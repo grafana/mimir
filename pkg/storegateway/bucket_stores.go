@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/gate"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -91,12 +91,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
 	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
-	var queryGate gate.Gate
-	if cfg.BucketStore.MaxConcurrentRejectOverLimit {
-		queryGate = gate.NewRejecting(cfg.BucketStore.MaxConcurrent)
-	} else {
-		queryGate = gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
-	}
+	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	u := &BucketStores{
@@ -293,7 +288,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	return errs.Err()
 }
 
-// Series makes a series request to the underlying user bucket store.
+// Series implements the storepb.StoreServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) error {
 	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
 	defer spanLog.Span.Finish()
@@ -314,7 +309,7 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_Seri
 	})
 }
 
-// LabelNames implements the Storegateway proto service.
+// LabelNames implements the storepb.StoreServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelNames")
 	defer spanLog.Span.Finish()
@@ -332,7 +327,7 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	return store.LabelNames(ctx, req)
 }
 
-// LabelValues implements the Storegateway proto service.
+// LabelValues implements the storepb.StoreServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelValues")
 	defer spanLog.Span.Finish()
@@ -463,6 +458,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
+		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
 	}
 	if u.logLevel.String() == "debug" {
 		bucketStoreOpts = append(bucketStoreOpts, WithDebugLogging())

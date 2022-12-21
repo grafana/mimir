@@ -54,6 +54,9 @@ spec:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.store_gateway.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.store_gateway.priorityClassName }}
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}

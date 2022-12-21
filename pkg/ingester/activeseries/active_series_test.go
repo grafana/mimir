@@ -16,8 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 func copyFn(l labels.Labels) labels.Labels { return l }
@@ -25,8 +23,8 @@ func copyFn(l labels.Labels) labels.Labels { return l }
 const DefaultTimeout = 5 * time.Minute
 
 func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
-	ls1 := []labels.Label{{Name: "a", Value: "1"}}
-	ls2 := []labels.Label{{Name: "a", Value: "2"}}
+	ls1 := labels.FromStrings("a", "1")
+	ls2 := labels.FromStrings("a", "2")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	allActive, activeMatching, valid := c.Active(time.Now())
@@ -51,9 +49,9 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
-	ls1 := []labels.Label{{Name: "a", Value: "1"}}
-	ls2 := []labels.Label{{Name: "a", Value: "2"}}
-	ls3 := []labels.Label{{Name: "a", Value: "3"}}
+	ls1 := labels.FromStrings("a", "1")
+	ls2 := labels.FromStrings("a", "2")
+	ls3 := labels.FromStrings("a", "3")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3"}`}))
 
@@ -88,12 +86,12 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.True(t, valid)
 }
 
-func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
-	metric := labels.NewBuilder(labels.FromStrings("__name__", "logs"))
-	ls1 := metric.Set("_", "ypfajYg2lsv").Labels(nil)
-	ls2 := metric.Set("_", "KiqbryhzUpn").Labels(nil)
+func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
+	// These two series have the same XXHash; for algo see https://github.com/Cyan4973/xxHash/issues/54#issuecomment-414061026
+	ls1 := labels.FromStrings("_z~!!a+0", "interesting_data_here_", "zzzzz%!z", "more_interesting_data_here")
+	ls2 := labels.FromStrings("_z-m\xaew\xa3\xc0", "interesting_data_here_", "zzzzz\xa5|z", "more_interesting_data_here")
 
-	require.True(t, client.Fingerprint(ls1) == client.Fingerprint(ls2))
+	require.True(t, ls1.Hash() == ls2.Hash())
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	c.UpdateSeries(ls1, time.Now(), copyFn)
 	c.UpdateSeries(ls2, time.Now(), copyFn)
@@ -104,12 +102,12 @@ func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
 }
 
 func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
-	series := [][]labels.Label{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
+	series := []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
 		// The two following series have the same Fingerprint
-		{{Name: "_", Value: "ypfajYg2lsv"}, {Name: "__name__", Value: "logs"}},
-		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
+		labels.FromStrings("_", "ypfajYg2lsv", "__name__", "logs"),
+		labels.FromStrings("_", "KiqbryhzUpn", "__name__", "logs"),
 	}
 
 	// Run the same test for increasing TTL values
@@ -137,12 +135,12 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
-	series := [][]labels.Label{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
+	series := []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
 		// The two following series have the same Fingerprint
-		{{Name: "_", Value: "ypfajYg2lsv"}, {Name: "__name__", Value: "logs"}},
-		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
+		labels.FromStrings("_", "ypfajYg2lsv", "__name__", "logs"),
+		labels.FromStrings("_", "KiqbryhzUpn", "__name__", "logs"),
 	}
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{_=~"y.*"}`}))
@@ -210,10 +208,10 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
-	ls1 := []labels.Label{{Name: "a", Value: "1"}}
-	ls2 := []labels.Label{{Name: "a", Value: "2"}}
-	ls3 := []labels.Label{{Name: "a", Value: "3"}}
-	ls4 := []labels.Label{{Name: "a", Value: "4"}}
+	ls1 := labels.FromStrings("a", "1")
+	ls2 := labels.FromStrings("a", "2")
+	ls3 := labels.FromStrings("a", "3")
+	ls4 := labels.FromStrings("a", "4")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
@@ -271,7 +269,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
-	ls1 := []labels.Label{{Name: "a", Value: "1"}}
+	ls1 := labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -306,7 +304,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
-	ls1 := []labels.Label{{Name: "a", Value: "1"}}
+	ls1 := labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,

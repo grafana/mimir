@@ -61,6 +61,9 @@ data:
         location = /api/v1/push {
           proxy_pass      http://small-values-mimir-distributor-headless.citestns.svc.cluster.local:8080$request_uri;
         }
+        location /otlp/v1/metrics {
+          proxy_pass      http://small-values-mimir-distributor-headless.citestns.svc.cluster.local:8080$request_uri;
+        }
     
         # Alertmanager endpoints
         location /alertmanager {

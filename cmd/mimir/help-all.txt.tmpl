@@ -265,6 +265,8 @@ Usage of ./cmd/mimir/mimir:
     	User assigned identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
+  -blocks-storage.bucket-store.batch-series-size int
+    	[experimental] If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
@@ -339,12 +341,14 @@ Usage of ./cmd/mimir/mimir:
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.map-populate-enabled
     	[experimental] If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.
+  -blocks-storage.bucket-store.index-header.stream-reader-enabled
+    	[experimental] If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.
+  -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles uint
+    	[experimental] Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled. (default 1)
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
     	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
-  -blocks-storage.bucket-store.max-concurrent-reject-over-limit
-    	[experimental] True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
@@ -480,7 +484,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.swift.username string
     	OpenStack Swift username.
   -blocks-storage.tsdb.block-ranges-period comma-separated-list-of-durations
-    	TSDB blocks range period. (default 2h0m0s)
+    	[experimental] TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -1246,7 +1250,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
-    	The maximum number of concurrent queries. This config option should be set on query-frontend too when query sharding is enabled. (default 20)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
@@ -1605,6 +1609,8 @@ Usage of ./cmd/mimir/mimir:
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
+  -ruler.alertmanager-client.tls-enabled
+    	Enable TLS for gRPC client connecting to alertmanager. (default true)
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
@@ -1616,7 +1622,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-refresh-interval duration
     	How long to wait between refreshing DNS resolutions of Alertmanager hosts. (default 1m0s)
   -ruler.alertmanager-url string
-    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
+    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.
   -ruler.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.client.backoff-min-period duration

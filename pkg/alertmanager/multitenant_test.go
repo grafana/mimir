@@ -201,6 +201,55 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestMultitenantAlertmanager_relativeDataDir(t *testing.T) {
+	ctx := context.Background()
+
+	// Run this test using a real storage client.
+	store := prepareInMemoryAlertStore()
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User: "user",
+		RawConfig: simpleConfigOne + `
+templates:
+- 'first.tpl'
+- 'second.tpl'
+`,
+		Templates: []*alertspb.TemplateDesc{
+			{
+				Filename: "first.tpl",
+				Body:     `{{ define "t1" }}Template 1 ... {{end}}`,
+			},
+			{
+				Filename: "second.tpl",
+				Body:     `{{ define "t2" }}Template 2{{ end}}`,
+			},
+		},
+	}))
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := mockAlertmanagerConfig(t)
+	// Alter datadir to get a relative path
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	cfg.DataDir, err = filepath.Rel(cwd, cfg.DataDir)
+	require.NoError(t, err)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
+
+	// Ensure the configs are synced correctly and persist across several syncs
+	for i := 0; i < 3; i++ {
+		err := am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		require.Len(t, am.alertmanagers, 1)
+
+		dirs := am.getPerUserDirectories()
+		userDir := dirs["user"]
+		require.NotZero(t, userDir)
+		require.True(t, dirExists(t, userDir))
+		require.True(t, dirExists(t, filepath.Join(userDir, templatesDir)))
+		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "first.tpl")))
+		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "second.tpl")))
+	}
+}
+
 func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	ctx := context.Background()
 

@@ -34,9 +34,7 @@ func TestChunkIter(t *testing.T) {
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, enc chunk.Encoding) chunk.Chunk {
-	metric := labels.Labels{
-		{Name: model.MetricNameLabel, Value: "foo"},
-	}
+	metric := labels.FromStrings(model.MetricNameLabel, "foo")
 	pc, err := chunk.NewForEncoding(enc)
 	require.NoError(t, err)
 	ts := from

@@ -14,7 +14,7 @@ local filename = 'mimir-overrides.json';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(limit_name) (cortex_limits_defaults{%s=~"$cluster",namespace=~"$namespace"})' % $._config.per_cluster_label,
+              expr: 'max by(limit_name) (cortex_limits_defaults{%s=~"$cluster",%s=~"$namespace"})' % [$._config.per_cluster_label, $._config.per_namespace_label],
               instant: true,
               legendFormat: '',
               refId: 'A',
@@ -70,7 +70,7 @@ local filename = 'mimir-overrides.json';
           datasource: '${datasource}',
           targets: [
             {
-              expr: 'max by(user, limit_name) (cortex_limits_overrides{%s=~"$cluster",namespace=~"$namespace",user=~"${tenant_id}"})' % $._config.per_cluster_label,
+              expr: 'max by(user, limit_name) (cortex_limits_overrides{%s=~"$cluster",%s=~"$namespace",user=~"${tenant_id}"})' % [$._config.per_cluster_label, $._config.per_namespace_label],
               instant: true,
               legendFormat: '',
               refId: 'A',

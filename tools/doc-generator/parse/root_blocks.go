@@ -5,6 +5,7 @@ package parse
 import (
 	"reflect"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"

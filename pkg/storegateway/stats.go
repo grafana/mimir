@@ -52,6 +52,8 @@ type queryStats struct {
 	mergedSeriesCount int
 	mergedChunksCount int
 	mergeDuration     time.Duration
+
+	expandedPostingsDuration time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -59,6 +61,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
+	s.postingsToFetch += o.postingsToFetch
 	s.postingsFetched += o.postingsFetched
 	s.postingsFetchedSizeSum += o.postingsFetchedSizeSum
 	s.postingsFetchCount += o.postingsFetchCount
@@ -95,6 +98,8 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergedChunksCount += o.mergedChunksCount
 	s.mergeDuration += o.mergeDuration
 
+	s.expandedPostingsDuration += o.expandedPostingsDuration
+
 	return &s
 }
 
@@ -118,14 +123,12 @@ func (s *safeQueryStats) update(fn func(stats *queryStats)) {
 	fn(s.unsafeStats)
 }
 
-// merge the statistics while holding the lock. Returns a new object with the merged statistics.
-func (s *safeQueryStats) merge(o *queryStats) *safeQueryStats {
+// merge the statistics while holding the lock. Statistics are merged in the receiver.
+func (s *safeQueryStats) merge(o *queryStats) {
 	s.unsafeStatsMx.Lock()
 	defer s.unsafeStatsMx.Unlock()
 
-	return &safeQueryStats{
-		unsafeStats: s.unsafeStats.merge(o),
-	}
+	s.unsafeStats = s.unsafeStats.merge(o)
 }
 
 // export returns a copy of the internal statistics.

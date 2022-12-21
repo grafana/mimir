@@ -856,7 +856,7 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 				}
 			}
 
-			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
+			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", strings.Join(serviceNamesStates, ", "))
 			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return

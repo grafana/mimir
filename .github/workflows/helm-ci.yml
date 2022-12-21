@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-036177f2f
+      image: grafana/mimir-build-image:pr3702-cc811800b
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -30,8 +30,3 @@ jobs:
         env:
           TEMP_DIR: ${{ runner.temp }}/conftest
         run: make BUILD_IN_CONTAINER=false conftest-verify
-
-      - name: Conftest Run Tests
-        env:
-          TEMP_DIR: ${{ runner.temp }}/conftest
-        run: make BUILD_IN_CONTAINER=false conftest-test

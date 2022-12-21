@@ -118,8 +118,7 @@ type File struct {
 	// SizeBytes is optional (e.g meta.json does not show size).
 	SizeBytes int64 `json:"size_bytes,omitempty"`
 
-	// Hash is an optional hash of this file. Used for potentially avoiding an extra download.
-	Hash *ObjectHash `json:"hash,omitempty"`
+	// The json field "hash" is reserved because it is used by Thanos for the file hash.
 }
 
 type ThanosDownsample struct {
@@ -145,12 +144,6 @@ func InjectThanos(logger log.Logger, bdir string, meta Thanos, downsampledMeta *
 	}
 
 	return newMeta, nil
-}
-
-// Returns a unique identifier for the compaction group the block belongs to.
-// It considers the downsampling resolution and the block's labels.
-func (m *Thanos) GroupKey() string {
-	return fmt.Sprintf("%d@%v", m.Downsample.Resolution, labels.FromMap(m.Labels).Hash())
 }
 
 // WriteToDir writes the encoded meta into <dir>/meta.json.

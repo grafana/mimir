@@ -39,7 +39,7 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 	return nil
 }
 
-// DeleteRuleGroup creates a new rule group
+// DeleteRuleGroup deletes a rule group
 func (r *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)

@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -50,23 +54,81 @@ func TestWriteError(t *testing.T) {
 
 func TestHandler_ServeHTTP(t *testing.T) {
 	for _, tt := range []struct {
-		name            string
-		cfg             HandlerConfig
-		expectedMetrics int
+		name             string
+		cfg              HandlerConfig
+		request          func() *http.Request
+		expectedParams   url.Values
+		expectedMetrics  int
+		expectedActivity string
 	}{
 		{
-			name:            "test handler with stats enabled",
-			cfg:             HandlerConfig{QueryStatsEnabled: true},
-			expectedMetrics: 4,
+			name: "handler with stats enabled, POST request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				form := url.Values{
+					"query": []string{"some_metric"},
+					"time":  []string{"42"},
+				}
+				r := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
+				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				return r
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:  4,
+			expectedActivity: "12345 POST /api/v1/query query=some_metric&time=42",
 		},
 		{
-			name:            "test handler with stats disabled",
-			cfg:             HandlerConfig{QueryStatsEnabled: false},
-			expectedMetrics: 0,
+			name: "handler with stats enabled, GET request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:  4,
+			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
+		},
+		{
+			name: "handler with stats enabled, GET request without params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query", nil)
+			},
+			expectedParams:   url.Values{},
+			expectedMetrics:  4,
+			expectedActivity: "12345 GET /api/v1/query (no params)",
+		},
+		{
+			name: "handler with stats disabled, GET request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: false},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:  0,
+			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+				assert.NoError(t, err)
+				assert.Len(t, activities, 1)
+				assert.Equal(t, tt.expectedActivity, activities[0].Activity)
+
+				assert.NoError(t, req.ParseForm())
+				assert.Equal(t, tt.expectedParams, req.Form)
+
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       io.NopCloser(strings.NewReader("{}")),
@@ -74,11 +136,14 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			})
 
 			reg := prometheus.NewPedanticRegistry()
-			handler := NewHandler(tt.cfg, roundTripper, log.NewNopLogger(), reg)
 
-			ctx := user.InjectOrgID(context.Background(), "12345")
-			req := httptest.NewRequest("GET", "/", nil)
-			req = req.WithContext(ctx)
+			at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+			handler := NewHandler(tt.cfg, roundTripper, log.NewNopLogger(), reg, at)
+
+			req := tt.request().WithContext(user.InjectOrgID(context.Background(), "12345"))
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
@@ -95,6 +160,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMetrics, count)
+
+			activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+			require.NoError(t, err)
+			require.Empty(t, activities)
 		})
 	}
 }
@@ -133,7 +202,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
-			handler := NewHandler(test.cfg, roundTripper, logger, reg)
+			handler := NewHandler(test.cfg, roundTripper, logger, reg, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "12345")
 			req := httptest.NewRequest("GET", test.path, nil)

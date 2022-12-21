@@ -11,10 +11,10 @@ import (
 	"encoding/binary"
 	"io"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -22,6 +22,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type bucketChunkReader struct {
@@ -29,30 +30,27 @@ type bucketChunkReader struct {
 	block *bucketBlock
 
 	toLoad [][]loadIdx
-
-	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
-	// After chunks are loaded, mutex is no longer used.
-	mtx        sync.Mutex
-	stats      *queryStats
-	chunkBytes []*[]byte // Byte slice to return to the chunk pool on close.
 }
 
 func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
 	return &bucketChunkReader{
 		ctx:    ctx,
 		block:  block,
-		stats:  &queryStats{},
 		toLoad: make([][]loadIdx, len(block.chunkObjs)),
 	}
 }
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-
-	for _, b := range r.chunkBytes {
-		r.block.chunkPool.Put(b)
-	}
 	return nil
+}
+
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use the injected pool.BatchBytes to release the bytes.
+func (r *bucketChunkReader) reset() {
+	for i := range r.toLoad {
+		r.toLoad[i] = r.toLoad[i][:0]
+	}
 }
 
 // addLoad adds the chunk with id to the data set to be fetched.
@@ -69,8 +67,8 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 	return nil
 }
 
-// load loads all added chunks and saves resulting aggrs to res.
-func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error {
+// load all added chunks and saves resulting chunks to res.
+func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -86,7 +84,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 			p := p
 			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
 			g.Go(func() error {
-				return r.loadChunks(ctx, res, aggrs, seq, p, indices)
+				return r.loadChunks(ctx, res, seq, p, indices, chunksPool, stats)
 			})
 		}
 	}
@@ -95,7 +93,12 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storepb.Aggr, seq int, part Part, pIdxs []loadIdx) error {
+//
+// This function is called concurrently and the same instance of res, part of pIdx is
+// passed to multiple concurrent invocations. However, this shouldn't require a mutex
+// because part and pIdxs is only read, and different calls are expected to write to
+// different chunks in the res.
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
@@ -106,19 +109,15 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
 	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
 
-	locked := true
-	r.mtx.Lock()
+	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
+	// all stats in a local instance and then merge it in the defer.
+	localStats := queryStats{}
+	defer stats.merge(&localStats)
 
-	defer func() {
-		if locked {
-			r.mtx.Unlock()
-		}
-	}()
-
-	r.stats.chunksFetchCount++
-	r.stats.chunksFetched += len(pIdxs)
-	r.stats.chunksFetchDurationSum += time.Since(fetchBegin)
-	r.stats.chunksFetchedSizeSum += int(part.End - part.Start)
+	localStats.chunksFetchCount++
+	localStats.chunksFetched += len(pIdxs)
+	localStats.chunksFetchDurationSum += time.Since(fetchBegin)
+	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
 
 	var (
 		buf        = make([]byte, mimir_tsdb.EstimatedMaxChunkSize)
@@ -166,18 +165,14 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), aggrs, r.save)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
-			r.stats.chunksTouched++
-			r.stats.chunksTouchedSizeSum += int(chunkDataLen)
+			localStats.chunksTouched++
+			localStats.chunksTouchedSizeSum += int(chunkDataLen)
 			continue
 		}
-
-		// If we didn't fetch enough data for the chunk, fetch more.
-		r.mtx.Unlock()
-		locked = false
 
 		fetchBegin = time.Now()
 
@@ -191,40 +186,44 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 			return errors.Errorf("preloaded chunk too small, expecting %d", chunkLen)
 		}
 
-		r.mtx.Lock()
-		locked = true
-
-		r.stats.chunksFetchCount++
-		r.stats.chunksFetchDurationSum += time.Since(fetchBegin)
-		r.stats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), aggrs, r.save)
+		localStats.chunksFetchCount++
+		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
+		localStats.chunksFetchedSizeSum += len(*nb)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
 		}
-		r.stats.chunksTouched++
-		r.stats.chunksTouchedSizeSum += int(chunkDataLen)
+		localStats.chunksTouched++
+		localStats.chunksTouchedSizeSum += int(chunkDataLen)
 
 		r.block.chunkPool.Put(nb)
 	}
 	return nil
 }
 
-// save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
-// Returned slice becomes invalid once r.block.chunkPool.Put() is called.
-func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	// Ensure we never grow slab beyond original capacity.
-	if len(r.chunkBytes) == 0 ||
-		cap(*r.chunkBytes[len(r.chunkBytes)-1])-len(*r.chunkBytes[len(r.chunkBytes)-1]) < len(b) {
-		s, err := r.block.chunkPool.Get(len(b))
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.BatchBytes) error {
+	if in.Encoding() == chunkenc.EncXOR {
+		b, err := saveChunk(in.Bytes(), chunksPool)
 		if err != nil {
-			return nil, errors.Wrap(err, "allocate chunk bytes")
+			return err
 		}
-		r.chunkBytes = append(r.chunkBytes, s)
+		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
+		return nil
 	}
-	slab := r.chunkBytes[len(r.chunkBytes)-1]
-	*slab = append(*slab, b...)
-	return (*slab)[len(*slab)-len(b):], nil
+	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
+}
+
+// saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.
+// The buffer containing the chunk data is returned.
+// The returned slice becomes invalid once chunksPool is released.
+func saveChunk(b []byte, chunksPool *pool.BatchBytes) ([]byte, error) {
+	dst, err := chunksPool.Get(len(b))
+	if err != nil {
+		return nil, err
+	}
+	copy(dst, b)
+	return dst, nil
 }
 
 type loadIdx struct {
@@ -258,4 +257,53 @@ func (b rawChunk) Appender() (chunkenc.Appender, error) {
 
 func (b rawChunk) NumSamples() int {
 	panic("invalid call")
+}
+
+// bucketChunkReaders holds a collection of chunkReader's for multiple blocks
+// and selects the correct chunk reader to use on each call to addLoad
+type bucketChunkReaders struct {
+	readers map[ulid.ULID]chunkReader
+}
+
+type chunkReader interface {
+	io.Closer
+
+	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
+	load(result []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error
+	reset()
+}
+
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
+	return &bucketChunkReaders{
+		readers: readersMap,
+	}
+}
+
+func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
+	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
+}
+
+func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+	g := &errgroup.Group{}
+	for _, reader := range r.readers {
+		reader := reader
+		g.Go(func() error {
+			// We don't need synchronisation on the access to entries because each chunk in
+			// every series will be loaded by exactly one reader. Since the chunks slices are already
+			// initialized to the correct length, they don't need to be resized and can just be accessed.
+			return reader.load(entries, chunksPool, stats)
+		})
+	}
+
+	// Block until all goroutines are done. We need to wait for all goroutines and
+	// can't return on first error, otherwise a subsequent release of the bytes pool
+	// could cause a race condition.
+	return g.Wait()
+}
+
+// reset the chunks scheduled for loading.
+func (r *bucketChunkReaders) reset() {
+	for _, reader := range r.readers {
+		reader.reset()
+	}
 }

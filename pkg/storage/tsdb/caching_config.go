@@ -14,13 +14,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -94,18 +95,18 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
 
-	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, reg)
+	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
 	}
 
-	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, reg)
+	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "metadata-cache")
 	}
 	if metadataCache != nil {
 		cachingConfigured = true
-		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger)
+		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger, tenant.NewMultiResolver())
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
@@ -121,7 +122,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 
 	if chunksCache != nil {
 		cachingConfigured = true
-		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger)
+		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
 		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
 		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
@@ -131,7 +132,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
 			var err error
-			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}

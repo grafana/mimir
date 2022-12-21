@@ -15,4 +15,8 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ template "mimir.serviceAccountName" . }}
+{{- if .Values.rollout_operator.enabled }}
+- kind: ServiceAccount
+  name: {{ include "rollout-operator.serviceAccountName" . }}
+{{- end }}
 {{- end }}

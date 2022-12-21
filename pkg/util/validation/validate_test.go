@@ -311,27 +311,6 @@ func TestValidateMetadata(t *testing.T) {
 	`), "cortex_discarded_metadata_total"))
 }
 
-func TestValidateLabelOrder(t *testing.T) {
-	var cfg validateLabelsCfg
-	cfg.maxLabelNameLength = 10
-	cfg.maxLabelNamesPerSeries = 10
-	cfg.maxLabelValueLength = 10
-
-	userID := "testUser"
-
-	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
-		{Name: model.MetricNameLabel, Value: "m"},
-		{Name: "b", Value: "b"},
-		{Name: "a", Value: "a"},
-	}, false)
-	expected := newLabelsNotSortedError([]mimirpb.LabelAdapter{
-		{Name: model.MetricNameLabel, Value: "m"},
-		{Name: "b", Value: "b"},
-		{Name: "a", Value: "a"},
-	}, "a")
-	assert.Equal(t, expected, actual)
-}
-
 func TestValidateLabelDuplication(t *testing.T) {
 	var cfg validateLabelsCfg
 	cfg.maxLabelNameLength = 10

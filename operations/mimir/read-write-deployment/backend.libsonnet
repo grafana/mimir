@@ -35,9 +35,9 @@
       'query-scheduler.max-used-instances': 2,
     },
 
-  mimir_backend_zone_a_args:: {},
-  mimir_backend_zone_b_args:: {},
-  mimir_backend_zone_c_args:: {},
+  mimir_backend_zone_a_args:: $.store_gateway_zone_a_args {},
+  mimir_backend_zone_b_args:: $.store_gateway_zone_b_args {},
+  mimir_backend_zone_c_args:: $.store_gateway_zone_c_args {},
 
   local mimir_backend_data_pvc =
     pvc.new() +
@@ -58,16 +58,19 @@
   newMimirBackendZoneContainer(zone, zone_args)::
     container.new('mimir-backend', $._images.mimir_backend) +
     container.withPorts($.mimir_backend_ports) +
-    container.withArgsMixin($.util.mapToFlags($.mimir_backend_args + zone_args + {
-      'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
-      'store-gateway.sharding-ring.zone-awareness-enabled': true,
+    container.withArgsMixin($.util.mapToFlags(
+      // This first block contains flags that can be overridden.
+      {
+        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+        'store-gateway.sharding-ring.unregister-on-shutdown': false,
+      } + $.mimir_backend_args + zone_args + {
+        'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
+        'store-gateway.sharding-ring.zone-awareness-enabled': true,
 
-      // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
-      'store-gateway.sharding-ring.prefix': 'multi-zone/',
-
-      // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-      'store-gateway.sharding-ring.unregister-on-shutdown': false,
-    })) +
+        // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
+        'store-gateway.sharding-ring.prefix': 'multi-zone/',
+      }
+    )) +
     container.withVolumeMountsMixin([volumeMount.new('mimir-backend-data', '/data')]) +
     $.util.resourcesRequests(1, '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
@@ -110,38 +113,38 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  mimir_backend_zone_a_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('a', $.mimir_backend_zone_a_args),
 
-  mimir_backend_zone_b_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('b', $.mimir_backend_zone_b_args),
 
-  mimir_backend_zone_c_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('c', $.mimir_backend_zone_c_args),
 
-  mimir_backend_zone_a_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('a', $.mimir_backend_zone_a_container),
 
-  mimir_backend_zone_b_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('b', $.mimir_backend_zone_b_container),
 
-  mimir_backend_zone_c_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('c', $.mimir_backend_zone_c_container),
 
-  mimir_backend_zone_a_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_a_statefulset),
 
-  mimir_backend_zone_b_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_b_statefulset),
 
-  mimir_backend_zone_c_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_c_statefulset),
 
   // Create a service backed by all mimir-backend replicas (in all zone).
   // This service is used to access the mimir-backend admin UI.
-  mimir_backend_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupService('mimir-backend', [$.mimir_backend_zone_a_statefulset, $.mimir_backend_zone_b_statefulset, $.mimir_backend_zone_c_statefulset], $._config.service_ignored_labels),
 
-  mimir_backend_rollout_pdb: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupPDB('mimir-backend', 1),
 }

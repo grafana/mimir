@@ -286,3 +286,102 @@ func init() {
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
 }
+
+// PreallocatingMetric overrides the Unmarshal behaviour of Metric.
+type PreallocatingMetric struct {
+	Metric
+}
+
+// Unmarshal is like Metric.Unmarshal, but it preallocates the slice of labels
+// instead of growing it during append(). Unmarshal traverses the dAtA slice and counts the number of
+// Metric.Labels elements. Then it preallocates a slice of mimirpb.LabelAdapter with that capacity
+// and delegates the actual unmarshalling to Metric.Unmarshal.
+//
+// Unmarshal should be manually updated when new fields are added to Metric.
+// Unmarshal will give up on counting labels if it encounters unknown fields and will
+// fall back to Metric.Unmarshal
+//
+// The implementation of Unmarshal is copied from the implementation of
+// Metric.Unmarshal and modified, so it only counts the labels instead of
+// also unmarshalling them.
+func (m *PreallocatingMetric) Unmarshal(dAtA []byte) error {
+	numLabels, ok := m.labelsCount(dAtA)
+	if ok && numLabels > 0 {
+		m.Labels = make([]LabelAdapter, 0, numLabels)
+	}
+
+	return m.Metric.Unmarshal(dAtA)
+}
+
+// The implementation of labelsCount is copied from the implementation of
+// Metric.Unmarshal and modified, so it only counts the labels instead of
+// also unmarshalling them.
+func (m *PreallocatingMetric) labelsCount(dAtA []byte) (int, bool) {
+	l := len(dAtA)
+	iNdEx := 0
+	numLabels := 0
+loop:
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return 0, false
+			}
+			if iNdEx >= l {
+				return 0, false
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return 0, false
+		}
+		if fieldNum <= 0 {
+			return 0, false
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return 0, false
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return 0, false
+				}
+				if iNdEx >= l {
+					return 0, false
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return 0, false
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return 0, false
+			}
+			if postIndex > l {
+				return 0, false
+			}
+			numLabels++
+			iNdEx = postIndex
+		default:
+			// There is a field we don't know about, so we can't make an assured decision based
+			break loop
+		}
+	}
+
+	return numLabels, true
+}

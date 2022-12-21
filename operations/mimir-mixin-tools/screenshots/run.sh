@@ -13,7 +13,7 @@ GRAFANA_PID=""
 if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "This tool expects a local config file stored at ${SCRIPT_DIR}/.config and containing the following content:"
   echo ""
-  echo "CLUSTER=\"<cluster-to-query\""
+  echo "CLUSTER=\"<cluster-to-query>\""
   echo "MIMIR_NAMESPACE=\"<namespace-where-mimir-is-running>\""
   echo "ALERTMANAGER_NAMESPACE=\"<namespace-where-alertmanager-is-running>\""
   echo ""
@@ -67,7 +67,7 @@ docker run \
   --env "MIMIR_NAMESPACE=${MIMIR_NAMESPACE}" \
   --env "ALERTMANAGER_NAMESPACE=${ALERTMANAGER_NAMESPACE}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/input" \
-  -v "${SCRIPT_DIR}/../../../docs/sources/operators-guide/monitor-grafana-mimir/dashboards:/output" \
+  -v "${SCRIPT_DIR}/../../../docs/sources/mimir/operators-guide/monitor-grafana-mimir/dashboards:/output" \
   -v "${SCRIPT_DIR}:/sources" \
   --entrypoint "" \
   "${DOCKER_APP_IMAGE}" \

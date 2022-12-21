@@ -1,6 +1,53 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
+## main / unreleased
+
+### Grafana Mimir
+
+* [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
+* [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779
+* [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
+* [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
+* [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
+* [ENHANCEMENT] Distributor: remove labels with empty values #2439
+* [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
+* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use memory mapped files. The index-header reader is expected to improve stability of the store-gateway. You can enable this implementation with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639 #3691 #3703
+* [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_cancelled_requests_total` metric to track the number of requests that are already cancelled when dequeued. #3696
+* [ENHANCEMENT] Store-gateway: add `cortex_bucket_store_partitioner_extended_ranges_total` metric to keep track of the ranges that the partitioner decided to overextend and merge in order to save API call to the object storage. #3769
+* [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
+* [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
+* [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
+* [BUGFIX] Debian package: Fix post-install, environment file path and user creation. #3720
+* [BUGFIX] memberlist: Fix panic during Mimir startup when Mimir receives gossip message before it's ready. #3746
+* [BUGFIX] Store-gateway: fix `cortex_bucket_store_partitioner_requested_bytes_total` metric to not double count overlapping ranges. #3769
+
+### Mixin
+
+* [ENHANCEMENT] Alerts: Added `MimirIngesterInstanceHasNoTenants` alert that fires when an ingester replica is not receiving write requests for any tenant. #3681
+* [ENHANCEMENT] Alerts: Extended `MimirAllocatingTooMuchMemory` to check read-write deployment containers. #3710
+* [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
+* [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
+* [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
+* [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
+* [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
+* [BUGFIX] Tenants dashboard: Make it compatible with all deployment types. #3754
+
+### Jsonnet
+
+* [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
+* [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
+* [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
+
+### Mimirtool
+
+### Documentation
+
+* [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
+* [ENHANCEMENT] Update migration from cortex documentation. #3662
+
+### Tools
+
+## 2.5.0
 
 ### Grafana Mimir
 
@@ -8,9 +55,11 @@
 * [CHANGE] Experimental flag `-blocks-storage.tsdb.out-of-order-capacity-min` has been removed. #3261
 * [CHANGE] Distributor: Wrap errors from pushing to ingesters with useful context, for example clarifying timeouts. #3307
 * [CHANGE] The default value of `-server.http-write-timeout` has changed from 30s to 2m. #3346
+* [CHANGE] Reduce period of health checks in connection pools for querier->store-gateway, ruler->ruler, and alertmanager->alertmanager clients to 10s. This reduces the time to fail a gRPC call when the remote stops responding. #3168
+* [CHANGE] Hide TSDB block ranges period config from doc and mark it experimental. #3518
 * [FEATURE] Alertmanager: added Discord support. #3309
 * [ENHANCEMENT] Added `-server.tls-min-version` and `-server.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by HTTP and gRPC servers. #2898
-* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133
+* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3113
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation when generating ids in index cache. #3179
 * [ENHANCEMENT] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [ENHANCEMENT] Ingester: Reduce activity tracker memory allocation. #3203
@@ -18,7 +67,7 @@
 * [ENHANCEMENT] Added `-usage-stats.installation-mode` configuration to track the installation mode via the anonymous usage statistics. #3244
 * [ENHANCEMENT] Compactor: Add new `cortex_compactor_block_max_time_delta_seconds` histogram for detecting if compaction of blocks is lagging behind. #3240 #3429
 * [ENHANCEMENT] Ingester: reduced the memory footprint of active series custom trackers. #2568
-* [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283
+* [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283 #3385
 * [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3309
 * [ENHANCEMENT] Add experimental flag `-shutdown-delay` to allow components to wait after receiving SIGTERM and before stopping. In this time the component returns 503 from /ready endpoint. #3298
 * [ENHANCEMENT] Go: update to go 1.19.3. #3371
@@ -26,12 +75,17 @@
 * [ENHANCEMENT] Clarify which S3 signature versions are supported in the error "unsupported signature version". #3376
 * [ENHANCEMENT] Store-gateway: improved index header reading performance. #3393 #3397 #3436
 * [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
-* [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386
+* [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386 #3458
+* [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
+* [ENHANCEMENT] Query-frontend: added "fetched index bytes" to query statistics, so that the statistics contain the total bytes read by store-gateways from TSDB block indexes. #3206
+* [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
+* [ENHANCEMENT] Added the `/api/v1/status/config` API to maintain API compatibility with prometheus. #3596
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302
 * [BUGFIX] Ruler: persist evaluation delay configured in the rulegroup. #3392
 * [BUGFIX] Ring status pages: show 100% ownership as "100%", not "1e+02%". #3435
+* [BUGFIX] Fix panics in OTLP ingest path when parse errors exist. #3538
 
 ### Mixin
 
@@ -39,15 +93,25 @@
 * [CHANGE] Dashboards: Removed the `Querier > Stages` panel from the `Mimir / Queries` dashboard. #3311
 * [CHANGE] Configuration: The format of the `autoscaling` section of the configuration has changed to support more components. #3378
   * Instead of specific config variables for each component, they are listed in a dictionary. For example, `autoscaling.querier_enabled` becomes `autoscaling.querier.enabled`.
+* [FEATURE] Dashboards: Added "Mimir / Overview resources" dashboard, providing an high level view over a Mimir cluster resources utilization. #3481
+* [FEATURE] Dashboards: Added "Mimir / Overview networking" dashboard, providing an high level view over a Mimir cluster network bandwidth, inflight requests and TCP connections. #3487
+* [FEATURE] Compile baremetal mixin along k8s mixin. #3162 #3514
 * [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
-* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182 #3394
+* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182 #3394 #3394 #3461
 * [ENHANCEMENT] Dashboards: Remove the "Instance Mapper" row from the "Alertmanager Resources Dashboard". This is a Grafana Cloud specific service and not relevant for external users. #3152
 * [ENHANCEMENT] Dashboards: Add "remote read", "metadata", and "exemplar" queries to "Mimir / Overview" dashboard. #3245
 * [ENHANCEMENT] Dashboards: Use non-red colors for non-error series in the "Mimir / Overview" dashboard. #3246
-* [ENHANCEMENT] Dashboards: Add support to multi-zone deployments for the experimental read-write deployment mode. #3254
+* [ENHANCEMENT] Dashboards: Add support to multi-zone deployments for the experimental read-write deployment mode. #3256
 * [ENHANCEMENT] Dashboards: If enabled, add new row to the `Mimir / Writes` for distributor autoscaling metrics. #3378
 * [ENHANCEMENT] Dashboards: Add read path insights row to the "Mimir / Tenants" dashboard. #3326
-* [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
+* [ENHANCEMENT] Alerts: Add runbook urls for alerts. #3452
+* [ENHANCEMENT] Configuration: Make it possible to configure namespace label, job label, and job prefix. #3482
+* [ENHANCEMENT] Dashboards: improved resources and networking dashboards to work with read-write deployment mode too. #3497 #3504 #3519 #3531
+* [ENHANCEMENT] Alerts: Added "MimirDistributorForwardingErrorRate" alert, which fires on high error rates in the distributor’s forwarding feature. #3200
+* [ENHANCEMENT] Improve phrasing in Overview dashboard. #3488
+* [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173 #3184
+* [BUGFIX] Alerts: Fixed `MimirGossipMembersMismatch` alert when Mimir is deployed in read-write mode. #3489
+* [BUGFIX] Dashboards: Remove "Inflight requests" from object store panels because the panel is not tracking the inflight requests to object storage. #3521
 
 ### Jsonnet
 
@@ -77,11 +141,11 @@
     }
   }
   ```
-* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379
+* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379 #3475 #3405
   ```jsonnet
   {
     _config+:: {
-      read_write_deployment_enabled: true,
+      deployment_mode: 'read-write',
 
       // See operations/mimir/read-write-deployment.libsonnet for more configuration options.
       mimir_write_replicas: 3,
@@ -94,12 +158,15 @@
 * [ENHANCEMENT] Added `$._config.usageStatsConfig` to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [ENHANCEMENT] Add support for autoscaling distributors. #3378
+* [ENHANCEMENT] Make auto-scaling logic ensure integer KEDA thresholds. #3512
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
+* [BUGFIX] Jsonnet: Fix auto-scaling so that ruler-querier CPU threshold is a string-encoded integer millicores value. #3520
 
 ### Mimirtool
 
+* [FEATURE] Added `mimirtool alertmanager verify` command to validate configuration without uploading. #3440
 * [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
-* [ENHANCEMENT] Refactor `mimirtool analyze prometheus`: add concurrency and resiliency #3062
+* [ENHANCEMENT] Refactor `mimirtool analyze prometheus`: add concurrency and resiliency #3349
   * Add `--concurrency` flag. Default: number of logical CPUs
 * [BUGFIX] `--log.level=debug` now correctly prints the response from the remote endpoint when a request fails. #3180
 
@@ -108,14 +175,28 @@
 * [ENHANCEMENT] Documented how to configure HA deduplication using Consul in a Mimir Helm deployment. #2972
 * [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
+* [ENHANCEMENT] Use imperative for docs titles. #3178 #3332 #3343
+* [ENHANCEMENT] Docs: mention gRPC compression in "Production tips". #3201
+* [ENHANCEMENT] Update ADOPTERS.md. #3224 #3225
+* [ENHANCEMENT] Add a note for jsonnet deploying. #3213
+* [ENHANCEMENT] out-of-order runbook update with use case. #3253
+* [ENHANCEMENT] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3280
+* [ENHANCEMENT] Run Grafana Mimir in production using the Helm chart. #3072
+* [ENHANCEMENT] Use common configuration in the tutorial. #3282
+* [ENHANCEMENT] Updated detailed steps for migrating blocks from Thanos to Mimir. #3290
+* [ENHANCEMENT] Add scheme to DNS service discovery docs. #3450
+* [BUGFIX] Remove reference to file that no longer exists in contributing guide. #3404
+* [BUGFIX] Fix some minor typos in the contributing guide and on the runbooks page. #3418
+* [BUGFIX] Fix small typos in API reference. #3526
 * [BUGFIX] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3278
-* [BUGFIX] Fixed configuration example in the "Configuring the Grafana Mimir query-frontend to work with Prometheus" guide. #3373
+* [BUGFIX] Fixed configuration example in the "Configuring the Grafana Mimir query-frontend to work with Prometheus" guide. #3374
 
 ### Tools
 
-* [FEATURE] Add `copyblocks` tool, to copy Mimir blocks between two GCS buckets. #3263
+* [FEATURE] Add `copyblocks` tool, to copy Mimir blocks between two GCS buckets. #3264
 * [ENHANCEMENT] copyblocks: copy no-compact global markers and optimize min time filter check. #3268
 * [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
+* [BUGFIX] Mimir rules Github action: Fix single line output. #3421
 
 ## 2.4.0
 

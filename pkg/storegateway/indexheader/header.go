@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"flag"
 	"io"
 
 	"github.com/pkg/errors"
@@ -13,7 +14,7 @@ import (
 )
 
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
-var NotFoundRangeErr = errors.New("range not found") //nolint:golint
+var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
@@ -40,4 +41,16 @@ type Reader interface {
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames() ([]string, error)
+}
+
+type Config struct {
+	MapPopulateEnabled             bool `yaml:"map_populate_enabled" category:"experimental"`
+	StreamReaderEnabled            bool `yaml:"stream_reader_enabled" category:"experimental"`
+	StreamReaderMaxIdleFileHandles uint `yaml:"stream_reader_max_idle_file_handles" category:"experimental"`
+}
+
+func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
+	f.BoolVar(&cfg.StreamReaderEnabled, prefix+"stream-reader-enabled", false, "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.")
+	f.UintVar(&cfg.StreamReaderMaxIdleFileHandles, prefix+"stream-reader-max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.")
 }

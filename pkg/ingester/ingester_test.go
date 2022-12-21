@@ -47,13 +47,13 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/shipper"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -1755,7 +1755,7 @@ func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse
 		items = append(items, res.Items...)
 	}
 	for _, it := range items {
-		sort.Strings(it.Values)
+		slices.Sort(it.Values)
 	}
 	return items
 }
@@ -3263,8 +3263,8 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, shipper.WriteMetaFile(log.NewNopLogger(), db.db.Dir(), &shipper.Meta{
-		Version: shipper.MetaVersion1,
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), &shipperMeta{
+		Version: shipperMetaVersion1,
 	}))
 
 	// Run blocks shipping in a separate go routine.
@@ -4182,8 +4182,8 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, shipper.WriteMetaFile(nil, db.db.Dir(), &shipper.Meta{
-		Version:  shipper.MetaVersion1,
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
+		Version:  shipperMetaVersion1,
 		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
@@ -4210,8 +4210,8 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, shipper.WriteMetaFile(nil, db.db.Dir(), &shipper.Meta{
-		Version:  shipper.MetaVersion1,
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
+		Version:  shipperMetaVersion1,
 		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID, newBlocks[0].Meta().ULID, newBlocks[1].Meta().ULID},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
@@ -4462,7 +4462,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 				uids = append(uids, uid)
 				totalPushes += len(requests)
 			}
-			sort.Strings(uids)
+			slices.Sort(uids)
 
 			pushIdx := 0
 			for _, uid := range uids {

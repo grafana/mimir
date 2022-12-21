@@ -6,7 +6,7 @@
 //
 //		import (
 //			"time"
-//			tele "gopkg.in/tucnak/telebot.v3"
+//			tele "gopkg.in/telebot.v3"
 //		)
 //
 //		func main() {
@@ -18,7 +18,7 @@
 //				return
 //			}
 //
-//			b.Handle(tele.OnText, func(c tele.Context) error {
+//			b.Handle("/start", func(c tele.Context) error {
 //				return c.Send("Hello world!")
 //			})
 //
@@ -46,35 +46,30 @@ const DefaultApiURL = "https://api.telegram.org"
 //
 const (
 	// Basic message handlers.
-	OnText       = "\atext"
-	OnEdited     = "\aedited"
-	OnPhoto      = "\aphoto"
-	OnAudio      = "\aaudio"
-	OnAnimation  = "\aanimation"
-	OnDocument   = "\adocument"
-	OnSticker    = "\asticker"
-	OnVideo      = "\avideo"
-	OnVoice      = "\avoice"
-	OnVideoNote  = "\avideo_note"
-	OnContact    = "\acontact"
-	OnLocation   = "\alocation"
-	OnVenue      = "\avenue"
-	OnDice       = "\adice"
-	OnInvoice    = "\ainvoice"
-	OnPayment    = "\apayment"
-	OnGame       = "\agame"
-	OnPoll       = "\apoll"
-	OnPollAnswer = "\apoll_answer"
-	OnPinned     = "\apinned"
-
-	// Will fire on channel posts.
+	OnText              = "\atext"
+	OnEdited            = "\aedited"
+	OnPhoto             = "\aphoto"
+	OnAudio             = "\aaudio"
+	OnAnimation         = "\aanimation"
+	OnDocument          = "\adocument"
+	OnSticker           = "\asticker"
+	OnVideo             = "\avideo"
+	OnVoice             = "\avoice"
+	OnVideoNote         = "\avideo_note"
+	OnContact           = "\acontact"
+	OnLocation          = "\alocation"
+	OnVenue             = "\avenue"
+	OnDice              = "\adice"
+	OnInvoice           = "\ainvoice"
+	OnPayment           = "\apayment"
+	OnGame              = "\agame"
+	OnPoll              = "\apoll"
+	OnPollAnswer        = "\apoll_answer"
+	OnPinned            = "\apinned"
 	OnChannelPost       = "\achannel_post"
 	OnEditedChannelPost = "\aedited_channel_post"
 
-	// Will fire when bot is added to a group.
-	OnAddedToGroup = "\aadded_to_group"
-
-	// Service events:
+	OnAddedToGroup      = "\aadded_to_group"
 	OnUserJoined        = "\auser_joined"
 	OnUserLeft          = "\auser_left"
 	OnNewGroupTitle     = "\anew_chat_title"
@@ -84,56 +79,29 @@ const (
 	OnSuperGroupCreated = "\asupergroup_created"
 	OnChannelCreated    = "\achannel_created"
 
-	// Migration happens when group switches to
+	// OnMigration happens when group switches to
 	// a supergroup. You might want to update
 	// your internal references to this chat
 	// upon switching as its ID will change.
 	OnMigration = "\amigration"
 
-	// Will fire on any unhandled media.
-	OnMedia = "\amedia"
-
-	// Will fire on callback requests.
-	OnCallback = "\acallback"
-
-	// Will fire on incoming inline queries.
-	OnQuery = "\aquery"
-
-	// Will fire on chosen inline results.
-	OnInlineResult = "\ainline_result"
-
-	// Will fire on a shipping query.
-	OnShipping = "\ashipping_query"
-
-	// Will fire on pre checkout query.
-	OnCheckout = "\apre_checkout_query"
-
-	// Will fire on bot's chat member changes.
-	OnMyChatMember = "\amy_chat_member"
-
-	// Will fire on chat member's changes.
-	OnChatMember = "\achat_member"
-
-	// Will fire on chat join request.
+	OnMedia           = "\amedia"
+	OnCallback        = "\acallback"
+	OnQuery           = "\aquery"
+	OnInlineResult    = "\ainline_result"
+	OnShipping        = "\ashipping_query"
+	OnCheckout        = "\apre_checkout_query"
+	OnMyChatMember    = "\amy_chat_member"
+	OnChatMember      = "\achat_member"
 	OnChatJoinRequest = "\achat_join_request"
-
-	// Will fire on the start of a voice chat.
-	OnVoiceChatStarted = "\avoice_chat_started"
-
-	// Will fire on the end of a voice chat.
-	OnVoiceChatEnded = "\avoice_chat_ended"
-
-	// Will fire on invited participants to the voice chat.
-	OnVoiceChatParticipants = "\avoice_chat_participants_invited"
-
-	// Will fire on scheduling a voice chat.
-	OnVoiceChatScheduled = "\avoice_chat_scheduled"
-
-	// Will fire on a proximity alert.
-	OnProximityAlert = "\aproximity_alert_triggered"
-
-	// Will fire on auto delete timer set.
+	OnProximityAlert  = "\aproximity_alert_triggered"
 	OnAutoDeleteTimer = "\amessage_auto_delete_timer_changed"
+	OnWebApp          = "\aweb_app"
+
+	OnVideoChatStarted      = "\avideo_chat_started"
+	OnVideoChatEnded        = "\avideo_chat_ended"
+	OnVideoChatParticipants = "\avideo_chat_participants_invited"
+	OnVideoChatScheduled    = "\avideo_chat_scheduled"
 )
 
 // ChatAction is a client-side status indicating bot activity.
@@ -163,80 +131,6 @@ const (
 	ModeHTML       ParseMode = "HTML"
 )
 
-// EntityType is a MessageEntity type.
-type EntityType string
-
-const (
-	EntityMention       EntityType = "mention"
-	EntityTMention      EntityType = "text_mention"
-	EntityHashtag       EntityType = "hashtag"
-	EntityCashtag       EntityType = "cashtag"
-	EntityCommand       EntityType = "bot_command"
-	EntityURL           EntityType = "url"
-	EntityEmail         EntityType = "email"
-	EntityPhone         EntityType = "phone_number"
-	EntityBold          EntityType = "bold"
-	EntityItalic        EntityType = "italic"
-	EntityUnderline     EntityType = "underline"
-	EntityStrikethrough EntityType = "strikethrough"
-	EntityCode          EntityType = "code"
-	EntityCodeBlock     EntityType = "pre"
-	EntityTextLink      EntityType = "text_link"
-	EntitySpoiler       EntityType = "spoiler"
-)
-
-// ChatType represents one of the possible chat types.
-type ChatType string
-
-const (
-	ChatPrivate        ChatType = "private"
-	ChatGroup          ChatType = "group"
-	ChatSuperGroup     ChatType = "supergroup"
-	ChatChannel        ChatType = "channel"
-	ChatChannelPrivate ChatType = "privatechannel"
-)
-
-// MemberStatus is one's chat status.
-type MemberStatus string
-
-const (
-	Creator       MemberStatus = "creator"
-	Administrator MemberStatus = "administrator"
-	Member        MemberStatus = "member"
-	Restricted    MemberStatus = "restricted"
-	Left          MemberStatus = "left"
-	Kicked        MemberStatus = "kicked"
-)
-
-// MaskFeature defines sticker mask position.
-type MaskFeature string
-
-const (
-	FeatureForehead MaskFeature = "forehead"
-	FeatureEyes     MaskFeature = "eyes"
-	FeatureMouth    MaskFeature = "mouth"
-	FeatureChin     MaskFeature = "chin"
-)
-
-// PollType defines poll types.
-type PollType string
-
-const (
-	// Despite "any" type isn't described in documentation,
-	// it needed for proper KeyboardButtonPollType marshaling.
-	PollAny PollType = "any"
-
-	PollQuiz    PollType = "quiz"
-	PollRegular PollType = "regular"
-)
-
-type DiceType string
-
-var (
-	Cube = &Dice{Type: "🎲"}
-	Dart = &Dice{Type: "🎯"}
-	Ball = &Dice{Type: "🏀"}
-	Goal = &Dice{Type: "⚽"}
-	Slot = &Dice{Type: "🎰"}
-	Bowl = &Dice{Type: "🎳"}
-)
+// M is a shortcut for map[string]interface{}. Use it for passing
+// arguments to the layout functions.
+type M = map[string]interface{}

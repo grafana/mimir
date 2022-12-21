@@ -39,6 +39,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -1244,6 +1245,23 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 				"foo", "bar", "some", "thing"),
 			expectedSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one"),
 		},
+		// Remove blank labels.
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "blank", "", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
 		// Don't remove any labels.
 		{
 			removeReplica:  false,
@@ -2237,7 +2255,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// sort label values to make stable assertion
 			for _, item := range response.Items {
-				sort.Strings(item.Values)
+				slices.Sort(item.Values)
 			}
 			assert.ElementsMatch(t, response.Items, expectedLabelValues)
 		})
@@ -3404,15 +3422,17 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	ingestersByAddr := map[string]*mockIngester{}
 	for i := range ingesters {
 		addr := fmt.Sprintf("%d", i)
+		tokens := []uint32{uint32((math.MaxUint32 / cfg.numIngesters) * i)}
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
 			State:               ring.ACTIVE,
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(),
-			Tokens:              []uint32{uint32((math.MaxUint32 / cfg.numIngesters) * i)},
+			Tokens:              tokens,
 		}
 		ingestersByAddr[addr] = &ingesters[i]
+		ingesters[i].tokens = tokens
 	}
 
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -3661,11 +3681,11 @@ type metaDataGen func(int, string) *mimirpb.MetricMetadata
 // The label set generator gets called once for each sample, the returned label set gets added to the request with the sample.
 // The exemplar label set generator also gets called once for each sample, if it isn't nil.
 // The metadata generator gets called once for each unique metric name that has been returned by the label generator, if it isn't nil.
-func makeWriteRequestForGenerators(samples int, lsg labelSetGen, elsg labelSetGen, mdg metaDataGen) *mimirpb.WriteRequest {
+func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen, mdg metaDataGen) *mimirpb.WriteRequest {
 	metricNames := make(map[string]struct{})
 
 	request := &mimirpb.WriteRequest{}
-	for i := 0; i < samples; i++ {
+	for i := 0; i < series; i++ {
 		labelSet := lsg(i)
 		metricName := mimirpb.FromLabelAdaptersToLabels(labelSet).Get(model.MetricNameLabel)
 		if metricName != "" {
@@ -3771,6 +3791,7 @@ type mockIngester struct {
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
+	tokens                        []uint32
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -3939,7 +3960,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	_, _, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -3978,7 +3999,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 			}
 		}
 	}
-	sort.Strings(response.LabelNames)
+	slices.Sort(response.LabelNames)
 
 	return &response, nil
 }
@@ -4268,6 +4289,19 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
+		// Test validation passes when labels are unsorted.
+		{
+			labels: []labels.Labels{mimirpb.FromLabelAdaptersToLabels(
+				[]mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+					{Name: labels.MetricName, Value: "testmetric"},
+				})},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+		},
+
 		// Test validation fails for samples from the future.
 		{
 			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
@@ -4305,7 +4339,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test metadata validation fails
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -4327,7 +4361,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -4402,7 +4436,7 @@ func TestRemoveReplicaLabel(t *testing.T) {
 	}
 }
 
-// This is not great, but we deal with unsorted labels when validating labels.
+// This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
 		{Name: "__name__", Value: "foo"},
@@ -4441,9 +4475,9 @@ func TestSortLabels(t *testing.T) {
 
 	sortLabelsIfNeeded(unsorted)
 
-	sort.SliceIsSorted(unsorted, func(i, j int) bool {
+	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
 		return unsorted[i].Name < unsorted[j].Name
-	})
+	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {
@@ -4892,10 +4926,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
-	lbls := labels.Labels{
-		{Name: "__name__", Value: "metric_1"},
-		{Name: "key", Value: "value_1"},
-	}
+	lbls := labels.FromStrings("__name__", "metric_1", "key", "value_1")
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
@@ -4903,6 +4934,98 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 
 	// First push request returned, but there's still an ingester call inflight.
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
-	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
+	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
 	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
+}
+
+func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
+	config := prepConfig{
+		numIngesters:      5,
+		happyIngesters:    5,
+		numDistributors:   1,
+		replicationFactor: 1, // push each series to single ingester only
+	}
+	d, ing, _ := prepare(t, config)
+
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("%d", sampleIdx)},
+			{Name: "x", Value: fmt.Sprintf("%d", sampleIdx)},
+		}
+	}
+	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
+	}
+	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+		return &mimirpb.MetricMetadata{
+			Type:             mimirpb.COUNTER,
+			MetricFamilyName: metricName,
+			Help:             "test metric",
+			Unit:             "unknown",
+		}
+	}
+
+	const series = 1000
+	const userName = "userName"
+
+	req := makeWriteRequestForGenerators(series, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+	ctx := user.InjectOrgID(context.Background(), userName)
+	// skip all the middlewares, just do the push
+	distrib := d[0]
+	_, err := distrib.push(ctx, push.NewParsedRequest(req))
+	require.NoError(t, err)
+
+	// Verify that each ingester only received series and metadata that it should receive.
+	totalSeries := 0
+	totalMetadata := 0
+	for ix := range ing {
+		totalSeries += len(ing[ix].timeseries)
+		totalMetadata += len(ing[ix].metadata)
+
+		for _, ts := range ing[ix].timeseries {
+			token, err := distrib.tokenForLabels(userName, ts.Labels)
+			require.NoError(t, err)
+
+			ingIx := getIngesterIndexForToken(token, ing)
+			assert.Equal(t, ix, ingIx)
+		}
+
+		for _, metadataMap := range ing[ix].metadata {
+			for m := range metadataMap {
+				token := distrib.tokenForMetadata(userName, m.MetricFamilyName)
+				ingIx := getIngesterIndexForToken(token, ing)
+				assert.Equal(t, ix, ingIx)
+			}
+		}
+	}
+	assert.Equal(t, series, totalSeries)
+	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
+}
+
+func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
+	tokens := []uint32{}
+	tokensMap := map[uint32]int{}
+
+	for ix := range ings {
+		tokens = append(tokens, ings[ix].tokens...)
+		for _, t := range ings[ix].tokens {
+			tokensMap[t] = ix
+		}
+	}
+
+	ix := searchToken(tokens, key)
+	t := tokens[ix]
+	return tokensMap[t]
+}
+
+// copied from vendor/github.com/grafana/dskit/ring/util.go
+func searchToken(tokens []uint32, key uint32) int {
+	i := sort.Search(len(tokens), func(x int) bool {
+		return tokens[x] > key
+	})
+	if i >= len(tokens) {
+		i = 0
+	}
+	return i
 }

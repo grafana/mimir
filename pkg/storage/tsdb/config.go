@@ -79,8 +79,6 @@ var (
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
-//
-//nolint:golint
 type BlocksStorageConfig struct {
 	Bucket      bucket.Config     `yaml:",inline"`
 	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
@@ -146,10 +144,10 @@ func (cfg *BlocksStorageConfig) Validate() error {
 
 // TSDBConfig holds the config for TSDB opened in the ingesters.
 //
-//nolint:golint
+//nolint:revive
 type TSDBConfig struct {
 	Dir                       string        `yaml:"dir"`
-	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"advanced"`
+	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
 	Retention                 time.Duration `yaml:"retention_period"`
 	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
 	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`
@@ -298,10 +296,9 @@ type BucketStoreConfig struct {
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 
 	// Controls experimental options for index-header file reading.
-	IndexHeader indexheader.BinaryReaderConfig `yaml:"index_header" category:"experimental"`
+	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
 
-	// Controls what to do when MaxConcurrent is exceeded: fail immediately or wait for a slot to run.
-	MaxConcurrentRejectOverLimit bool `yaml:"max_concurrent_reject_over_limit" category:"experimental"`
+	StreamingBatchSize int `yaml:"streaming_series_batch_size" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -319,7 +316,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ChunkPoolMaxBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes", ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
-	f.BoolVar(&cfg.MaxConcurrentRejectOverLimit, "blocks-storage.bucket-store.max-concurrent-reject-over-limit", false, "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
@@ -331,6 +327,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
+	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 0, "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.")
 }
 
 // Validate the config.

@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
-	"flag"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -30,8 +29,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/thanos-io/objstore"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
@@ -453,8 +452,6 @@ type BinaryReader struct {
 		symbol string
 	}
 
-	dec *index.Decoder
-
 	version             int
 	indexVersion        int
 	indexLastPostingEnd int64
@@ -462,16 +459,8 @@ type BinaryReader struct {
 	postingOffsetsInMemSampling int
 }
 
-type BinaryReaderConfig struct {
-	MapPopulateEnabled bool `yaml:"map_populate_enabled" category:"experimental"`
-}
-
-func (cfg *BinaryReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
-}
-
 // NewBinaryReader loads or builds new index-header if not present on disk.
-func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (*BinaryReader, error) {
+func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (*BinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 	br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 	if err == nil {
@@ -489,7 +478,7 @@ func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 	return newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 }
 
-func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (bw *BinaryReader, err error) {
+func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Config) (bw *BinaryReader, err error) {
 	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
 	if err != nil {
 		return nil, err
@@ -629,8 +618,6 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		}
 		r.nameSymbols[off] = k
 	}
-
-	r.dec = &index.Decoder{LookupSymbol: r.LookupSymbol}
 
 	return r, nil
 }
@@ -868,7 +855,7 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 				values = append(values, k)
 			}
 		}
-		sort.Strings(values)
+		slices.Sort(values)
 		return values, nil
 
 	}
@@ -926,7 +913,7 @@ func (r *BinaryReader) LabelNames() ([]string, error) {
 		}
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, nil
 }
 

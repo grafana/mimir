@@ -80,7 +80,9 @@
             //
             // Read more:
             // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
-            threshold: trigger.threshold,
+            //
+            // We also have to ensure that the threshold is an integer (represented as a string)
+            threshold: std.toString(std.parseInt(trigger.threshold)),
           },
         }
         for trigger in config.triggers
@@ -141,17 +143,23 @@
     // Simple method to convert binary multiples.
     // Only works for limited set of SI prefixes (as below).
 
-    if std.endsWith(str, 'Ki') then (
-      std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
-    ) else if std.endsWith(str, 'Mi') then (
-      std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
-    ) else if std.endsWith(str, 'Gi') then (
-      std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
-    ) else if std.endsWith(str, 'Ti') then (
-      std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
-    ) else (
-      str
-    )
+    // Utility converting the input to a (potentially decimal) number of bytes
+    local siToBytesDecimal(str) = (
+      if std.endsWith(str, 'Ki') then (
+        std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
+      ) else if std.endsWith(str, 'Mi') then (
+        std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
+      ) else if std.endsWith(str, 'Gi') then (
+        std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
+      ) else if std.endsWith(str, 'Ti') then (
+        std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
+      ) else (
+        std.parseJson(str)
+      )
+    );
+
+    // Round down to nearest integer
+    std.floor(siToBytesDecimal(str))
   ),
 
   local cpuToMilliCPUInt(str) = (
@@ -178,11 +186,16 @@
       max_replicas=$._config.autoscaling_querier_max_replicas,
     ),
 
-  querier_deployment+: if !$._config.autoscaling_querier_enabled then {} else
-    removeReplicasFromSpec,
+  querier_deployment: overrideSuperIfExists(
+    'querier_deployment',
+    if !$._config.autoscaling_querier_enabled then {} else removeReplicasFromSpec
+  ),
 
-  query_frontend_deployment+: if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
-    queryFrontendReplicas($._config.autoscaling_querier_max_replicas),
+  query_frontend_deployment: overrideSuperIfExists(
+    'query_frontend_deployment',
+    if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
+      queryFrontendReplicas($._config.autoscaling_querier_max_replicas)
+  ),
 
   //
   // Ruler-queriers
@@ -199,9 +212,10 @@
         // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
         // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler-querier over 5m (rolling window)
         // and then we pick the highest value over the last 15m.
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:])' % [name, $._config.namespace],
+        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
-        threshold: querier_cpu_requests,
+        // threshold is expected to be a string.
+        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests)),
       },
     ],
   }),
@@ -214,18 +228,15 @@
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
     ),
 
-  ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
-    super.ruler_querier_deployment + (
-      if !$._config.autoscaling_ruler_querier_enabled then {} else
-        removeReplicasFromSpec
-    )
+  ruler_querier_deployment: overrideSuperIfExists(
+    'ruler_querier_deployment',
+    if !$._config.autoscaling_ruler_querier_enabled then {} else removeReplicasFromSpec
   ),
 
-  ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
-    super.ruler_query_frontend_deployment + (
-      if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
-        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
-    )
+  ruler_query_frontend_deployment: overrideSuperIfExists(
+    'ruler_query_frontend_deployment',
+    if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
+      queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
   ),
 
   //
@@ -245,8 +256,8 @@
         // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with Ints.
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
-        // threshold is expected to be a string, so use '' to cast any ints returned by cpuToMilliCPUInt.
-        threshold: cpuToMilliCPUInt(distributor_cpu_requests) + '',
+        // threshold is expected to be a string.
+        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -254,8 +265,8 @@
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
-        // threshold is expected to be a string, so use '' to cast any ints returned by siToBytes.
-        threshold: siToBytes(distributor_memory_requests) + '',
+        // threshold is expected to be a string
+        threshold: std.toString(siToBytes(distributor_memory_requests)),
       },
     ],
   }),
@@ -269,7 +280,12 @@
       max_replicas=$._config.autoscaling_distributor_max_replicas,
     ),
 
-  distributor_deployment+: if !$._config.autoscaling_distributor_enabled then {} else
-    removeReplicasFromSpec,
+  distributor_deployment: overrideSuperIfExists(
+    'distributor_deployment',
+    if !$._config.autoscaling_distributor_enabled then {} else removeReplicasFromSpec
+  ),
 
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
 }

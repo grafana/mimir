@@ -36,6 +36,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/tenant"
@@ -143,6 +144,8 @@ type Distributor struct {
 	sampleValidationMetrics   *validation.SampleValidationMetrics
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 	metadataValidationMetrics *validation.MetadataValidationMetrics
+
+	pushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -425,6 +428,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.forwarder)
 	}
 
+	d.pushWithMiddlewares = d.GetPushFunc(nil)
+
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -581,6 +586,15 @@ func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 		if pair.Name == labelName {
 			*labels = append((*labels)[:i], (*labels)[i+1:]...)
 			return
+		}
+	}
+}
+
+// Remove labels with value=="" from a slice of LabelPairs, updating the slice in-place.
+func removeEmptyLabelValues(labels *[]mimirpb.LabelAdapter) {
+	for i := len(*labels) - 1; i >= 0; i-- {
+		if (*labels)[i].Value == "" {
+			*labels = append((*labels)[:i], (*labels)[i+1:]...)
 		}
 	}
 }
@@ -791,6 +805,9 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 				removeLabel(labelName, &ts.Labels)
 			}
 
+			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
+			removeEmptyLabelValues(&ts.Labels)
+
 			if len(ts.Labels) == 0 {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
 				continue
@@ -807,7 +824,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		if len(removeTsIndexes) > 0 {
 			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeTsIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
@@ -897,7 +914,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		}
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 			removeIndexes = removeIndexes[:0]
@@ -1120,7 +1137,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
 
-	return d.GetPushFunc(nil)(ctx, pushReq)
+	return d.pushWithMiddlewares(ctx, pushReq)
 }
 
 // GetPushFunc returns push.Func that can be used by push handler.
@@ -1195,13 +1212,25 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	keys := append(seriesKeys, metadataKeys...)
+	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		err := d.send(localCtx, ingester, req.Timeseries, req.Metadata, req.Source)
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
+		var metadata []*mimirpb.MetricMetadata
+
+		for _, i := range indexes {
+			if i >= initialMetadataIndex {
+				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+			} else {
+				timeseries = append(timeseries, req.Timeseries[i])
+			}
+		}
+
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1317,7 +1346,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	}
 
 	// We need the values returned to be sorted.
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }
@@ -1617,7 +1646,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 		values = append(values, v)
 	}
 
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }

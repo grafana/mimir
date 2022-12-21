@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -99,7 +100,7 @@ type HealthStats struct {
 // #5372 and affects Prometheus versions 2.8.0 and below.
 func (i HealthStats) OutOfOrderLabelsErr() error {
 	if i.OutOfOrderLabels > 0 {
-		return errors.Errorf("index contains %d postings with out of order labels",
+		return fmt.Errorf("index contains %d postings with out of order labels",
 			i.OutOfOrderLabels)
 	}
 	return nil
@@ -108,21 +109,21 @@ func (i HealthStats) OutOfOrderLabelsErr() error {
 // Issue347OutsideChunksErr returns error if stats indicates issue347 block issue, that is repaired explicitly before compaction (on plan block).
 func (i HealthStats) Issue347OutsideChunksErr() error {
 	if i.Issue347OutsideChunks > 0 {
-		return errors.Errorf("found %d chunks outside the block time range introduced by https://github.com/prometheus/tsdb/issues/347", i.Issue347OutsideChunks)
+		return fmt.Errorf("found %d chunks outside the block time range introduced by https://github.com/prometheus/tsdb/issues/347", i.Issue347OutsideChunks)
 	}
 	return nil
 }
 
 func (i HealthStats) OutOfOrderChunksErr() error {
 	if i.OutOfOrderChunks > 0 {
-		return errors.New(fmt.Sprintf(
+		return fmt.Errorf(
 			"%d/%d series have an average of %.3f out-of-order chunks: "+
 				"%.3f of these are exact duplicates (in terms of data and time range)",
 			i.OutOfOrderSeries,
 			i.TotalSeries,
 			float64(i.OutOfOrderChunks)/float64(i.OutOfOrderSeries),
 			float64(i.DuplicatedChunks)/float64(i.OutOfOrderChunks),
-		))
+		)
 	}
 	return nil
 }
@@ -688,6 +689,6 @@ func (ss stringset) slice() []string {
 	for k := range ss {
 		slice = append(slice, k)
 	}
-	sort.Strings(slice)
+	slices.Sort(slice)
 	return slice
 }

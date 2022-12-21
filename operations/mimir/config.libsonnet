@@ -9,6 +9,14 @@
 
     aws_region: error 'must specify AWS region',
 
+    // The deployment mode to use. Supported values are:
+    // `microservices`: Provides only the k8s objects for each component as microservices.
+    // `read-write`: Provides only mimir-read, mimir-write, and mimir-backend k8s objects.
+    // `migration`: Provides both the microservices and read-write services.
+    deployment_mode: 'microservices',
+    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'migration',
+    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write' || $._config.deployment_mode == 'migration',
+
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:
@@ -383,6 +391,40 @@
         compactor_tenant_shard_size: 2,
         compactor_split_groups: 2,
       },
+
+      user_24M+:: {
+        max_global_series_per_user: 24000000,  // 24M
+        max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
+        max_global_metadata_per_metric: 10,
+
+        ingestion_rate: 3500000,  // 3.5M
+        ingestion_burst_size: 35000000,  // 35M
+
+        // 3500 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 175,
+
+        compactor_split_and_merge_shards: 4,
+        compactor_tenant_shard_size: 4,
+        compactor_split_groups: 4,
+      },
+
+      user_32M+:: {
+        max_global_series_per_user: 32000000,  // 32M
+        max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
+        max_global_metadata_per_metric: 10,
+
+        ingestion_rate: 4500000,  // 4.5M
+        ingestion_burst_size: 45000000,  // 45M
+
+        // 4000 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 200,
+
+        compactor_split_and_merge_shards: 4,
+        compactor_tenant_shard_size: 4,
+        compactor_split_groups: 8,
+      },
     },
 
     // if not empty, passed to overrides.yaml as another top-level field
@@ -419,6 +461,17 @@
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
   },
+
+  // Check configured deployment mode to ensure configuration is correct and consistent.
+  check_deployment_mode: if (
+    $._config.deployment_mode == 'microservices' ||
+    $._config.deployment_mode == 'read-write' ||
+    $._config.deployment_mode == 'migration'
+  ) then null else
+    error 'unsupported deployment mode "%s"' % $._config.deployment_mode,
+
+  check_deployment_mode_mutually_exclusive: if $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode) then null else
+    error 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
 
   local configMap = $.core.v1.configMap,
 

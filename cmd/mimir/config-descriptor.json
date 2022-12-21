@@ -1863,7 +1863,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The maximum number of concurrent queries. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",
@@ -5678,6 +5678,28 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_enabled",
+                  "required": false,
+                  "desc": "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_max_idle_file_handles",
+                  "required": false,
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -5685,13 +5707,13 @@
             },
             {
               "kind": "field",
-              "name": "max_concurrent_reject_over_limit",
+              "name": "streaming_series_batch_size",
               "required": false,
-              "desc": "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.",
+              "desc": "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
-              "fieldType": "boolean",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             }
           ],
@@ -5713,17 +5735,6 @@
               "fieldDefaultValue": "./tsdb/",
               "fieldFlag": "blocks-storage.tsdb.dir",
               "fieldType": "string"
-            },
-            {
-              "kind": "field",
-              "name": "block_ranges_period",
-              "required": false,
-              "desc": "TSDB blocks range period.",
-              "fieldValue": null,
-              "fieldDefaultValue": [],
-              "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
-              "fieldType": "list of durations",
-              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -7366,7 +7377,7 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.",
+          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "ruler.alertmanager-url",
@@ -7411,6 +7422,17 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
             {
               "kind": "field",
               "name": "tls_cert_path",

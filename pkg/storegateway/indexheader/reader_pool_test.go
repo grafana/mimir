@@ -20,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
@@ -54,18 +53,18 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, NewReaderPoolMetrics(nil))
 			defer pool.Close()
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{})
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
@@ -92,17 +91,17 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	metrics := NewReaderPoolMetrics(nil)
 	pool := NewReaderPool(log.NewNopLogger(), true, idleTimeout, metrics)
 	defer pool.Close()
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{})
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, r.Close()) }()
 

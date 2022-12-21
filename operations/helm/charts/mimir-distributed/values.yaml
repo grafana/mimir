@@ -6,6 +6,15 @@
 # To configure the resources for production load, refer to the the small.yaml or
 # large.yaml values files.
 
+# Note: The values in this file are not backward compatible. Copying and pasting the values is discouraged, but if you do so,
+# make sure to use the values.yaml from the branch or tag that matches the mimir-distributed Helm chart version that you
+# want to install. You also can see values.yaml for a specific version by running
+# `helm show values grafana/mimir-distributed --version <version>`
+
+# If you want to get the values file from Github, build the URL as follows because we git tag every release:
+# `https://github.com/grafana/mimir/blob/mimir-distributed-<chart-version>/operations/helm/charts/mimir-distributed/values.yaml`.
+# For example, https://github.com/grafana/mimir/blob/mimir-distributed-3.1.0/operations/helm/charts/mimir-distributed/values.yaml.
+
 # -- Overrides the version used to determine compatibility of resources with the target Kubernetes cluster.
 # This is useful when using `helm template`, because then helm will use the client version of kubectl as the Kubernetes version,
 # which may or may not match your cluster's server version. Example: 'v1.24.4'. Set to null to use the version that helm
@@ -25,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r211-fcdaf01
+  tag: r217-f449a69
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -386,6 +395,9 @@ alertmanager:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the alertmanager
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 10m
@@ -684,6 +696,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the ingester
+  schedulerName: ""
 
   resources:
     requests:
@@ -1255,6 +1270,9 @@ store_gateway:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the store-gateway
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 100m
@@ -1429,6 +1447,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the compactor
+  schedulerName: ""
 
   resources:
     requests:
@@ -2140,6 +2161,9 @@ nginx:
           location = /api/v1/push {
             proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
+          location /otlp/v1/metrics {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
 
           # Alertmanager endpoints
           location {{ template "mimir.alertmanagerHttpPrefix" . }} {
@@ -2552,6 +2576,42 @@ metaMonitoring:
     # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
     tlsConfig: null
 
+  # Rules for the Prometheus Operator
+  prometheusRule:
+    # -- If enabled, a PrometheusRule resource for Prometheus Operator is created
+    enabled: false
+    # -- Create standard Mimir alerts in Prometheus Operator via a PrometheusRule CRD
+    mimirAlerts: false
+    # -- Create standard Mimir recording rules in Prometheus Operator via a PrometheusRule CRD
+    mimirRules: false
+    # -- PrometheusRule annotations
+    annotations: {}
+    # -- Additional PrometheusRule labels. To find out what your Prometheus operator expects,
+    # see the Prometheus object and field spec.ruleSelector
+    labels: {}
+    # -- prometheusRule namespace. This should be the namespace where the Prometheus Operator is installed,
+    # unless the Prometheus Operator is set up to look for rules outside its namespace
+    namespace: null
+    # -- Contents of Prometheus rules file
+    groups: []
+  #  - name: mimir_api_1
+  #    rules:
+  #    - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #        by (le, cluster, job))
+  #      record: cluster_job:cortex_request_duration_seconds:99quantile
+  #    - expr: histogram_quantile(0.50, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #        by (le, cluster, job))
+  #      record: cluster_job:cortex_request_duration_seconds:50quantile
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job) / sum(rate(cortex_request_duration_seconds_count[1m]))
+  #        by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds:avg
+  #    - expr: sum(rate(cortex_request_duration_seconds_bucket[1m])) by (le, cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_bucket:sum_rate
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
+  #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
+
   # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
@@ -2720,7 +2780,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r211-d7cccb37
+    tag: r217-7c770d6f
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3199,7 +3259,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r211-fcdaf01
+    tag: r217-f449a69
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3219,7 +3279,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r211-fcdaf01
+    tag: r217-f449a69
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

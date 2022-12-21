@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,7 +25,6 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
 
-	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
@@ -54,7 +54,7 @@ type DefaultMultiTenantManager struct {
 	logger                        log.Logger
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cacheutil.AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
 	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
 	if err != nil {
 		return nil, err
