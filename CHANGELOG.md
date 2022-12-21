@@ -37,6 +37,7 @@
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
+* [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
 
 ### Mimirtool
 
