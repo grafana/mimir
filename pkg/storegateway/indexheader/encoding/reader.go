@@ -3,12 +3,13 @@
 package encoding
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 // readerBufferSize is the size of the buffer used for reading index-header files. This
@@ -22,7 +23,7 @@ type poolCloser interface {
 type fileReader struct {
 	file   *os.File
 	closer poolCloser
-	buf    *bufio.Reader
+	buf    *bufferingFileReader
 	base   int
 	length int
 	pos    int
@@ -30,7 +31,7 @@ type fileReader struct {
 
 var bufferPool = sync.Pool{
 	New: func() any {
-		return bufio.NewReaderSize(nil, readerBufferSize)
+		return newBufferingFileReader(readerBufferSize)
 	},
 }
 
@@ -40,7 +41,7 @@ func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileRea
 	f := &fileReader{
 		file:   file,
 		closer: closer,
-		buf:    bufferPool.Get().(*bufio.Reader),
+		buf:    bufferPool.Get().(*bufferingFileReader),
 		base:   base,
 		length: length,
 	}
@@ -68,12 +69,7 @@ func (f *fileReader) resetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	_, err := f.file.Seek(int64(f.base+off), io.SeekStart)
-	if err != nil {
-		return err
-	}
-
-	f.buf.Reset(f.file)
+	f.buf.Seek(f.file, f.base+off)
 	f.pos = off
 
 	return nil
@@ -87,12 +83,10 @@ func (f *fileReader) skip(l int) error {
 		return ErrInvalidSize
 	}
 
-	n, err := f.buf.Discard(l)
-	if n > 0 {
-		f.pos += n
-	}
+	f.buf.Discard(l)
+	f.pos += l
 
-	return err
+	return nil
 }
 
 // peek returns at most the given number of bytes from the file segment
@@ -163,4 +157,113 @@ func (f *fileReader) close() error {
 	bufferPool.Put(f.buf)
 	// File handles are pooled, so we don't actually close the handle here, just return it.
 	return f.closer.put(f.file)
+}
+
+// bufferingFileReader is conceptually the same as bufio.Reader, but optimised
+// for reading files. In particular, it does not discard its buffer when seeking
+// to an earlier position in the same file where possible.
+type bufferingFileReader struct {
+	f *os.File
+	b []byte
+
+	offsetFirstByteInB    int
+	currentPositionInFile int
+	haveRead              bool
+}
+
+func newBufferingFileReader(bufferSize int) *bufferingFileReader {
+	return &bufferingFileReader{
+		b: make([]byte, 0, bufferSize),
+	}
+}
+
+func (b *bufferingFileReader) Seek(f *os.File, off int) {
+	b.currentPositionInFile = off
+
+	if f != b.f {
+		b.f = f
+		b.offsetFirstByteInB = off
+		b.haveRead = false
+	}
+}
+
+func (b *bufferingFileReader) Discard(n int) {
+	b.currentPositionInFile += n
+}
+
+func (b *bufferingFileReader) Peek(n int) ([]byte, error) {
+	if err := b.fillIfRequired(n); err != nil {
+		return nil, err
+	}
+
+	firstIndex := b.currentPositionInFile - b.offsetFirstByteInB
+	available := len(b.b) - firstIndex
+
+	if available == 0 {
+		return nil, io.EOF
+	}
+
+	n = math.Min(n, available)
+
+	return b.b[firstIndex : firstIndex+n], nil
+}
+
+func (b *bufferingFileReader) fillIfRequired(minDesired int) error {
+	if minDesired > cap(b.b) {
+		return fmt.Errorf("tried to fill %v bytes into buffer, but buffer capacity is only %v bytes", minDesired, cap(b.b))
+	}
+
+	if b.haveRead && b.currentPositionInFile >= b.offsetFirstByteInB && b.currentPositionInFile+minDesired <= b.offsetFirstByteInB+len(b.b) {
+		return nil
+	}
+
+	if _, err := b.f.Seek(int64(b.currentPositionInFile), io.SeekStart); err != nil {
+		return err
+	}
+
+	b.b = b.b[:cap(b.b)]
+	n, err := io.ReadFull(b.f, b.b)
+	b.b = b.b[:n]
+	b.offsetFirstByteInB = b.currentPositionInFile
+
+	if err != nil {
+		if err == io.ErrUnexpectedEOF {
+			b.haveRead = true
+
+			if n == 0 {
+				return io.EOF
+			}
+		} else {
+			return err
+		}
+	}
+
+	b.haveRead = true
+
+	return nil
+}
+
+func (b *bufferingFileReader) Size() int {
+	return cap(b.b)
+}
+
+func (b *bufferingFileReader) Read(dest []byte) (int, error) {
+	// TODO: could potentially read directly into dest in some cases (eg. we have no available bytes buffered and we're doing a read larger than the capacity of the buffer)
+
+	if err := b.fillIfRequired(1); err != nil {
+		return 0, err
+	}
+
+	firstIndex := b.currentPositionInFile - b.offsetFirstByteInB
+	available := len(b.b) - firstIndex
+
+	if available == 0 {
+		return 0, io.EOF
+	}
+
+	n := math.Min(len(dest), available)
+	copy(dest[:n], b.b[firstIndex:firstIndex+n])
+	b.currentPositionInFile += n
+
+	return n, nil
 }
