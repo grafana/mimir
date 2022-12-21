@@ -25,7 +25,7 @@ const (
 	queriesPath       = "/Users/dimitar/Documents/proba/goldman-sachs-queries/first-100-range-queries.txt"
 	queryEndpoint     = "http://localhost:8080/prometheus"
 	tenantID          = "417760"
-	concurrency       = 10
+	concurrency       = 100
 	requestsPerSecond = float64(10)
 )
 
@@ -98,10 +98,12 @@ func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.W
 			continue
 		}
 
-		//logger.Log("response", fmt.Sprintf("%v", m))
+		//logger.Log("response", fmt.Sprintf("%v", m.Len()))
 	}
 }
 
+// parses each new line as space delimited `float64_param_start float64_param_end float64_param_step param_query`
+// where param_query is everything after the third space.
 func produceQueries(reader *os.File, queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
 	defer done.Done()
 	defer close(queriesChan)
@@ -158,7 +160,7 @@ func appendNoCacheMatcher(s string, nonce string) string {
 	if idx == -1 {
 		return s
 	}
-	return fmt.Sprintf(`%s,__no_cache__="%s"%s`, s[:idx], nonce, s[idx:])
+	return fmt.Sprintf(`%s,__no_cache__!="%s"%s`, s[:idx], nonce, s[idx:])
 }
 
 // Parses 1.67089685911E9, multiples by 1000, expects that the result it is a whole number
