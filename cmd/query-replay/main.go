@@ -29,7 +29,7 @@ const (
 
 	rateRampUpDuration   = 2 * time.Second
 	rateRampUpInterval   = 1 * time.Second
-	concurrency          = 300
+	concurrency          = 600
 	maxRequestsPerSecond = float64(250)
 )
 
