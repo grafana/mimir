@@ -455,8 +455,8 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 			// These are always the same number of bytes,
 			// and it's faster to skip than parse.
 			skip = d.Len()
-			d.Uvarint()            // Keycount.
-			d.UnsafeUvarintBytes() // Label name.
+			d.Uvarint()          // Keycount.
+			d.SkipUvarintBytes() // Label name.
 			skip -= d.Len()
 		} else {
 			d.Skip(skip)

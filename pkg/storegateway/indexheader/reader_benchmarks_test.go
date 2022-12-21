@@ -190,6 +190,50 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 	})
 }
 
+func BenchmarkLabelValuesIndexV2(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	nameSymbols := generateSymbols("name", 10)
+	valueSymbols := generateSymbols("value", 100)
+	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+	require.NoError(b, err)
+	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+
+	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, br.Close()) })
+
+	names, err := br.LabelNames()
+	require.NoError(b, err)
+
+	rand.Shuffle(len(names), func(i, j int) {
+		names[i], names[j] = names[j], names[i]
+	})
+
+	b.Run(fmt.Sprintf("%vNames%vValues", len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			name := names[i%len(names)]
+
+			values, err := br.LabelValues(name, func(s string) bool {
+				return true
+			})
+
+			require.NoError(b, err)
+			require.NotEmpty(b, values)
+		}
+	})
+}
+
 func benchmarkReaders(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
 	b.Run("StreamBinaryReader", func(b *testing.B) {
 		br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
