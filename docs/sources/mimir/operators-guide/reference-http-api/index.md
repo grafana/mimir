@@ -22,10 +22,11 @@ This document groups API endpoints by service. Note that the API endpoints are e
 ## Endpoints
 
 | API                                                                                   | Service                        | Endpoint                                                                  |
-| ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
+|---------------------------------------------------------------------------------------| ------------------------------ |---------------------------------------------------------------------------|
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
 | [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
+| [Status Flags](#status-flags)                                                         | _All services_                 | `GET /api/v1/status/flags`                                                |
 | [Runtime Configuration](#runtime-configuration)                                       | _All services_                 | `GET /runtime_config`                                                     |
 | [Services' status](#services-status)                                                  | _All services_                 | `GET /services`                                                           |
 | [Readiness probe](#readiness-probe)                                                   | _All services_                 | `GET /ready`                                                              |
@@ -150,6 +151,14 @@ GET /api/v1/status/config
 This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
 
 It is a simplified wrapper for `/config` to be compatible with the prometheus `/api/v1/status/config` API.
+
+### Status Flags
+
+```
+GET /api/v1/status/flags
+```
+
+This endpoint displays flag values that Grafana Mimir was configured with.
 
 ### Runtime Configuration
 
