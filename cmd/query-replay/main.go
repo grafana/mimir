@@ -24,13 +24,13 @@ import (
 const (
 	queriesPath    = "/Users/dimitar/Documents/proba/goldman-sachs-queries/range-queries.txt"
 	queryEndpoint1 = "http://localhost:8080/prometheus"
-	queryEndpoint2 = "http://localhost:8080/prometheus"
+	queryEndpoint2 = "http://localhost:8081/prometheus"
 	tenantID       = "417760"
 
 	rateRampUpDuration   = 2 * time.Second
 	rateRampUpInterval   = 1 * time.Second
 	concurrency          = 600
-	maxRequestsPerSecond = float64(400)
+	maxRequestsPerSecond = float64(300)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
