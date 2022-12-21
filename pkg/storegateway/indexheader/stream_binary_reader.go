@@ -173,11 +173,11 @@ func (r *StreamBinaryReader) IndexVersion() (int, error) {
 
 // TODO(bwplotka): Get advantage of multi value offset fetch.
 func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
-	rng, err := r.postingsOffsetTable.PostingsOffset(name, value)
+	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
 		return index.Range{}, err
 	}
-	if rng.Start == 0 && rng.End == 0 {
+	if !found {
 		return index.Range{}, NotFoundRangeErr
 	}
 	return rng, nil

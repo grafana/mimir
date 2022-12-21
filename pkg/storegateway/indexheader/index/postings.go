@@ -23,7 +23,7 @@ const postingLengthFieldSize = 4
 
 type PostingOffsetTable interface {
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
-	PostingsOffset(name string, value string) (index.Range, error)
+	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
 	// LabelValues returns a list of values for the label named name that match filter.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
@@ -231,16 +231,16 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 	return d.Err()
 }
 
-func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.Range, error) {
+func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.Range, bool, error) {
 	e, ok := t.postings[name]
 	if !ok {
-		return index.Range{}, nil
+		return index.Range{}, false, nil
 	}
 	rng, ok := e[value]
 	if !ok {
-		return index.Range{}, nil
+		return index.Range{}, false, nil
 	}
-	return rng, nil
+	return rng, true, nil
 }
 
 func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool) ([]string, error) {
@@ -298,28 +298,28 @@ type postingOffset struct {
 	tableOff int
 }
 
-func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r index.Range, err error) {
+func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
 	e, ok := t.postings[name]
 	if !ok {
-		return index.Range{}, nil
+		return index.Range{}, false, nil
 	}
 
 	if value < e.offsets[0].value {
 		// The desired value sorts before the first known value.
-		return index.Range{}, nil
+		return index.Range{}, false, nil
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get postings offsets")
 	if err := d.Err(); err != nil {
-		return index.Range{}, err
+		return index.Range{}, false, err
 	}
 
 	i := sort.Search(len(e.offsets), func(i int) bool { return e.offsets[i].value >= value })
 
 	if i == len(e.offsets) {
 		// The desired value sorts after the last known value.
-		return index.Range{}, nil
+		return index.Range{}, false, nil
 	}
 
 	if i > 0 && e.offsets[i].value != value {
@@ -347,7 +347,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 
 		if currentValue > value {
 			// There is no entry for value.
-			return index.Range{}, nil
+			return index.Range{}, false, nil
 		}
 
 		if currentValue == value {
@@ -365,19 +365,19 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 			}
 
 			if d.Err() != nil {
-				return index.Range{}, errors.Wrap(d.Err(), "get postings offset entry")
+				return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
 			}
 
-			return rng, nil
+			return rng, true, nil
 		}
 	}
 
 	if d.Err() != nil {
-		return index.Range{}, errors.Wrap(d.Err(), "get postings offset entry")
+		return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
 	}
 
 	// If we get to here, there is no entry for value.
-	return index.Range{}, nil
+	return index.Range{}, false, nil
 }
 
 func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) (v []string, err error) {
