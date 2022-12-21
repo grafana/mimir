@@ -41,6 +41,7 @@ func main() {
 	stats := requestStats{
 		sentQueries:   atomic.NewInt64(0),
 		failedQueries: atomic.NewInt64(0),
+		totalSeries:   atomic.NewInt64(0),
 	}
 	done := &sync.WaitGroup{}
 	done.Add(1 + concurrency)
@@ -67,7 +68,7 @@ func logStats(stats requestStats) {
 
 func printStats(stats requestStats, prevSentQueries int64) {
 	sentQueries := stats.sentQueries.Load()
-	logger.Log("msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries)
+	logger.Log("t", time.Now().String(), "msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries, "total_series", stats.totalSeries.Load())
 }
 
 func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
@@ -94,13 +95,14 @@ func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.W
 	for r := range queriesChan {
 		//logger.Log("msg", "sending query", "query", fmt.Sprintf("%v", r))
 
-		_, err := client.QueryRange(context.Background(), r.query, time.UnixMilli(r.start), time.UnixMilli(r.end), r.step, continuoustest.WithResultsCacheEnabled(false))
+		m, err := client.QueryRange(context.Background(), r.query, time.UnixMilli(r.start), time.UnixMilli(r.end), r.step, continuoustest.WithResultsCacheEnabled(false))
 		if err != nil {
 			logger.Log("msg", "query failed", "err", err, "query", fmt.Sprintf("%v", r))
 			stats.failedQueries.Inc()
 			continue
 		}
-
+		stats.totalSeries.Add(int64(m.Len()))
+		_ = m
 		//logger.Log("response", fmt.Sprintf("%v", m.Len()))
 	}
 }
@@ -173,7 +175,7 @@ func parseScientificUnixMillis(s string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	flt = flt.Mul(flt, big.NewFloat(10))
+	flt = flt.Mul(flt, big.NewFloat(1000))
 	i, _ := flt.Int64()
 	return i, nil
 }
@@ -199,4 +201,5 @@ type queryRequest struct {
 type requestStats struct {
 	sentQueries   *atomic.Int64
 	failedQueries *atomic.Int64
+	totalSeries   *atomic.Int64
 }
