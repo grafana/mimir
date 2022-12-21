@@ -187,6 +187,19 @@ func (cfg *Config) statusConfigHandler(actualCfg interface{}) http.HandlerFunc {
 	}
 }
 
+func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		response := struct {
+			Status string            `json:"status"`
+			Flags  map[string]string `json:"data"`
+		}{
+			Status: "success",
+			Flags:  cfg.Flags,
+		}
+		util.WriteJSONResponse(w, response)
+	}
+}
+
 // NewQuerierHandler returns a HTTP handler that can be used by the querier service to
 // either register with the frontend worker query processor or with the external HTTP
 // server to fulfill the Prometheus query API.

@@ -209,6 +209,8 @@ func main() {
 
 	level.Info(util_log.Logger).Log("msg", "Starting application", "version", version.Info())
 
+	cfg.GetSetFlagsValues(flag.CommandLine)
+
 	err = t.Run()
 
 	runtime.KeepAlive(ballast)

@@ -71,6 +71,10 @@ type Config struct {
 	// initialized, the custom config handler will be used instead of
 	// DefaultConfigHandler.
 	CustomConfigHandler ConfigHandler `yaml:"-"`
+
+	// The values from the flags that have been set.
+	// Used for `/api/v1/status/flags` API.
+	Flags map[string]string `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -218,6 +222,7 @@ func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultC
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(actualCfg), false, true, "GET")
+	a.RegisterRoute("/api/v1/status/flags", a.cfg.statusFlagsHandler(), false, true, "GET")
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration

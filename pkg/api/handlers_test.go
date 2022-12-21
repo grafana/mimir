@@ -235,3 +235,21 @@ func TestStatusConfigHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusFlagsHandler(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://test.com/api/v1/status/config", nil)
+	w := httptest.NewRecorder()
+
+	cfg := &Config{}
+	cfg.Flags = map[string]string{}
+	cfg.Flags["flag1"] = "value1"
+	cfg.Flags["flag2"] = "value2"
+	h := cfg.statusFlagsHandler()
+	h(w, req)
+	resp := w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"status\":\"success\",\"data\":{\"flag1\":\"value1\",\"flag2\":\"value2\"}}", string(body))
+}
