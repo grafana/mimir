@@ -27,10 +27,10 @@ const (
 	queryEndpoint2 = "http://localhost:8081/prometheus"
 	tenantID       = "417760"
 
-	rateRampUpDuration   = 15 * time.Minute
+	rateRampUpDuration   = 20 * time.Minute
 	rateRampUpInterval   = 10 * time.Second
 	concurrency          = 600
-	maxRequestsPerSecond = float64(300)
+	maxRequestsPerSecond = float64(250)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
