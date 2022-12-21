@@ -659,6 +659,11 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
+
+# Maximum number of groups allowed per user by which specified metrics can be
+# further separated.
+# CLI flag: -distributor.max-groups-per-user
+[max_groups_per_user: <int> | default = 1000]
 ```
 
 ### ingester
@@ -850,6 +855,11 @@ instance_limits:
 # the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
+
+# (advanced) Maximum number of groups allowed per user by which specified
+# metrics can be further separated.
+# CLI flag: -ingester.max-groups-per-user
+[max_groups_per_user: <int> | default = 1000]
 ```
 
 ### querier
@@ -2481,7 +2491,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# Label used to further separate specific metrics
+# Label used to further separate specific metrics.
 # CLI flag: -validation.separate-metrics-label
 [separate_metrics_label: <string> | default = ""]
 
