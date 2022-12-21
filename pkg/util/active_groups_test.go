@@ -101,8 +101,8 @@ func TestActiveGroupLimitExceeded(t *testing.T) {
 	}
 
 	// Active group limit exceeded when trying to add new group
-	require.True(t, agCleanupService.ActiveGroupLimitExceeded("user1", "new-group"))
+	require.True(t, ag.ActiveGroupLimitExceeded("user1", "new-group"))
 
 	// Existing group can still be updated
-	require.False(t, agCleanupService.ActiveGroupLimitExceeded("user1", "0"))
+	require.False(t, ag.ActiveGroupLimitExceeded("user1", "0"))
 }
