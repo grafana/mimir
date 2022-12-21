@@ -55,13 +55,11 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 		tableOffset: offset,
 	}
 
-	origLen := d.Len()
 	cnt := d.Be32int()
-	basePos := 4
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, basePos+origLen-d.Len())
+			s.offsets = append(s.offsets, d.Position())
 		}
 		d.SkipUvarintBytes() // The symbol.
 		s.seen++
