@@ -6,13 +6,10 @@ import (
 	"context"
 	"crypto/rand"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -161,23 +158,6 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 		return nil, err
 	}
 
-	// Enumerate created files (including the meta.json file that isn't there yet but will be).
-	files := []metadata.File{{RelPath: filepath.Join(blockID.String(), block.MetaFilename)}}
-	err = filepath.WalkDir(storageDir, func(path string, d os.DirEntry, _ error) error {
-		relPath, err := filepath.Rel(storageDir, path)
-		if err != nil {
-			return err
-		}
-
-		if !d.IsDir() && relPath != "" {
-			files = append(files, metadata.File{RelPath: relPath})
-		}
-		return nil
-	})
-	sort.Slice(files, func(i, j int) bool {
-		return strings.Compare(files[i].RelPath, files[j].RelPath) < 0
-	})
-
 	// Generate the meta.json file.
 	meta := &metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
@@ -192,7 +172,6 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 		},
 		Thanos: metadata.Thanos{
 			Version: metadata.ThanosVersion1,
-			Files:   files,
 		},
 	}
 

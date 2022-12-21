@@ -4,7 +4,6 @@ package integration
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -97,11 +96,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		meta, err := testutil.GenerateBlockFromSpec(userID, inDir, []*testutil.BlockSeriesSpec{&spec})
 		require.NoError(t, err)
 
-		for _, f := range meta.Thanos.Files {
-			r, err := os.Open(filepath.Join(inDir, f.RelPath))
-			require.NoError(t, err)
-			require.NoError(t, bktClient.Upload(context.Background(), filepath.Join(f.RelPath), r))
-		}
+		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
 
 		metas = append(metas, meta)
 	}
@@ -173,7 +168,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		require.NoError(t, chkReader.Close())
 
 		// This block ULID should not be the same as any of the pre-compacted ones (otherwise the corresponding block
-		//did not get compacted).
+		// did not get compacted).
 		for _, m := range metas {
 			require.NotEqual(t, m.ULID.String(), blockID)
 		}
