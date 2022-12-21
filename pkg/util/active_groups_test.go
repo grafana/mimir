@@ -107,7 +107,7 @@ func TestActiveGroupLimitExceeded(t *testing.T) {
 }
 
 func TestUpdateActiveGroups(t *testing.T) {
-	s := NewActiveGroupsCleanupWithDefaultValues(func(string, string) {}, maxGroupsPerUser)
+	s := NewActiveGroupsCleanupWithDefaultValues(maxGroupsPerUser, func(string, string) {})
 
 	// Hit the group limit for user1
 	for i := 0; i < maxGroupsPerUser; i++ {

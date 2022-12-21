@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -62,6 +63,7 @@ type forwarder struct {
 	workerWg           sync.WaitGroup
 	reqCh              chan *request
 	httpGrpcClientPool *client.Pool
+	activeGroups       *util.ActiveGroupsCleanupService
 
 	requestsTotal           prometheus.Counter
 	errorsTotal             *prometheus.CounterVec
@@ -74,7 +76,7 @@ type forwarder struct {
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
-func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits *validation.Overrides) Forwarder {
+func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService) Forwarder {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -93,7 +95,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 				IdleConnTimeout:     10 * time.Second,       // don't keep unused connections for too long
 			},
 		},
-
+		activeGroups: activeGroupsCleanupService,
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_total",
@@ -342,6 +344,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
+					f.activeGroups.UpdateActiveGroupTimestamp(user, group, time.Now())
 					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
 				}
 			}
