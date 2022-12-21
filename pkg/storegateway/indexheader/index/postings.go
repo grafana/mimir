@@ -61,7 +61,7 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	var lastValue string
 	var prevRng index.Range
 
-	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64, _ int) error {
+	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64) error {
 		if len(t.postings) > 0 {
 			prevRng.End = int64(off - crc32.Size)
 			t.postings[lastKey][lastValue] = prevRng
@@ -199,15 +199,13 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64, int) error) (err error) {
+func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
-	startLen := d.Len()
 	cnt := d.Be32()
 
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
-		offsetPos := startLen - d.Len()
 		keyCount := d.Uvarint()
 
 		// The Postings offset table takes only 2 keys per entry (name and value of label).
@@ -221,7 +219,7 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 		if d.Err() != nil {
 			break
 		}
-		if err := f(key, value, o, offsetPos); err != nil {
+		if err := f(key, value, o); err != nil {
 			return err
 		}
 		cnt--
