@@ -54,17 +54,20 @@ func main() {
 
 	done.Wait()
 	logger.Log("msg", "sent all queries")
-	printStats(stats)
+	printStats(stats, 0)
 }
 
 func logStats(stats requestStats) {
+	prevSentQueries := stats.sentQueries.Load()
 	for range time.Tick(time.Second) {
-		printStats(stats)
+		printStats(stats, prevSentQueries)
+		prevSentQueries = stats.sentQueries.Load()
 	}
 }
 
-func printStats(stats requestStats) {
-	logger.Log("msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", stats.sentQueries.Load())
+func printStats(stats requestStats, prevSentQueries int64) {
+	sentQueries := stats.sentQueries.Load()
+	logger.Log("msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries)
 }
 
 func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
