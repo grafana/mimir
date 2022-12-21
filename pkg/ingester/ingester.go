@@ -1336,14 +1336,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	eph, prstt, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
+	ephemeral, persistent, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
 	if err != nil {
 		return err
 	}
-	if eph {
+	if ephemeral {
 		i.metrics.ephemeralQueries.Inc()
 	}
-	if prstt {
+	if persistent {
 		i.metrics.queries.Inc()
 	}
 
@@ -1374,20 +1374,20 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, eph, prstt)
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral, persistent)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, eph, prstt)
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral, persistent)
 	}
 	if err != nil {
 		return err
 	}
 
-	if eph {
+	if ephemeral {
 		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
 		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
 	}
-	if prstt {
+	if persistent {
 		i.metrics.queriedSeries.Observe(float64(numSeries))
 		i.metrics.queriedSamples.Observe(float64(numSamples))
 	}
