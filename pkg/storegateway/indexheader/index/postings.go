@@ -413,7 +413,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 				// We know it exists as we never go further in this loop than e.offsets[i, i+1].
 
 				skipNAndName(&d, &buf)
-				d.UnsafeUvarintBytes() // Label value.
+				d.SkipUvarintBytes() // Label value.
 				postingOffset := int64(d.Uvarint64())
 
 				for j := range newSameRngs {
@@ -500,8 +500,8 @@ func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 		// Keycount+LabelName are always the same number of bytes,
 		// and it's faster to skip than parse.
 		*buf = d.Len()
-		d.Uvarint()            // Keycount.
-		d.UnsafeUvarintBytes() // Label name.
+		d.Uvarint()          // Keycount.
+		d.SkipUvarintBytes() // Label name.
 		*buf -= d.Len()
 		return
 	}
