@@ -204,17 +204,14 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 	}
 
 	if enh.signatureToMetricWithRunningTotal == nil {
-		enh.signatureToMetricWithRunningTotal = map[int64]map[uint64]*metricWithRunningTotal{}
-	}
-	if enh.signatureToMetricWithRunningTotal[enh.Ts] == nil {
-		enh.signatureToMetricWithRunningTotal[enh.Ts] = map[uint64]*metricWithRunningTotal{}
+		enh.signatureToMetricWithRunningTotal = map[uint64]*metricWithRunningTotal{}
 	}
 
 	seriesHash := aggregatedSeriesLabels.Hash()
-	if mrt, ok := enh.signatureToMetricWithRunningTotal[enh.Ts][seriesHash]; ok {
+	if mrt, ok := enh.signatureToMetricWithRunningTotal[seriesHash]; ok {
 		mrt.runningTotal += resultValue
 	} else {
-		enh.signatureToMetricWithRunningTotal[enh.Ts][seriesHash] = &metricWithRunningTotal{
+		enh.signatureToMetricWithRunningTotal[seriesHash] = &metricWithRunningTotal{
 			metric:       aggregatedSeriesLabels,
 			runningTotal: resultValue,
 		}

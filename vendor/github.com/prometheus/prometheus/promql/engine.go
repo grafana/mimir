@@ -1019,7 +1019,7 @@ type EvalNodeHelper struct {
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// funcAggregateCounters
-	signatureToMetricWithRunningTotal map[int64]map[uint64]*metricWithRunningTotal
+	signatureToMetricWithRunningTotal map[uint64]*metricWithRunningTotal
 	// label_replace.
 	regex *regexp.Regexp
 
@@ -1317,6 +1317,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 		}
 
+		if e.Func.Name == "aggregate_counters" && ev.startTimestamp != ev.endTimestamp {
+			ev.errorf("aggregate_counters() can only be used with instant queries, range queries are not supported")
+		}
+
 		// Check if the function has a matrix argument.
 		var (
 			matrixArgIndex int
@@ -1505,16 +1509,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 			var result Matrix
 
-			for ts, signatureToMetricWithRunningTotal := range enh.signatureToMetricWithRunningTotal {
-				for _, mrt := range signatureToMetricWithRunningTotal {
-					result = append(result, Series{
-						Metric: mrt.metric,
-						Points: []Point{{
-							T: ts,
-							V: mrt.runningTotal,
-						}},
-					})
-				}
+			for _, mrt := range enh.signatureToMetricWithRunningTotal {
+				result = append(result, Series{
+					Metric: mrt.metric,
+					Points: []Point{{
+						T: ev.startTimestamp,
+						V: mrt.runningTotal,
+					}},
+				})
 			}
 
 			return result, warnings
