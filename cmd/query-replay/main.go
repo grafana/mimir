@@ -22,14 +22,14 @@ import (
 )
 
 const (
-	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/second-200000-range-queries.txt"
+	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/dec-13-afternoon/range-queries.txt"
 	queryEndpoint = "http://localhost:8080/prometheus"
 	tenantID      = "417760"
 
-	rateRampUpDuration   = 7 * time.Minute
+	rateRampUpDuration   = 15 * time.Minute
 	rateRampUpInterval   = 10 * time.Second
-	concurrency          = 100
-	maxRequestsPerSecond = float64(300)
+	concurrency          = 250
+	maxRequestsPerSecond = float64(500)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
