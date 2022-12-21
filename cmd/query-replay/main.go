@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/dec-13-afternoon/without-first-300000-range-queries.txt"
-	queryEndpoint = "http://localhost:8080/prometheus"
-	tenantID      = "417760"
+	queriesPath    = "/Users/dimitar/Documents/proba/goldman-sachs-queries/dec-13-afternoon/without-first-775000-range-queries.txt"
+	queryEndpoint1 = "http://localhost:8080/prometheus"
+	queryEndpoint2 = "http://localhost:8081/prometheus"
+	tenantID       = "417760"
 
 	rateRampUpDuration   = 2 * time.Second
 	rateRampUpInterval   = 1 * time.Second
@@ -52,7 +53,11 @@ func main() {
 	queriesChan := make(chan queryRequest)
 	go produceQueries(reader, queriesChan, stats, done)
 	for i := 0; i < concurrency; i++ {
-		go sendQueries(queriesChan, stats, done)
+		if i%2 == 0 {
+			go sendQueries(queriesChan, queryEndpoint1, stats, done)
+		} else {
+			go sendQueries(queriesChan, queryEndpoint2, stats, done)
+		}
 	}
 	go logStats(stats)
 
@@ -74,7 +79,7 @@ func printStats(stats requestStats, prevSentQueries int64) {
 	logger.Log("t", time.Now().UTC().String(), "msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries, "total_series", stats.totalSeries.Load())
 }
 
-func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
+func sendQueries(queriesChan chan queryRequest, queryEndpoint string, stats requestStats, done *sync.WaitGroup) {
 	defer done.Done()
 
 	endpoint := flagext.URLValue{}
