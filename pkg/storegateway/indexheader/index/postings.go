@@ -469,7 +469,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 		d.Uvarint64() // Offset.
 	}
 	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "get postings offset entry")
+		return nil, errors.Wrap(d.Err(), "get label values")
 	}
 	return values, nil
 }
