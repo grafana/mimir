@@ -24,37 +24,45 @@ func NewActiveGroups(maxGroupsPerUser int) *ActiveGroups {
 	}
 }
 
+// UpdateGroupTimestampForUser function is only guaranteed to update to timestamp
+// provided even if it is smaller than the existing value
 func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, ts int64) {
 	ag.mu.RLock()
-	groupTimestamps := ag.timestampsPerUser[userID]
+	if groupTs := ag.timestampsPerUser[userID][group]; groupTs != nil {
+		ag.mu.RUnlock()
+		groupTs.Store(ts)
+		return
+	}
 	ag.mu.RUnlock()
 
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	groupTimestamps := ag.timestampsPerUser[userID]
+
 	if groupTimestamps == nil {
-		ag.mu.Lock()
-		if ag.timestampsPerUser[userID] == nil {
-			ag.timestampsPerUser[userID] = map[string]*atomic.Int64{group: atomic.NewInt64(ts)}
-		}
-		ag.mu.Unlock()
+		ag.timestampsPerUser[userID] = map[string]*atomic.Int64{group: atomic.NewInt64(ts)}
 		return
 	}
 
-	ag.mu.RLock()
 	groupTs := ag.timestampsPerUser[userID][group]
-	ag.mu.RUnlock()
 
 	if groupTs != nil {
 		groupTs.Store(ts)
 		return
 	}
 
-	ag.mu.Lock()
 	ag.timestampsPerUser[userID][group] = atomic.NewInt64(ts)
-	ag.mu.Unlock()
 }
 
 func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64) []string {
 	ag.mu.RLock()
-	inactiveGroups := make([]string, 0, len(ag.timestampsPerUser))
+	totalGroups := len(ag.timestampsPerUser[userID])
+	if totalGroups == 0 {
+		ag.mu.RUnlock()
+		return nil
+	}
+
+	inactiveGroups := make([]string, 0, totalGroups)
 	groupTimestamps := ag.timestampsPerUser[userID]
 
 	for group, ts := range groupTimestamps {
@@ -69,26 +77,19 @@ func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64
 	}
 
 	// Cleanup inactive groups
-	for i := 0; i < len(inactiveGroups); {
-		group := inactiveGroups[i]
-		deleted := false
+	deletedGroups := make([]string, 0, len(inactiveGroups))
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
 
-		ag.mu.Lock()
-		groupTs := ag.timestampsPerUser[userID][group]
+	for _, inactiveGroup := range inactiveGroups {
+		groupTs := ag.timestampsPerUser[userID][inactiveGroup]
 		if groupTs != nil && groupTs.Load() <= deadline {
-			delete(ag.timestampsPerUser[userID], group)
-			deleted = true
-		}
-		ag.mu.Unlock()
-
-		if deleted {
-			i++
-		} else {
-			inactiveGroups = append(inactiveGroups[:i], inactiveGroups[i+1:]...)
+			delete(ag.timestampsPerUser[userID], inactiveGroup)
+			deletedGroups = append(deletedGroups, inactiveGroup)
 		}
 	}
 
-	return inactiveGroups
+	return deletedGroups
 }
 
 type ActiveGroupsCleanupService struct {
@@ -123,6 +124,11 @@ func (ag *ActiveGroups) ActiveGroupLimitExceeded(userID, group string) bool {
 }
 
 func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group string, now time.Time) string {
+	// Does not track empty label
+	if group == "" {
+		return group
+	}
+
 	if s.activeGroups.ActiveGroupLimitExceeded(user, group) {
 		group = "other"
 	}

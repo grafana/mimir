@@ -897,10 +897,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
-	group := validation.GroupLabel(i.limits, userID, req.Timeseries)
-	if group != "" {
-		group = i.activeGroups.UpdateActiveGroupTimestamp(userID, group, time.Now())
-	}
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), time.Now())
 
 	if sampleOutOfBoundsCount > 0 {
 		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(sampleOutOfBoundsCount))

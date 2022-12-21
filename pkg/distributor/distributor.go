@@ -178,8 +178,8 @@ type Config struct {
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
 
-	// Limit on number of groups by which a specified metric can be further separated
-	MaxGroupsPerUser int `yaml:"max_groups_per_user"`
+	// Limit on number of groups by which specified metrics can be further separated.
+	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:"experimental"`
 }
 
 type InstanceLimits struct {
@@ -750,6 +750,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		numSamples := 0
+		group := validation.GroupLabel(d.limits, userID, req.Timeseries)
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
 		}
@@ -763,7 +764,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				group := validation.GroupLabel(d.limits, userID, req.Timeseries)
+				group = d.activeGroups.UpdateActiveGroupTimestamp(userID, group, time.Now())
 
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
@@ -873,10 +874,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
-		group := validation.GroupLabel(d.limits, userID, req.Timeseries)
-		if group != "" {
-			group = d.activeGroups.UpdateActiveGroupTimestamp(userID, group, now)
-		}
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
