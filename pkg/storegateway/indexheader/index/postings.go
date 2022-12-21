@@ -184,10 +184,6 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 		t.postings[currentName].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
 	}
 
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "read last values for entries in postings table")
-	}
-
 	// Trim any extra space in the slices.
 	for k, v := range t.postings {
 		if len(v.offsets) == cap(v.offsets) {
