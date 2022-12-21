@@ -29,7 +29,7 @@ const (
 	rateRampUpDuration   = 7 * time.Minute
 	rateRampUpInterval   = 10 * time.Second
 	concurrency          = 100
-	maxRequestsPerSecond = float64(242)
+	maxRequestsPerSecond = float64(300)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
