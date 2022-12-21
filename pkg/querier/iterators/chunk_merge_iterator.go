@@ -8,6 +8,7 @@ package iterators
 import (
 	"container/heap"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -36,9 +37,14 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 	}
 
 	for _, iter := range c.its {
-		if iter.Next() == chunkenc.ValFloat {
+		valType := iter.Next()
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
 		}
 
 		if err := iter.Err(); err != nil {
@@ -84,9 +90,15 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 	c.h = c.h[:0]
 
 	for _, iter := range c.its {
-		if iter.Seek(t) == chunkenc.ValFloat {
+		valType := iter.Seek(t)
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			return chunkenc.ValNone
 		}
 
 		if err := iter.Err(); err != nil {
@@ -114,7 +126,7 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	for c.currTime == lastTime && len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
 
-		if c.h[0].Next() == chunkenc.ValFloat {
+		if c.h[0].Next() != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
 			continue
 		}
@@ -212,14 +224,15 @@ func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
-	for it.curr < len(it.chunks) && it.chunks[it.curr].Next() == chunkenc.ValNone {
+	valType := it.chunks[it.curr].Next()
+	for ; it.curr < len(it.chunks) && valType == chunkenc.ValNone; valType = it.chunks[it.curr].Next() {
 		it.curr++
 	}
 
 	if it.curr >= len(it.chunks) {
 		return chunkenc.ValNone
 	}
-	return chunkenc.ValFloat
+	return valType
 }
 
 func (it *nonOverlappingIterator) AtTime() int64 {
