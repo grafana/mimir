@@ -22,6 +22,8 @@ func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimese
 
 	for _, label := range timeseries[0].Labels {
 		if label.Name == groupLabel {
+			// label.Value string is cloned as underlying PreallocTimeseries contains
+			// unsafe strings that should not be retained
 			return strings.Clone(label.Value)
 		}
 	}
