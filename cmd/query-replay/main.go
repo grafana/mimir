@@ -27,8 +27,8 @@ const (
 	queryEndpoint2 = "http://localhost:8081/prometheus"
 	tenantID       = "417760"
 
-	rateRampUpDuration   = 2 * time.Second
-	rateRampUpInterval   = 1 * time.Second
+	rateRampUpDuration   = 15 * time.Minute
+	rateRampUpInterval   = 10 * time.Second
 	concurrency          = 600
 	maxRequestsPerSecond = float64(300)
 )
