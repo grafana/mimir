@@ -156,7 +156,7 @@ func (f *fileReader) len() int {
 	return f.length - f.pos
 }
 
-// position returns the current position of this fileReader in f, relative to the beginning of f.
+// position returns the current position of this fileReader in f, relative to base.
 func (f *fileReader) position() int {
 	return f.pos
 }
