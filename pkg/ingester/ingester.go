@@ -899,7 +899,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	group := validation.GroupLabel(i.limits, userID, req.Timeseries)
 	if group != "" {
-		i.activeGroups.UpdateActiveGroupTimestamp(userID, group, time.Now())
+		group = i.activeGroups.UpdateActiveGroupTimestamp(userID, group, time.Now())
 	}
 
 	if sampleOutOfBoundsCount > 0 {

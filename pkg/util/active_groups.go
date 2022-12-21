@@ -25,10 +25,6 @@ func NewActiveGroups(maxGroupsPerUser int) *ActiveGroups {
 }
 
 func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, ts int64) {
-	if ag.ActiveGroupLimitExceeded(userID, group) {
-		group = "other"
-	}
-
 	ag.mu.RLock()
 	groupTimestamps := ag.timestampsPerUser[userID]
 	ag.mu.RUnlock()
@@ -126,9 +122,12 @@ func (ag *ActiveGroups) ActiveGroupLimitExceeded(userID, group string) bool {
 	return !containsGroup && len(ag.timestampsPerUser[userID]) >= ag.maxGroupsPerUser
 }
 
-func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group string, now time.Time) {
-	// if active group limit exceeded, group = "other"
+func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group string, now time.Time) string {
+	if s.activeGroups.ActiveGroupLimitExceeded(user, group) {
+		group = "other"
+	}
 	s.activeGroups.UpdateGroupTimestampForUser(user, group, now.UnixNano())
+	return group
 }
 
 func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {

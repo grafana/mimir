@@ -92,8 +92,7 @@ func TestActiveGroupsConcurrentUpdateAndPurge(t *testing.T) {
 }
 
 func TestActiveGroupLimitExceeded(t *testing.T) {
-	agCleanupService := NewActiveGroupsCleanupWithDefaultValues(func(string, string) {}, maxGroupsPerUser)
-	ag := agCleanupService.activeGroups
+	ag := NewActiveGroups(maxGroupsPerUser)
 
 	// Send number of groups to the limit
 	for i := 0; i < maxGroupsPerUser; i++ {
@@ -105,4 +104,24 @@ func TestActiveGroupLimitExceeded(t *testing.T) {
 
 	// Existing group can still be updated
 	require.False(t, ag.ActiveGroupLimitExceeded("user1", "0"))
+}
+
+func TestUpdateActiveGroups(t *testing.T) {
+	s := NewActiveGroupsCleanupWithDefaultValues(func(string, string) {}, maxGroupsPerUser)
+
+	// Hit the group limit for user1
+	for i := 0; i < maxGroupsPerUser; i++ {
+		s.UpdateActiveGroupTimestamp("user1", fmt.Sprintf("%d", i), time.Unix(1, 0))
+	}
+
+	// Add new groups for user1 that should be set as "other"
+	finalTs := time.Now().Add(-10 * time.Second)
+	s.UpdateActiveGroupTimestamp("user1", "new_group_1", time.Unix(123, 0))
+	group := s.UpdateActiveGroupTimestamp("user1", "new_group_2", finalTs)
+	require.Equal(t, "other", group)
+
+	// Active groups should now have "other" with timestamp finalTs
+	timestamps := s.activeGroups.timestampsPerUser["user1"]
+	require.NotEmpty(t, timestamps)
+	require.Equal(t, timestamps["other"], atomic.NewInt64(finalTs.UnixNano()))
 }

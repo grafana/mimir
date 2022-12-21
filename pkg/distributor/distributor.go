@@ -875,7 +875,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		group := validation.GroupLabel(d.limits, userID, req.Timeseries)
 		if group != "" {
-			d.activeGroups.UpdateActiveGroupTimestamp(userID, group, now)
+			group = d.activeGroups.UpdateActiveGroupTimestamp(userID, group, now)
 		}
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
