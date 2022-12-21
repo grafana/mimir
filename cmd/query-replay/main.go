@@ -22,11 +22,14 @@ import (
 )
 
 const (
-	queriesPath       = "/Users/dimitar/Documents/proba/goldman-sachs-queries/first-100-range-queries.txt"
-	queryEndpoint     = "http://localhost:8080/prometheus"
-	tenantID          = "417760"
-	concurrency       = 100
-	requestsPerSecond = float64(10)
+	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/first-1000-range-queries.txt"
+	queryEndpoint = "http://localhost:8080/prometheus"
+	tenantID      = "417760"
+
+	rateRampUpDuration   = time.Minute
+	rateRampUpInterval   = 2 * time.Second
+	concurrency          = 100
+	maxRequestsPerSecond = float64(100)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
@@ -68,7 +71,7 @@ func logStats(stats requestStats) {
 
 func printStats(stats requestStats, prevSentQueries int64) {
 	sentQueries := stats.sentQueries.Load()
-	logger.Log("t", time.Now().String(), "msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries, "total_series", stats.totalSeries.Load())
+	logger.Log("t", time.Now().UTC().String(), "msg", "stats", "failed_queries", stats.failedQueries.Load(), "sent_queries", sentQueries, "sent_since_last_log", sentQueries-prevSentQueries, "total_series", stats.totalSeries.Load())
 }
 
 func sendQueries(queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
@@ -115,46 +118,51 @@ func produceQueries(reader *os.File, queriesChan chan queryRequest, stats reques
 
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
 	scanner := bufio.NewScanner(reader)
-	rateLimit := rate.NewLimiter(rate.Limit(requestsPerSecond), int(requestsPerSecond))
+	rateLimit := newRampingUpRateLimiter(rateRampUpDuration, rateRampUpInterval, 1, maxRequestsPerSecond)
 
 	for scanner.Scan() {
 		queryLine := scanner.Text()
-		splitQueryLine := strings.SplitN(queryLine, " ", 4)
-		if len(splitQueryLine) != 4 {
-			logger.Log("msg", "query line contains unexpected number of fields; skipping", "line", queryLine)
-			continue
-		}
-		start, err := parseScientificUnixMillis(splitQueryLine[0])
-		if err != nil {
-			logger.Log("msg", "couldn't parse query line; skipping", "err", err, "line", queryLine)
-			continue
-		}
-		end, err := parseScientificUnixMillis(splitQueryLine[1])
-		if err != nil {
-			logger.Log("msg", "couldn't parse query line; skipping", "err", err, "line", queryLine)
-			continue
-		}
-		step, err := parseStep(splitQueryLine[2])
-		if err != nil {
-			logger.Log("msg", "couldn't parse query line; skipping", "err", err, "line", queryLine)
-			continue
-		}
 
-		query := appendNoCacheMatcher(splitQueryLine[3], runID)
-
-		err = rateLimit.Wait(context.Background())
+		r, err := parseQueryRequest(queryLine, runID)
+		if err != nil {
+			logger.Log("msg", "couldn't parse query line; skipping", "err", err, "line", queryLine)
+			continue
+		}
+		err = rateLimit.Wait()
 		if err != nil {
 			logger.Log("msg", "limiter error", "err", err)
 		}
 
-		queriesChan <- queryRequest{
-			start: start,
-			end:   end,
-			step:  step,
-			query: query,
-		}
+		queriesChan <- r
 		stats.sentQueries.Inc()
 	}
+}
+
+func parseQueryRequest(queryLine, nonce string) (queryRequest, error) {
+	splitQueryLine := strings.SplitN(queryLine, " ", 4)
+	if len(splitQueryLine) != 4 {
+		return queryRequest{}, errors.New("query line contains unexpected number of fields")
+	}
+	start, err := parseScientificUnixMillis(splitQueryLine[0])
+	if err != nil {
+		return queryRequest{}, err
+	}
+	end, err := parseScientificUnixMillis(splitQueryLine[1])
+	if err != nil {
+		return queryRequest{}, err
+	}
+	step, err := parseStep(splitQueryLine[2])
+	if err != nil {
+		return queryRequest{}, err
+	}
+	query := appendNoCacheMatcher(splitQueryLine[3], nonce)
+
+	return queryRequest{
+		start: start,
+		end:   end,
+		step:  step,
+		query: query,
+	}, nil
 }
 
 // This assumes that all queries have the `{}` somewhere in them. This was valid for all of goldman sach's queries.
@@ -202,4 +210,43 @@ type requestStats struct {
 	sentQueries   *atomic.Int64
 	failedQueries *atomic.Int64
 	totalSeries   *atomic.Int64
+}
+
+type rampingUpRateLimiter struct {
+	mtx *sync.RWMutex
+	l   *rate.Limiter
+}
+
+func newRampingUpRateLimiter(rampUpDuration, rampUpInterval time.Duration, startRate, finalRate float64) *rampingUpRateLimiter {
+	l := &rampingUpRateLimiter{
+		l:   rate.NewLimiter(rate.Limit(startRate), int(startRate)),
+		mtx: &sync.RWMutex{},
+	}
+	go l.rampUp(rampUpDuration, rampUpInterval, startRate, finalRate)
+	return l
+}
+
+func (l *rampingUpRateLimiter) Wait() error {
+	l.mtx.RLock()
+	defer l.mtx.RUnlock()
+	return l.l.Wait(context.Background())
+}
+
+func (l *rampingUpRateLimiter) rampUp(duration time.Duration, interval time.Duration, startRate float64, finalRate float64) {
+	maxRampUps := int(duration / interval)
+	rampUpStep := (finalRate - startRate) / float64(maxRampUps)
+	currentRampUps := 0
+	currentRate := startRate
+
+	for range time.Tick(interval) {
+		currentRate += rampUpStep
+		currentRampUps++
+		if currentRampUps >= maxRampUps {
+			return
+		}
+		logger.Log("msg", "ramping up request rate to", "rate", currentRate)
+		l.mtx.Lock()
+		l.l = rate.NewLimiter(rate.Limit(currentRate), int(currentRate))
+		l.mtx.Unlock()
+	}
 }
