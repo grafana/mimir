@@ -2484,7 +2484,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# Label used to further separate specific metrics.
+# Label used to further separate specific distributor and ingester metrics. For
+# each write request, the group is obtained from the first non-empty group label
+# from the incoming list of timeseries.
 # CLI flag: -validation.separate-metrics-label
 [separate_metrics_label: <string> | default = ""]
 

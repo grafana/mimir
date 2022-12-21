@@ -3088,7 +3088,7 @@
           "kind": "field",
           "name": "separate_metrics_label",
           "required": false,
-          "desc": "Label used to further separate specific metrics.",
+          "desc": "Label used to further separate specific distributor and ingester metrics. For each write request, the group is obtained from the first non-empty group label from the incoming list of timeseries.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "validation.separate-metrics-label",
