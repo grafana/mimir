@@ -116,8 +116,8 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 		// Important: this value is only valid as long as we don't perform any further reads from d.
 		// If we need to retain its value, we must copy it before performing another read.
-		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || currentName != string(unsafeName) {
-			newKey := string(unsafeName)
+		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || lastName != string(unsafeName) {
+			newName := string(unsafeName)
 
 			if lastEntryOffsetInTable != -1 {
 				// We haven't recorded the last offset for the last value of the previous name.
@@ -127,13 +127,13 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 				d.Uvarint()                           // Skip the key count
 				d.SkipUvarintBytes()                  // Skip the name
 				value := d.UvarintStr()
-				t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
+				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 
 				// Skip ahead to where we were before we called ResetAt() above.
 				d.Skip(d.Len() - newValueOffset)
 			}
 
-			currentName = newKey
+			currentName = newName
 			t.postings[currentName] = &postingValueOffsets{}
 			valuesForCurrentKey = 0
 		}
