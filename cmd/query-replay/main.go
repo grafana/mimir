@@ -22,14 +22,14 @@ import (
 )
 
 const (
-	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/first-1000-range-queries.txt"
+	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/first-100000-range-queries.txt"
 	queryEndpoint = "http://localhost:8080/prometheus"
 	tenantID      = "417760"
 
-	rateRampUpDuration   = time.Minute
-	rateRampUpInterval   = 2 * time.Second
+	rateRampUpDuration   = 5 * time.Minute
+	rateRampUpInterval   = 10 * time.Second
 	concurrency          = 100
-	maxRequestsPerSecond = float64(100)
+	maxRequestsPerSecond = float64(200)
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
@@ -232,7 +232,7 @@ func (l *rampingUpRateLimiter) Wait() error {
 	return l.l.Wait(context.Background())
 }
 
-func (l *rampingUpRateLimiter) rampUp(duration time.Duration, interval time.Duration, startRate float64, finalRate float64) {
+func (l *rampingUpRateLimiter) rampUp(duration, interval time.Duration, startRate, finalRate float64) {
 	maxRampUps := int(duration / interval)
 	rampUpStep := (finalRate - startRate) / float64(maxRampUps)
 	currentRampUps := 0
@@ -241,7 +241,7 @@ func (l *rampingUpRateLimiter) rampUp(duration time.Duration, interval time.Dura
 	for range time.Tick(interval) {
 		currentRate += rampUpStep
 		currentRampUps++
-		if currentRampUps >= maxRampUps {
+		if currentRampUps > maxRampUps {
 			return
 		}
 		logger.Log("msg", "ramping up request rate to", "rate", currentRate)
