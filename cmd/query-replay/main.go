@@ -22,13 +22,13 @@ import (
 )
 
 const (
-	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/dec-13-afternoon/without-first-160000-range-queries.txt"
+	queriesPath   = "/Users/dimitar/Documents/proba/goldman-sachs-queries/dec-13-afternoon/without-first-300000-range-queries.txt"
 	queryEndpoint = "http://localhost:8080/prometheus"
 	tenantID      = "417760"
 
-	rateRampUpDuration   = 20 * time.Second
-	rateRampUpInterval   = 10 * time.Second
-	concurrency          = 400
+	rateRampUpDuration   = 2 * time.Second
+	rateRampUpInterval   = 1 * time.Second
+	concurrency          = 600
 	maxRequestsPerSecond = float64(500)
 )
 
