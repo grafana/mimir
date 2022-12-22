@@ -223,20 +223,15 @@ func (b *bufferingFileReader) fillIfRequired(minDesired int) error {
 		return nil
 	}
 
-	if _, err := b.f.Seek(int64(b.currentPositionInFile), io.SeekStart); err != nil {
-		return err
-	}
-
 	b.b = b.b[:cap(b.b)]
-	n, err := io.ReadFull(b.f, b.b)
+	n, err := b.f.ReadAt(b.b, int64(b.currentPositionInFile))
 	b.b = b.b[:n]
 	b.offsetFirstByteInB = b.currentPositionInFile
 
 	if err != nil {
-		if err == io.ErrUnexpectedEOF {
-			b.haveRead = true
-
+		if err == io.EOF {
 			if n == 0 {
+				b.haveRead = true
 				return io.EOF
 			}
 		} else {
