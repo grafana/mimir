@@ -177,6 +177,7 @@ func newBufferingFileReader(bufferSize int) *bufferingFileReader {
 	}
 }
 
+// Seek resets the position of this reader to off in f.
 func (b *bufferingFileReader) Seek(f *os.File, off int) {
 	b.currentPositionInFile = off
 
@@ -187,10 +188,15 @@ func (b *bufferingFileReader) Seek(f *os.File, off int) {
 	}
 }
 
+// Discard advances the position of this reader by n bytes.
 func (b *bufferingFileReader) Discard(n int) {
 	b.currentPositionInFile += n
 }
 
+// Peek returns the next n bytes of f without advancing the position of this reader.
+// The returned byte slice is only valid until the next Peek or Read call.
+// Peek guarantees that it will return exactly n bytes if there are n or more bytes remaining
+// to be read from f (ie. no short reads).
 func (b *bufferingFileReader) Peek(n int) ([]byte, error) {
 	if err := b.fillIfRequired(n); err != nil {
 		return nil, err
@@ -243,10 +249,12 @@ func (b *bufferingFileReader) fillIfRequired(minDesired int) error {
 	return nil
 }
 
+// Size returns the size of the underlying buffer used by this reader.
 func (b *bufferingFileReader) Size() int {
 	return cap(b.b)
 }
 
+// Read reads up to len(dest) bytes into dest and returns the number of bytes read.
 func (b *bufferingFileReader) Read(dest []byte) (int, error) {
 	// TODO: could potentially read directly into dest in some cases (eg. we have no available bytes buffered and we're doing a read larger than the capacity of the buffer)
 
