@@ -864,7 +864,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				var actualValues []valueResult
 
 				it := set.At().Iterator()
-				for it.Next() == chunkenc.ValFloat {
+				for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+					assert.Equal(t, valType, chunkenc.ValFloat)
 					t, v := it.At()
 					actualValues = append(actualValues, valueResult{
 						t: t,
