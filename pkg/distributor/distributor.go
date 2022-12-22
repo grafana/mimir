@@ -445,6 +445,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 // newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
 func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' KV store")
@@ -461,12 +462,12 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.HeartbeatTimeout, delegate, logger)
 
-	distributorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "distributor", distributorRingKey, kvStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	distributorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "distributor", distributorRingKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
 	}
 
-	distributorsRing, err := ring.New(cfg.ToRingConfig(), "distributor", distributorRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	distributorsRing, err := ring.New(cfg.ToRingConfig(), "distributor", distributorRingKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' ring client")
 	}
