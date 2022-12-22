@@ -590,7 +590,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingSeriesChunksSetIterator(*readers, bytesPool, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
+			set := newLoadingSeriesChunksSetIterator(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
@@ -685,7 +685,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(*chunkReaders, chunksPool, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
+				it := newLoadingSeriesChunksSetIterator(*chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
 
 				actualSeries := 0
 				actualChunks := 0
