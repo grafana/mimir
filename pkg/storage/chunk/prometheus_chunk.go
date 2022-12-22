@@ -173,9 +173,11 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 			batch.Values[j] = v
 			j++
 		}
-		valueType = p.it.Next()
-		if j < size && valueType == chunkenc.ValNone {
-			break
+		if j < size {
+			valueType = p.it.Next()
+			if valueType == chunkenc.ValNone {
+				break
+			}
 		}
 	}
 	batch.Index = 0
