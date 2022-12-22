@@ -162,41 +162,17 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
+// TODO native histograms support, assumes it's used on float chunk
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
-	var batch Batch
-	var populate func(j int)
-	switch valueType {
-	case chunkenc.ValFloat:
-		batch.ValueTypes = chunkenc.ValFloat
-		batch.SampleValues = &[BatchSize]float64{}
-		populate = func(j int) {
-			t, v := p.it.At()
-			batch.Timestamps[j] = t
-			batch.SampleValues[j] = v
-		}
-	case chunkenc.ValHistogram:
-		batch.ValueTypes = chunkenc.ValHistogram
-		batch.HistogramValues = &[BatchSize]*histogram.Histogram{}
-		populate = func(j int) {
-			t, h := p.it.AtHistogram()
-			batch.Timestamps[j] = t
-			batch.HistogramValues[j] = h
-		}
-	case chunkenc.ValFloatHistogram:
-		batch.ValueTypes = chunkenc.ValFloatHistogram
-		batch.FloatHistogramValues = &[BatchSize]*histogram.FloatHistogram{}
-		populate = func(j int) {
-			t, fh := p.it.AtFloatHistogram()
-			batch.Timestamps[j] = t
-			batch.FloatHistogramValues[j] = fh
-		}
-	default:
-		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))
+	if valueType != chunkenc.ValFloat {
+		panic("prometheusChunkIterator cannot handle non float chunks")
 	}
-
+	var batch Batch
 	j := 0
 	for j < size {
-		populate(j)
+		t, v := p.it.At()
+		batch.Timestamps[j] = t
+		batch.Values[j] = v
 		j++
 		if j < size && p.it.Next() == chunkenc.ValNone {
 			break

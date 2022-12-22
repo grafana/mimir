@@ -129,7 +129,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	}
 
 	if len(c.batches) > 0 {
-		return c.batches[0].ValueTypes
+		return chunkenc.ValFloat
 	}
 	return chunkenc.ValNone
 }

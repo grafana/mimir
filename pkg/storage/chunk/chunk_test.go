@@ -190,7 +190,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 		batch := iter.Batch(BatchSize, chunkenc.ValFloat)
 		for j := 0; j < batch.Length; j++ {
 			require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-			require.EqualValues(t, float64(i+j), batch.SampleValues[j])
+			require.EqualValues(t, float64(i+j), batch.Values[j])
 		}
 		i += batch.Length
 	}

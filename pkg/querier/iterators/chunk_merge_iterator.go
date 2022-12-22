@@ -224,14 +224,15 @@ func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
-	valType := it.chunks[it.curr].Next()
-	for ; it.curr < len(it.chunks) && valType == chunkenc.ValNone; valType = it.chunks[it.curr].Next() {
+	valType := chunkenc.ValNone
+	for it.curr < len(it.chunks) {
+		valType = it.chunks[it.curr].Next()
+		if valType != chunkenc.ValNone {
+			break
+		}
 		it.curr++
 	}
 
-	if it.curr >= len(it.chunks) {
-		return chunkenc.ValNone
-	}
 	return valType
 }
 
