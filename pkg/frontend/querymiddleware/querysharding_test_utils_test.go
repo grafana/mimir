@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -271,7 +272,8 @@ func TestNewMockShardedqueryable(t *testing.T) {
 				seriesCt++
 				iter := set.At().Iterator()
 				samples := 0
-				for iter.Next() {
+				for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
+					require.Equal(t, chunkenc.ValFloat, valType)
 					samples++
 				}
 				require.Equal(t, tc.nSamples, samples)

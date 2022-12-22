@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -450,7 +452,10 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 		stream := SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(set.At().Labels())}
 
 		it := set.At().Iterator()
-		for it.Next() {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType != chunkenc.ValFloat {
+				return nil, fmt.Errorf("unsupported value type %v", valType)
+			}
 			t, v := it.At()
 			stream.Samples = append(stream.Samples, mimirpb.Sample{
 				Value:       v,

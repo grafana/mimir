@@ -267,7 +267,13 @@ func (d *Decbuf) Byte() byte {
 }
 
 func (d *Decbuf) Err() error { return d.E }
-func (d *Decbuf) Len() int   { return d.r.len() }
+
+// Len returns the remaining number of bytes in the underlying fileReader.
+func (d *Decbuf) Len() int { return d.r.len() }
+
+// Position returns the current position of the underlying fileReader.
+// Calling d.ResetAt(d.Position()) is effectively a no-op.
+func (d *Decbuf) Position() int { return d.r.position() }
 
 func (d *Decbuf) Close() error {
 	if d.r != nil {

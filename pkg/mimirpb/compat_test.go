@@ -15,7 +15,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -142,13 +141,6 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		FromLabelAdaptersToLabelsWithCopy(input)
 	}
-}
-
-func TestFromPointsToSamples(t *testing.T) {
-	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}}
-	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
-
-	assert.Equal(t, expected, FromPointsToSamples(input))
 }
 
 func TestPreallocatingMetric(t *testing.T) {

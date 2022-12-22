@@ -82,7 +82,8 @@ func TestBlockQuerierSeries(t *testing.T) {
 			sampleIx := 0
 
 			it := series.Iterator()
-			for it.Next() {
+			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+				assert.Equal(t, chunkenc.ValFloat, valType)
 				ts, val := it.At()
 				require.True(t, sampleIx < len(testData.expectedSamples))
 				assert.Equal(t, int64(testData.expectedSamples[sampleIx].Timestamp), ts)
@@ -239,7 +240,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Next() }
+			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType { return it.Next() }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
@@ -269,7 +270,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		t.Run(fmt.Sprintf("consume with .Seek() method, perform .At() after every %dth call to .Seek()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Seek(wantTs) }
+			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType { return it.Seek(wantTs) }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
@@ -300,7 +301,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			t.Parallel()
 
 			var seek bool
-			advance := func(it chunkenc.Iterator, wantTs int64) bool {
+			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType {
 				seek = !seek
 				if seek {
 					return it.Seek(wantTs)
@@ -341,7 +342,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 // "samples" is the expected total number of samples.
 // "callAtEvery" defines after every how many samples we want to call .At().
 // "advance" is a function which takes an iterator and advances its position.
-func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange, samples, callAtEvery uint32, advance func(chunkenc.Iterator, int64) bool) {
+func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange, samples, callAtEvery uint32, advance func(chunkenc.Iterator, int64) chunkenc.ValueType) {
 	require.True(t, ss.Next())
 
 	s := ss.At()
@@ -351,7 +352,7 @@ func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, 
 	it := s.Iterator()
 	for _, r := range ranges {
 		for wantTs := r.minT.UnixNano() / 1000000; wantTs <= r.maxT.UnixNano()/1000000; wantTs += step.Milliseconds() {
-			require.True(t, advance(it, wantTs))
+			require.Equal(t, chunkenc.ValFloat, advance(it, wantTs))
 
 			if count%callAtEvery == 0 {
 				gotTs, v := it.At()
@@ -482,7 +483,7 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 		set := blockQuerierSeriesSet{series: series}
 
 		for set.Next() {
-			for t := set.At().Iterator(); t.Next(); {
+			for t := set.At().Iterator(); t.Next() != chunkenc.ValNone; {
 				t.At()
 			}
 		}
@@ -521,7 +522,7 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 
 		for set.Next() {
 			seekT := int64(0)
-			for t := set.At().Iterator(); t.Seek(seekT); seekT += samplesPerStep {
+			for t := set.At().Iterator(); t.Seek(seekT) != chunkenc.ValNone; seekT += samplesPerStep {
 				t.At()
 			}
 		}

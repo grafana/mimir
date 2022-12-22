@@ -7,9 +7,12 @@ package iterators
 
 import (
 	"container/heap"
+	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -34,13 +37,20 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 	}
 
 	for _, iter := range c.its {
-		if iter.Next() {
+		valType := iter.Next()
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			break
 		}
 
 		if err := iter.Err(); err != nil {
 			c.currErr = err
+			break
 		}
 	}
 
@@ -78,18 +88,27 @@ outer:
 	return its
 }
 
-func (c *chunkMergeIterator) Seek(t int64) bool {
+func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
+	if c.currErr != nil {
+		return chunkenc.ValNone
+	}
 	c.h = c.h[:0]
 
 	for _, iter := range c.its {
-		if iter.Seek(t) {
+		valType := iter.Seek(t)
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			return chunkenc.ValNone
 		}
 
 		if err := iter.Err(); err != nil {
 			c.currErr = err
-			return false
+			return chunkenc.ValNone
 		}
 	}
 
@@ -97,22 +116,22 @@ func (c *chunkMergeIterator) Seek(t int64) bool {
 
 	if len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
-		return true
+		return chunkenc.ValFloat
 	}
 
-	return false
+	return chunkenc.ValNone
 }
 
-func (c *chunkMergeIterator) Next() bool {
-	if len(c.h) == 0 {
-		return false
+func (c *chunkMergeIterator) Next() chunkenc.ValueType {
+	if len(c.h) == 0 || c.currErr != nil {
+		return chunkenc.ValNone
 	}
 
 	lastTime := c.currTime
 	for c.currTime == lastTime && len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
 
-		if c.h[0].Next() {
+		if c.h[0].Next() != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
 			continue
 		}
@@ -120,15 +139,33 @@ func (c *chunkMergeIterator) Next() bool {
 		iter := heap.Pop(&c.h).(chunkenc.Iterator)
 		if err := iter.Err(); err != nil {
 			c.currErr = err
-			return false
+			return chunkenc.ValNone
 		}
 	}
 
-	return c.currTime != lastTime
+	if c.currTime != lastTime {
+		// TODO for native histograms: return the correct type
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
 func (c *chunkMergeIterator) At() (t int64, v float64) {
 	return c.currTime, c.currValue
+}
+
+// Histogram support isn't complete yet
+func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("chunkMergeIterator: AtHistogram is not implemented"))
+}
+
+// Histogram suppport isn't complete yet
+func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("chunkMergeIterator: AtFloatHistogram is not implemented"))
+}
+
+func (c *chunkMergeIterator) AtT() int64 {
+	return c.currTime
 }
 
 func (c *chunkMergeIterator) Err() error {
@@ -182,22 +219,26 @@ func newNonOverlappingIterator(chunks []*chunkIterator) *nonOverlappingIterator 
 	}
 }
 
-func (it *nonOverlappingIterator) Seek(t int64) bool {
+func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 	for ; it.curr < len(it.chunks); it.curr++ {
-		if it.chunks[it.curr].Seek(t) {
-			return true
+		if v := it.chunks[it.curr].Seek(t); v != chunkenc.ValNone {
+			return v
 		}
 	}
 
-	return false
+	return chunkenc.ValNone
 }
 
-func (it *nonOverlappingIterator) Next() bool {
-	for it.curr < len(it.chunks) && !it.chunks[it.curr].Next() {
+func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
+	for it.curr < len(it.chunks) {
+		valType := it.chunks[it.curr].Next()
+		if valType != chunkenc.ValNone {
+			return valType
+		}
 		it.curr++
 	}
 
-	return it.curr < len(it.chunks)
+	return chunkenc.ValNone
 }
 
 func (it *nonOverlappingIterator) AtTime() int64 {
@@ -206,6 +247,18 @@ func (it *nonOverlappingIterator) AtTime() int64 {
 
 func (it *nonOverlappingIterator) At() (int64, float64) {
 	return it.chunks[it.curr].At()
+}
+
+func (it *nonOverlappingIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return it.chunks[it.curr].AtHistogram()
+}
+
+func (it *nonOverlappingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return it.chunks[it.curr].AtFloatHistogram()
+}
+
+func (it *nonOverlappingIterator) AtT() int64 {
+	return it.chunks[it.curr].AtT()
 }
 
 func (it *nonOverlappingIterator) Err() error {

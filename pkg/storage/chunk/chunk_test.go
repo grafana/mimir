@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,18 +101,18 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 	// Check all the samples are in there.
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; i++ {
-		require.True(t, iter.Scan())
+		require.True(t, iter.Scan() == chunkenc.ValFloat)
 		sample := iter.Value()
 		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 		require.EqualValues(t, model.SampleValue(i), sample.Value)
 	}
-	require.False(t, iter.Scan())
+	require.False(t, iter.Scan() == chunkenc.ValFloat)
 	require.NoError(t, iter.Err())
 
 	// Check seek works after unmarshal
 	iter = chunk.NewIterator(iter)
 	for i := 0; i < samples; i += samples / 10 {
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)))
+		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
 	}
 
 	// Check the byte representation after another Marshall is the same.
@@ -132,29 +133,29 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 	for i := 0; i < samples; i += samples / 10 {
 		if i > 0 {
 			// Seek one millisecond before the actual time
-			require.True(t, iter.FindAtOrAfter(model.Time(i*step-1)), "1ms before step %d not found", i)
+			require.True(t, iter.FindAtOrAfter(model.Time(i*step-1)) == chunkenc.ValFloat, "1ms before step %d not found", i)
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
 		}
 		// Now seek to exactly the right time
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)))
+		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
 		sample := iter.Value()
 		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 		require.EqualValues(t, model.SampleValue(i), sample.Value)
 
 		j := i + 1
 		for ; j < samples; j++ {
-			require.True(t, iter.Scan())
+			require.True(t, iter.Scan() == chunkenc.ValFloat)
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(j), sample.Value)
 		}
-		require.False(t, iter.Scan())
+		require.False(t, iter.Scan() == chunkenc.ValFloat)
 		require.NoError(t, iter.Err())
 	}
 	// Check seek past the end of the chunk returns failure
-	require.False(t, iter.FindAtOrAfter(model.Time(samples*step+1)))
+	require.False(t, iter.FindAtOrAfter(model.Time(samples*step+1)) == chunkenc.ValFloat)
 }
 
 func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
@@ -162,20 +163,20 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; i += samples / 10 {
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)))
+		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
 		sample := iter.Value()
 		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 		require.EqualValues(t, model.SampleValue(i), sample.Value)
 
 		j := i + 1
 		for ; j < (i+samples/10) && j < samples; j++ {
-			require.True(t, iter.Scan())
+			require.True(t, iter.Scan() == chunkenc.ValFloat)
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(j), sample.Value)
 		}
 	}
-	require.False(t, iter.Scan())
+	require.False(t, iter.Scan() == chunkenc.ValFloat)
 	require.NoError(t, iter.Err())
 }
 
@@ -185,14 +186,14 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 	// Check all the samples are in there.
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; {
-		require.True(t, iter.Scan())
-		batch := iter.Batch(BatchSize)
+		require.True(t, iter.Scan() == chunkenc.ValFloat)
+		batch := iter.Batch(BatchSize, chunkenc.ValFloat)
 		for j := 0; j < batch.Length; j++ {
 			require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
 			require.EqualValues(t, float64(i+j), batch.Values[j])
 		}
 		i += batch.Length
 	}
-	require.False(t, iter.Scan())
+	require.False(t, iter.Scan() == chunkenc.ValFloat)
 	require.NoError(t, iter.Err())
 }

@@ -239,6 +239,43 @@ receivers:
 	require.Equal(t, testAlertName, alerts[0].Name())
 }
 
+func TestReadWriteModeCompaction(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	client, cluster := startReadWriteModeCluster(t, s, BlocksStorageFlags(), map[string]string{
+		// Frequently compact and ship blocks to storage so the compactor can compact them.
+		"-blocks-storage.tsdb.block-ranges-period":          "2s",
+		"-blocks-storage.tsdb.ship-interval":                "1s",
+		"-blocks-storage.tsdb.retention-period":             "3s",
+		"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
+
+		// Frequently cleanup old blocks.
+		// While this doesn't test the compaction functionality of the compactor, it does verify that the compactor
+		// is correctly configured and able to interact with storage, which is the intention of this test.
+		"-compactor.cleanup-interval":        "2s",
+		"-compactor.blocks-retention-period": "5s",
+	})
+
+	// Push some data to the cluster.
+	series, _, _ := generateSeries("test_series_1", time.Now(), prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Wait until the TSDB head is shipped to storage.
+	require.NoError(t, cluster.writeInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingester_shipper_uploads_total"))
+
+	// Wait until the compactor discovers and deletes the old block.
+	require.NoError(t, cluster.backendInstance.WaitSumMetricsWithOptions(
+		e2e.GreaterOrEqual(1),
+		[]string{"cortex_compactor_blocks_marked_for_deletion_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "reason", "retention")),
+	))
+}
+
 func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[string]string) (*e2emimir.Client, readWriteModeCluster) {
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
