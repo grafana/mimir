@@ -549,6 +549,26 @@ receivers:
 `, backendURL)
 			},
 		},
+		"webex": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: webex
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: webex
+    webex_configs:
+      - api_url: %s
+        room_id: test
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: secret
+`, backendURL)
+			},
+		},
 		// We expect requests against the HTTP proxy to be blocked too.
 		"HTTP proxy": {
 			getAlertmanagerConfig: func(backendURL string) string {
