@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20221216094413-a9826f9b0468
+	github.com/grafana/dskit v0.0.0-20221222155338-19b619d2a0da
 	github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -84,7 +84,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v0.4.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.5.1 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
-	github.com/OneOfOne/xxhash v1.2.6 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
@@ -111,6 +110,7 @@ require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/dnaeon/go-vcr v1.2.0 // indirect
 	github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11 // indirect
@@ -132,6 +132,7 @@ require (
 	github.com/go-openapi/runtime v0.25.0 // indirect
 	github.com/go-openapi/spec v0.20.7 // indirect
 	github.com/go-openapi/validate v0.22.0 // indirect
+	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/gofrs/uuid v4.3.1+incompatible // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt v3.2.1+incompatible // indirect
@@ -185,14 +186,12 @@ require (
 	github.com/prometheus/exporter-toolkit v0.8.2 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
-	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/rs/cors v1.8.2 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sercand/kuberesolver v2.4.0+incompatible // indirect
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
-	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect

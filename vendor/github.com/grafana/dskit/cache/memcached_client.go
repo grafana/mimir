@@ -3,10 +3,8 @@ package cache
 import (
 	"context"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -21,49 +19,11 @@ import (
 	"github.com/grafana/dskit/gate"
 )
 
-const (
-	opSet                 = "set"
-	opGetMulti            = "getmulti"
-	opDelete              = "delete"
-	reasonMaxItemSize     = "max-item-size"
-	reasonAsyncBufferFull = "async-buffer-full"
-	reasonMalformedKey    = "malformed-key"
-	reasonTimeout         = "timeout"
-	reasonServerError     = "server-error"
-	reasonNetworkError    = "network-error"
-	reasonOther           = "other"
-)
-
 var (
-	errMemcachedAsyncBufferFull                = errors.New("the async buffer is full")
 	errMemcachedConfigNoAddrs                  = errors.New("no memcached addresses provided")
 	errMemcachedDNSUpdateIntervalNotPositive   = errors.New("DNS provider update interval must be positive")
 	errMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 )
-
-var (
-	_ RemoteCacheClient = (*memcachedClient)(nil)
-)
-
-// RemoteCacheClient is a high level client to interact with remote cache.
-type RemoteCacheClient interface {
-	// GetMulti fetches multiple keys at once from remoteCache. In case of error,
-	// an empty map is returned and the error tracked/logged.
-	GetMulti(ctx context.Context, keys []string) map[string][]byte
-
-	// SetAsync enqueues an asynchronous operation to store a key into memcached.
-	// Returns an error in case it fails to enqueue the operation. In case the
-	// underlying async operation will fail, the error will be tracked/logged.
-	SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error
-
-	// Delete deletes a key from memcached.
-	// This is a synchronous operation. If an asynchronous set operation for key is still
-	// pending to be processed, it will wait for it to complete before performing deletion.
-	Delete(ctx context.Context, key string) error
-
-	// Stop client and release underlying resources.
-	Stop()
-}
 
 // MemcachedClient for compatible.
 type MemcachedClient = RemoteCacheClient
@@ -151,6 +111,8 @@ func (c *MemcachedClientConfig) validate() error {
 }
 
 type memcachedClient struct {
+	*baseClient
+
 	logger   log.Logger
 	config   MemcachedClientConfig
 	client   memcachedClientBackend
@@ -165,22 +127,11 @@ type memcachedClient struct {
 	// Channel used to notify internal goroutines when they should quit.
 	stop chan struct{}
 
-	// Channel used to enqueue async operations.
-	asyncQueue chan func()
-
 	// Gate used to enforce the max number of concurrent GetMulti() operations.
 	getMultiGate gate.Gate
 
-	// Wait group used to wait all workers on stopping.
-	workers sync.WaitGroup
-
 	// Tracked metrics.
 	clientInfo prometheus.GaugeFunc
-	operations *prometheus.CounterVec
-	failures   *prometheus.CounterVec
-	skipped    *prometheus.CounterVec
-	duration   *prometheus.HistogramVec
-	dataSize   *prometheus.HistogramVec
 }
 
 // AddressProvider performs node address resolution given a list of clusters.
@@ -231,13 +182,16 @@ func newMemcachedClient(
 		dns.MiekgdnsResolverType,
 	)
 
+	metrics := newClientMetrics(
+		prometheus.WrapRegistererWithPrefix("memcached_", reg),
+	)
 	c := &memcachedClient{
+		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		logger:          log.With(logger, "name", name),
 		config:          config,
 		client:          client,
 		selector:        selector,
 		addressProvider: addressProvider,
-		asyncQueue:      make(chan func(), config.MaxAsyncBufferSize),
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
 			prometheus.WrapRegistererWithPrefix("memcached_getmulti_", reg),
@@ -262,71 +216,13 @@ func newMemcachedClient(
 		func() float64 { return 1 },
 	)
 
-	c.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operations_total",
-		Help: "Total number of operations against memcached.",
-	}, []string{"operation"})
-	c.operations.WithLabelValues(opGetMulti)
-	c.operations.WithLabelValues(opSet)
-	c.operations.WithLabelValues(opDelete)
-
-	c.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operation_failures_total",
-		Help: "Total number of operations against memcached that failed.",
-	}, []string{"operation", "reason"})
-	for _, op := range []string{opGetMulti, opSet, opDelete} {
-		c.failures.WithLabelValues(op, reasonTimeout)
-		c.failures.WithLabelValues(op, reasonMalformedKey)
-		c.failures.WithLabelValues(op, reasonServerError)
-		c.failures.WithLabelValues(op, reasonNetworkError)
-		c.failures.WithLabelValues(op, reasonOther)
-	}
-
-	c.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "memcached_operation_skipped_total",
-		Help: "Total number of operations against memcached that have been skipped.",
-	}, []string{"operation", "reason"})
-	c.skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
-	c.skipped.WithLabelValues(opSet, reasonMaxItemSize)
-	c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
-
-	c.duration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "memcached_operation_duration_seconds",
-		Help:    "Duration of operations against memcached.",
-		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
-	}, []string{"operation"})
-	c.duration.WithLabelValues(opGetMulti)
-	c.duration.WithLabelValues(opSet)
-	c.duration.WithLabelValues(opDelete)
-
-	c.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name: "memcached_operation_data_size_bytes",
-		Help: "Tracks the size of the data stored in and fetched from memcached.",
-		Buckets: []float64{
-			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
-		},
-	},
-		[]string{"operation"},
-	)
-	c.dataSize.WithLabelValues(opGetMulti)
-	c.dataSize.WithLabelValues(opSet)
-
 	// As soon as the client is created it must ensure that memcached server
 	// addresses are resolved, so we're going to trigger an initial addresses
 	// resolution here.
 	if err := c.resolveAddrs(); err != nil {
 		return nil, err
 	}
-
-	c.workers.Add(1)
 	go c.resolveAddrsLoop()
-
-	// Start a number of goroutines - processing async operations - equal
-	// to the max concurrency we have.
-	c.workers.Add(c.config.MaxAsyncConcurrency)
-	for i := 0; i < c.config.MaxAsyncConcurrency; i++ {
-		go c.asyncQueueProcessLoop()
-	}
 
 	return c, nil
 }
@@ -334,51 +230,18 @@ func newMemcachedClient(
 func (c *memcachedClient) Stop() {
 	close(c.stop)
 
-	// Wait until all workers have terminated.
-	c.workers.Wait()
+	// Stop running async operations.
+	c.asyncQueue.stop()
 }
 
-func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, ttl time.Duration) error {
-	// Skip hitting memcached at all if the item is bigger than the max allowed size.
-	if c.config.MaxItemSize > 0 && uint64(len(value)) > uint64(c.config.MaxItemSize) {
-		c.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
-		return nil
-	}
-
-	err := c.enqueueAsync(func() {
-		start := time.Now()
-		c.operations.WithLabelValues(opSet).Inc()
-
-		err := c.client.Set(&memcache.Item{
+func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
+		return c.client.Set(&memcache.Item{
 			Key:        key,
 			Value:      value,
 			Expiration: int32(time.Now().Add(ttl).Unix()),
 		})
-		if err != nil {
-			// If the PickServer will fail for any reason the server address will be nil
-			// and so missing in the logs. We're OK with that (it's a best effort).
-			serverAddr, _ := c.selector.PickServer(key)
-			level.Debug(c.logger).Log(
-				"msg", "failed to store item to memcached",
-				"key", key,
-				"sizeBytes", len(value),
-				"server", serverAddr,
-				"err", err,
-			)
-			c.trackError(opSet, err)
-			return
-		}
-
-		c.dataSize.WithLabelValues(opSet).Observe(float64(len(value)))
-		c.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
 	})
-
-	if errors.Is(err, errMemcachedAsyncBufferFull) {
-		c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to store item to memcached because the async buffer is full", "err", err, "size", len(c.asyncQueue))
-		return nil
-	}
-	return err
 }
 
 func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
@@ -410,12 +273,7 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[strin
 }
 
 func (c *memcachedClient) Delete(ctx context.Context, key string) error {
-	errCh := make(chan error, 1)
-
-	enqueueErr := c.enqueueAsync(func() {
-		start := time.Now()
-		c.operations.WithLabelValues(opDelete).Inc()
-
+	return c.delete(ctx, key, func(ctx context.Context, key string) error {
 		var err error
 		select {
 		case <-ctx.Done():
@@ -423,27 +281,8 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 		default:
 			err = c.client.Delete(key)
 		}
-
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to delete memcached item",
-				"key", key,
-				"err", err,
-			)
-			c.trackError(opDelete, err)
-		} else {
-			c.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
-		}
-		errCh <- err
+		return err
 	})
-
-	if errors.Is(enqueueErr, errMemcachedAsyncBufferFull) {
-		c.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to delete memcached item because the async buffer is full", "err", enqueueErr, "size", len(c.asyncQueue))
-		return enqueueErr
-	}
-	// Wait for the delete operation to complete.
-	return <-errCh
 }
 
 func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([]map[string]*memcache.Item, error) {
@@ -527,7 +366,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 
 func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
-	c.operations.WithLabelValues(opGetMulti).Inc()
+	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
 	select {
 	case <-ctx.Done():
@@ -546,8 +385,8 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (it
 		for _, it := range items {
 			total += len(it.Value)
 		}
-		c.dataSize.WithLabelValues(opGetMulti).Observe(float64(total))
-		c.duration.WithLabelValues(opGetMulti).Observe(time.Since(start).Seconds())
+		c.metrics.dataSize.WithLabelValues(opGetMulti).Observe(float64(total))
+		c.metrics.duration.WithLabelValues(opGetMulti).Observe(time.Since(start).Seconds())
 	}
 
 	return items, err
@@ -582,52 +421,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 	return out
 }
 
-func (c *memcachedClient) trackError(op string, err error) {
-	var connErr *memcache.ConnectTimeoutError
-	var netErr net.Error
-	switch {
-	case errors.As(err, &connErr):
-		c.failures.WithLabelValues(op, reasonTimeout).Inc()
-	case errors.As(err, &netErr):
-		if netErr.Timeout() {
-			c.failures.WithLabelValues(op, reasonTimeout).Inc()
-		} else {
-			c.failures.WithLabelValues(op, reasonNetworkError).Inc()
-		}
-	case errors.Is(err, memcache.ErrMalformedKey):
-		c.failures.WithLabelValues(op, reasonMalformedKey).Inc()
-	case errors.Is(err, memcache.ErrServerError):
-		c.failures.WithLabelValues(op, reasonServerError).Inc()
-	default:
-		c.failures.WithLabelValues(op, reasonOther).Inc()
-	}
-}
-
-func (c *memcachedClient) enqueueAsync(op func()) error {
-	select {
-	case c.asyncQueue <- op:
-		return nil
-	default:
-		return errMemcachedAsyncBufferFull
-	}
-}
-
-func (c *memcachedClient) asyncQueueProcessLoop() {
-	defer c.workers.Done()
-
-	for {
-		select {
-		case op := <-c.asyncQueue:
-			op()
-		case <-c.stop:
-			return
-		}
-	}
-}
-
 func (c *memcachedClient) resolveAddrsLoop() {
-	defer c.workers.Done()
-
 	ticker := time.NewTicker(c.config.DNSProviderUpdateInterval)
 	defer ticker.Stop()
 
@@ -649,7 +443,7 @@ func (c *memcachedClient) resolveAddrs() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// If some of the dns resolution fails, log the error.
+	// If some dns resolution fails, log the error.
 	if err := c.addressProvider.Resolve(ctx, c.config.Addresses); err != nil {
 		level.Error(c.logger).Log("msg", "failed to resolve addresses for memcached", "addresses", strings.Join(c.config.Addresses, ","), "err", err)
 	}
