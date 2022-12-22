@@ -61,7 +61,7 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	var lastValue string
 	var prevRng index.Range
 
-	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64, _ int) error {
+	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64) error {
 		if len(t.postings) > 0 {
 			prevRng.End = int64(off - crc32.Size)
 			t.postings[lastKey][lastValue] = prevRng
@@ -98,7 +98,6 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
-	startLen := d.Len()
 	remainingCount := d.Be32()
 	currentName := ""
 	valuesForCurrentKey := 0
@@ -106,7 +105,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 	for d.Err() == nil && remainingCount > 0 {
 		lastName := currentName
-		offsetInTable := startLen - d.Len()
+		offsetInTable := d.Position()
 		keyCount := d.Uvarint()
 
 		// The Postings offset table takes only 2 keys per entry (name and value of label).
@@ -122,15 +121,15 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 			if lastEntryOffsetInTable != -1 {
 				// We haven't recorded the last offset for the last value of the previous name.
 				// Go back and read the last value for the previous name.
-				newValueOffset := d.Len()
-				d.ResetAt(lastEntryOffsetInTable + 4) // 4 bytes for entry count
-				d.Uvarint()                           // Skip the key count
-				d.SkipUvarintBytes()                  // Skip the name
+				newValueOffsetInTable := d.Position()
+				d.ResetAt(lastEntryOffsetInTable)
+				d.Uvarint()          // Skip the key count
+				d.SkipUvarintBytes() // Skip the name
 				value := d.UvarintStr()
 				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 
 				// Skip ahead to where we were before we called ResetAt() above.
-				d.Skip(d.Len() - newValueOffset)
+				d.Skip(newValueOffsetInTable - d.Position())
 			}
 
 			currentName = newName
@@ -167,9 +166,9 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	if lastEntryOffsetInTable != -1 {
 		// We haven't recorded the last offset for the last value of the last key
 		// Go back and read the last value for the last key.
-		d.ResetAt(lastEntryOffsetInTable + 4) // 4 bytes for initial count
-		d.Uvarint()                           // Skip the key count
-		d.SkipUvarintBytes()                  // Skip the key
+		d.ResetAt(lastEntryOffsetInTable)
+		d.Uvarint()          // Skip the key count
+		d.SkipUvarintBytes() // Skip the key
 		value := d.UvarintStr()
 		t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 	}
@@ -182,10 +181,6 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
 		t.postings[currentName].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
-	}
-
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "read last values for entries in postings table")
 	}
 
 	// Trim any extra space in the slices.
@@ -204,15 +199,13 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64, int) error) (err error) {
+func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
-	startLen := d.Len()
 	cnt := d.Be32()
 
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
-		offsetPos := startLen - d.Len()
 		keyCount := d.Uvarint()
 
 		// The Postings offset table takes only 2 keys per entry (name and value of label).
@@ -226,7 +219,7 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 		if d.Err() != nil {
 			break
 		}
-		if err := f(key, value, o, offsetPos); err != nil {
+		if err := f(key, value, o); err != nil {
 			return err
 		}
 		cnt--
@@ -345,7 +338,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 
 		// Reusing the same decoding buffer on each iteration so make sure it's reset to
 		// the beginning of the posting offset table before we search
-		d.ResetAt(e.offsets[i].tableOff + 4) // 4 byte length of the offset table
+		d.ResetAt(e.offsets[i].tableOff)
 
 		// Iterate on the offset table.
 		newSameRngs = newSameRngs[:0]
@@ -446,7 +439,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	d.Skip(e.offsets[0].tableOff)
+	d.ResetAt(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	skip := 0
@@ -473,7 +466,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 		d.Uvarint64() // Offset.
 	}
 	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "get postings offset entry")
+		return nil, errors.Wrap(d.Err(), "get label values")
 	}
 	return values, nil
 }

@@ -31,7 +31,6 @@ type Symbols struct {
 	factory *streamencoding.DecbufFactory
 
 	version     int
-	tableLength int
 	tableOffset int
 
 	offsets []int
@@ -51,17 +50,14 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
-		tableLength: d.Len() + 4, // NewDecbufAtChecked has already read the size of the table (4 bytes) by the time we get here.
 		tableOffset: offset,
 	}
 
-	origLen := d.Len()
 	cnt := d.Be32int()
-	basePos := 4
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, basePos+origLen-d.Len())
+			s.offsets = append(s.offsets, d.Position())
 		}
 		d.SkipUvarintBytes() // The symbol.
 		s.seen++
@@ -159,10 +155,10 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 
 	d.ResetAt(s.offsets[i])
 	res := i * symbolFactor
-	var lastLen int
+	var lastPosition int
 	var lastSymbol string
 	for d.Err() == nil && res <= s.seen {
-		lastLen = d.Len()
+		lastPosition = d.Position()
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
 		if lastSymbol >= sym {
 			break
@@ -178,7 +174,7 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	if s.version == index.FormatV2 {
 		return uint32(res), nil
 	}
-	return uint32(s.tableLength - lastLen), nil
+	return uint32(lastPosition), nil
 }
 
 func yoloString(b []byte) string {
