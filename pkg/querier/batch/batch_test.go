@@ -44,7 +44,7 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				it := NewChunkMergeIterator(chunks, 0, 0)
-				for it.Next() == chunkenc.ValFloat {
+				for it.Next() != chunkenc.ValNone {
 					it.At()
 				}
 
