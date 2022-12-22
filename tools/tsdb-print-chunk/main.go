@@ -53,7 +53,7 @@ func main() {
 		fmt.Println("Chunk ref:", ref, "samples:", ch.NumSamples(), "bytes:", len(ch.Bytes()))
 
 		it := ch.Iterator(nil)
-		for valType := it.Next(); it.Err() == nil && valType != chunkenc.ValNone; valType = it.Next() {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
 			case chunkenc.ValFloat:
 				ts, val := it.At()

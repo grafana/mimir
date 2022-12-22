@@ -339,7 +339,7 @@ func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []ch
 		prevTs := int64(-1)
 
 		it := ch.Iterator(nil)
-		for valType := it.Next(); it.Err() == nil && valType != chunkenc.ValNone; valType = it.Next() {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			samples++
 			if valType != chunkenc.ValFloat {
 				// TODO support native histograms

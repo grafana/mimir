@@ -69,7 +69,7 @@ func printChunksFile(filename string, printSamples bool) error {
 
 			it := c.Iterator(nil)
 			six := 0
-			for valType := it.Next(); it.Err() == nil && valType != chunkenc.ValNone; valType = it.Next() {
+			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				switch valType {
 				case chunkenc.ValFloat:
 					ts, val := it.At()
