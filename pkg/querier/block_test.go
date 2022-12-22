@@ -483,7 +483,7 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 		set := blockQuerierSeriesSet{series: series}
 
 		for set.Next() {
-			for t := set.At().Iterator(); t.Next() == chunkenc.ValFloat; {
+			for t := set.At().Iterator(); t.Next() != chunkenc.ValNone; {
 				t.At()
 			}
 		}
