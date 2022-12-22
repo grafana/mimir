@@ -25,8 +25,8 @@ const (
 	// number of chunks (across series).
 	seriesChunksSlabSize = 1000
 
-	// Selected so that the largest common-use-case chunk of 16k bytes can be served from the pool
-	chunkBytesSlabSize = tsdb.EstimatedMaxChunkSize
+	// Selected so that an individual chunk's data typically fits within the slab size
+	chunkBytesSlabSize = 10 * tsdb.EstimatedMaxChunkSize
 )
 
 var (
@@ -178,7 +178,7 @@ func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders
 		refsIteratorBatchSize,
 		stats,
 		func() pool.BatchReleasable[byte] {
-			return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, tsdb.EstimatedMaxChunkSize)
+			return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 		},
 	)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))

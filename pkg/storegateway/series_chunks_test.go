@@ -709,7 +709,6 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 			}
 
 			chunkReaders := newChunkReaders(readersMap)
-			//chunksPool := &trackedBytesPool{parent: pool.NoopBytes{}}
 			stats := newSafeQueryStats()
 
 			b.ResetTimer()
