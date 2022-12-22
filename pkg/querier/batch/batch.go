@@ -93,6 +93,7 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
+			// TODO native histograms: return correct batch type
 			return chunkenc.ValFloat
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
@@ -100,6 +101,7 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
 			}
+			// TODO native histograms: return correct batch type
 			return chunkenc.ValFloat
 		}
 	}
@@ -127,6 +129,7 @@ func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	}
 
 	if a.curr.Index < a.curr.Length {
+		// TODO native histograms: return correct batch type
 		return chunkenc.ValFloat
 	}
 	return chunkenc.ValNone

@@ -163,6 +163,8 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 }
 
 // TODO native histograms support, assumes it's used on float chunk and only keeps floats
+// The Batch function takes a valueType since the first sample we process is already acquired
+// by a Next/Seek/etc and we cannot get its type otherwise.
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
 	var batch Batch
 	j := 0

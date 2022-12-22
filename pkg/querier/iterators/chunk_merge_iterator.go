@@ -45,10 +45,12 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 		}
 		if valType != chunkenc.ValNone {
 			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			break
 		}
 
 		if err := iter.Err(); err != nil {
 			c.currErr = err
+			break
 		}
 	}
 
@@ -89,6 +91,10 @@ outer:
 func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 	c.h = c.h[:0]
 
+	if c.currErr != nil {
+		return chunkenc.ValNone
+	}
+
 	for _, iter := range c.its {
 		valType := iter.Seek(t)
 		// TODO for native histograms: allow all types
@@ -118,7 +124,7 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (c *chunkMergeIterator) Next() chunkenc.ValueType {
-	if len(c.h) == 0 {
+	if len(c.h) == 0 || c.currErr != nil {
 		return chunkenc.ValNone
 	}
 
@@ -139,6 +145,7 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	}
 
 	if c.currTime != lastTime {
+		// TODO for native histograms: return the correct type
 		return chunkenc.ValFloat
 	}
 	return chunkenc.ValNone
@@ -224,16 +231,15 @@ func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
-	valType := chunkenc.ValNone
 	for it.curr < len(it.chunks) {
-		valType = it.chunks[it.curr].Next()
+		valType := it.chunks[it.curr].Next()
 		if valType != chunkenc.ValNone {
-			break
+			return valType
 		}
 		it.curr++
 	}
 
-	return valType
+	return chunkenc.ValNone
 }
 
 func (it *nonOverlappingIterator) AtTime() int64 {
