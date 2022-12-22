@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,6 +43,7 @@ type Config struct {
 	TesterRequestMinRange             time.Duration
 	TesterRequestMaxRange             time.Duration
 	TesterRequestMetricNameRegex      string
+	TesterRequestRandomLabelName      string
 	TesterRequestSkipChunks           bool
 	TesterConcurrency                 int
 	TesterComparisonAuthoritativeZone string
@@ -55,6 +58,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.TesterRequestMinRange, "tester.request-min-range", 24*time.Hour, "The minimum time range to query within the configured min and max time.")
 	f.DurationVar(&c.TesterRequestMaxRange, "tester.request-max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
 	f.StringVar(&c.TesterRequestMetricNameRegex, "tester.request-metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
+	f.StringVar(&c.TesterRequestRandomLabelName, "tester.request-label-name-with-random-values", "", "Label name to add to all requests' matchers that will have a random value.")
 	f.BoolVar(&c.TesterRequestSkipChunks, "tester.request-skip-chunks", false, "True to request series without chunks.")
 	f.IntVar(&c.TesterConcurrency, "tester.concurrency", 1, "The number of concurrent requests to run.")
 	f.StringVar(&c.TesterComparisonAuthoritativeZone, "tester.comparison-authoritative-zone", "zone-c", "The name of the zone to compare results against. This should be the zone expected to return the expected results.")
@@ -147,6 +151,13 @@ func main() {
 			Value: cfg.TesterRequestMetricNameRegex,
 		},
 	}
+	if cfg.TesterRequestRandomLabelName != "" {
+		matchers = append(matchers, storepb.LabelMatcher{
+			Type:  storepb.LabelMatcher_EQ,
+			Name:  cfg.TesterRequestRandomLabelName,
+			Value: "",
+		})
+	}
 
 	t := newTester(cfg.TesterUserID, finder, selector, cfg.TesterComparisonAuthoritativeZone, logger)
 	g, _ := errgroup.WithContext(ctx)
@@ -154,13 +165,18 @@ func main() {
 	for c := 0; c < cfg.TesterConcurrency; c++ {
 		// Compare results only on 1 request, to reduce memory utilization.
 		compareResults := c == 0
+		myMatchers := make([]storepb.LabelMatcher, len(matchers))
+		copy(myMatchers, matchers)
 
 		g.Go(func() error {
 			for {
 				start, end := getRandomRequestTimeRange(cfg)
+				if cfg.TesterRequestRandomLabelName != "" {
+					myMatchers[len(myMatchers)-1].Value = strconv.FormatInt(rand.Int63n(math.MaxInt64), 10)
+				}
 				//level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
 
-				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers, cfg.TesterRequestSkipChunks, compareResults); err != nil {
+				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, myMatchers, cfg.TesterRequestSkipChunks, compareResults); err != nil {
 					level.Error(logger).Log("msg", "failed to run test", "err", err)
 				}
 			}
