@@ -36,11 +36,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thanos-io/objstore"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -451,7 +451,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	for _, b := range blocks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 	for _, b := range blocksWithOutOfOrderChunks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
@@ -460,7 +460,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 		require.NoError(t, err)
 
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 
 	return metas
@@ -471,7 +471,7 @@ func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockge
 	if b.numSamples == 0 {
 		id, err = createEmptyBlock(prepareDir, b.mint, b.maxt, b.extLset, b.res)
 	} else {
-		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numSamples, b.mint, b.maxt, b.extLset, b.res, false, metadata.NoneFunc)
+		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numSamples, b.mint, b.maxt, b.extLset, b.res, false)
 	}
 	require.NoError(t, err)
 
@@ -668,7 +668,6 @@ func createBlockWithOptions(
 	extLset labels.Labels,
 	resolution int64,
 	tombstones bool,
-	hashFunc metadata.HashFunc,
 ) (id ulid.ULID, err error) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
@@ -739,36 +738,11 @@ func createBlockWithOptions(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	files := []metadata.File{}
-	if hashFunc != metadata.NoneFunc {
-		paths := []string{}
-		if err := filepath.Walk(blockDir, func(path string, info os.FileInfo, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-			paths = append(paths, path)
-			return nil
-		}); err != nil {
-			return id, errors.Wrapf(err, "walking %s", dir)
-		}
-
-		for _, p := range paths {
-			pHash, err := metadata.CalculateHash(p, metadata.SHA256Func, log.NewNopLogger())
-			if err != nil {
-				return id, errors.Wrapf(err, "calculating hash of %s", blockDir+p)
-			}
-			files = append(files, metadata.File{
-				RelPath: strings.TrimPrefix(p, blockDir+"/"),
-				Hash:    &pHash,
-			})
-		}
-	}
-
 	if _, err = metadata.InjectThanos(log.NewNopLogger(), blockDir, metadata.Thanos{
 		Labels:     extLset.Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: resolution},
 		Source:     metadata.TestSource,
-		Files:      files,
+		Files:      []metadata.File{},
 	}, nil); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}
@@ -850,7 +824,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 	for s := range symbols {
 		syms = append(syms, s)
 	}
-	sort.Strings(syms)
+	slices.Sort(syms)
 	for _, s := range syms {
 		if err := iw.AddSymbol(s); err != nil {
 			return err

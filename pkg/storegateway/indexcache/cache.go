@@ -7,24 +7,29 @@ package indexcache
 
 import (
 	"context"
+	"encoding/base64"
+	"reflect"
 	"sort"
 	"strings"
+	"unsafe"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 const (
-	cacheTypePostings         = "Postings"
-	cacheTypeSeriesForRef     = "SeriesForRef"
-	cacheTypeExpandedPostings = "ExpandedPostings"
-	cacheTypeSeries           = "Series"
-	cacheTypeLabelNames       = "LabelNames"
-	cacheTypeLabelValues      = "LabelValues"
+	cacheTypePostings          = "Postings"
+	cacheTypeSeriesForRef      = "SeriesForRef"
+	cacheTypeExpandedPostings  = "ExpandedPostings"
+	cacheTypeSeries            = "Series"
+	cacheTypeSeriesForPostings = "SeriesForPostings"
+	cacheTypeLabelNames        = "LabelNames"
+	cacheTypeLabelValues       = "LabelValues"
 )
 
 var (
@@ -33,6 +38,7 @@ var (
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
 		cacheTypeSeries,
+		cacheTypeSeriesForPostings,
 		cacheTypeLabelNames,
 		cacheTypeLabelValues,
 	}
@@ -65,6 +71,11 @@ type IndexCache interface {
 	// FetchSeries fetches the result of a Series() call.
 	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 
+	// StoreSeriesForPostings stores a series set for the provided postings.
+	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
+	// FetchSeriesForPostings fetches a series set for the provided postings.
+	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
+
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelNames fetches the result of a LabelNames() call.
@@ -74,6 +85,29 @@ type IndexCache interface {
 	StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+}
+
+// PostingsKey represents a canonical key for a []storage.SeriesRef slice
+type PostingsKey string
+
+// CanonicalPostingsKey creates a canonical version of PostingsKey
+func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
+	hashable := unsafeCastPostingsToBytes(postings)
+	checksum := blake2b.Sum256(hashable)
+	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum[:]))
+}
+
+const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
+
+// unsafeCastPostingsToBytes returns the postings as a slice of bytes with minimal allocations.
+// It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
+func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
+	byteSlice := make([]byte, 0)
+	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
+	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
+	slicePtr.Len = len(postings) * bytesPerPosting
+	slicePtr.Cap = slicePtr.Len
+	return byteSlice
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice

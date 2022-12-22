@@ -7,6 +7,7 @@ package distributor
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -198,7 +199,7 @@ func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResp
 		lbls := labels.NewBuilder(labels.EmptyLabels())
 		lbls.Set(model.MetricNameLabel, "foo")
 		for i := 0; i < 10; i++ {
-			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d_%d", i, rand.Intn(10)))
 		}
 		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels(nil))
 		ts[i].Exemplars = []mimirpb.Exemplar{{

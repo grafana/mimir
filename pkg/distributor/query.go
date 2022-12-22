@@ -8,7 +8,6 @@ package distributor
 import (
 	"context"
 	"io"
-	"sort"
 	"time"
 
 	"github.com/grafana/dskit/ring"
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/instrument"
+	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -168,7 +168,7 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 	}
 
 	// Query results from each ingester were sorted, but are not necessarily still sorted after merging.
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {

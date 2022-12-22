@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -72,8 +71,6 @@ type Shipper struct {
 	metrics *metrics
 	bucket  objstore.Bucket
 	source  metadata.SourceType
-
-	hashFunc metadata.HashFunc
 }
 
 // NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
@@ -85,19 +82,17 @@ func NewShipper(
 	dir string,
 	bucket objstore.Bucket,
 	source metadata.SourceType,
-	hashFunc metadata.HashFunc,
 ) *Shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	return &Shipper{
-		logger:   logger,
-		dir:      dir,
-		bucket:   bucket,
-		metrics:  newMetrics(r),
-		source:   source,
-		hashFunc: hashFunc,
+		logger:  logger,
+		dir:     dir,
+		bucket:  bucket,
+		metrics: newMetrics(r),
+		source:  source,
 	}
 }
 
@@ -199,7 +194,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 
 	// Upload block with custom metadata.
-	return tsdb.UploadBlock(ctx, s.logger, s.bucket, blockDir, meta)
+	return block.Upload(ctx, s.logger, s.bucket, blockDir, meta)
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir

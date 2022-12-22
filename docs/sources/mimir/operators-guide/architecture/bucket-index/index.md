@@ -50,7 +50,7 @@ The overhead introduced by keeping the bucket index updated is not significant.
 At query time the [querier]({{< relref "../components/querier.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) determine whether the bucket index for the tenant has already been loaded to memory.
 If not, the querier and ruler download it from the storage and cache it.
 
-Because the bucket index is a small file, lazy downloading it doesn't have a significant impact on first query performances, but it does allow a querier to get up and running without pre-downloading every tenant's bucket index.
+Because the bucket index is a small file, lazy downloading it doesn't have a significant impact on first query performance, but it does allow a querier to get up and running without pre-downloading every tenant's bucket index.
 In addition, if the [metadata cache]({{< relref "../components/querier.md#metadata-cache" >}}) is enabled, the bucket index is cached for a short time in a shared cache, which reduces the latency and number of API calls to the object storage in case multiple queriers and rulers fetch the same tenant's bucket index within a short time.
 
 ![Querier - Bucket index](bucket-index-querier-workflow.png)

@@ -8,11 +8,11 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/config"
@@ -138,7 +138,7 @@ func (c *ConfigCommand) output(yamlContents []byte, flags []string, notices conf
 	}
 	defer closeFile()
 
-	sort.Strings(flags)
+	slices.Sort(flags)
 
 	_, err = fmt.Fprintln(outYAMLWriter, string(yamlContents))
 	_, err2 := fmt.Fprintln(outFlagsWriter, strings.Join(flags, "\n"))

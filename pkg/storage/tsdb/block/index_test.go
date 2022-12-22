@@ -33,7 +33,7 @@ func TestRewrite(t *testing.T) {
 		labels.FromStrings("a", "3"),
 		labels.FromStrings("a", "4"),
 		labels.FromStrings("a", "1", "b", "1"),
-	}, 150, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
+	}, 150, 0, 1000, labels.EmptyLabels(), 124)
 	require.NoError(t, err)
 
 	ir, err := index.NewFileReader(filepath.Join(tmpDir, b.String(), IndexFilename))

@@ -4,8 +4,12 @@ package storegateway
 
 import (
 	"context"
+	"strings"
 	"sync"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -13,10 +17,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var (
@@ -599,12 +606,16 @@ type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
+	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
+	matchers            []*labels.Matcher
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	skipChunks          bool
 	minTime, maxTime    int64
+	tenantID            string
+	logger              log.Logger
 
 	symbolizedLsetBuffer []symbolizedLabel
 	chksBuffer           []chunks.Meta
@@ -616,17 +627,20 @@ type loadingSeriesChunkRefsSetIterator struct {
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
+	tenantID string,
 	indexr *bucketIndexReader, // Index reader for block.
+	indexCache indexcache.IndexCache,
 	blockMeta *metadata.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHasher seriesHasher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
 	metrics *BucketStoreMetrics,
+	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -637,27 +651,22 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	// We can't compute the series hash yet because we're still missing the series labels.
-	// However, if the hash is already in the cache, then we can remove all postings for series
-	// not belonging to the shard.
-	if shard != nil {
-		var unsafeStats queryStats
-		ps, unsafeStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
-		stats.merge(&unsafeStats)
-	}
-
 	var iterator seriesChunkRefsSetIterator
 	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
+		indexCache,
 		stats,
 		blockMeta,
+		matchers,
 		shard,
-		cachedSeriesHasher{cache: seriesHashCache},
+		seriesHasher,
 		skipChunks,
 		minTime,
 		maxTime,
+		tenantID,
+		logger,
 	)
 	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("series_load"))
 	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
@@ -668,13 +677,17 @@ func newLoadingSeriesChunkRefsSetIterator(
 	ctx context.Context,
 	postingsSetIterator *postingsSetsIterator,
 	indexr *bucketIndexReader,
+	indexCache indexcache.IndexCache,
 	stats *safeQueryStats,
 	blockMeta *metadata.Meta,
+	matchers []*labels.Matcher,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,
 	minTime int64,
 	maxTime int64,
+	tenantID string,
+	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
 	if skipChunks {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
@@ -684,13 +697,17 @@ func newLoadingSeriesChunkRefsSetIterator(
 		ctx:                 ctx,
 		postingsSetIterator: postingsSetIterator,
 		indexr:              indexr,
+		indexCache:          indexCache,
 		stats:               stats,
 		blockID:             blockMeta.ULID,
+		matchers:            matchers,
 		shard:               shard,
 		seriesHasher:        seriesHasher,
 		skipChunks:          skipChunks,
 		minTime:             minTime,
 		maxTime:             maxTime,
+		tenantID:            tenantID,
+		logger:              logger,
 	}
 }
 
@@ -702,16 +719,38 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		return false
 	}
 	nextPostings := s.postingsSetIterator.At()
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
-	if err != nil {
-		s.err = errors.Wrap(err, "preload series")
-		return false
+
+	var seriesCacheKey indexcache.PostingsKey
+	if s.skipChunks {
+		// Calculate the cache key before we filter out anything from the postings,
+		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
+		// Calculate the postings key only if we'll actually use it.
+		seriesCacheKey = indexcache.CanonicalPostingsKey(nextPostings)
+		if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.matchers, s.shard, seriesCacheKey, s.logger); isCached {
+			s.currentSet = cachedSet
+			return true
+		}
 	}
 
 	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
 	// and then merge before returning from the function.
 	loadStats := &queryStats{}
 	defer s.stats.merge(loadStats)
+
+	// We can't compute the series hash yet because we're still missing the series labels.
+	// However, if the hash is already in the cache, then we can remove all postings for series
+	// not belonging to the shard.
+	if s.shard != nil {
+		var unsafeStats queryStats
+		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, &unsafeStats)
+		loadStats.merge(&unsafeStats)
+	}
+
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
+	if err != nil {
+		s.err = errors.Wrap(err, "preload series")
+		return false
+	}
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
@@ -747,6 +786,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
+	if s.skipChunks {
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.matchers, s.shard, seriesCacheKey, nextSet, s.logger)
+	}
 	return true
 }
 
@@ -790,23 +832,106 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
+func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
+	if !ok {
+		return seriesChunkRefsSet{}, false
+	}
+	data, err := snappy.Decode(nil, data)
+	if err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache snappy", "err", err)
+		return seriesChunkRefsSet{}, false
+	}
+	var entry storepb.CachedSeries
+	if err = entry.Unmarshal(data); err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
+		return seriesChunkRefsSet{}, false
+	}
+
+	if entry.MatchersKey != string(matchersKey) {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
+		return seriesChunkRefsSet{}, false
+	}
+	if nonNilShard := maybeNilShard(shard); entry.ShardIndex != nonNilShard.ShardIndex || entry.ShardCount != nonNilShard.ShardCount {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard_index", entry.ShardIndex, "cached_shard_count", entry.ShardCount)
+		return seriesChunkRefsSet{}, false
+	}
+
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
+	// after Next() will be called again.
+	res := newSeriesChunkRefsSet(len(entry.Series), true)
+	for _, lset := range entry.Series {
+		res.series = append(res.series, seriesChunkRefs{
+			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
+		})
+	}
+	return res, true
+}
+
+func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
+	nonNilShard := maybeNilShard(shard)
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+	data, err := encodeCachedSeriesForPostings(set, matchersKey, nonNilShard)
+	if err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
+		return
+	}
+	indexCache.StoreSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey, data)
+}
+
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) ([]byte, error) {
+	entry := &storepb.CachedSeries{
+		Series:      make([]mimirpb.PreallocatingMetric, set.len()),
+		MatchersKey: string(matchersKey),
+		ShardIndex:  nonNilShard.ShardIndex,
+		ShardCount:  nonNilShard.ShardCount,
+	}
+	for i, s := range set.series {
+		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
+	}
+
+	uncompressed, err := entry.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, uncompressed), nil
+}
+
+func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
+	nonNilShard := maybeNilShard(shard)
+	var matchersStr strings.Builder
+	for _, m := range matchers {
+		matchersStr.WriteString(m.String())
+		matchersStr.WriteString(",")
+	}
+	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard_index", nonNilShard.ShardIndex, "requested_shard_count", nonNilShard.ShardCount, "postings_key", postingsKey)
+	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
+}
+
 type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
+	CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool)
 }
 
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
 }
 
-func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+func (b cachedSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
 	stats.seriesHashCacheRequests++
+	hash, isCached := b.cache.Fetch(seriesID)
+	if isCached {
+		stats.seriesHashCacheHits++
+	}
+	return hash, isCached
+}
 
-	hash, ok := b.cache.Fetch(id)
+func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	hash, ok := b.CachedHash(id, stats)
 	if !ok {
 		hash = lset.Hash()
 		b.cache.Store(id, hash)
-	} else {
-		stats.seriesHashCacheHits++
 	}
 	return hash
 }

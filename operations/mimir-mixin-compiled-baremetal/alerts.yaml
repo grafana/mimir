@@ -351,15 +351,15 @@ groups:
   - alert: MimirAllocatingTooMuchMemory
     annotations:
       message: |
-        Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+        Instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
     expr: |
       (
         # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
         # See: https://github.com/grafana/mimir/issues/2466
-        container_memory_rss{container="ingester"}
+        container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
           /
-        ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+        ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
       ) > 0.65
     for: 15m
     labels:
@@ -367,15 +367,15 @@ groups:
   - alert: MimirAllocatingTooMuchMemory
     annotations:
       message: |
-        Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+        Instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
     expr: |
       (
         # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
         # See: https://github.com/grafana/mimir/issues/2466
-        container_memory_rss{container="ingester"}
+        container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
           /
-        ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+        ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
       ) > 0.8
     for: 15m
     labels:
@@ -774,6 +774,8 @@ groups:
         hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullycleanedupblocks
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
     for: 1h
     labels:
@@ -784,6 +786,8 @@ groups:
         $labels.namespace }} has not run compaction in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullyruncompaction
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
       and
       (cortex_compactor_last_successful_run_timestamp_seconds > 0)
@@ -797,6 +801,8 @@ groups:
         $labels.namespace }} has not run compaction in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullyruncompaction
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
     labels:
@@ -818,9 +824,13 @@ groups:
         $labels.namespace }} has not uploaded any block in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
     expr: |
-      (time() - thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 60 * 60 * 24)
+      (time() - (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"})) > 60 * 60 * 24)
       and
-      (thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 0)
+      (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
+      and
+      # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
+      # (e.g. there are more replicas than required because running as part of mimir-backend).
+      (sum by(cluster, namespace, instance) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
     for: 15m
     labels:
       severity: critical
@@ -830,7 +840,11 @@ groups:
         $labels.namespace }} has not uploaded any block in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
     expr: |
-      thanos_objstore_bucket_last_successful_upload_time{component="compactor"} == 0
+      (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
+      and
+      # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
+      # (e.g. there are more replicas than required because running as part of mimir-backend).
+      (sum by(cluster, namespace, instance) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
     for: 24h
     labels:
       severity: critical

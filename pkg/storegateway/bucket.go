@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -148,6 +149,12 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 func (noopCache) StoreSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
 }
 func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
+	return nil, false
+}
+
+func (noopCache) StoreSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey, _ []byte) {
+}
+func (noopCache) FetchSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -564,7 +571,7 @@ func blockSeries(
 	chunksPool *pool.BatchBytes, // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHasher seriesHasher, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
@@ -602,7 +609,7 @@ func blockSeries(
 	// not belonging to the shard.
 	var seriesCacheStats queryStats
 	if shard != nil {
-		ps, seriesCacheStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
+		ps = filterPostingsByCachedShardHash(ps, shard, seriesHasher, &seriesCacheStats)
 	}
 
 	if len(ps) == 0 {
@@ -656,20 +663,8 @@ func blockSeries(
 			}
 
 			// Skip the series if it doesn't belong to the shard.
-			if shard != nil {
-				hash, ok := seriesHashCache.Fetch(id)
-				seriesCacheStats.seriesHashCacheRequests++
-
-				if !ok {
-					hash = lset.Hash()
-					seriesHashCache.Store(id, hash)
-				} else {
-					seriesCacheStats.seriesHashCacheHits++
-				}
-
-				if hash%shard.ShardCount != shard.ShardIndex {
-					continue
-				}
+			if !shardOwned(shard, seriesHasher, id, lset, &seriesCacheStats) {
+				continue
 			}
 
 			// Check series limit after filtering out series not belonging to the requested shard (if any).
@@ -1037,7 +1032,7 @@ func (s *BucketStore) synchronousSeriesSet(
 				chunksPool,
 				matchers,
 				shardSelector,
-				blockSeriesHashCache,
+				cachedSeriesHasher{blockSeriesHashCache},
 				chunksLimiter,
 				seriesLimiter,
 				req.SkipChunks,
@@ -1117,17 +1112,20 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				s.maxSeriesPerBatch,
+				s.userID,
 				indexr,
+				s.indexCache,
 				b.meta,
 				matchers,
 				shardSelector,
-				blockSeriesHashCache,
+				cachedSeriesHasher{blockSeriesHashCache},
 				chunksLimiter,
 				seriesLimiter,
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
 				stats,
 				s.metrics,
+				s.logger,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
@@ -1158,7 +1156,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats, s.metrics.iteratorLoadDurations)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, s.maxSeriesPerBatch, stats, s.metrics.iteratorLoadDurations)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
 	}
@@ -1338,7 +1336,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	for n := range labelNames {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	storeCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, names, logger)
 	return names, nil

@@ -79,7 +79,6 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			groupKey,
 			externalLabels,
 			resolution,
-			metadata.NoneFunc,
 			job.stage == stageSplit,
 			g.shardCount,
 			job.shardingKey(),

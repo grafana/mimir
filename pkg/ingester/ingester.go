@@ -1641,7 +1641,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			metadata.ReceiveSource,
-			metadata.NoneFunc,
 		)
 
 		// Initialise the shipper blocks cache.

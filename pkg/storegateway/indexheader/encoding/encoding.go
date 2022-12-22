@@ -89,6 +89,13 @@ func (d *Decbuf) Skip(l int) {
 	d.E = d.r.skip(l)
 }
 
+// SkipUvarintBytes advances the pointer of the underlying fileReader past the
+// next varint-prefixed bytes. If E is non-nil, this method has no effect.
+func (d *Decbuf) SkipUvarintBytes() {
+	l := d.Uvarint64()
+	d.Skip(int(l))
+}
+
 // ResetAt sets the pointer of the underlying fileReader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
 // no effect. ResetAt-ing beyond the end of the underlying fileReader will set
@@ -105,13 +112,13 @@ func (d *Decbuf) ResetAt(off int) {
 // returned allocates its own memory may be used after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty string.
 func (d *Decbuf) UvarintStr() string {
-	return string(d.UvarintBytes())
+	return string(d.UnsafeUvarintBytes())
 }
 
-// UvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
+// UnsafeUvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
 // allocating. The bytes returned are NO LONGER VALID after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty byte slice.
-func (d *Decbuf) UvarintBytes() []byte {
+func (d *Decbuf) UnsafeUvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {
 		return nil
