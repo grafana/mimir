@@ -177,7 +177,7 @@ func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders
 		refsIterator,
 		refsIteratorBatchSize,
 		stats,
-		func() *pool.SafeSlabPool[byte] {
+		func() pool.BatchReleasable[byte] {
 			return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, tsdb.EstimatedMaxChunkSize)
 		},
 	)
@@ -300,7 +300,7 @@ type loadingSeriesChunksSetIterator struct {
 	from             seriesChunkRefsSetIterator
 	fromBatchSize    int
 	stats            *safeQueryStats
-	chunkPoolFactory func() *pool.SafeSlabPool[byte]
+	chunkPoolFactory func() pool.BatchReleasable[byte]
 
 	current seriesChunksSet
 	err     error
@@ -311,7 +311,7 @@ func newLoadingSeriesChunksSetIterator(
 	from seriesChunkRefsSetIterator,
 	fromBatchSize int,
 	stats *safeQueryStats,
-	chunkPoolFactory func() *pool.SafeSlabPool[byte],
+	chunkPoolFactory func() pool.BatchReleasable[byte],
 ) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		chunkReaders:     chunkReaders,

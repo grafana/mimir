@@ -177,6 +177,11 @@ func (b *BatchBytes) Get(sz int) ([]byte, error) {
 	return (*slab)[len(*slab)-sz : len(*slab) : len(*slab)], nil
 }
 
+type BatchReleasable[T any] interface {
+	Get(size int) []T
+	Release()
+}
+
 // SlabPool wraps Interface and adds support to get a sub-slice of the data type T
 // from the pool, trying to fit the slices picked from the pool as much as possible.
 //

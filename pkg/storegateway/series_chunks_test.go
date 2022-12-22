@@ -595,7 +595,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...),
 				100,
 				newSafeQueryStats(),
-				func() *pool.SafeSlabPool[byte] { return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0) },
+				func() pool.BatchReleasable[byte] { return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0) },
 			)
 			loadedSets := readAllSeriesChunksSets(set)
 
@@ -696,7 +696,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 					newSliceSeriesChunkRefsSetIterator(nil, sets...),
 					batchSize,
 					stats,
-					func() *pool.SafeSlabPool[byte] {
+					func() pool.BatchReleasable[byte] {
 						return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0)
 					},
 				)
@@ -765,7 +765,7 @@ func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, chunksPool pool.BatchReleasable[byte], _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
