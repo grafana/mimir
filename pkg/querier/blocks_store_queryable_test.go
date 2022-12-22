@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -863,7 +864,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				var actualValues []valueResult
 
 				it := set.At().Iterator()
-				for it.Next() {
+				for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+					assert.Equal(t, valType, chunkenc.ValFloat)
 					t, v := it.At()
 					actualValues = append(actualValues, valueResult{
 						t: t,

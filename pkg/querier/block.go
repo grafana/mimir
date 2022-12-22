@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -150,22 +151,22 @@ type blockQuerierSeriesIterator struct {
 	lastT     int64
 }
 
-func (it *blockQuerierSeriesIterator) Seek(t int64) bool {
+func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	for ; it.i < len(it.iterators); it.i++ {
 		// We check the maxT property of each iterator because if the time range which its data covers ends at a lower
 		// time than the seeked <t> then we don't even need to try to seek to it, as this wouldn't succeed.
 		if it.iterators[it.i].maxT >= t {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
-			if it.iterators[it.i].Seek(t) {
+			if typ := it.iterators[it.i].Seek(t); typ != chunkenc.ValNone {
 				// Calling .At() to update it.lastT
 				it.At()
-				return true
+				return typ
 			}
 		}
 	}
 
-	return false
+	return chunkenc.ValNone
 }
 
 func (it *blockQuerierSeriesIterator) At() (int64, float64) {
@@ -178,24 +179,54 @@ func (it *blockQuerierSeriesIterator) At() (int64, float64) {
 	return t, v
 }
 
-func (it *blockQuerierSeriesIterator) Next() bool {
+func (it *blockQuerierSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if it.i >= len(it.iterators) {
-		return false
+		return 0, nil
 	}
 
-	if it.iterators[it.i].Next() {
+	t, h := it.iterators[it.i].AtHistogram()
+	it.lastT = t
+	return t, h
+}
+
+func (it *blockQuerierSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	if it.i >= len(it.iterators) {
+		return 0, nil
+	}
+
+	t, fh := it.iterators[it.i].AtFloatHistogram()
+	it.lastT = t
+	return t, fh
+}
+
+func (it *blockQuerierSeriesIterator) AtT() int64 {
+	if it.i >= len(it.iterators) {
+		return 0
+	}
+
+	t := it.iterators[it.i].AtT()
+	it.lastT = t
+	return t
+}
+
+func (it *blockQuerierSeriesIterator) Next() chunkenc.ValueType {
+	if it.i >= len(it.iterators) {
+		return chunkenc.ValNone
+	}
+
+	if typ := it.iterators[it.i].Next(); typ != chunkenc.ValNone {
 		// Calling .At() to update it.lastT
 		it.At()
-		return true
+		return typ
 	}
 	if it.iterators[it.i].Err() != nil {
-		return false
+		return chunkenc.ValNone
 	}
 
 	it.i++
 
 	if it.i >= len(it.iterators) {
-		return false
+		return chunkenc.ValNone
 	}
 
 	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.

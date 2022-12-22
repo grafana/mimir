@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
@@ -52,9 +53,14 @@ func main() {
 		fmt.Println("Chunk ref:", ref, "samples:", ch.NumSamples(), "bytes:", len(ch.Bytes()))
 
 		it := ch.Iterator(nil)
-		for it.Err() == nil && it.Next() {
-			ts, val := it.At()
-			fmt.Printf("%g\t%d (%s)\n", val, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, val := it.At()
+				fmt.Printf("%g\t%d (%s)\n", val, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			default:
+				fmt.Printf("skipping unsupported value type %v\n", valType)
+			}
 		}
 		if e := it.Err(); e != nil {
 			fmt.Fprintln(os.Stderr, "Failed to iterate chunk", val, "due to error:", err)

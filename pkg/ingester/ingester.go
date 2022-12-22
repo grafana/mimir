@@ -738,7 +738,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 
 		// Look up a reference for this series.
-		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := succeededSamplesCount
@@ -1344,7 +1344,10 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		}
 
 		it := series.Iterator()
-		for it.Next() {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType != chunkenc.ValFloat {
+				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+			}
 			t, v := it.At()
 			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}

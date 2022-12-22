@@ -7,6 +7,7 @@ package batch
 
 import (
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -36,10 +37,10 @@ func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
 // iterator iterates over batches.
 type iterator interface {
 	// Seek to the batch at (or after) time t.
-	Seek(t int64, size int) bool
+	Seek(t int64, size int) chunkenc.ValueType
 
 	// Next moves to the next batch.
-	Next(size int) bool
+	Next(size int) chunkenc.ValueType
 
 	// AtTime returns the start time of the next batch.  Must only be called after
 	// Seek or Next have returned true.
@@ -85,49 +86,73 @@ func newIteratorAdapter(underlying iterator) chunkenc.Iterator {
 }
 
 // Seek implements chunkenc.Iterator.
-func (a *iteratorAdapter) Seek(t int64) bool {
+func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 
 	// Optimisation: fulfill the seek using current batch if possible.
 	if a.curr.Length > 0 && a.curr.Index < a.curr.Length {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
-			return true
+			// TODO native histograms: return correct batch type
+			return chunkenc.ValFloat
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
 			}
-			return true
+			// TODO native histograms: return correct batch type
+			return chunkenc.ValFloat
 		}
 	}
 
 	a.curr.Length = -1
 	a.batchSize = 1
-	if a.underlying.Seek(t, a.batchSize) {
+	if typ := a.underlying.Seek(t, a.batchSize); typ != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
-		return a.curr.Index < a.curr.Length
+		if a.curr.Index < a.curr.Length {
+			return typ
+		}
 	}
-	return false
+	return chunkenc.ValNone
 }
 
 // Next implements chunkenc.Iterator.
-func (a *iteratorAdapter) Next() bool {
+func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	a.curr.Index++
-	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) {
+	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
 		a.batchSize = a.batchSize * 2
 		if a.batchSize > chunk.BatchSize {
 			a.batchSize = chunk.BatchSize
 		}
 	}
-	return a.curr.Index < a.curr.Length
+
+	if a.curr.Index < a.curr.Length {
+		// TODO native histograms: return correct batch type
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
 // At implements chunkenc.Iterator.
 func (a *iteratorAdapter) At() (int64, float64) {
 	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
+}
+
+// AtHistogram implements chunkenc.Iterator.
+func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
+	panic("iteratorAdapter.AtHistogram not yet implemented")
+}
+
+// AtFloatHistogram implements chunkenc.Iterator.
+func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic("iteratorAdapter.AtFloatHistogram not yet implemented")
+}
+
+// AtT implements chunkenc.Iterator.
+func (a *iteratorAdapter) AtT() int64 {
+	return a.curr.Timestamps[a.curr.Index]
 }
 
 // Err implements chunkenc.Iterator.

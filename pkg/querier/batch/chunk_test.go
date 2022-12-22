@@ -59,20 +59,20 @@ func mkGenericChunk(t require.TestingT, from model.Time, points int, enc chunk.E
 func testIter(t require.TestingT, points int, iter chunkenc.Iterator) {
 	ets := model.TimeFromUnix(0)
 	for i := 0; i < points; i++ {
-		require.True(t, iter.Next(), strconv.Itoa(i))
+		require.Equal(t, chunkenc.ValFloat, iter.Next(), strconv.Itoa(i))
 		ts, v := iter.At()
 		require.EqualValues(t, int64(ets), ts, strconv.Itoa(i))
 		require.EqualValues(t, float64(ets), v, strconv.Itoa(i))
 		ets = ets.Add(step)
 	}
-	require.False(t, iter.Next())
+	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
 func testSeek(t require.TestingT, points int, iter chunkenc.Iterator) {
 	for i := 0; i < points; i += points / 10 {
 		ets := int64(i * int(step/time.Millisecond))
 
-		require.True(t, iter.Seek(ets))
+		require.Equal(t, chunkenc.ValFloat, iter.Seek(ets))
 		ts, v := iter.At()
 		require.EqualValues(t, ets, ts)
 		require.EqualValues(t, v, float64(ets))
@@ -80,7 +80,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator) {
 
 		for j := i + 1; j < i+points/10; j++ {
 			ets := int64(j * int(step/time.Millisecond))
-			require.True(t, iter.Next())
+			require.Equal(t, chunkenc.ValFloat, iter.Next())
 			ts, v := iter.At()
 			require.EqualValues(t, ets, ts)
 			require.EqualValues(t, float64(ets), v)
@@ -99,11 +99,11 @@ func TestSeek(t *testing.T) {
 	}
 
 	for i := 0; i < chunk.BatchSize-1; i++ {
-		require.True(t, c.Seek(int64(i), 1))
+		require.Equal(t, chunkenc.ValFloat, c.Seek(int64(i), 1), i)
 	}
 	require.Equal(t, 1, it.seeks)
 
-	require.True(t, c.Seek(int64(chunk.BatchSize), 1))
+	require.Equal(t, chunkenc.ValFloat, c.Seek(int64(chunk.BatchSize), 1))
 	require.Equal(t, 2, it.seeks)
 }
 
@@ -111,20 +111,23 @@ type mockIterator struct {
 	seeks int
 }
 
-func (i *mockIterator) Scan() bool {
-	return true
+func (i *mockIterator) Scan() chunkenc.ValueType {
+	return chunkenc.ValFloat
 }
 
-func (i *mockIterator) FindAtOrAfter(model.Time) bool {
+func (i *mockIterator) FindAtOrAfter(model.Time) chunkenc.ValueType {
 	i.seeks++
-	return true
+	return chunkenc.ValFloat
 }
 
 func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) Batch(size int) chunk.Batch {
+func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
+	if valueType != chunkenc.ValFloat {
+		panic("mockIterator cannot handle non float chunks")
+	}
 	batch := chunk.Batch{
 		Length: chunk.BatchSize,
 	}

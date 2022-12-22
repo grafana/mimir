@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -2379,10 +2379,10 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		opts.TSDBDir,
 	)
 
-	var w *wal.WAL
+	var w *wlog.WL
 	var err error
 	if opts.WithWAL {
-		w, err = wal.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), true)
+		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), true)
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))
