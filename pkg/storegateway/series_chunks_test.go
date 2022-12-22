@@ -22,6 +22,27 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+type trackedBatchReleasableBytePool struct {
+	delegate pool.BatchReleasable[byte]
+
+	balance  atomic.Uint64
+	gets     atomic.Uint64
+	released atomic.Bool
+}
+
+func (t *trackedBatchReleasableBytePool) Get(size int) []byte {
+	res := t.delegate.Get(size)
+	t.balance.Add(uint64(cap(res)))
+	t.gets.Inc()
+	return res
+}
+
+func (t *trackedBatchReleasableBytePool) Release() {
+	t.delegate.Release()
+	t.balance.Store(0)
+	t.released.Store(true)
+}
+
 func init() {
 	// Track the balance of gets/puts in pools in all tests.
 	seriesEntrySlicePool = &pool.TrackedPool{Parent: seriesEntrySlicePool}
@@ -582,7 +603,9 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
 
 			// Setup
-			bytesPool := &trackedBytesPool{parent: pool.NoopBytes{}}
+			bytesPool := &trackedBatchReleasableBytePool{
+				delegate: pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0),
+			}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
 				readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
@@ -595,7 +618,9 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...),
 				100,
 				newSafeQueryStats(),
-				func() pool.BatchReleasable[byte] { return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0) },
+				func() pool.BatchReleasable[byte] {
+					return bytesPool
+				},
 			)
 			loadedSets := readAllSeriesChunksSets(set)
 
