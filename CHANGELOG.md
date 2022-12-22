@@ -31,6 +31,7 @@
 * [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
 * [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 * [BUGFIX] Tenants dashboard: Make it compatible with all deployment types. #3754
+* [BUGFIX] Alerts: Fixed `MimirCompactorHasNotUploadedBlocks` to not fire if compactor has nothing to do. #3793
 
 ### Jsonnet
 
