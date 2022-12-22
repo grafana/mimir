@@ -176,7 +176,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f, logger)
 }
 
-func (c *Config) GetSetFlagsValues(f *flag.FlagSet) {
+func (c *Config) GetFlagsValues(f *flag.FlagSet) {
 	c.API.Flags = map[string]string{}
 	// Only get the flags that have been set.
 	f.Visit(func(flag *flag.Flag) {

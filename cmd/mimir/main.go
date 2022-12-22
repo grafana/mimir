@@ -185,6 +185,9 @@ func main() {
 	// Initialise seed for randomness usage.
 	rand.Seed(time.Now().UnixNano())
 
+	// Get values of flags that have been set.
+	cfg.GetFlagsValues(flag.CommandLine)
+
 	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
 	util_log.CheckFatal("initializing application", err)
 
@@ -208,8 +211,6 @@ func main() {
 	}
 
 	level.Info(util_log.Logger).Log("msg", "Starting application", "version", version.Info())
-
-	cfg.GetSetFlagsValues(flag.CommandLine)
 
 	err = t.Run()
 
