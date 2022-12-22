@@ -80,14 +80,9 @@ const BatchSize = 12
 // small, and passed by value.
 type Batch struct {
 	Timestamps [BatchSize]int64
-
-	ValueTypes           chunkenc.ValueType
-	SampleValues         *[BatchSize]float64
-	HistogramValues      *[BatchSize]*histogram.Histogram
-	FloatHistogramValues *[BatchSize]*histogram.FloatHistogram
-
-	Index  int
-	Length int
+	Values     [BatchSize]float64
+	Index      int
+	Length     int
 }
 
 // Chunk contains encoded timeseries data

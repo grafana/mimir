@@ -125,9 +125,11 @@ func (i *mockIterator) Value() model.SamplePair {
 }
 
 func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
+	if valueType != chunkenc.ValFloat {
+		panic("mockIterator cannot handle non float chunks")
+	}
 	batch := chunk.Batch{
-		Length:     chunk.BatchSize,
-		ValueTypes: chunkenc.ValFloat,
+		Length: chunk.BatchSize,
 	}
 	for i := 0; i < chunk.BatchSize; i++ {
 		batch.Timestamps[i] = int64(i)

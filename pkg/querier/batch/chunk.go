@@ -44,7 +44,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			i.batch.Index++
 		}
 		if i.batch.Index+size < i.batch.Length {
-			return i.batch.ValueTypes
+			return chunkenc.ValFloat
 		}
 	}
 
