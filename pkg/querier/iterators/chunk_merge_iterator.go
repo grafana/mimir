@@ -89,11 +89,10 @@ outer:
 }
 
 func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
-	c.h = c.h[:0]
-
 	if c.currErr != nil {
 		return chunkenc.ValNone
 	}
+	c.h = c.h[:0]
 
 	for _, iter := range c.its {
 		valType := iter.Seek(t)
