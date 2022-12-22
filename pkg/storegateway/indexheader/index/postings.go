@@ -320,7 +320,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 		i--
 	}
 
-	d.ResetAt(e.offsets[i].tableOff + 4) // 4 byte length of the offset table
+	d.ResetAt(e.offsets[i].tableOff)
 	nAndNameSize := 0
 
 	for d.Err() == nil {
