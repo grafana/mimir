@@ -162,19 +162,19 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-// TODO native histograms support, assumes it's used on float chunk
+// TODO native histograms support, assumes it's used on float chunk and only keeps floats
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
-	if valueType != chunkenc.ValFloat {
-		panic("prometheusChunkIterator cannot handle non float chunks")
-	}
 	var batch Batch
 	j := 0
 	for j < size {
-		t, v := p.it.At()
-		batch.Timestamps[j] = t
-		batch.Values[j] = v
-		j++
-		if j < size && p.it.Next() == chunkenc.ValNone {
+		if valueType == chunkenc.ValFloat {
+			t, v := p.it.At()
+			batch.Timestamps[j] = t
+			batch.Values[j] = v
+			j++
+		}
+		valueType = p.it.Next()
+		if j < size && valueType == chunkenc.ValNone {
 			break
 		}
 	}
