@@ -166,9 +166,9 @@ type bufferingFileReader struct {
 	f *os.File
 	b []byte
 
-	offsetFirstByteInB    int
-	currentPositionInFile int
-	haveRead              bool
+	offsetFirstByteInB   int
+	nextByteOffsetToRead int
+	haveRead             bool
 }
 
 func newBufferingFileReader(bufferSize int) *bufferingFileReader {
@@ -179,7 +179,7 @@ func newBufferingFileReader(bufferSize int) *bufferingFileReader {
 
 // Seek resets the position of this reader to off in f.
 func (b *bufferingFileReader) Seek(f *os.File, off int) {
-	b.currentPositionInFile = off
+	b.nextByteOffsetToRead = off
 
 	if f != b.f {
 		b.f = f
@@ -190,7 +190,7 @@ func (b *bufferingFileReader) Seek(f *os.File, off int) {
 
 // Discard advances the position of this reader by n bytes.
 func (b *bufferingFileReader) Discard(n int) {
-	b.currentPositionInFile += n
+	b.nextByteOffsetToRead += n
 }
 
 // Peek returns the next n bytes of f without advancing the position of this reader.
@@ -202,7 +202,7 @@ func (b *bufferingFileReader) Peek(n int) ([]byte, error) {
 		return nil, err
 	}
 
-	firstIndex := b.currentPositionInFile - b.offsetFirstByteInB
+	firstIndex := b.nextByteOffsetToRead - b.offsetFirstByteInB
 	available := len(b.b) - firstIndex
 
 	if available == 0 {
@@ -219,18 +219,18 @@ func (b *bufferingFileReader) fillIfRequired(minDesired int) error {
 		return fmt.Errorf("tried to fill %v bytes into buffer, but buffer capacity is only %v bytes", minDesired, cap(b.b))
 	}
 
-	if b.haveRead && b.currentPositionInFile >= b.offsetFirstByteInB && b.currentPositionInFile+minDesired <= b.offsetFirstByteInB+len(b.b) {
+	if b.haveRead && b.nextByteOffsetToRead >= b.offsetFirstByteInB && b.nextByteOffsetToRead+minDesired <= b.offsetFirstByteInB+len(b.b) {
 		return nil
 	}
 
-	if _, err := b.f.Seek(int64(b.currentPositionInFile), io.SeekStart); err != nil {
+	if _, err := b.f.Seek(int64(b.nextByteOffsetToRead), io.SeekStart); err != nil {
 		return err
 	}
 
 	b.b = b.b[:cap(b.b)]
 	n, err := io.ReadFull(b.f, b.b)
 	b.b = b.b[:n]
-	b.offsetFirstByteInB = b.currentPositionInFile
+	b.offsetFirstByteInB = b.nextByteOffsetToRead
 
 	if err != nil {
 		if err == io.ErrUnexpectedEOF {
@@ -262,7 +262,7 @@ func (b *bufferingFileReader) Read(dest []byte) (int, error) {
 		return 0, err
 	}
 
-	firstIndex := b.currentPositionInFile - b.offsetFirstByteInB
+	firstIndex := b.nextByteOffsetToRead - b.offsetFirstByteInB
 	available := len(b.b) - firstIndex
 
 	if available == 0 {
@@ -271,7 +271,7 @@ func (b *bufferingFileReader) Read(dest []byte) (int, error) {
 
 	n := math.Min(len(dest), available)
 	copy(dest[:n], b.b[firstIndex:firstIndex+n])
-	b.currentPositionInFile += n
+	b.nextByteOffsetToRead += n
 
 	return n, nil
 }
