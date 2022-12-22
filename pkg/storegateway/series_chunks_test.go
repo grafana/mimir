@@ -590,7 +590,13 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingSeriesChunksSetIterator(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
+			set := newLoadingSeriesChunksSetIterator(
+				*readers,
+				newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...),
+				100,
+				newSafeQueryStats(),
+				func() *pool.SafeSlabPool[byte] { return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0) },
+			)
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
@@ -678,14 +684,22 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 			}
 
 			chunkReaders := newChunkReaders(readersMap)
-			chunksPool := &trackedBytesPool{parent: pool.NoopBytes{}}
+			//chunksPool := &trackedBytesPool{parent: pool.NoopBytes{}}
 			stats := newSafeQueryStats()
 
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(*chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
+				it := newLoadingSeriesChunksSetIterator(
+					*chunkReaders,
+					newSliceSeriesChunkRefsSetIterator(nil, sets...),
+					batchSize,
+					stats,
+					func() *pool.SafeSlabPool[byte] {
+						return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0)
+					},
+				)
 
 				actualSeries := 0
 				actualChunks := 0
