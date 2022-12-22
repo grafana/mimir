@@ -1428,9 +1428,12 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 
 func removeIgnoredLogs(input []string) []string {
 	ignoredLogStringsMap := map[string]struct{}{
+
 		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected but are just ring setup information.
 		`level=info component=compactor msg="ring doesn't exist in KV store yet"`:                                                                                 {},
 		`level=info component=compactor msg="not loading tokens from file, tokens file path is empty"`:                                                            {},
+		`level=info component=compactor msg="tokens verification succeeded" ring=compactor`:                                                                       {},
+		`level=info component=compactor msg="waiting stable tokens" ring=compactor`:                                                                               {},
 		`level=info component=compactor msg="instance not found in ring, adding with no tokens" ring=compactor`:                                                   {},
 		`level=debug component=compactor msg="JoinAfter expired" ring=compactor`:                                                                                  {},
 		`level=info component=compactor msg="auto-joining cluster after timeout" ring=compactor`:                                                                  {},
@@ -1438,17 +1441,18 @@ func removeIgnoredLogs(input []string) []string {
 		`level=info component=compactor msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
 		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
 		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
-		`level=debug component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                   {},
-		`level=info component=compactor msg="instance removed from the KV store" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                    {},
+		`level=info component=compactor msg="instance removed from the ring" ring=compactor`:                                                                      {},
 		`level=info component=compactor msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
 		`level=info component=compactor msg="lifecycler entering final sleep before shutdown" final_sleep=0s`:                                                     {},
+		`level=info component=compactor msg="ring lifecycler is shutting down" ring=compactor`:                                                                    {},
 	}
 
 	out := make([]string, 0, len(input))
 
 	for i := 0; i < len(input); i++ {
 		log := input[i]
-		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") {
+		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") || strings.Contains(log, "instance not found in the ring") {
 			continue
 		}
 
@@ -1760,18 +1764,13 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10
 
-	c, _, _, logs, _ := prepare(t, cfg, bucketClient)
+	c, _, _, _, _ := prepare(t, cfg, bucketClient)
 
 	// Try to start the compactor with a bad consul kv-store. The
 	err := services.StartAndAwaitRunning(context.Background(), c)
 
 	// Assert that the compactor timed out
-	assert.Equal(t, context.DeadlineExceeded, err)
-
-	assert.ElementsMatch(t, []string{
-		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
-		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
-	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 type ownUserReason int

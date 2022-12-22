@@ -8,6 +8,7 @@ package iterators
 import (
 	"container/heap"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -36,13 +37,20 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 	}
 
 	for _, iter := range c.its {
-		if iter.Next() == chunkenc.ValFloat {
+		valType := iter.Next()
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			break
 		}
 
 		if err := iter.Err(); err != nil {
 			c.currErr = err
+			break
 		}
 	}
 
@@ -81,12 +89,21 @@ outer:
 }
 
 func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
+	if c.currErr != nil {
+		return chunkenc.ValNone
+	}
 	c.h = c.h[:0]
 
 	for _, iter := range c.its {
-		if iter.Seek(t) == chunkenc.ValFloat {
+		valType := iter.Seek(t)
+		// TODO for native histograms: allow all types
+		if valType == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
+		}
+		if valType != chunkenc.ValNone {
+			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			return chunkenc.ValNone
 		}
 
 		if err := iter.Err(); err != nil {
@@ -106,7 +123,7 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (c *chunkMergeIterator) Next() chunkenc.ValueType {
-	if len(c.h) == 0 {
+	if len(c.h) == 0 || c.currErr != nil {
 		return chunkenc.ValNone
 	}
 
@@ -114,7 +131,7 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	for c.currTime == lastTime && len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
 
-		if c.h[0].Next() == chunkenc.ValFloat {
+		if c.h[0].Next() != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
 			continue
 		}
@@ -127,6 +144,7 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	}
 
 	if c.currTime != lastTime {
+		// TODO for native histograms: return the correct type
 		return chunkenc.ValFloat
 	}
 	return chunkenc.ValNone
@@ -212,14 +230,15 @@ func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
-	for it.curr < len(it.chunks) && it.chunks[it.curr].Next() == chunkenc.ValNone {
+	for it.curr < len(it.chunks) {
+		valType := it.chunks[it.curr].Next()
+		if valType != chunkenc.ValNone {
+			return valType
+		}
 		it.curr++
 	}
 
-	if it.curr >= len(it.chunks) {
-		return chunkenc.ValNone
-	}
-	return chunkenc.ValFloat
+	return chunkenc.ValNone
 }
 
 func (it *nonOverlappingIterator) AtTime() int64 {

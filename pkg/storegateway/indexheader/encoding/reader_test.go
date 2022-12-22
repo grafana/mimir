@@ -178,6 +178,34 @@ func TestReaders_Len(t *testing.T) {
 	})
 }
 
+func TestReaders_Position(t *testing.T) {
+	testReaders(t, func(t *testing.T, r *fileReader) {
+		require.Equal(t, 0, r.position(), "initial position")
+
+		_, err := r.read(5)
+		require.NoError(t, err)
+		require.Equal(t, 5, r.position(), "after first read")
+
+		_, err = r.read(2)
+		require.NoError(t, err)
+		require.Equal(t, 7, r.position(), "after second read")
+
+		_, err = r.peek(3)
+		require.NoError(t, err)
+		require.Equal(t, 7, r.position(), "after peek")
+
+		_, err = r.read(14)
+		require.ErrorIs(t, err, ErrInvalidSize)
+		require.Equal(t, 20, r.position(), "after read beyond end")
+
+		require.NoError(t, r.reset())
+		require.Equal(t, 0, r.position(), "after reset to beginning")
+
+		require.NoError(t, r.resetAt(3))
+		require.Equal(t, 3, r.position(), "after reset to offset")
+	})
+}
+
 func TestReaders_CreationWithEmptyContents(t *testing.T) {
 	t.Run("fileReader", func(t *testing.T) {
 		dir := t.TempDir()

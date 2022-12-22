@@ -228,8 +228,8 @@ require (
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
-// Using a fork of Prometheus while we work on querysharding and native histograms to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20221123154106-5dfa66120387
+// Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20221129151924-0db77b4c76da
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

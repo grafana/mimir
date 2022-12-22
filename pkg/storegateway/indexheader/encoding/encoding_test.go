@@ -31,11 +31,13 @@ func TestDecbuf_Be32HappyPath(t *testing.T) {
 
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 4, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.Be32()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, 4, dec.Position())
 		})
 	}
 }
@@ -61,11 +63,13 @@ func FuzzDecbuf_Be32(f *testing.F) {
 		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 4, dec.Len())
+		require.Equal(t, 0, dec.Position())
 
 		actual := dec.Be32()
 		require.NoError(t, dec.Err())
 		require.Equal(t, n, actual)
 		require.Equal(t, 0, dec.Len())
+		require.Equal(t, 4, dec.Position())
 	})
 }
 
@@ -111,11 +115,13 @@ func TestDecbuf_Be32intHappyPath(t *testing.T) {
 
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 4, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.Be32int()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, 4, dec.Position())
 		})
 	}
 }
@@ -145,11 +151,13 @@ func FuzzDecbuf_Be32int(f *testing.F) {
 		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 4, dec.Len())
+		require.Equal(t, 0, dec.Position())
 
 		actual := dec.Be32int()
 		require.NoError(t, dec.Err())
 		require.Equal(t, n, actual)
 		require.Equal(t, 0, dec.Len())
+		require.Equal(t, 4, dec.Position())
 	})
 }
 
@@ -167,11 +175,13 @@ func TestDecbuf_Be64HappyPath(t *testing.T) {
 
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 8, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.Be64()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, 8, dec.Position())
 		})
 	}
 }
@@ -194,11 +204,13 @@ func FuzzDecbuf_Be64(f *testing.F) {
 		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 8, dec.Len())
+		require.Equal(t, 0, dec.Position())
 
 		actual := dec.Be64()
 		require.NoError(t, dec.Err())
 		require.Equal(t, n, actual)
 		require.Equal(t, 0, dec.Len())
+		require.Equal(t, 8, dec.Position())
 	})
 }
 
@@ -239,15 +251,18 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 
 	dec := createDecbufWithBytes(t, enc.Get())
 	require.Equal(t, 8, dec.Len())
+	require.Equal(t, 0, dec.Position())
 
 	dec.Skip(4)
 	require.NoError(t, dec.Err())
 	require.Equal(t, 4, dec.Len())
+	require.Equal(t, 4, dec.Position())
 
 	actual := dec.Be32()
 	require.NoError(t, dec.Err())
 	require.Equal(t, expected, actual)
 	require.Equal(t, 0, dec.Len())
+	require.Equal(t, 8, dec.Position())
 }
 
 func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
@@ -263,6 +278,7 @@ func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
 
 	require.NoError(t, dec.Err())
 	require.Equal(t, dec.Len(), 4096)
+	require.Equal(t, 4096*4, dec.Position())
 	require.Equal(t, byte(0x01), dec.Byte())
 }
 
@@ -280,10 +296,12 @@ func TestDecbuf_SkipUvarintBytesHappyPath(t *testing.T) {
 
 	dec := createDecbufWithBytes(t, enc.Get())
 	require.Equal(t, 7, dec.Len())
+	require.Equal(t, 0, dec.Position())
 
 	dec.SkipUvarintBytes()
 	require.NoError(t, dec.Err())
 	require.Equal(t, 4, dec.Len())
+	require.Equal(t, 3, dec.Position())
 
 	actual := dec.Be32()
 	require.NoError(t, dec.Err())
@@ -298,6 +316,7 @@ func TestDecbuf_SkipUvarintBytesEndOfFile(t *testing.T) {
 	dec.Be32()
 	require.NoError(t, dec.Err())
 	require.Equal(t, 0, dec.Len())
+	require.Equal(t, 4, dec.Position())
 
 	dec.SkipUvarintBytes()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
@@ -310,6 +329,7 @@ func TestDecbuf_SkipUvarintBytesOnlyHaveLength(t *testing.T) {
 	bytes := enc.Get()
 	dec := createDecbufWithBytes(t, bytes[:len(bytes)-2])
 	require.Equal(t, 1, dec.Len())
+	require.Equal(t, 0, dec.Position())
 
 	dec.SkipUvarintBytes()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
@@ -322,6 +342,7 @@ func TestDecbuf_SkipUvarintBytesPartialValue(t *testing.T) {
 	bytes := enc.Get()
 	dec := createDecbufWithBytes(t, bytes[:len(bytes)-1])
 	require.Equal(t, 2, dec.Len())
+	require.Equal(t, 0, dec.Position())
 
 	dec.SkipUvarintBytes()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
@@ -346,11 +367,13 @@ func TestDecbuf_UvarintHappyPath(t *testing.T) {
 
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, c.bytes, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.Uvarint()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c.value, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, c.bytes, dec.Position())
 		})
 	}
 }
@@ -406,11 +429,13 @@ func TestDecbuf_Uvarint64HappyPath(t *testing.T) {
 
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, c.bytes, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.Uvarint64()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c.value, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, c.bytes, dec.Position())
 		})
 	}
 }
@@ -464,12 +489,15 @@ func TestDecbuf_UnsafeUvarintBytesHappyPath(t *testing.T) {
 			enc.PutUvarintBytes(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
-			require.Equal(t, dec.Len(), c.encodedSizeLength+len(c.value))
+			size := c.encodedSizeLength + len(c.value)
+			require.Equal(t, size, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.UnsafeUvarintBytes()
 			require.NoError(t, dec.Err())
 			require.Condition(t, test.EqualSlices(c.value, actual), "%#v != %#v", c.value, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, size, dec.Position())
 		})
 	}
 }
@@ -581,12 +609,15 @@ func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 			enc.PutUvarintStr(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
-			require.Equal(t, dec.Len(), c.encodedSizeLength+len(c.value))
+			size := c.encodedSizeLength + len(c.value)
+			require.Equal(t, size, dec.Len())
+			require.Equal(t, 0, dec.Position())
 
 			actual := dec.UvarintStr()
 			require.NoError(t, dec.Err())
 			require.Equal(t, c.value, actual)
 			require.Equal(t, 0, dec.Len())
+			require.Equal(t, size, dec.Position())
 		})
 	}
 }
