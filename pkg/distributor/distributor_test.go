@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/e2e"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -61,8 +62,9 @@ import (
 )
 
 var (
-	errFail       = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
-	emptyResponse = &mimirpb.WriteResponse{}
+	errFail               = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
+	emptyResponse         = &mimirpb.WriteResponse{}
+	generateTestHistogram = e2e.GenerateTestHistogram
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -1529,22 +1531,6 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				assert.Nil(t, err)
 			}
 		})
-	}
-}
-
-// based on GenerateTestHistograms in github.com/prometheus/prometheus/tsdb
-func generateTestHistogram(i int) *histogram.Histogram {
-	return &histogram.Histogram{
-		Count:         5 + uint64(i*4),
-		ZeroCount:     2 + uint64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
 	}
 }
 

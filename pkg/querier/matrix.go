@@ -24,7 +24,11 @@ func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterat
 
 		samples = append(samples, ss)
 	}
+	mergedSamples := util.MergeNSampleSets(samples...)
 
-	merged := util.MergeNSampleSets(samples...)
-	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, merged))
+	histograms := make([][]model.SampleHistogramPair, 0, len(chunks))
+	// TODO(zenador): fix like samples
+	mergedHistograms := util.MergeNSampleSets(histograms...)
+
+	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, mergedSamples, mergedHistograms))
 }

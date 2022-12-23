@@ -12,14 +12,14 @@ import (
 )
 
 // MergeSampleSets merges and dedupes two sets of already sorted sample pairs.
-func MergeSampleSets(a, b []model.SamplePair) []model.SamplePair {
-	result := make([]model.SamplePair, 0, len(a)+len(b))
+func MergeSampleSets[S model.GenericSamplePair](a, b []S) []S {
+	result := make([]S, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
-		if a[i].Timestamp < b[j].Timestamp {
+		if a[i].GetTimestamp() < b[j].GetTimestamp() {
 			result = append(result, a[i])
 			i++
-		} else if a[i].Timestamp > b[j].Timestamp {
+		} else if a[i].GetTimestamp() > b[j].GetTimestamp() {
 			result = append(result, b[j])
 			j++
 		} else {
@@ -35,11 +35,11 @@ func MergeSampleSets(a, b []model.SamplePair) []model.SamplePair {
 }
 
 // MergeNSampleSets merges and dedupes n sets of already sorted sample pairs.
-func MergeNSampleSets(sampleSets ...[]model.SamplePair) []model.SamplePair {
+func MergeNSampleSets[S model.GenericSamplePair](sampleSets ...[]S) []S {
 	l := len(sampleSets)
 	switch l {
 	case 0:
-		return []model.SamplePair{}
+		return []S{}
 	case 1:
 		return sampleSets[0]
 	}

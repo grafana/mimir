@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +24,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+)
+
+var (
+	generateTestSampleHistogram = e2e.GenerateTestSampleHistogram
 )
 
 // genLabels will create a slice of labels where each label has an equal chance to occupy a value from [0,labelBuckets]. It returns a slice of length labelBuckets^len(labelSet)
@@ -70,10 +75,17 @@ func newMockShardedQueryable(
 			Value:     model.SampleValue(i),
 		})
 	}
+	histograms := make([]model.SampleHistogramPair, 0, nSamples)
+	for i := 0; i < nSamples; i++ {
+		histograms = append(histograms, model.SampleHistogramPair{
+			Timestamp: model.Time(i * 1000),
+			Histogram: *generateTestSampleHistogram(i),
+		})
+	}
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))
 	for _, ls := range sets {
-		xs = append(xs, series.NewConcreteSeries(ls, samples))
+		xs = append(xs, series.NewConcreteSeries(ls, samples, histograms))
 	}
 
 	return &mockShardedQueryable{
@@ -269,6 +281,7 @@ func TestNewMockShardedqueryable(t *testing.T) {
 			require.Nil(t, set.Err())
 
 			for set.Next() {
+				// TODO(zenador): fix for histograms
 				seriesCt++
 				iter := set.At().Iterator()
 				samples := 0

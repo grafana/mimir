@@ -55,15 +55,17 @@ func (c *ConcreteSeriesSet) Warnings() storage.Warnings {
 
 // ConcreteSeries implements storage.Series.
 type ConcreteSeries struct {
-	labels  labels.Labels
-	samples []model.SamplePair
+	labels     labels.Labels
+	samples    []model.SamplePair
+	histograms []model.SampleHistogramPair
 }
 
-// NewConcreteSeries instantiates an in memory series from a list of samples & labels
-func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair) *ConcreteSeries {
+// NewConcreteSeries instantiates an in memory series from a list of samples & histograms & labels
+func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair, histograms []model.SampleHistogramPair) *ConcreteSeries {
 	return &ConcreteSeries{
-		labels:  ls,
-		samples: samples,
+		labels:     ls,
+		samples:    samples,
+		histograms: histograms,
 	}
 }
 
@@ -175,8 +177,9 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(m))
 	for _, ss := range m {
 		series = append(series, &ConcreteSeries{
-			labels:  metricToLabels(ss.Metric),
-			samples: ss.Values,
+			labels:     metricToLabels(ss.Metric),
+			samples:    ss.Values,
+			histograms: ss.Histograms,
 		})
 	}
 	return NewConcreteSeriesSet(series)
@@ -187,8 +190,9 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(ls))
 	for _, l := range ls {
 		series = append(series, &ConcreteSeries{
-			labels:  l,
-			samples: nil,
+			labels:     l,
+			samples:    nil,
+			histograms: nil,
 		})
 	}
 	return NewConcreteSeriesSet(series)
