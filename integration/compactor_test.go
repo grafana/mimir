@@ -4,6 +4,9 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -12,13 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
-	"github.com/grafana/e2e/db"
-	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/bucket/s3"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,6 +24,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
@@ -38,7 +42,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// inDir is a staging directory for blocks we upload to the bucket.
@@ -49,7 +53,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	bkt, err := s3.NewBucketClient(s3.Config{
 		Endpoint:        minio.HTTPEndpoint(),
 		Insecure:        true,
-		BucketName:      mimirBucketName,
+		BucketName:      blocksBucketName,
 		AccessKeyID:     e2edb.MinioAccessKey,
 		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 	}, "test", log.NewNopLogger())
@@ -102,7 +106,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	}
 
 	// Start compactor.
-	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags()))
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags()))
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
 	// Wait for the compactor to run.
@@ -110,7 +114,10 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	var blocks []string
 	require.NoError(t, bktClient.Iter(context.Background(), "", func(name string) error {
-		blocks = append(blocks, filepath.Base(name))
+		baseName := filepath.Base(name)
+		if len(baseName) == ulid.EncodedSize {
+			blocks = append(blocks, filepath.Base(name))
+		}
 		return nil
 	}))
 
@@ -118,6 +125,11 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	for _, blockID := range blocks {
 		require.NoError(t, block.Download(context.Background(), log.NewNopLogger(), bktClient, ulid.MustParseStrict(blockID), filepath.Join(outDir, blockID)))
+
+		if isMarkedForDeletionDueToCompaction(t, path.Join(outDir, blockID)) {
+			// The source blocks are marked for deletion but not deleted yet; skip them.
+			continue
+		}
 
 		chkReader, err := chunks.NewDirReader(filepath.Join(outDir, blockID, block.ChunksDirname), nil)
 		require.NoError(t, err)
@@ -167,14 +179,27 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		require.NoError(t, ixReader.Close())
 		require.NoError(t, chkReader.Close())
 
-		// This block ULID should not be the same as any of the pre-compacted ones (otherwise the corresponding block
-		// did not get compacted).
+		// This block ULID should not be the same as any of the pre-compacted ones.
 		for _, m := range metas {
 			require.NotEqual(t, m.ULID.String(), blockID)
 		}
 	}
 
 	require.Equal(t, expectedSeries, compactedSeries)
+}
+
+func isMarkedForDeletionDueToCompaction(t *testing.T, blockPath string) bool {
+	deletionMarkFilePath := filepath.Join(blockPath, metadata.DeletionMarkFilename)
+	b, err := os.ReadFile(deletionMarkFilePath)
+	if os.IsNotExist(err) {
+		return false
+	}
+	require.NoError(t, err)
+
+	deletionMark := &metadata.DeletionMark{}
+	require.NoError(t, json.Unmarshal(b, deletionMark))
+
+	return deletionMark.Details == "source of compacted block"
 }
 
 type series struct {
