@@ -185,20 +185,14 @@ spec:
           }} has no rule groups assigned.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerinstancehasnorulegroups
       expr: |
-        # Alert on ruler instances that have no rule groups assigned,
-        (min by(cluster, namespace, pod) (cortex_ruler_managers_total) == 0)
+        # Alert on ruler instances in microservices mode that have no rule groups assigned,
+        min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
         # but only if other ruler instances of the same cell do have rule groups assigned
         and on (cluster, namespace)
-        (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
-        # but not if we have exactly 2 instances and the cell has less than 5 rule groups.
-        # We never want to scale to less than 2 instances because of availability concerns,
-        # and in these cases, it's likely that rule groups aren't sharded across both instances.
-        unless on (cluster, namespace)
-        (
-            count by (cluster, namespace) (cortex_ruler_managers_total) == 2
-            and on (cluster, namespace)
-            count by (cluster, namespace) (cortex_prometheus_rule_group_rules{job=~".+?((ruler|cortex|mimir|mimir-backend.*))"}) < 5
-        )
+        max by(cluster, namespace) (cortex_ruler_managers_total) > 0
+        # and there are more than two instances overall
+        and on (cluster, namespace)
+        count by (cluster, namespace) (cortex_ruler_managers_total) > 2
       for: 1h
       labels:
         severity: warning

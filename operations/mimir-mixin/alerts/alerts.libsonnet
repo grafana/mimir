@@ -270,21 +270,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerInstanceHasNoRuleGroups'),
           'for': '1h',
           expr: |||
-            # Alert on ruler instances that have no rule groups assigned,
-            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total) == 0)
+            # Alert on ruler instances in microservices mode that have no rule groups assigned,
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total{%(per_instance_label)s=~"%(rulerInstanceName)s"}) == 0
             # but only if other ruler instances of the same cell do have rule groups assigned
             and on (%(alert_aggregation_labels)s)
-            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
-            # but not if we have exactly 2 instances and the cell has less than 5 rule groups.
-            # We never want to scale to less than 2 instances because of availability concerns,
-            # and in these cases, it's likely that rule groups aren't sharded across both instances.
-            unless on (%(alert_aggregation_labels)s)
-            (
-                count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) == 2
-                and on (%(alert_aggregation_labels)s)
-                count by (%(alert_aggregation_labels)s) (cortex_prometheus_rule_group_rules{job=~".+?((ruler|cortex|mimir|mimir-backend.*))"}) < 5
-            )
-          ||| % $._config,
+            max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0
+            # and there are more than two instances overall
+            and on (%(alert_aggregation_labels)s)
+            count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            rulerInstanceName: $._config.instance_names.ruler,
+          },
           labels: {
             severity: 'warning',
           },
