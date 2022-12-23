@@ -303,7 +303,7 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 			filteredSamplesCount = len(samplesUnfiltered) - len(samplesFiltered)
 		}
 
-		histogramsFiltered := dropHistogramsBefore(histogramsUnfiltered, dontForwardBeforeTimestamp)
+		histogramsFiltered := dropSamplesBefore(histogramsUnfiltered, dontForwardBeforeTimestamp)
 		if len(histogramsFiltered) < len(histogramsUnfiltered) {
 			filteredHistogramsCount = len(histogramsUnfiltered) - len(histogramsFiltered)
 		}
@@ -391,28 +391,16 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	return tsToIngest, tsToForward, counts, err
 }
 
-// dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
-// the given timestamp. It relies on the samples being sorted by timestamp.
-func dropSamplesBefore(samples []mimirpb.Sample, ts int64) []mimirpb.Sample {
+// dropSamplesBefore filters a given slice of samples/histograms to only contain those that have timestamps newer or equal to
+// the given timestamp. It relies on them being sorted by timestamp.
+func dropSamplesBefore[S mimirpb.GenericSamplePair](samples []S, ts int64) []S {
 	for sampleIdx := len(samples) - 1; sampleIdx >= 0; sampleIdx-- {
-		if samples[sampleIdx].TimestampMs < ts {
+		if samples[sampleIdx].GetTimestampVal() < ts {
 			return samples[sampleIdx+1:]
 		}
 	}
 
 	return samples
-}
-
-// dropHistogramsBefore filters a given slice of histograms to only contain histograms that have timestamps newer or equal to
-// the given timestamp. It relies on the histograms being sorted by timestamp.
-func dropHistogramsBefore(histograms []mimirpb.Histogram, ts int64) []mimirpb.Histogram {
-	for idx := len(histograms) - 1; idx >= 0; idx-- {
-		if histograms[idx].Timestamp < ts {
-			return histograms[idx+1:]
-		}
-	}
-
-	return histograms
 }
 
 func shouldForwardAndIngest(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (forward, ingest bool) {
