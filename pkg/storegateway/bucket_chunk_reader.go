@@ -46,7 +46,6 @@ func (r *bucketChunkReader) Close() error {
 }
 
 // reset resets the chunks scheduled for loading. It does not release any loaded chunks.
-// Use the injected pool.BatchBytes to release the bytes.
 func (r *bucketChunkReader) reset() {
 	for i := range r.toLoad {
 		r.toLoad[i] = r.toLoad[i][:0]
