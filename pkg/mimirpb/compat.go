@@ -237,7 +237,7 @@ func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHisto
 
 // FromPointsToSamples converts []promql.Point to []Sample.
 func FromPointsToSamples(points []promql.Point) []Sample {
-	samples := make([]Sample, 0)
+	samples := make([]Sample, 0, len(points))
 	for _, point := range points {
 		if point.H != nil {
 			continue
@@ -252,7 +252,7 @@ func FromPointsToSamples(points []promql.Point) []Sample {
 
 // FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
 func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
-	samples := make([]SampleHistogramPair, 0)
+	samples := make([]SampleHistogramPair, 0, len(points))
 	for _, point := range points {
 		h := point.H
 		if h == nil {
