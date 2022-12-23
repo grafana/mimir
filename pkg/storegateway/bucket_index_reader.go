@@ -91,6 +91,9 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 // TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
 // TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (promise expandedPostingsPromise, loaded bool) {
+	s, ctx := tracing.StartSpan(ctx, "expandedPostingsPromise")
+	defer s.Finish()
+
 	var (
 		refs   []storage.SeriesRef
 		err    error
@@ -139,6 +142,9 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef) {
+	s, ctx := tracing.StartSpan(ctx, "cacheExpandedPostings")
+	defer s.Finish()
+
 	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
@@ -148,6 +154,9 @@ func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID st
 }
 
 func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, bool) {
+	s, ctx := tracing.StartSpan(ctx, "fetchCachedExpandedPostings")
+	defer s.Finish()
+
 	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key)
 	if !ok {
 		return nil, false
@@ -176,12 +185,15 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		keys          []labels.Label
 	)
 
+	s, _ := tracing.StartSpan(ctx, "expandedPostings.toPostingGroups")
+
 	toPostingsGroupsStartTime := time.Now()
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
 		pg, err := toPostingGroup(r.block.indexHeaderReader, m)
 		if err != nil {
+			s.Finish()
 			return nil, errors.Wrap(err, "toPostingGroup")
 		}
 
@@ -189,6 +201,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		// postings would return no postings anyway.
 		// E.g. label="non-existing-value" returns empty group.
 		if !pg.addAll && len(pg.addKeys) == 0 {
+			s.Finish()
 			return nil, nil
 		}
 
@@ -202,6 +215,8 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		keys = append(keys, pg.addKeys...)
 		keys = append(keys, pg.removeKeys...)
 	}
+	s.Finish()
+
 	r.block.logger.Log("toPostingsGroups_duration_millis", time.Since(toPostingsGroupsStartTime).Milliseconds())
 	if len(postingGroups) == 0 {
 		return nil, nil
@@ -218,7 +233,9 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		keys = append(keys, allPostingsLabel)
 	}
 
-	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
+	s, spanCtx := tracing.StartSpan(ctx, "expandedPostings.fetchPostings")
+	fetchedPostings, err := r.fetchPostings(spanCtx, keys, stats)
+	s.Finish()
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}
@@ -227,6 +244,8 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// again, and this is exactly the same order as before (when building the groups), so we can simply
 	// use one incrementing index to fetch postings from returned slice.
 	postingIndex := 0
+	s, _ = tracing.StartSpan(ctx, "expandedPostings.intersectPostings")
+	defer s.Finish()
 
 	var groupAdds, groupRemovals []index.Postings
 	for _, g := range postingGroups {
@@ -247,9 +266,12 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
+	s.LogKV("event", "constructed groupAdds, groupRemovals")
+
 	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
+	s.LogKV("event", "expanded postings")
 	if err != nil {
 		return nil, errors.Wrap(err, "expand")
 	}
@@ -265,6 +287,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 			ps[i] = id * 16
 		}
 	}
+	s.LogKV("event", "got index header version")
 
 	return ps, nil
 }
@@ -299,6 +322,8 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
+	s, ctx := tracing.StartSpan(ctx, "fetchPostings")
+	defer s.Finish()
 
 	var ptrs []postingPtr
 
@@ -306,7 +331,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 	// Fetch postings from the cache with a single call.
 	fromCache, _ := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
-
+	s.LogKV("event", "fetched postings form cache")
 	// Iterate over all groups and fetch posting from cache.
 	// If we have a miss, mark key to be fetched in `ptrs` slice.
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
@@ -352,6 +377,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 		ptrs = append(ptrs, postingPtr{ptr: ptr, keyID: ix})
 	}
+	s.LogKV("event", "decoded postings from cache")
 
 	sort.Slice(ptrs, func(i, j int) bool {
 		return ptrs[i].ptr.Start < ptrs[j].ptr.Start
