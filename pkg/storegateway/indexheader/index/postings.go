@@ -99,6 +99,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	currentName := ""
 	valuesForCurrentKey := 0
 	haveAlreadyReadKeyCount := false
+	var retainedValueBytes []byte
 
 	for d.Err() == nil && remainingCount > 0 {
 		lastName := currentName
@@ -140,8 +141,17 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 			}
 		} else {
 			// We only need to store this value if it's the last one for this name.
-			value := d.UvarintStr() // TODO: peek and copy, then only allocate string if we need it
-			_ = d.Uvarint64()       // Offset
+			// Why all the messing about with byte slices? It saves us from allocating a string unless we really need it.
+			unsafeValueBytes := d.UnsafeUvarintBytes()
+
+			if cap(retainedValueBytes) < len(unsafeValueBytes) {
+				retainedValueBytes = make([]byte, 0, len(unsafeValueBytes))
+			}
+
+			retainedValueBytes = retainedValueBytes[:len(unsafeValueBytes)]
+			copy(retainedValueBytes, unsafeValueBytes)
+
+			_ = d.Uvarint64() // Offset
 
 			// Read the key count and label name for the next value to check if we need to record this value.
 			keyCount := d.Uvarint()
@@ -156,7 +166,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 			if currentName != string(unsafeNextName) {
 				// The next entry starts a new name. Record this value and its offset.
-				t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
+				t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: string(retainedValueBytes), tableOff: offsetInTable})
 			}
 		}
 
