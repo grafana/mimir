@@ -32,11 +32,12 @@ var (
 
 // LazyBinaryReaderMetrics holds metrics tracked by LazyBinaryReader.
 type LazyBinaryReaderMetrics struct {
-	loadCount         prometheus.Counter
-	loadFailedCount   prometheus.Counter
-	unloadCount       prometheus.Counter
-	unloadFailedCount prometheus.Counter
-	loadDuration      prometheus.Histogram
+	loadCount           prometheus.Counter
+	loadFailedCount     prometheus.Counter
+	unloadCount         prometheus.Counter
+	unloadFailedCount   prometheus.Counter
+	loadDuration        prometheus.Histogram
+	labelValuesDuration prometheus.Histogram
 }
 
 // NewLazyBinaryReaderMetrics makes new LazyBinaryReaderMetrics.
@@ -61,6 +62,11 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 		loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "indexheader_lazy_load_duration_seconds",
 			Help:    "Duration of the index-header lazy loading in seconds.",
+			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 15, 30, 60, 120, 300},
+		}),
+		labelValuesDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "indexheader_lazy_label_values_duration_seconds",
+			Help:    "Duration of the lazy index-header LabelValues in seconds.",
 			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 15, 30, 60, 120, 300},
 		}),
 	}
@@ -177,6 +183,9 @@ func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
 
 // LabelValues implements Reader.
 func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+	timer := prometheus.NewTimer(r.metrics.labelValuesDuration)
+	defer timer.ObserveDuration()
+
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
