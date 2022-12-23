@@ -187,7 +187,6 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	s, _ := tracing.StartSpan(ctx, "expandedPostings.toPostingGroups")
 
-	toPostingsGroupsStartTime := time.Now()
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
@@ -217,7 +216,6 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 	s.Finish()
 
-	r.block.logger.Log("toPostingsGroups_duration_millis", time.Since(toPostingsGroupsStartTime).Milliseconds())
 	if len(postingGroups) == 0 {
 		return nil, nil
 	}
