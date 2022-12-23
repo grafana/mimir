@@ -104,9 +104,9 @@ mimir:
           kvstore:
             store: "memberlist"
 
-      {{- if .Values.minio.enabled }}
     admin_client:
       storage:
+      {{- if .Values.minio.enabled }}
         type: s3
         s3:
           access_key_id: {{ .Values.minio.rootUser }}
@@ -114,6 +114,13 @@ mimir:
           endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
           insecure: true
           secret_access_key: {{ .Values.minio.rootPassword }}
+      {{- end }}
+      {{- if and (index .Values "admin-cache" "enabled") (eq .Values.admin-cache.cacheType "memcached" ) }}
+        cache_type: memcached
+        memcached:
+          addresses: {{ include "mimir.adminCacheAddress" . }}
+          max_item_size: {{ mul (index .Values "admin-cache").maxItemMemory 1024 1024 }}
+          timeout: 450ms
       {{- end }}
     {{- end }}
 
@@ -1599,8 +1606,9 @@ memcachedExporter:
     allowPrivilegeEscalation: false
 
 admin-cache:
-  # -- Specifies whether memcached based admin-cache should be enabled
-  enabled: false
+  # -- Specifies whether admin-cache should be enabled
+  enabled: true
+  cacheType: inmemory
 
   # -- Total number of admin-cache replicas
   replicas: 1
