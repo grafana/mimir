@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // postingGroup keeps posting keys for single matcher. Logical result of the group is:
@@ -25,7 +26,9 @@ import (
 type postingGroup struct {
 	addAll     bool
 	addKeys    []labels.Label
+	addPtrs    []*postingPtr
 	removeKeys []labels.Label
+	removePtrs []*postingPtr
 }
 
 func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) *postingGroup {
@@ -38,13 +41,25 @@ func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) *postingGr
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, error) {
+	matchingVals, err := lvr.LabelValues(m.Name, m.Matches)
+	if err != nil {
+		return nil, err
+	}
+
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
+		atLeastOneMatchingVal := false
 		for _, val := range setMatches {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
+			if util.StringsContain(matchingVals, val) {
+				atLeastOneMatchingVal = true
+			}
 		}
 		if m.Type == labels.MatchNotRegexp {
 			return newPostingGroup(true, nil, keys), nil
+		}
+		if !atLeastOneMatchingVal {
+			return newPostingGroup(false, nil, keys), nil
 		}
 		return newPostingGroup(false, keys, nil), nil
 	}
@@ -53,6 +68,9 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
+			if len(matchingVals) == 0 {
+				return newPostingGroup(false, nil, nil), nil
+			}
 			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil
 		}
 
@@ -82,12 +100,11 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	vals, err := lvr.LabelValues(m.Name, m.Matches)
-	toAdd := make([]labels.Label, len(vals))
-	for i := range vals {
-		toAdd[i] = labels.Label{Name: m.Name, Value: vals[i]}
+	toAdd := make([]labels.Label, len(matchingVals))
+	for i := range matchingVals {
+		toAdd[i] = labels.Label{Name: m.Name, Value: matchingVals[i]}
 	}
-	return newPostingGroup(false, toAdd, nil), err
+	return newPostingGroup(false, toAdd, nil), nil
 }
 
 func not(filter func(string) bool) func(string) bool {

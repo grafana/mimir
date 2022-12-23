@@ -176,13 +176,45 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 	return refs, true
 }
 
+type peekedPostings struct {
+	index.Postings
+	peeked                 storage.SeriesRef
+	seenPeeked, pastPeeked bool
+}
+
+func (p *peekedPostings) Next() bool {
+	if !p.seenPeeked {
+		p.seenPeeked = true
+		return true
+	}
+	p.pastPeeked = true
+	return p.Postings.Next()
+}
+
+func (p *peekedPostings) Seek(v storage.SeriesRef) bool {
+	if !p.pastPeeked && p.peeked >= v {
+		return true
+	}
+	return p.Postings.Seek(v)
+}
+
+func (p *peekedPostings) At() storage.SeriesRef {
+	if p.pastPeeked {
+		return p.Postings.At()
+	}
+	return p.Postings.At()
+}
+
+func (p *peekedPostings) Err() error {
+	return p.Postings.Err()
+}
+
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
 	var (
 		postingGroups []*postingGroup
 		allRequested  = false
 		hasAdds       = false
-		keys          []labels.Label
 	)
 
 	s, _ := tracing.StartSpan(ctx, "expandedPostings.toPostingGroups")
@@ -207,12 +239,6 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		postingGroups = append(postingGroups, pg)
 		allRequested = allRequested || pg.addAll
 		hasAdds = hasAdds || len(pg.addKeys) > 0
-
-		// Postings returned by fetchPostings will be in the same order as keys
-		// so it's important that we iterate them in the same order later.
-		// We don't have any other way of pairing keys and fetched postings.
-		keys = append(keys, pg.addKeys...)
-		keys = append(keys, pg.removeKeys...)
 	}
 	s.Finish()
 
@@ -228,45 +254,57 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		allPostingsLabel := labels.Label{Name: name, Value: value}
 
 		postingGroups = append(postingGroups, newPostingGroup(true, []labels.Label{allPostingsLabel}, nil))
-		keys = append(keys, allPostingsLabel)
 	}
 
-	s, spanCtx := tracing.StartSpan(ctx, "expandedPostings.fetchPostings")
-	fetchedPostings, err := r.fetchPostings(spanCtx, keys, stats)
-	s.Finish()
-	if err != nil {
-		return nil, errors.Wrap(err, "get postings")
-	}
+	var (
+		groupRemovals   []index.Postings
+		postingsInclude index.Postings
+	)
 
-	// Get "add" and "remove" postings from groups. We iterate over postingGroups and their keys
-	// again, and this is exactly the same order as before (when building the groups), so we can simply
-	// use one incrementing index to fetch postings from returned slice.
-	postingIndex := 0
-	s, _ = tracing.StartSpan(ctx, "expandedPostings.intersectPostings")
-	defer s.Finish()
+	// Sort so that we intersect first the postings lists with the fewest elements.
+	sort.Slice(postingGroups, func(i, j int) bool {
+		return (!postingGroups[i].addAll && postingGroups[j].addAll) || sumRanges(postingGroups[i].addPtrs) < sumRanges(postingGroups[j].addPtrs)
+	})
 
-	var groupAdds, groupRemovals []index.Postings
-	for _, g := range postingGroups {
-		// We cannot add empty set to groupAdds, since they are intersected.
-		if len(g.addKeys) > 0 {
-			toMerge := make([]index.Postings, 0, len(g.addKeys))
-			for _, l := range g.addKeys {
-				toMerge = append(toMerge, checkNilPosting(l, fetchedPostings[postingIndex]))
-				postingIndex++
+	// TODO add a fast case where we fetch all postings when we know that the volume is small
+	s, spanCtx := tracing.StartSpan(ctx, "expandedPostings.fetchAddPostings")
+	for _, pg := range postingGroups {
+		fetchedPostings, err := r.fetchPostings(spanCtx, pg.addKeys, stats)
+		if err != nil {
+			s.Finish()
+			return nil, errors.Wrap(err, "get postings")
+		}
+		if postingsInclude == nil {
+			postingsInclude = index.Merge(fetchedPostings...)
+		} else {
+			intersected := index.Intersect(index.Merge(fetchedPostings...), postingsInclude)
+			// We just added a set to intersect with. Try to advance the intersection to see if we have at least
+			// one common posting.
+			if !intersected.Next() {
+				return nil, intersected.Err()
 			}
-
-			groupAdds = append(groupAdds, index.Merge(toMerge...))
-		}
-
-		for _, l := range g.removeKeys {
-			groupRemovals = append(groupRemovals, checkNilPosting(l, fetchedPostings[postingIndex]))
-			postingIndex++
+			// If we have at least one posting, we save it for later use and continue with the next matcher.
+			postingsInclude = &peekedPostings{Postings: intersected, peeked: intersected.At()}
 		}
 	}
+	s.Finish()
 
+	s, spanCtx = tracing.StartSpan(ctx, "expandedPostings.fetchRemovePostings")
+	for _, pg := range postingGroups {
+		fetchedPostings, err := r.fetchPostings(spanCtx, pg.removeKeys, stats)
+		if err != nil {
+			s.Finish()
+			return nil, errors.Wrap(err, "get postings")
+		}
+		groupRemovals = append(groupRemovals, fetchedPostings...)
+	}
+	s.Finish()
+
+	// TODO add a store-gateway-load-test-tool test case which selects valida labels that don't have any intersections and then test performance in dev-09
 	s.LogKV("event", "constructed groupAdds, groupRemovals")
 
-	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
+	// TODO when passing groupAdds here they need to be in increasing order so we spik the most in
+	result := index.Without(postingsInclude, index.Merge(groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
 	s.LogKV("event", "expanded postings")
@@ -288,6 +326,13 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	s.LogKV("event", "got index header version")
 
 	return ps, nil
+}
+
+func sumRanges(ranges []*postingPtr) (sum int64) {
+	for _, r := range ranges {
+		sum += r.ptr.End - r.ptr.Start
+	}
+	return
 }
 
 // FetchPostings fills postings requested by posting groups.
@@ -360,6 +405,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
+		// TODO this shouldn't happen now since we've looked up the values in the header before reaching this point
 		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
