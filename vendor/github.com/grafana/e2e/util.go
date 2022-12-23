@@ -275,7 +275,7 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 	}
 }
 
-func generateTestSampleHistogram(i int) *model.SampleHistogram {
+func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	return &model.SampleHistogram{
 		Count: model.FloatString(5 + i*4),
 		Sum:   model.FloatString(18.4 * float64(i+1)),
@@ -340,7 +340,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 	vector = append(vector, &model.Sample{
 		Metric:    metric,
 		Timestamp: model.Time(tsMillis),
-		Histogram: generateTestSampleHistogram(0),
+		Histogram: GenerateTestSampleHistogram(0),
 	})
 
 	matrix = append(matrix, &model.SampleStream{
@@ -348,7 +348,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 		Histograms: []model.SampleHistogramPair{
 			{
 				Timestamp: model.Time(tsMillis),
-				Histogram: *generateTestSampleHistogram(0),
+				Histogram: *GenerateTestSampleHistogram(0),
 			},
 		},
 	})
@@ -384,7 +384,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 		vector = append(vector, &model.Sample{
 			Metric:    metric,
 			Timestamp: model.Time(tsMillis),
-			Histogram: generateTestSampleHistogram(i),
+			Histogram: GenerateTestSampleHistogram(i),
 		})
 	}
 	return

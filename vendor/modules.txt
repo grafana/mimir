@@ -524,7 +524,7 @@ github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/util/stringsutil
-# github.com/grafana/e2e v0.1.1-0.20221220153032-0e7b2838f556
+# github.com/grafana/e2e v0.1.1-0.20221223120552-be1bbed5ed47
 ## explicit; go 1.18
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
@@ -757,8 +757,8 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.3.0
 ## explicit; go 1.9
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.37.0 => github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855
-## explicit; go 1.17
+# github.com/prometheus/common v0.37.0 => github.com/zenador/prometheus-common v0.0.0-20221223120230-84e64ded26db
+## explicit; go 1.18
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
@@ -1074,7 +1074,7 @@ golang.org/x/exp/slices
 # golang.org/x/mod v0.7.0
 ## explicit; go 1.17
 golang.org/x/mod/semver
-# golang.org/x/net v0.2.0
+# golang.org/x/net v0.4.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context
@@ -1091,7 +1091,7 @@ golang.org/x/net/ipv6
 golang.org/x/net/netutil
 golang.org/x/net/publicsuffix
 golang.org/x/net/trace
-# golang.org/x/oauth2 v0.1.0
+# golang.org/x/oauth2 v0.3.0
 ## explicit; go 1.17
 golang.org/x/oauth2
 golang.org/x/oauth2/authhandler
@@ -1361,4 +1361,4 @@ sigs.k8s.io/yaml
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
-# github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855
+# github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221223120230-84e64ded26db

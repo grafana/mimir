@@ -17,7 +17,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20221222155338-19b619d2a0da
-	github.com/grafana/e2e v0.1.1-0.20221220153032-0e7b2838f556
+	github.com/grafana/e2e v0.1.1-0.20221223120552-be1bbed5ed47
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.45
@@ -41,7 +41,7 @@ require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.3.0
-	golang.org/x/net v0.2.0
+	golang.org/x/net v0.4.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/time v0.1.0
 	google.golang.org/grpc v1.50.1
@@ -209,7 +209,7 @@ require (
 	go.opentelemetry.io/otel/metric v0.33.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/oauth2 v0.1.0 // indirect
+	golang.org/x/oauth2 v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
@@ -248,4 +248,4 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 // + https://github.com/go-yaml/yaml/pull/876
 replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 
-replace github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855
+replace github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221223120230-84e64ded26db
