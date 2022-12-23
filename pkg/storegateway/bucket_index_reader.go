@@ -329,9 +329,11 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 	output := make([]index.Postings, len(keys))
 
+	ss, _ := tracing.StartSpan(ctx, "fetchPostings.FetchMultiPostings")
 	// Fetch postings from the cache with a single call.
 	fromCache, _ := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
-	s.LogKV("event", "fetched postings form cache")
+	ss.Finish()
+
 	// Iterate over all groups and fetch posting from cache.
 	// If we have a miss, mark key to be fetched in `ptrs` slice.
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
