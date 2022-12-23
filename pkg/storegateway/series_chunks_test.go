@@ -591,12 +591,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingSeriesChunksSetIterator(
-				*readers,
-				newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...),
-				100,
-				newSafeQueryStats(),
-			)
+			set := newLoadingSeriesChunksSetIterator(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
@@ -746,7 +741,7 @@ func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *chunkReaderMock) load(result []seriesEntry, chunksPool pool.BatchReleasable[byte], _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
