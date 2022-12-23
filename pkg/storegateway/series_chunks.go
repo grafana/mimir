@@ -172,15 +172,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(
-		chunkReaders,
-		refsIterator,
-		refsIteratorBatchSize,
-		stats,
-		func() pool.BatchReleasable[byte] {
-			return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
-		},
-	)
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
 	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
@@ -296,29 +288,21 @@ func (p *preloadingSetIterator[Set]) Err() error {
 }
 
 type loadingSeriesChunksSetIterator struct {
-	chunkReaders     bucketChunkReaders
-	from             seriesChunkRefsSetIterator
-	fromBatchSize    int
-	stats            *safeQueryStats
-	chunkPoolFactory func() pool.BatchReleasable[byte]
+	chunkReaders  bucketChunkReaders
+	from          seriesChunkRefsSetIterator
+	fromBatchSize int
+	stats         *safeQueryStats
 
 	current seriesChunksSet
 	err     error
 }
 
-func newLoadingSeriesChunksSetIterator(
-	chunkReaders bucketChunkReaders,
-	from seriesChunkRefsSetIterator,
-	fromBatchSize int,
-	stats *safeQueryStats,
-	chunkPoolFactory func() pool.BatchReleasable[byte],
-) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
-		chunkReaders:     chunkReaders,
-		from:             from,
-		fromBatchSize:    fromBatchSize,
-		stats:            stats,
-		chunkPoolFactory: chunkPoolFactory,
+		chunkReaders:  chunkReaders,
+		from:          from,
+		fromBatchSize: fromBatchSize,
+		stats:         stats,
 	}
 }
 
@@ -371,7 +355,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	}
 
 	// Create a batched memory pool that can be released all at once.
-	chunksPool := c.chunkPoolFactory()
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {

@@ -22,31 +22,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-type trackedBatchReleasableBytePool struct {
-	delegate pool.BatchReleasable[byte]
-
-	balance  atomic.Uint64
-	gets     atomic.Uint64
-	released atomic.Bool
-}
-
-func (t *trackedBatchReleasableBytePool) Get(size int) []byte {
-	res := t.delegate.Get(size)
-	t.balance.Add(uint64(cap(res)))
-	t.gets.Inc()
-	return res
-}
-
-func (t *trackedBatchReleasableBytePool) Release() {
-	t.delegate.Release()
-	t.balance.Store(0)
-	t.released.Store(true)
-}
-
 func init() {
 	// Track the balance of gets/puts in pools in all tests.
 	seriesEntrySlicePool = &pool.TrackedPool{Parent: seriesEntrySlicePool}
 	seriesChunksSlicePool = &pool.TrackedPool{Parent: seriesChunksSlicePool}
+	chunkBytesSlicePool = &pool.TrackedPool{Parent: chunkBytesSlicePool}
 }
 
 func TestSeriesChunksSet(t *testing.T) {
@@ -601,11 +581,9 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesEntrySlicePool.(*pool.TrackedPool).Reset()
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
+			chunkBytesSlicePool.(*pool.TrackedPool).Reset()
 
 			// Setup
-			bytesPool := &trackedBatchReleasableBytePool{
-				delegate: pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0),
-			}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
 				readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
@@ -618,30 +596,17 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...),
 				100,
 				newSafeQueryStats(),
-				func() pool.BatchReleasable[byte] {
-					return bytesPool
-				},
 			)
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
 			if testCase.expectedErr != "" {
 				assert.ErrorContains(t, set.Err(), testCase.expectedErr)
+				assert.Equal(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			} else {
 				assert.NoError(t, set.Err())
+				assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			}
-			// NoopBytes should allocate slices just the right size, so the packing optimization in BatchBytes should not be used
-			// This allows to assert on the exact number of bytes allocated.
-			var expectedReservedBytes int
-			for _, set := range testCase.expectedSets {
-				for _, s := range set.series {
-					for _, c := range s.chks {
-						expectedReservedBytes += len(c.Raw.Data)
-					}
-				}
-			}
-			assert.Equal(t, expectedReservedBytes, int(bytesPool.balance.Load()))
-
 			// Check that chunks bytes are what we expect
 			require.Len(t, loadedSets, len(testCase.expectedSets))
 			for i, loadedSet := range loadedSets {
@@ -659,7 +624,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				s.release()
 			}
 
-			assert.Zero(t, int(bytesPool.balance.Load()))
+			assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Greater(t, seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
@@ -715,15 +680,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(
-					*chunkReaders,
-					newSliceSeriesChunkRefsSetIterator(nil, sets...),
-					batchSize,
-					stats,
-					func() pool.BatchReleasable[byte] {
-						return pool.NewSafeSlabPool[byte](chunkBytesSlicePool, 0)
-					},
-				)
+				it := newLoadingSeriesChunksSetIterator(*chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
 
 				actualSeries := 0
 				actualChunks := 0
