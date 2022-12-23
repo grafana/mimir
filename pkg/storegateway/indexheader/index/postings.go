@@ -22,11 +22,8 @@ import (
 const postingLengthFieldSize = 4
 
 type PostingOffsetTable interface {
-	// PostingsOffset returns a list of offsets for labels named name with value in values.
-	// TODO: can this be simplified to only handle a single value?
-	// StreamBinaryReader.PostingsOffset only ever calls this method with a single value, although there's a comment
-	// in there about taking advantage of retrieving multiple values at once.
-	PostingsOffset(name string, values ...string) ([]index.Range, error)
+	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
+	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
 	// LabelValues returns a list of values for the label named name that match filter.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
@@ -227,20 +224,16 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 	return d.Err()
 }
 
-func (t *PostingOffsetTableV1) PostingsOffset(name string, values ...string) ([]index.Range, error) {
-	rngs := make([]index.Range, 0, len(values))
+func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.Range, bool, error) {
 	e, ok := t.postings[name]
 	if !ok {
-		return nil, nil
+		return index.Range{}, false, nil
 	}
-	for _, v := range values {
-		rng, ok := e[v]
-		if !ok {
-			continue
-		}
-		rngs = append(rngs, rng)
+	rng, ok := e[value]
+	if !ok {
+		return index.Range{}, false, nil
 	}
-	return rngs, nil
+	return rng, true, nil
 }
 
 func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool) ([]string, error) {
@@ -298,130 +291,86 @@ type postingOffset struct {
 	tableOff int
 }
 
-func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r []index.Range, err error) {
+func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
 	e, ok := t.postings[name]
 	if !ok {
-		return nil, nil
+		return index.Range{}, false, nil
 	}
 
-	if len(values) == 0 {
-		return nil, nil
-	}
-
-	rngs := make([]index.Range, 0, len(values))
-	buf := 0
-	valueIndex := 0
-	for valueIndex < len(values) && values[valueIndex] < e.offsets[0].value {
-		// Discard values before the start.
-		valueIndex++
+	if value < e.offsets[0].value {
+		// The desired value sorts before the first known value.
+		return index.Range{}, false, nil
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get postings offsets")
 	if err := d.Err(); err != nil {
-		return nil, err
+		return index.Range{}, false, err
 	}
 
-	var newSameRngs []index.Range // The start, end offsets in the postings table in the original index file.
-	for valueIndex < len(values) {
-		wantedValue := values[valueIndex]
+	i := sort.Search(len(e.offsets), func(i int) bool { return e.offsets[i].value >= value })
 
-		i := sort.Search(len(e.offsets), func(i int) bool { return e.offsets[i].value >= wantedValue })
-		if i == len(e.offsets) {
-			// We're past the end.
-			break
+	if i == len(e.offsets) {
+		// The desired value sorts after the last known value.
+		return index.Range{}, false, nil
+	}
+
+	if i > 0 && e.offsets[i].value != value {
+		// Need to look from previous entry.
+		i--
+	}
+
+	d.ResetAt(e.offsets[i].tableOff)
+	nAndNameSize := 0
+
+	for d.Err() == nil {
+		// Posting format entry is as follows:
+		// │ ┌────────────────────────────────────────┐ │
+		// │ │  n = 2 <1b>                            │ │
+		// │ ├──────────────────────┬─────────────────┤ │
+		// │ │ len(name) <uvarint>  │ name <bytes>    │ │
+		// │ ├──────────────────────┼─────────────────┤ │
+		// │ │ len(value) <uvarint> │ value <bytes>   │ │
+		// │ ├──────────────────────┴─────────────────┤ │
+		// │ │  offset <uvarint64>                    │ │
+		// │ └────────────────────────────────────────┘ │
+		skipNAndName(&d, &nAndNameSize)
+		currentValue := d.UvarintStr()
+		postingOffset := int64(d.Uvarint64())
+
+		if currentValue > value {
+			// There is no entry for value.
+			return index.Range{}, false, nil
 		}
-		if i > 0 && e.offsets[i].value != wantedValue {
-			// Need to look from previous entry.
-			i--
-		}
 
-		// Reusing the same decoding buffer on each iteration so make sure it's reset to
-		// the beginning of the posting offset table before we search
-		d.ResetAt(e.offsets[i].tableOff)
-
-		// Iterate on the offset table.
-		newSameRngs = newSameRngs[:0]
-		for d.Err() == nil {
-			// Posting format entry is as follows:
-			// │ ┌────────────────────────────────────────┐ │
-			// │ │  n = 2 <1b>                            │ │
-			// │ ├──────────────────────┬─────────────────┤ │
-			// │ │ len(name) <uvarint>  │ name <bytes>    │ │
-			// │ ├──────────────────────┼─────────────────┤ │
-			// │ │ len(value) <uvarint> │ value <bytes>   │ │
-			// │ ├──────────────────────┴─────────────────┤ │
-			// │ │  offset <uvarint64>                    │ │
-			// │ └────────────────────────────────────────┘ │
-			// First, let's skip n and name.
-			skipNAndName(&d, &buf)
-			value := d.UvarintStr() // Label value.
-			postingOffset := int64(d.Uvarint64())
-
-			if len(newSameRngs) > 0 {
-				// We added some ranges in previous iteration. Use next posting offset as end of all our new ranges.
-				for j := range newSameRngs {
-					newSameRngs[j].End = postingOffset - crc32.Size
-				}
-				rngs = append(rngs, newSameRngs...)
-				newSameRngs = newSameRngs[:0]
-			}
-
-			for value >= wantedValue {
-				// If wantedValue is equals of greater than current value, loop over all given wanted values in the values until
-				// this is no longer true or there are no more values wanted.
-				// This ensures we cover case when someone asks for postingsOffset(name, value1, value1, value1).
-
-				// Record on the way if wanted value is equal to the current value.
-				if value == wantedValue {
-					newSameRngs = append(newSameRngs, index.Range{Start: postingOffset + postingLengthFieldSize})
-				}
-				valueIndex++
-				if valueIndex == len(values) {
-					break
-				}
-				wantedValue = values[valueIndex]
-			}
+		if currentValue == value {
+			rng := index.Range{Start: postingOffset + postingLengthFieldSize}
 
 			if i+1 == len(e.offsets) {
 				// No more offsets for this name.
-				// Break this loop and record lastOffset on the way for ranges we just added if any.
-				for j := range newSameRngs {
-					newSameRngs[j].End = e.lastValOffset
-				}
-				rngs = append(rngs, newSameRngs...)
-				break
-			}
-
-			if valueIndex != len(values) && wantedValue <= e.offsets[i+1].value {
-				// wantedValue is smaller or same as the next offset we know about, let's iterate further to add those.
-				continue
-			}
-
-			// Nothing wanted or wantedValue is larger than next offset we know about.
-			// Let's exit and do binary search again / exit if nothing wanted.
-
-			if len(newSameRngs) > 0 {
-				// We added some ranges in this iteration. Use next posting offset as the end of our ranges.
-				// We know it exists as we never go further in this loop than e.offsets[i, i+1].
-
-				skipNAndName(&d, &buf)
-				d.UnsafeUvarintBytes() // Label value.
+				rng.End = e.lastValOffset
+			} else {
+				// There's at least one more value for this name, use that as the end of the range.
+				skipNAndName(&d, &nAndNameSize)
+				d.SkipUvarintBytes() // Label value.
 				postingOffset := int64(d.Uvarint64())
-
-				for j := range newSameRngs {
-					newSameRngs[j].End = postingOffset - crc32.Size
-				}
-				rngs = append(rngs, newSameRngs...)
+				rng.End = postingOffset - crc32.Size
 			}
-			break
-		}
-		if d.Err() != nil {
-			return nil, errors.Wrap(d.Err(), "get postings offset entry")
+
+			if d.Err() != nil {
+				return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
+			}
+
+			return rng, true, nil
 		}
 	}
 
-	return rngs, nil
+	if d.Err() != nil {
+		return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
+	}
+
+	// If we get to here, there is no entry for value.
+	return index.Range{}, false, nil
 }
 
 func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) (v []string, err error) {
@@ -448,8 +397,8 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 			// These are always the same number of bytes,
 			// and it's faster to skip than parse.
 			skip = d.Len()
-			d.Uvarint()            // Keycount.
-			d.UnsafeUvarintBytes() // Label name.
+			d.Uvarint()          // Keycount.
+			d.SkipUvarintBytes() // Label name.
 			skip -= d.Len()
 		} else {
 			d.Skip(skip)
@@ -493,8 +442,8 @@ func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 		// Keycount+LabelName are always the same number of bytes,
 		// and it's faster to skip than parse.
 		*buf = d.Len()
-		d.Uvarint()            // Keycount.
-		d.UnsafeUvarintBytes() // Label name.
+		d.Uvarint()          // Keycount.
+		d.SkipUvarintBytes() // Label name.
 		*buf -= d.Len()
 		return
 	}

@@ -11,7 +11,7 @@
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
 * [ENHANCEMENT] Distributor: remove labels with empty values #2439
 * [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
-* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use memory mapped files. The index-header reader is expected to improve stability of the store-gateway. You can enable this implementation with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639 #3691 #3703 #3742 #3797 #3785
+* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use memory mapped files. The index-header reader is expected to improve stability of the store-gateway. You can enable this implementation with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639 #3691 #3703 #3742 #3785 #3787 #3797
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_cancelled_requests_total` metric to track the number of requests that are already cancelled when dequeued. #3696
 * [ENHANCEMENT] Store-gateway: add `cortex_bucket_store_partitioner_extended_ranges_total` metric to keep track of the ranges that the partitioner decided to overextend and merge in order to save API call to the object storage. #3769
 * [ENHANCEMENT] Compactor: Auto-forget unhealthy compactors after ten failed ring heartbeats. #3771
@@ -21,6 +21,8 @@
 * [BUGFIX] Debian package: Fix post-install, environment file path and user creation. #3720
 * [BUGFIX] memberlist: Fix panic during Mimir startup when Mimir receives gossip message before it's ready. #3746
 * [BUGFIX] Store-gateway: fix `cortex_bucket_store_partitioner_requested_bytes_total` metric to not double count overlapping ranges. #3769
+* [BUGFIX] Update `github.com/thanos-io/objstore` to address issue with Multipart PUT on s3-compatible Object Storage. #3802
+* [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 
 ### Mixin
 
@@ -36,6 +38,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Replaced the deprecated `policy/v1beta1` with `policy/v1` when configuring a PodDisruptionBudget for read-write deployment mode. #3811
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766

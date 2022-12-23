@@ -39,7 +39,6 @@ func (cfg *MemcachedConfig) GetAddresses() []string {
 	if cfg.Addresses == "" {
 		return []string{}
 	}
-
 	return strings.Split(cfg.Addresses, ",")
 }
 
@@ -48,11 +47,10 @@ func (cfg *MemcachedConfig) Validate() error {
 	if len(cfg.GetAddresses()) == 0 {
 		return ErrNoMemcachedAddresses
 	}
-
 	return nil
 }
 
-func (cfg MemcachedConfig) ToMemcachedClientConfig() MemcachedClientConfig {
+func (cfg *MemcachedConfig) ToMemcachedClientConfig() MemcachedClientConfig {
 	return MemcachedClientConfig{
 		Addresses:                 cfg.GetAddresses(),
 		Timeout:                   cfg.Timeout,

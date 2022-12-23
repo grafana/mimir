@@ -1,10 +1,9 @@
 {
   local service = $.core.v1.service,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+  local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
 
   newMimirRolloutGroupPDB(rolloutGroup, maxUnavailable)::
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName('%s-rollout-pdb' % rolloutGroup) +
+    podDisruptionBudget.new('%s-rollout-pdb' % rolloutGroup) +
     podDisruptionBudget.mixin.metadata.withLabels({ name: '%s-rollout-pdb' % rolloutGroup }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': rolloutGroup }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(maxUnavailable),
