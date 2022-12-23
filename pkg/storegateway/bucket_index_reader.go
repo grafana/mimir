@@ -269,6 +269,9 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// TODO add a fast case where we fetch all postings when we know that the volume is small
 	s, spanCtx := tracing.StartSpan(ctx, "expandedPostings.fetchAddPostings")
 	for _, pg := range postingGroups {
+		if len(pg.addKeys) == 0 {
+			continue
+		}
 		fetchedPostings, err := r.fetchPostings(spanCtx, pg.addKeys, stats)
 		if err != nil {
 			s.Finish()
@@ -291,6 +294,9 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	s, spanCtx = tracing.StartSpan(ctx, "expandedPostings.fetchRemovePostings")
 	for _, pg := range postingGroups {
+		if len(pg.removeKeys) == 0 {
+			continue
+		}
 		fetchedPostings, err := r.fetchPostings(spanCtx, pg.removeKeys, stats)
 		if err != nil {
 			s.Finish()
