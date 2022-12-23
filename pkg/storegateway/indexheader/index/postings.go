@@ -98,44 +98,39 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	remainingCount := d.Be32()
 	currentName := ""
 	valuesForCurrentKey := 0
-	lastEntryOffsetInTable := -1
+	haveAlreadyReadKeyCount := false
 
 	for d.Err() == nil && remainingCount > 0 {
 		lastName := currentName
 		offsetInTable := d.Position()
-		keyCount := d.Uvarint()
 
-		// The Postings offset table takes only 2 keys per entry (name and value of label).
-		if keyCount != 2 {
-			return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		if haveAlreadyReadKeyCount {
+			// We've already read the key count and it is 2. The value 2 occupies a single byte when encoded as a uvarint,
+			// so adjust offsetInTable to account for this.
+			offsetInTable -= 1
+		} else {
+			keyCount := d.Uvarint()
+
+			// The Postings offset table takes only 2 keys per entry (name and value of label).
+			if keyCount != 2 {
+				return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
+			}
 		}
 
-		// Important: this value is only valid as long as we don't perform any further reads from d.
+		haveAlreadyReadKeyCount = false
+
+		// Important: the value of unsafeName is only valid as long as we don't perform any further reads from d.
 		// If we need to retain its value, we must copy it before performing another read.
 		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || lastName != string(unsafeName) {
-			newName := string(unsafeName)
-
-			if lastEntryOffsetInTable != -1 {
-				// We haven't recorded the last offset for the last value of the previous name.
-				// Go back and read the last value for the previous name.
-				newValueOffsetInTable := d.Position()
-				d.ResetAt(lastEntryOffsetInTable)
-				d.Uvarint()          // Skip the key count
-				d.SkipUvarintBytes() // Skip the name
-				value := d.UvarintStr()
-				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
-
-				// Skip ahead to where we were before we called ResetAt() above.
-				d.Skip(newValueOffsetInTable - d.Position())
-			}
-
-			currentName = newName
+			currentName = string(unsafeName)
 			t.postings[currentName] = &postingValueOffsets{}
 			valuesForCurrentKey = 0
 		}
 
+		isLastEntryForTable := remainingCount == 1
+
 		// Retain every 1-in-postingOffsetsInMemSampling entries, starting with the first one.
-		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 {
+		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 || isLastEntryForTable {
 			value := d.UvarintStr()
 			off := d.Uvarint64()
 			t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
@@ -143,31 +138,30 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 			if lastName != currentName {
 				t.postings[lastName].lastValOffset = int64(off - crc32.Size)
 			}
-
-			// If the current value is the last one for this name, we don't need to record it again.
-			lastEntryOffsetInTable = -1
 		} else {
 			// We only need to store this value if it's the last one for this name.
-			// Record our current position in the table and come back to it if it turns out this is the last value.
-			lastEntryOffsetInTable = offsetInTable
+			value := d.UvarintStr() // TODO: peek and copy, then only allocate string if we need it
+			_ = d.Uvarint64()       // Offset
 
-			// Skip over the value and offset.
-			d.SkipUvarintBytes()
-			d.Uvarint64()
+			// Read the key count and label name for the next value to check if we need to record this value.
+			keyCount := d.Uvarint()
+
+			// The Postings offset table takes only 2 keys per entry (name and value of label).
+			if keyCount != 2 {
+				return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
+			}
+
+			haveAlreadyReadKeyCount = true
+			unsafeNextName := d.UnsafePeekUvarintBytes()
+
+			if currentName != string(unsafeNextName) {
+				// The next entry starts a new name. Record this value and its offset.
+				t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
+			}
 		}
 
 		valuesForCurrentKey++
 		remainingCount--
-	}
-
-	if lastEntryOffsetInTable != -1 {
-		// We haven't recorded the last offset for the last value of the last key
-		// Go back and read the last value for the last key.
-		d.ResetAt(lastEntryOffsetInTable)
-		d.Uvarint()          // Skip the key count
-		d.SkipUvarintBytes() // Skip the key
-		value := d.UvarintStr()
-		t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 	}
 
 	if d.Err() != nil {

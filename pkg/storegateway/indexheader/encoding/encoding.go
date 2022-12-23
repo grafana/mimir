@@ -188,6 +188,58 @@ func (d *Decbuf) Uvarint64() uint64 {
 	return x
 }
 
+func (d *Decbuf) PeekUvarint64() (uint64, int) {
+	if d.E != nil {
+		return 0, 0
+	}
+	b, err := d.r.peek(10)
+	if err != nil {
+		d.E = err
+		return 0, 0
+	}
+
+	x, n := varint.Uvarint(b)
+	if n < 1 {
+		d.E = ErrInvalidSize
+		return 0, 0
+	}
+
+	return x, n
+}
+
+func (d *Decbuf) UnsafePeekUvarintBytes() []byte {
+	l, sizeBytes := d.PeekUvarint64()
+	if d.E != nil {
+		return nil
+	}
+
+	// If the length of this uvarint slice is greater than the size of buffer used
+	// by our file reader, we can't peek() it. Instead, we have to use the read() method
+	// which will allocate its own slice to hold the results. We prefer to use peek()
+	// when possible for performance but can't rely on slices always being less than
+	// the size of our buffer.
+	if l > uint64(d.r.size()) {
+		panic("TODO: can't handle this")
+	}
+
+	b, err := d.r.peek(int(l) + sizeBytes)
+	if err != nil {
+		d.E = err
+		return nil
+	}
+
+	if len(b) != int(l)+sizeBytes {
+		d.E = ErrInvalidSize
+		return nil
+	}
+
+	if b == nil {
+		return nil
+	}
+
+	return b[sizeBytes:]
+}
+
 func (d *Decbuf) Be64() uint64 {
 	if d.E != nil {
 		return 0
