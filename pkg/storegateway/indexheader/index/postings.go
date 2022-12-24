@@ -453,14 +453,25 @@ func (t *PostingOffsetTableV2) Contains(name string, cmp func(string) int) (_ bo
 	if exactMatch {
 		return true, nil
 	}
-
-	offsetWithValue := e.offsets[offsetIdx-1]
+	var (
+		offsetWithValue  postingOffset
+		offsetAfterValue postingOffset
+	)
+	if offsetIdx > 0 {
+		offsetWithValue = e.offsets[offsetIdx-1]
+	} else {
+		offsetWithValue = e.offsets[offsetIdx]
+	}
+	if offsetIdx < len(e.offsets)-1 {
+		offsetAfterValue = e.offsets[offsetIdx+1]
+	} else {
+		offsetAfterValue = e.offsets[offsetIdx]
+	}
 
 	d.ResetAt(offsetWithValue.tableOff)
-	lastVal := e.offsets[len(e.offsets)-1].value
 
 	skip := 0
-	for d.Err() == nil {
+	for d.Err() == nil && d.Position() < offsetAfterValue.tableOff {
 		if skip == 0 {
 			// These are always the same number of bytes,
 			// and it's faster to skip than parse.
@@ -474,9 +485,6 @@ func (t *PostingOffsetTableV2) Contains(name string, cmp func(string) int) (_ bo
 		s := yoloString(d.UnsafeUvarintBytes()) // Label value.
 		if cmp(s) == 0 {
 			return true, nil
-		}
-		if s == lastVal {
-			break
 		}
 		d.Uvarint64() // Offset.
 	}
