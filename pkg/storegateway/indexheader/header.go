@@ -38,7 +38,7 @@ type Reader interface {
 	// then empty string is returned and no error.
 	// If non-nil filter is provided, then only values for which filter returns true are returned.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
-	HasLabelValues(name string, filter func(string) bool) (bool, error)
+	Contains(name string, cmp func(string) int) (bool, error)
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames() ([]string, error)

@@ -27,7 +27,7 @@ type PostingOffsetTable interface {
 
 	// LabelValues returns a list of values for the label named name that match filter.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
-	HasLabelValues(name string, filter func(string) bool) (bool, error)
+	Contains(name string, cmp func(string) int) (bool, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -252,13 +252,13 @@ func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool
 	return values, nil
 }
 
-func (t *PostingOffsetTableV1) HasLabelValues(name string, filter func(string) bool) (_ bool, err error) {
+func (t *PostingOffsetTableV1) Contains(name string, cmp func(string) int) (_ bool, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return false, nil
 	}
 	for k := range e {
-		if filter == nil || filter(k) {
+		if cmp(k) == 0 {
 			return true, nil
 		}
 	}
@@ -434,7 +434,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	return values, nil
 }
 
-func (t *PostingOffsetTableV2) HasLabelValues(name string, filter func(string) bool) (_ bool, err error) {
+func (t *PostingOffsetTableV2) Contains(name string, cmp func(string) int) (_ bool, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return false, nil
@@ -447,7 +447,16 @@ func (t *PostingOffsetTableV2) HasLabelValues(name string, filter func(string) b
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	d.ResetAt(e.offsets[0].tableOff)
+	offsetIdx, exactMatch := sort.Find(len(e.offsets), func(i int) int {
+		return cmp(e.offsets[i].value)
+	})
+	if exactMatch {
+		return true, nil
+	}
+
+	offsetWithValue := e.offsets[offsetIdx-1]
+
+	d.ResetAt(offsetWithValue.tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	skip := 0
@@ -463,7 +472,7 @@ func (t *PostingOffsetTableV2) HasLabelValues(name string, filter func(string) b
 			d.Skip(skip)
 		}
 		s := yoloString(d.UnsafeUvarintBytes()) // Label value.
-		if filter == nil || filter(s) {
+		if cmp(s) == 0 {
 			return true, nil
 		}
 		if s == lastVal {

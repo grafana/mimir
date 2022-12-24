@@ -198,7 +198,7 @@ func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([
 }
 
 // HasLabelValues implements Reader.
-func (r *LazyBinaryReader) HasLabelValues(name string, filter func(string) bool) (bool, error) {
+func (r *LazyBinaryReader) Contains(name string, cmp func(string) int) (bool, error) {
 	timer := prometheus.NewTimer(r.metrics.labelValuesDuration)
 	defer timer.ObserveDuration()
 
@@ -210,7 +210,7 @@ func (r *LazyBinaryReader) HasLabelValues(name string, filter func(string) bool)
 	}
 
 	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.HasLabelValues(name, filter)
+	return r.reader.Contains(name, cmp)
 }
 
 // LabelNames implements Reader.

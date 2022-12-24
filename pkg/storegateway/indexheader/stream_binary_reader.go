@@ -220,8 +220,8 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 	return r.postingsOffsetTable.LabelValues(name, filter)
 }
 
-func (r *StreamBinaryReader) HasLabelValues(name string, filter func(string) bool) (bool, error) {
-	return r.postingsOffsetTable.HasLabelValues(name, filter)
+func (r *StreamBinaryReader) Contains(name string, cmp func(string) int) (bool, error) {
+	return r.postingsOffsetTable.Contains(name, cmp)
 }
 
 func (r *StreamBinaryReader) LabelNames() ([]string, error) {

@@ -8,6 +8,7 @@ package storegateway
 import (
 	"encoding/binary"
 	"sort"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -69,9 +70,9 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			// TODO we only need to know whether there are any values that match. We don't care what they are,
-			// 		so we can probably avoid doing some allocations in the postings offset table
-			matchingVals, err := lvr.HasLabelValues(m.Name, m.Matches)
+			matchingVals, err := lvr.Contains(m.Name, func(s string) int {
+				return strings.Compare(m.Value, s)
+			})
 			if err != nil {
 				return nil, err
 			}
