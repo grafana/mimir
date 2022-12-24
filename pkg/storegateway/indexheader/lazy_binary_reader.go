@@ -197,6 +197,22 @@ func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([
 	return r.reader.LabelValues(name, filter)
 }
 
+// HasLabelValues implements Reader.
+func (r *LazyBinaryReader) HasLabelValues(name string, filter func(string) bool) (bool, error) {
+	timer := prometheus.NewTimer(r.metrics.labelValuesDuration)
+	defer timer.ObserveDuration()
+
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
+	if err := r.load(); err != nil {
+		return false, err
+	}
+
+	r.usedAt.Store(time.Now().UnixNano())
+	return r.reader.HasLabelValues(name, filter)
+}
+
 // LabelNames implements Reader.
 func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 	r.readerMx.RLock()

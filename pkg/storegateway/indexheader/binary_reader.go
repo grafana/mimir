@@ -842,6 +842,10 @@ func (r *BinaryReader) LookupSymbol(o uint32) (string, error) {
 
 	return s, nil
 }
+func (r *BinaryReader) HasLabelValues(name string, filter func(string) bool) (bool, error) {
+	vals, err := r.LabelValues(name, filter)
+	return len(vals) > 0, err
+}
 
 func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
 	if r.indexVersion == index.FormatV1 {

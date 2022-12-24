@@ -71,12 +71,12 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		if m.Type == labels.MatchEqual {
 			// TODO we only need to know whether there are any values that match. We don't care what they are,
 			// 		so we can probably avoid doing some allocations in the postings offset table
-			matchingVals, err := lvr.LabelValues(m.Name, m.Matches)
+			matchingVals, err := lvr.HasLabelValues(m.Name, m.Matches)
 			if err != nil {
 				return nil, err
 			}
 
-			if len(matchingVals) == 0 {
+			if !matchingVals {
 				return newPostingGroup(false, nil, nil), nil
 			}
 			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil

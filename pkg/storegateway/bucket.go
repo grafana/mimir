@@ -1838,6 +1838,7 @@ func (b *bucketBlock) Close() error {
 
 type labelValuesReader interface {
 	LabelValues(name string, filter func(string) bool) ([]string, error)
+	HasLabelValues(name string, filter func(string) bool) (bool, error)
 }
 
 type Part struct {

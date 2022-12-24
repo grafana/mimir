@@ -27,6 +27,7 @@ type PostingOffsetTable interface {
 
 	// LabelValues returns a list of values for the label named name that match filter.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
+	HasLabelValues(name string, filter func(string) bool) (bool, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -251,6 +252,19 @@ func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool
 	return values, nil
 }
 
+func (t *PostingOffsetTableV1) HasLabelValues(name string, filter func(string) bool) (_ bool, err error) {
+	e, ok := t.postings[name]
+	if !ok {
+		return false, nil
+	}
+	for k := range e {
+		if filter == nil || filter(k) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	labelNames := make([]string, 0, len(t.postings))
 	allPostingsKeyName, _ := index.AllPostingsKey()
@@ -418,6 +432,49 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 		return nil, errors.Wrap(d.Err(), "get label values")
 	}
 	return values, nil
+}
+
+func (t *PostingOffsetTableV2) HasLabelValues(name string, filter func(string) bool) (_ bool, err error) {
+	e, ok := t.postings[name]
+	if !ok {
+		return false, nil
+	}
+	if len(e.offsets) == 0 {
+		return false, nil
+	}
+	// Don't Crc32 the entire postings offset table, this is very slow
+	// so hope any issues were caught at startup.
+	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
+	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
+
+	d.ResetAt(e.offsets[0].tableOff)
+	lastVal := e.offsets[len(e.offsets)-1].value
+
+	skip := 0
+	for d.Err() == nil {
+		if skip == 0 {
+			// These are always the same number of bytes,
+			// and it's faster to skip than parse.
+			skip = d.Len()
+			d.Uvarint()          // Keycount.
+			d.SkipUvarintBytes() // Label name.
+			skip -= d.Len()
+		} else {
+			d.Skip(skip)
+		}
+		s := yoloString(d.UnsafeUvarintBytes()) // Label value.
+		if filter == nil || filter(s) {
+			return true, nil
+		}
+		if s == lastVal {
+			break
+		}
+		d.Uvarint64() // Offset.
+	}
+	if d.Err() != nil {
+		return false, errors.Wrap(d.Err(), "get label values")
+	}
+	return false, nil
 }
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
