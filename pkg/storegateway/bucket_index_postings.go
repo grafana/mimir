@@ -88,6 +88,7 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
+			// TODO can also check if this value exists. if it does not, then we can return an EmptyPostings here
 			return newPostingGroup(true, nil, []labels.Label{{Name: m.Name, Value: m.Value}}), nil
 		}
 	}
@@ -109,6 +110,12 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
+	// TODO here our regexp may just be a prefix matcher. If it is, then we don't need
+	// 		to iterate through all the label values. We can jump to the few offsets that we know contain
+	//		values that match this.
+	// TODO within the implementation of LabelValues we go over the postings offset and skip it.
+	//		then later we call PostingsOffset and seek the same value, skip the name, then skip the value and
+	//		get the offset. We can just do it here (and everywhere where we call newPostingGroup)
 	matchingVals, err := lvr.LabelValues(m.Name, m.Matches)
 	if err != nil {
 		return nil, err

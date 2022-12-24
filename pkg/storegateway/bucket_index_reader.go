@@ -129,6 +129,9 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	defer close(done)
 	defer r.block.expandedPostingsPromises.Delete(key)
 
+	// TODO we always go to the cache first. sometimes that costs 100ms just to do a cache miss.
+	// 		We can still look in our index header to see if this query will match _anything_ at all
+	//		before going to the cache.
 	refs, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
 	if cached {
 		return promise, false

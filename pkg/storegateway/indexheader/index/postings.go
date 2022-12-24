@@ -395,6 +395,9 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	if len(e.offsets) == 0 {
 		return nil, nil
 	}
+	// TODO why is this preallocating as many as values we have? are we likely to select all of them?
+	//		we select all values only for LabelValues() store-gateway RPC.
+	// 		In ExpandedPostings we likely select only a subset of the values.
 	values := make([]string, 0, len(e.offsets)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
