@@ -1,0 +1,28 @@
+---
+# Source: mimir-distributed/templates/admin-cache/admin-cache-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-admin-cache
+  labels:
+    app: enterprise-metrics-admin-cache
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: memcached-client
+      port: 11211
+      targetPort: 11211
+    
+    - name: http-metrics
+      port: 9150
+      targetPort: 9150
+    
+  selector:
+    app: enterprise-metrics-admin-cache
+    release: test-enterprise-legacy-label-values

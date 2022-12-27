@@ -1,1 +1,3 @@
+{{- if .Values.enterprise.enabled }}
 {{- include "mimir.memcached.service" (dict "ctx" $ "component" "admin-cache" ) }}
+{{- end }}

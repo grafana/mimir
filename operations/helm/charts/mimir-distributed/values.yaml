@@ -115,7 +115,7 @@ mimir:
           insecure: true
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
-      {{- if and (index .Values "admin-cache" "enabled") (eq .Values.admin-cache.cacheType "memcached" ) }}
+      {{- if and (index .Values "admin-cache" "enabled") (eq (index .Values "admin-cache" "cacheType") "memcached" ) }}
         cache_type: memcached
         memcached:
           addresses: {{ include "mimir.adminCacheAddress" . }}
@@ -1608,6 +1608,8 @@ memcachedExporter:
 admin-cache:
   # -- Specifies whether admin-cache should be enabled
   enabled: true
+
+  # Cache type to be used (options: inmemory, memcahed, redis)
   cacheType: inmemory
 
   # -- Total number of admin-cache replicas
