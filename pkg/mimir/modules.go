@@ -770,9 +770,9 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, nil
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-stats", util_log.Logger, t.Registerer)
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, UsageStats, util_log.Logger, t.Registerer)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "create %s bucket client", UsageStats)
 	}
 
 	// Track anonymous usage statistics.
