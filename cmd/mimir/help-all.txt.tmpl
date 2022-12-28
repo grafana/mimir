@@ -503,6 +503,12 @@ Usage of ./cmd/mimir/mimir:
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes. (default 1m0s)
+  -blocks-storage.tsdb.head-postings-for-matchers-cache-force
+    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
+    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0. (default 100)
+  -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
+    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
     	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
