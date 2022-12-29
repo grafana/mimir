@@ -358,6 +358,67 @@ func TestMaxTotalQueryLengthWithDefault(t *testing.T) {
 	}
 }
 
+func TestMaxPartialQueryLengthWithDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxQueryLength: model.Duration(5 * time.Hour),
+		},
+		"tenant-b": {
+			MaxQueryLength:        model.Duration(2 * time.Hour),
+			MaxPartialQueryLength: model.Duration(1 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxQueryLength:        model.Duration(3 * time.Hour),
+		MaxPartialQueryLength: model.Duration(2 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs     []string
+		expectedLimit time.Duration
+	}{
+		{tenantIDs: []string{}, expectedLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expectedLimit: 5 * time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expectedLimit: 1 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expectedLimit: 2 * time.Hour},
+	} {
+		assert.Equal(t, tc.expectedLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
+	}
+}
+
+func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxQueryLength: model.Duration(5 * time.Hour),
+		},
+		"tenant-b": {
+			MaxQueryLength:        model.Duration(4 * time.Hour),
+			MaxPartialQueryLength: model.Duration(3 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxQueryLength: model.Duration(2 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs     []string
+		expectedLimit time.Duration
+	}{
+		{tenantIDs: []string{}, expectedLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expectedLimit: 5 * time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expectedLimit: 3 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expectedLimit: 2 * time.Hour},
+	} {
+		assert.Equal(t, tc.expectedLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
+	}
+}
+
 func TestAlertmanagerNotificationLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
 		inputYAML         string
