@@ -968,11 +968,8 @@ How it **works**:
 
 How to **fix** it:
 
-Choose one of three options:
-
 - Decrease the number of alertmanager replicas
-- Increase the shard size of one or more tenants to match the number of alertmanager replicas.
-- Set the shard size of one or more tenants to `0`; this will shard the given tenant’s alerts across all instances.
+- Increase the value for `-alertmanager.sharding-ring.replication-factor` to match the number of replicas
 
 ### MimirRolloutStuck
 
