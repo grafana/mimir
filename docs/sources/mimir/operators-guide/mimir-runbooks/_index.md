@@ -956,6 +956,24 @@ How to **fix** it:
 
 - Scale up alertmanager replicas; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of alertmanagers.
 
+### MimirAlertmanagerInstanceHasNoTenants
+
+This alert fires when an alertmanager instance doesn't own any tenants and is therefore idling.
+
+How it **works**:
+
+- Alerts handled by alertmanagers are sharded by tenant.
+- When the tenant shard size is lower than the number of alertmanager replicas, some replicas will not own any tenant and therefore idle.
+- This is more likely to happen in Mimir clusters with a lower number of tenants.
+
+How to **fix** it:
+
+Choose one of three options:
+
+- Decrease the number of alertmanager replicas
+- Increase the shard size of one or more tenants to match the number of alertmanager replicas.
+- Set the shard size of one or more tenants to `0`; this will shard the given tenant’s alerts across all instances.
+
 ### MimirRolloutStuck
 
 This alert fires when a Mimir service rollout is stuck, which means the number of updated replicas doesn't match the expected one and looks there's no progress in the rollout. The alert monitors services deployed as Kubernetes `StatefulSet` and `Deployment`.

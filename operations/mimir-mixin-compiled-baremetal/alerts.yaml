@@ -576,6 +576,20 @@ groups:
     for: 15m
     labels:
       severity: critical
+  - alert: MimirAlertmanagerInstanceHasNoTenants
+    annotations:
+      message: Mimir alertmanager {{ $labels.instance }} in {{ $labels.cluster }}/{{
+        $labels.namespace }} owns no tenants.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinstancehasnotenants
+    expr: |
+      # Alert on alertmanager instances in microservices mode that own no tenants,
+      min by(cluster, namespace, instance) (cortex_alertmanager_tenants_owned{instance=~".*alertmanager.*"}) == 0
+      # but only if other instances of the same cell do have tenants assigned.
+      and on (cluster, namespace)
+      max by(cluster, namespace) (cortex_alertmanager_tenants_owned) > 0
+    for: 1h
+    labels:
+      severity: warning
 - name: mimir_blocks_alerts
   rules:
   - alert: MimirIngesterHasNotShippedBlocks
