@@ -81,6 +81,10 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
+  - Postings for matchers cache configuration:
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
 - Query-frontend
   - `-query-frontend.max-total-query-length`
   - `-query-frontend.querier-forget-delay`

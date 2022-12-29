@@ -179,6 +179,15 @@ type TSDBConfig struct {
 
 	// For experimental out of order metrics support.
 	OutOfOrderCapacityMax int `yaml:"out_of_order_capacity_max" category:"experimental"`
+
+	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
+	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
+	HeadPostingsForMatchersCacheTTL time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
+	// HeadPostingsForMatchersCacheSize is the maximum size of cached postings for matchers elements in the Head.
+	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
+	HeadPostingsForMatchersCacheSize int `yaml:"head_postings_for_matchers_cache_size" category:"experimental"`
+	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
+	HeadPostingsForMatchersCacheForce bool `yaml:"head_postings_for_matchers_cache_force" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -207,6 +216,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.")
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", 100, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0.")
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.")
 }
 
 // Validate the config.

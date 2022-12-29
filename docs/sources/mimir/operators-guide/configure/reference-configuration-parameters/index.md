@@ -3141,6 +3141,21 @@ tsdb:
   # 1 and 255.
   # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
   [out_of_order_capacity_max: <int> | default = 32]
+
+  # (experimental) How long to cache postings for matchers in the Head and
+  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
+  [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in the Head and OOOHead when ttl > 0.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
+  [head_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in the
+  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
+  [head_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 
 ### compactor
