@@ -326,7 +326,6 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// TODO add a store-gateway-load-test-tool test case which selects valida labels that don't have any intersections and then test performance in dev-09
 	s.LogKV("event", "constructed groupAdds, groupRemovals")
 
-	// TODO when passing groupAdds here they need to be in increasing order so we spik the most in
 	result := index.Without(postingsInclude, index.Merge(groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
