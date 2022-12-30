@@ -66,7 +66,7 @@ Specify a fallback configuration using the `-alertmanager.configs.fallback` comm
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configure/reference-configuration-parameters/index.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../reference-configuration-parameters/index.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI

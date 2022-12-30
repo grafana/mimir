@@ -57,7 +57,7 @@
 
     // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
     // as a CLI flag. Please note that there are alternative ways of configuring GCS authentication:
-    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/#gcs_storage_backend
+    // See https://grafana.com/docs/mimir/latest/reference-configuration-parameters/#gcs_storage_backend
     // See https://cloud.google.com/storage/docs/authentication#libauth
     storage_gcs_service_account: null,
 
