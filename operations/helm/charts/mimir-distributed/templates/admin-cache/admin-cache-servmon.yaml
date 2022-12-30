@@ -1,3 +1,5 @@
-{{- if and .Values.enterprise.enabled (index .Values "admin-cache" "enabled") }}
+{{- if .Values.enterprise.enabled }}
+{{- if and (index .Values "admin-cache" "enabled") (eq (index .Values "admin-cache" "cacheType") "memcached" ) }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "admin-cache") }}
+{{- end -}}
 {{- end -}}
