@@ -67,7 +67,7 @@
             serverAddress: $._config.autoscaling_prometheus_url,
             query: trigger.query,
 
-            // The metric name uniquely identify a metric in the KEDA metrics server.
+            // The metric name uniquely identifies a metric in the KEDA metrics server.
             metricName: trigger.metric_name,
 
             // The threshold value is set to the HPA's targetAverageValue. The number of desired replicas is computed
