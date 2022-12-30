@@ -272,7 +272,21 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// TODO add a fast case where we fetch all postings when we know that the volume is small
 	s, spanCtx := tracing.StartSpan(ctx, "expandedPostings.fetchAddPostings")
 	for _, pg := range postingGroups {
+		// TODO when the size of the remaining postings lists is larger than the
+		// 		(estimated size per series) * len(intersected), then we can fetch
+		//		the series from intersected and apply the matchers to them. This way we minimize the
+		//		fetched data from storage/cache.
+		//		Problem: we don't know the size until we intersect them;
+		//		maybe it's ok to do the intersection after each fetch -
+		//		cost should still be dominated by the fetching, not by the intersection.
 		if len(pg.addKeys) == 0 {
+			// TODO we don't need to skip the groupRemove's here. We can do
+			//		intersected = index.Without(intersected, fetchPostings(pg.removeKeys)).
+			//		In that case we omit the index.Merge of the result of each fetchPostings(pg.removeKeys).
+			//		This is ok because doing index.Merge(groupRemovals...) is the same work as doing
+			//		index.Without(_, groupRemovals[i]) N times.
+			// 		But we need to make sure we do the first index.Without AFTER we have fetched
+			//		the first groupAdd, otherwise we are doing subtraction from the empty set.
 			continue
 		}
 		fetchedPostings, err := r.fetchPostings(spanCtx, pg.addKeys, stats)

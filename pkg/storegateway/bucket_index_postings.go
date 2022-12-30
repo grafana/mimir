@@ -40,6 +40,7 @@ func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) *postingGr
 }
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
+// TODO also populate addPtrs and removePtrs of each postingGroup by using lvr.PostingsOffset
 func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, error) {
 	// TODO there are some tests that assert on the number of calls we make to LabelValues,
 	//		so doing this here fails them. Investigate why these assertions are necessary.
