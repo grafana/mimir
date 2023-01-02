@@ -50,6 +50,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -691,6 +692,43 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
 		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.Error(t, err)
+	})
+
+	t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// With a regular EqualsMatcher we can look up the value of the label in the postings
+			// offset table and see if it has any matches. If it matches no series, then
+			// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
+			labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
+		}
+		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+	})
+
+	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// Since prometheus regular expressions are anchored at each end, some regular expressions have a
+			// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
+		}
+		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
 	})
 }
 
