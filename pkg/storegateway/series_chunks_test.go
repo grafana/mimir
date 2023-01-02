@@ -619,6 +619,11 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				s.release()
 			}
 
+			if testCase.expectedErr != "" {
+				assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
+			} else {
+				assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
+			}
 			assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Greater(t, seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
