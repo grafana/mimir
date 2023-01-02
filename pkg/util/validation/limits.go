@@ -455,8 +455,8 @@ func (o *Overrides) MaxQueryLookback(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLookback)
 }
 
-// MaxQueryLength returns the limit of the length (in time) of a query.
-func (o *Overrides) MaxQueryLength(userID string) time.Duration {
+// maxQueryLength returns the limit of the length (in time) of a query.
+func (o *Overrides) maxQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLength)
 }
 
@@ -464,7 +464,7 @@ func (o *Overrides) MaxQueryLength(userID string) time.Duration {
 func (o *Overrides) MaxPartialQueryLength(userID string) time.Duration {
 	t := time.Duration(o.getOverridesForUser(userID).MaxPartialQueryLength)
 	if t == time.Duration(0) {
-		t = o.MaxQueryLength(userID)
+		t = o.maxQueryLength(userID)
 	}
 	return t
 }
@@ -473,7 +473,7 @@ func (o *Overrides) MaxPartialQueryLength(userID string) time.Duration {
 func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 	t := time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
 	if t == time.Duration(0) {
-		return o.MaxQueryLength(userID)
+		return o.maxQueryLength(userID)
 	}
 	return t
 }
