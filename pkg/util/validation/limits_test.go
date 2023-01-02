@@ -369,24 +369,17 @@ func TestMaxPartialQueryLengthWithDefault(t *testing.T) {
 		},
 	}
 	defaults := Limits{
-		MaxQueryLength:        model.Duration(3 * time.Hour),
-		MaxPartialQueryLength: model.Duration(2 * time.Hour),
+		MaxQueryLength:        model.Duration(7 * time.Hour),
+		MaxPartialQueryLength: model.Duration(6 * time.Hour),
 	}
 
 	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
-		tenantIDs     []string
-		expectedLimit time.Duration
-	}{
-		{tenantIDs: []string{}, expectedLimit: time.Duration(0)},
-		{tenantIDs: []string{"tenant-a"}, expectedLimit: 5 * time.Hour},
-		{tenantIDs: []string{"tenant-b"}, expectedLimit: 1 * time.Hour},
-		{tenantIDs: []string{"tenant-c"}, expectedLimit: 2 * time.Hour},
-	} {
-		assert.Equal(t, tc.expectedLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
-	}
+	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength(""))
+	assert.Equal(t, 5*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
+	assert.Equal(t, 1*time.Hour, ov.MaxPartialQueryLength("tenant-b"))
+	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength("tenant-c"))
 }
 
 func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
@@ -406,17 +399,10 @@ func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
 	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
-		tenantIDs     []string
-		expectedLimit time.Duration
-	}{
-		{tenantIDs: []string{}, expectedLimit: time.Duration(0)},
-		{tenantIDs: []string{"tenant-a"}, expectedLimit: 5 * time.Hour},
-		{tenantIDs: []string{"tenant-b"}, expectedLimit: 3 * time.Hour},
-		{tenantIDs: []string{"tenant-c"}, expectedLimit: 2 * time.Hour},
-	} {
-		assert.Equal(t, tc.expectedLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
-	}
+	assert.Equal(t, 2*time.Hour, ov.MaxPartialQueryLength(""))
+	assert.Equal(t, 5*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
+	assert.Equal(t, 3*time.Hour, ov.MaxPartialQueryLength("tenant-b"))
+	assert.Equal(t, 2*time.Hour, ov.MaxPartialQueryLength("tenant-c"))
 }
 
 func TestAlertmanagerNotificationLimits(t *testing.T) {
