@@ -358,6 +358,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {
+		chunksPool.Release()
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
