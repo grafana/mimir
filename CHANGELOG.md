@@ -15,6 +15,7 @@
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_cancelled_requests_total` metric to track the number of requests that are already cancelled when dequeued. #3696
 * [ENHANCEMENT] Store-gateway: add `cortex_bucket_store_partitioner_extended_ranges_total` metric to keep track of the ranges that the partitioner decided to overextend and merge in order to save API call to the object storage. #3769
 * [ENHANCEMENT] Compactor: Auto-forget unhealthy compactors after ten failed ring heartbeats. #3771
+* [ENHANCEMENT] Ruler: change default value of `-ruler.for-grace-period` from `10m` to `2m` and update help text. The new default value reflects how we operate Mimir at Grafana Labs. #3817
 * [ENHANCEMENT] Ingester: Added experimental flags to force usage of _postings for matchers cache_. These flags will be removed in the future and it's not recommended to change them. #3823
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`

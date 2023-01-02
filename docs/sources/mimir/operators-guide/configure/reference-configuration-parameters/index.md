@@ -1344,11 +1344,18 @@ alertmanager_client:
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
 
-# (advanced) Minimum duration between alert and restored "for" state. This is
-# maintained only for alerts with configured "for" time greater than grace
-# period.
+# (advanced) This grace period controls which alerts the ruler restores after a
+# restart. Alerts with "for" duration lower than this grace period are not
+# restored after a ruler restart. This means that if the alerts have been firing
+# before the ruler restarted, they will now go to pending state and then to
+# firing again after their "for" duration expires. Alerts with "for" duration
+# greater than or equal to this grace period that have been pending before the
+# ruler restart will remain in pending state for at least this grace period.
+# Alerts with "for" duration greater than or equal to this grace period that
+# have been firing before the ruler restart will continue to be firing after the
+# restart.
 # CLI flag: -ruler.for-grace-period
-[for_grace_period: <duration> | default = 10m]
+[for_grace_period: <duration> | default = 2m]
 
 # (advanced) Minimum amount of time to wait before resending an alert to
 # Alertmanager.
