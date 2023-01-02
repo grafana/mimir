@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -26,7 +25,7 @@ const (
 	seriesChunksSlabSize = 1000
 
 	// Selected so that an individual chunk's data typically fits within the slab size
-	chunkBytesSlabSize = 10 * tsdb.EstimatedMaxChunkSize
+	chunkBytesSlabSize = 32_000
 )
 
 var (
