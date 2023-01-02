@@ -1912,28 +1912,37 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 		expectedHit bool
 	}{
 		"6000 series with 6 labels each with sharding": {
-			cachedEntryLabels: generateSeries([]int{1, 2, 3, 10, 10, 10}),
-			shard:             &sharding.ShardSelector{ShardIndex: 10, ShardCount: 100},
+			cachedEntryEncodedPostings: generatePostings(6000),
+			cachedEntryLabels:          generateSeries([]int{1, 2, 3, 10, 10, 10}),
+			shard:                      &sharding.ShardSelector{ShardIndex: 10, ShardCount: 100},
 
-			requestedPostingsKey: somePostingsKey,
-			expectedHit:          true,
+			requestedEncodedPostings: generatePostings(6000),
+			requestedPostingsKey:     somePostingsKey,
+			expectedHit:              true,
 		},
 		"6000 series with 6 labels each": {
-			cachedEntryLabels: generateSeries([]int{1, 2, 3, 10, 10, 10}),
+			cachedEntryEncodedPostings: generatePostings(6000),
+			cachedEntryLabels:          generateSeries([]int{1, 2, 3, 10, 10, 10}),
 
-			requestedPostingsKey: somePostingsKey,
-			expectedHit:          true,
+			requestedPostingsKey:     somePostingsKey,
+			requestedEncodedPostings: generatePostings(6000),
+			expectedHit:              true,
 		},
 		"6000 series with 6 labels with more repetitions": {
-			cachedEntryLabels: generateSeries([]int{1, 1, 1, 1, 1, 6000}),
+			cachedEntryEncodedPostings: generatePostings(6000),
+			cachedEntryLabels:          generateSeries([]int{1, 1, 1, 1, 1, 6000}),
 
-			requestedPostingsKey: somePostingsKey,
-			expectedHit:          true,
+			requestedPostingsKey:     somePostingsKey,
+			requestedEncodedPostings: generatePostings(6000),
+			expectedHit:              true,
 		},
 		"1000 series with 1 matcher": {
-			cachedEntryLabels:    generateSeries([]int{10, 10, 10}),
-			requestedPostingsKey: somePostingsKey,
-			expectedHit:          true,
+			cachedEntryEncodedPostings: generatePostings(1000),
+			cachedEntryLabels:          generateSeries([]int{10, 10, 10}),
+
+			requestedPostingsKey:     somePostingsKey,
+			requestedEncodedPostings: generatePostings(1000),
+			expectedHit:              true,
 		},
 		"1000 series with 1 matcher, mismatching encoded postings": {
 			cachedEntryEncodedPostings: generatePostings(999),
