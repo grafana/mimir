@@ -14,10 +14,12 @@ import (
 type queryStats struct {
 	blocksQueried int
 
-	postingsTouched          int
-	postingsTouchedSizeSum   int
-	postingsToFetch          int
-	postingsFetched          int
+	postingsTouched        int
+	postingsTouchedSizeSum int
+	postingsToFetch        int
+	postingsFetched        int
+
+	// TODO rename this to postingsBucketFetchDurationSum (+rename prom metrics; they aren't in dashboards or rules) and add postingsCacheFetchDuration
 	postingsFetchedSizeSum   int
 	postingsFetchCount       int
 	postingsFetchDurationSum time.Duration
