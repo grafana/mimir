@@ -1952,7 +1952,7 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 
 			blockID := ulid.MustNew(1671103209, nil)
 
-			cacheEntryContents, err := encodeCachedSeriesForPostings(seriesChunkRefsSetFromLabelSets(testCase.cachedEntryLabels), maybeNilShard(testCase.shard), mustDiffVarintSnappyEncode(b, testCase.cachedEntryEncodedPostings))
+			cacheEntryContents, err := encodeCachedSeriesForPostings(seriesChunkRefsSetFromLabelSets(testCase.cachedEntryLabels), mustDiffVarintSnappyEncode(b, testCase.cachedEntryEncodedPostings))
 			require.NoError(b, err)
 
 			var mockCache indexcache.IndexCache = mockIndexCache{fetchSeriesForPostingsResponse: mockIndexCacheEntry{

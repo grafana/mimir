@@ -878,8 +878,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 }
 
 func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, set seriesChunkRefsSet, logger log.Logger) {
-	nonNilShard := maybeNilShard(shard)
-	data, err := encodeCachedSeriesForPostings(set, nonNilShard, itemID.encodedPostings)
+	data, err := encodeCachedSeriesForPostings(set, itemID.encodedPostings)
 	if err != nil {
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't encode series for caching", "err", err)
 		return
@@ -887,11 +886,9 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
 }
 
-func encodeCachedSeriesForPostings(set seriesChunkRefsSet, nonNilShard sharding.ShardSelector, postings []byte) ([]byte, error) {
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, postings []byte) ([]byte, error) {
 	entry := &storepb.CachedSeries{
 		Series:              make([]mimirpb.PreallocatingMetric, set.len()),
-		ShardIndex:          nonNilShard.ShardIndex,
-		ShardCount:          nonNilShard.ShardCount,
 		DiffEncodedPostings: postings,
 	}
 	for i, s := range set.series {
