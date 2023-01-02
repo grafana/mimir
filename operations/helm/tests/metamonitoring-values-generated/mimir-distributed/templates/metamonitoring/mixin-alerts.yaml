@@ -179,6 +179,23 @@ spec:
       for: 1h
       labels:
         severity: warning
+    - alert: MimirRulerInstanceHasNoRuleGroups
+      annotations:
+        message: Mimir ruler {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} has no rule groups assigned.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerinstancehasnorulegroups
+      expr: |
+        # Alert on ruler instances in microservices mode that have no rule groups assigned,
+        min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
+        # but only if other ruler instances of the same cell do have rule groups assigned
+        and on (cluster, namespace)
+        (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
+        # and there are more than two instances overall
+        and on (cluster, namespace)
+        (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
+      for: 1h
+      labels:
+        severity: warning
     - alert: MimirRingMembersMismatch
       annotations:
         message: |
