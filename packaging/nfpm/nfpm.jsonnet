@@ -39,6 +39,26 @@ local overrides = {
       preremove: './dist/tmp/dependencies-%s-%s-%s/preremove.sh' % [name, packager, arch],
     },
   },
+  metaconvert: {
+    description: |||
+      Grafana Metaconvert converts Cortex meta.json files to be on the Grafana Mimir format.
+    |||,
+  },
+  'mimir-continuous-test': {
+    description: |||
+      As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters. This tool identifies a class of bugs that could be difficult to spot during development.
+    |||,
+  },
+  mimirtool: {
+    description: |||
+      Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
+    |||,
+  },
+  'query-tee': {
+    description: |||
+      The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performances of two Grafana Mimir clusters. The two Mimir clusters compared by the query-tee must ingest the same series and samples.
+    |||,
+  },
 };
 
 {

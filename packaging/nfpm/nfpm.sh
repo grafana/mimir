@@ -9,11 +9,9 @@ fi
 
 # Prepare build environment
 rm -rf dist/tmp && mkdir -p dist/tmp/packages
-cp dist/mimir-linux-* dist/tmp/packages
+cp dist/*-linux-* dist/tmp/packages
 
-# Run through binaries which need a package
-for name in mimir; do
-    # Run through supported architecture
+for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
     for arch in amd64 arm64; do
         for packager in deb rpm; do
             config_path="dist/tmp/config-${name}-${packager}-${arch}.json"
