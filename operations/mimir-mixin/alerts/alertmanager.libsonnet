@@ -126,6 +126,27 @@
             ||| % $._config,
           },
         },
+        {
+          alert: $.alertName('AlertmanagerInstanceHasNoTenants'),
+          expr: |||
+            # Alert on alertmanager instances in microservices mode that own no tenants,
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_alertmanager_tenants_owned{%(per_instance_label)s=~"%(alertmanagerInstanceName)s"}) == 0
+            # but only if other instances of the same cell do have tenants assigned.
+            and on (%(alert_aggregation_labels)s)
+            max by(%(alert_aggregation_labels)s) (cortex_alertmanager_tenants_owned) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            alertmanagerInstanceName: $._config.instance_names.alertmanager,
+          },
+          'for': '1h',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s owns no tenants.' % $._config,
+          },
+        },
       ],
     },
   ],

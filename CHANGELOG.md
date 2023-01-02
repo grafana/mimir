@@ -16,19 +16,26 @@
 * [ENHANCEMENT] Store-gateway: add `cortex_bucket_store_partitioner_extended_ranges_total` metric to keep track of the ranges that the partitioner decided to overextend and merge in order to save API call to the object storage. #3769
 * [ENHANCEMENT] Compactor: Auto-forget unhealthy compactors after ten failed ring heartbeats. #3771
 * [ENHANCEMENT] Ruler: change default value of `-ruler.for-grace-period` from `10m` to `2m` and update help text. The new default value reflects how we operate Mimir at Grafana Labs. #3817
+* [ENHANCEMENT] Ingester: Added experimental flags to force usage of _postings for matchers cache_. These flags will be removed in the future and it's not recommended to change them. #3823
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+* [ENHANCEMENT] Ingester: Improved series selection performance when some of the matchers do not match any series. #3827
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
 * [BUGFIX] Debian package: Fix post-install, environment file path and user creation. #3720
 * [BUGFIX] memberlist: Fix panic during Mimir startup when Mimir receives gossip message before it's ready. #3746
 * [BUGFIX] Store-gateway: fix `cortex_bucket_store_partitioner_requested_bytes_total` metric to not double count overlapping ranges. #3769
-* [BUGFIX] Update `github.com/thanos-io/objstore` to address issue with Multipart PUT on s3-compatible Object Storage. #3802
+* [BUGFIX] Update `github.com/thanos-io/objstore` to address issue with Multipart PUT on s3-compatible Object Storage. #3802 #3821
 * [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 
 ### Mixin
 
 * [ENHANCEMENT] Alerts: Added `MimirIngesterInstanceHasNoTenants` alert that fires when an ingester replica is not receiving write requests for any tenant. #3681
 * [ENHANCEMENT] Alerts: Extended `MimirAllocatingTooMuchMemory` to check read-write deployment containers. #3710
+* [ENHANCEMENT] Alerts: Added `MimirAlertmanagerInstanceHasNoTenants` alert that fires when an alertmanager instance ows no tenants. #3826
+* [ENHANCEMENT] Alerts: Added `MimirRulerInstanceHasNoRuleGroups` alert that fires when a ruler replica is not assigned any rule group to evaluate. #3723
 * [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
