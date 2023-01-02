@@ -1947,7 +1947,6 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 		testCase := testCase
 		b.Run(testName, func(b *testing.B) {
 			ctx := context.Background()
-			//logger := log.NewLogfmtLogger(os.Stderr)
 			logger := log.NewNopLogger()
 
 			blockID := ulid.MustNew(1671103209, nil)
