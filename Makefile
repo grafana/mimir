@@ -187,6 +187,7 @@ pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
 pkg/storegateway/storepb/types.pb.go: pkg/storegateway/storepb/types.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
+pkg/util/ephemeral/ephemeral.pb.go: pkg/util/ephemeral/ephemeral.proto
 
 all: $(UPTODATE_FILES)
 test: protos

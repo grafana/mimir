@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package ephemeral;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message Metrics {
+	map<string, Metric> metrics = 1 [(gogoproto.nullable) = false];
+}
+
+message Metric {
+	// Unix timestamp (seconds) when this metric was added to the map. This is only used when gossiping.
+	int64 created_timestamp = 1;
+	// Unix timestamp (seconds) when this metric was removed from the map. This is only used when gossiping.
+	int64 deleted_timestamp = 2;
+}
