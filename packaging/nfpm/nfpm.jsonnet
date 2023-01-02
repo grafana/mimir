@@ -1,3 +1,7 @@
+local name = std.extVar('name');
+local arch = std.extVar('arch');
+local packager = std.extVar('packager');
+
 local overrides = {
   mimir: {
     description: |||
@@ -5,70 +9,37 @@ local overrides = {
     |||,
     contents+: [
       {
-        src: './packaging/deb/systemd/mimir.service',
+        src: './dist/tmp/dependencies-%s-%s-%s/mimir.service' % [name, packager, arch],
         dst: '/lib/systemd/system/mimir.service',
         packager: 'deb',
-        file_info: {
-          owner: 0,
-          group: 0,
-        },
       },
       {
-        src: './packaging/rpm/systemd/mimir.service',
+        src: './dist/tmp/dependencies-%s-%s-%s/mimir.service' % [name, packager, arch],
         dst: '/lib/systemd/system/mimir.service',
         packager: 'rpm',
-        file_info: {
-          owner: 0,
-          group: 0,
-        },
       },
       {
-        src: './packaging/deb/default/mimir',
+        src: './dist/tmp/dependencies-%s-%s-%s/mimir.env' % [name, packager, arch],
         dst: '/etc/default/mimir',
         packager: 'deb',
-        file_info: {
-          owner: 0,
-          group: 0,
-        },
       },
       {
-        src: './packaging/rpm/sysconfig/mimir',
+        src: './dist/tmp/dependencies-%s-%s-%s/mimir.env' % [name, packager, arch],
         dst: '/etc/sysconfig/mimir',
         packager: 'rpm',
-        file_info: {
-          owner: 0,
-          group: 0,
-        },
       },
       {
         src: './docs/configurations/single-process-config-blocks.yaml',
         dst: '/etc/mimir/config.example.yaml',
         type: 'config|noreplace',
-        file_info: {
-          owner: 0,
-          group: 0,
-        },
       },
     ],
-    overrides: {
-      deb: {
-        scripts: {
-          postinstall: './packaging/deb/control/postinst',
-          preremove: './packaging/deb/control/prerm'
-        },
-      },
-      rpm: {
-        scripts: {
-          postinstall: './packaging/rpm/control/post',
-          preremove: './packaging/rpm/control/preun'
-        },
-      },
+    scripts: {
+      postinstall: './dist/tmp/dependencies-%s-%s-%s/postinstall.sh' % [name, packager, arch],
+      preremove: './dist/tmp/dependencies-%s-%s-%s/preremove.sh' % [name, packager, arch],
     },
   },
 };
-
-local name = std.extVar('name');
-local arch = std.extVar('arch');
 
 {
   name: name,
