@@ -254,7 +254,6 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 	//
 	// "SP*" (3) + userID (150) + blockID (26) + shard (10 with up to 1000 shards) + ":" (4) = 193
 	// Memcached limits key length to 250, so we're left with 57 bytes for the postings key.
-	// See CanonicalPostingsKey for how we ensure the postings key <= 57 bytes.
 	return "SP2:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey)
 }
 
