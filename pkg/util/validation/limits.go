@@ -106,7 +106,7 @@ type Limits struct {
 	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery   int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxQueryLookback               model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length" doc:"hidden"` // TODO: deprecated, remove in 2.x
+	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length" doc:"hidden"` // TODO: deprecated, remove in 2.8
 	MaxPartialQueryLength          model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
