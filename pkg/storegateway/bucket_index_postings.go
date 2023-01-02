@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
 // postingGroup keeps posting keys for single matcher. Logical result of the group is:
@@ -37,10 +38,15 @@ func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) *postingGr
 }
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
-func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, error) {
+func toPostingGroup(lvr indexheader.Reader, m *labels.Matcher) (*postingGroup, error) {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
+			if _, err := lvr.PostingsOffset(m.Name, val); errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This label name and value doesn't exist in this block, so there are 0 postings we can match.
+				// Try with the rest of the set matchers, maybe they can match some series.
+				continue
+			}
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
@@ -53,6 +59,10 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
+			if _, err := lvr.PostingsOffset(m.Name, m.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This label name or value doesn't exist in this block, so there are 0 postings we can match.
+				return newPostingGroup(false, nil, nil), nil
+			}
 			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil
 		}
 
@@ -61,6 +71,11 @@ func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, er
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
+			if _, err := lvr.PostingsOffset(m.Name, m.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This label name or value doesn't exist in this block, so we should include all postings
+				// because all series match m.
+				return newPostingGroup(true, nil, nil), nil
+			}
 			return newPostingGroup(true, nil, []labels.Label{{Name: m.Name, Value: m.Value}}), nil
 		}
 	}
