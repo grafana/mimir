@@ -969,7 +969,6 @@ How it **works**:
 How to **fix** it:
 
 - Decrease the number of alertmanager replicas
-- Increase the value for `-alertmanager.sharding-ring.replication-factor` to match the number of replicas
 
 ### MimirRolloutStuck
 
