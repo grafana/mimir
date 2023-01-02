@@ -189,10 +189,10 @@ spec:
         min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
         # but only if other ruler instances of the same cell do have rule groups assigned
         and on (cluster, namespace)
-        max by(cluster, namespace) (cortex_ruler_managers_total) > 0
+        (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
         # and there are more than two instances overall
         and on (cluster, namespace)
-        count by (cluster, namespace) (cortex_ruler_managers_total) > 2
+        (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
       for: 1h
       labels:
         severity: warning

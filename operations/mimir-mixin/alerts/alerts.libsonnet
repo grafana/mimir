@@ -274,10 +274,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total{%(per_instance_label)s=~"%(rulerInstanceName)s"}) == 0
             # but only if other ruler instances of the same cell do have rule groups assigned
             and on (%(alert_aggregation_labels)s)
-            max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0
+            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
             # and there are more than two instances overall
             and on (%(alert_aggregation_labels)s)
-            count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2
+            (count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2)
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
