@@ -93,18 +93,8 @@ type PostingsKey string
 // CanonicalPostingsKey creates a canonical version of PostingsKey
 func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
 	hashable := unsafeCastPostingsToBytes(postings)
-	// We use a hash size of 42 because that's how much room we have in the cache key after we base64-encode the hash.
-	// 42 * 4/3 = 56 (memcached limits keys to 250 bytes).
-	// See seriesForPostingsCacheKey for more details.
-	hasher, err := blake2b.New(42, nil)
-	if err != nil {
-		// Blake2 errors only when we provide an incompatible encryption key or size is more than 64 (ours is 42).
-		// This panic is so that tests fail if we mess those up.
-		panic(err)
-	}
-	_, _ = hasher.Write(hashable)
-	checksum := hasher.Sum(nil)
-	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum))
+	checksum := blake2b.Sum256(hashable)
+	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum[:]))
 }
 
 const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
