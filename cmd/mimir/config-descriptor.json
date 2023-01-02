@@ -3107,7 +3107,7 @@
           "kind": "field",
           "name": "max_partial_query_length",
           "required": false,
-          "desc": "Limit the time range for partial queries at the querier level. 0 to disable.",
+          "desc": "Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-partial-query-length",

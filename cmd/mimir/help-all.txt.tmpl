@@ -1260,7 +1260,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
-    	Limit the time range for partial queries at the querier level. 0 to disable.
+    	Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration

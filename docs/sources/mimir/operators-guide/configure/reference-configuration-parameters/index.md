@@ -2500,7 +2500,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
-# Limit the time range for partial queries at the querier level. 0 to disable.
+# Limit the time range for partial queries at the querier level. Defaults to the
+# value of -store.max-query-length if set to 0.
 # CLI flag: -querier.max-partial-query-length
 [max_partial_query_length: <duration> | default = 0s]
 
