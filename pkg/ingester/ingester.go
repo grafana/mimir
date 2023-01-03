@@ -147,9 +147,6 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
-
-	// For testing, you can override the address and ID of this ingester.
-	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -290,10 +287,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
-
-	if cfg.ingesterClientFactory == nil {
-		cfg.ingesterClientFactory = client.MakeIngesterClient
-	}
 
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
