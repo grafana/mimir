@@ -55,6 +55,8 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+
 ### Documentation
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
