@@ -49,6 +49,7 @@
 ### Jsonnet
 
 * [CHANGE] Replaced the deprecated `policy/v1beta1` with `policy/v1` when configuring a PodDisruptionBudget for read-write deployment mode. #3811
+* [CHANGE] Removed `-server.http-write-timeout` default option value from querier and query-frontend, as it defaults to a higher value in the code now, and cannot be lower than `-querier.timeout`. #3836
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766

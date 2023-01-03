@@ -30,13 +30,11 @@ mimir {
   // See the tracking issue: https://github.com/grafana/mimir/issues/2749
   querier_args+:: {
     'store.max-query-length': null,
-    'server.http-write-timeout': null,
   },
 
   query_frontend_args+:: {
     'server.grpc-max-recv-msg-size-bytes': null,
     'store.max-query-length': null,
-    'server.http-write-timeout': null,
     'query-frontend.query-sharding-total-shards': null,
   },
 
