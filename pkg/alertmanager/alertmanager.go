@@ -309,7 +309,7 @@ func withTenantIDFunc(userID string) template.Option {
 	funcs := tmpltext.FuncMap{"tenantID": func() string { return userID }}
 	return func(text *tmpltext.Template, html *tmplhtml.Template) {
 		text.Funcs(funcs)
-		html.Funcs(tmplhtml.FuncMap(funcs))
+		html.Funcs(funcs)
 	}
 }
 
