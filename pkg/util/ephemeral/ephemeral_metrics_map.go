@@ -71,7 +71,11 @@ func (m *Metrics) MergeContent() []string {
 }
 
 func (m *Metrics) RemoveTombstones(limit time.Time) (total, removed int) {
-	unixSeconds := limit.Unix()
+	unixSeconds := int64(0)
+	if !limit.IsZero() {
+		unixSeconds = limit.Unix()
+	}
+
 	for n, v := range m.Metrics {
 		total++
 		if v.GetDeletedTimestamp() > unixSeconds {

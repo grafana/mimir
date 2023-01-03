@@ -117,6 +117,8 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
+	ephemeralMetricsWatcher *ephemeralMetricsWatcher
+
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	ingesterChunksDeduplicated       prometheus.Counter
@@ -223,7 +225,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, ephemeralMetricsKV kv.Client, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -249,6 +251,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		limits:                limits,
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+
+		ephemeralMetricsWatcher: NewEphemeralWatcher(ephemeralMetricsKV, log),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -435,6 +439,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+	if d.cfg.MarkEphemeral {
+		subservices = append(subservices, d.ephemeralMetricsWatcher)
+	}
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -1016,7 +1023,7 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 }
 
 // prePushEphemeralMiddleware is used as push.Func middleware in front of push method.
-// If marking series as ephemeral is enabled, this middleware uses forwarding rules to
+// If marking series as ephemeral is enabled, this middleware uses ephemeral metrics map to
 // determine whether a time series should be marked as ephemeral.
 func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 	if !d.cfg.MarkEphemeral {
@@ -1033,8 +1040,13 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
-		forwardingRules := d.limits.ForwardingRules(userID)
-		if len(forwardingRules) > 0 {
+		// Don't mark series from ruler.
+		if req.Source == mimirpb.RULE {
+			return next(ctx, pushReq)
+		}
+
+		ephemeralMetrics := d.ephemeralMetricsWatcher.metricsMapForUser(userID)
+		if ephemeralMetrics != nil {
 			for _, ts := range req.Timeseries {
 				ts.Ephemeral = false
 
@@ -1043,7 +1055,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 					continue
 				}
 
-				if _, ok := forwardingRules[metric]; ok {
+				if ephemeralMetrics.IsEphemeral(metric) {
 					ts.Ephemeral = true
 					mimirpb.ClearExemplars(ts.TimeSeries)
 				}

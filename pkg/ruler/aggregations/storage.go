@@ -159,14 +159,25 @@ func (b *AggregationsRuleStore) updateEphemeralMetricsForUser(ctx context.Contex
 			em = ephemeral.NewMetrics()
 		}
 
+		changed := false
+
 		for _, m := range em.EphemeralMetrics() {
 			if !metricNames[m] {
+				changed = true
 				em.RemoveEphemeral(m)
 			}
 		}
 
 		for m := range metricNames {
-			em.AddEphemeral(m)
+			if !em.IsEphemeral(m) {
+				changed = true
+				em.AddEphemeral(m)
+			}
+		}
+
+		if !changed {
+			// Returning original map would work, but memberlist KV complains about no detected change.
+			return nil, false, nil
 		}
 
 		return em, true, nil

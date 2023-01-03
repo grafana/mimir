@@ -292,7 +292,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, t.EphemeralKV, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -565,7 +565,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initEphemeralMetricsKV() (_ services.Service, err error) {
-	t.EphemeralKV, err = kv.NewClient(t.Cfg.EphemeralMetricsKV, ephemeral.GetCodec(), t.Registerer, util_log.Logger)
+	t.EphemeralKV, err = kv.NewClient(t.Cfg.EphemeralMetricsKV, ephemeral.GetCodec(), kv.RegistererWithKVName(t.Registerer, "ephemeral-kv"), util_log.Logger)
 	return nil, err
 }
 
@@ -856,7 +856,7 @@ func (t *Mimir) setupModuleManager() error {
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
-		DistributorService:       {Ring, Overrides},
+		DistributorService:       {Ring, Overrides, EphemeralKV},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
