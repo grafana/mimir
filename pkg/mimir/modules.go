@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -56,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -91,6 +93,8 @@ const (
 	TenantFederation         string = "tenant-federation"
 	UsageStats               string = "usage-stats"
 	All                      string = "all"
+
+	EphemeralKV string = "ephemeral-kv"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -560,6 +564,11 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	return nil, nil
 }
 
+func (t *Mimir) initEphemeralMetricsKV() (_ services.Service, err error) {
+	t.EphemeralKV, err = kv.NewClient(t.Cfg.EphemeralMetricsKV, ephemeral.GetCodec(), t.Registerer, util_log.Logger)
+	return nil, err
+}
+
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// If the ruler is not configured and Mimir is running in monolithic or read-write mode, then we just skip starting the ruler.
 	if t.Cfg.isAnyModuleEnabled(Backend, All) && t.Cfg.RulerStorage.IsDefaults() {
@@ -576,7 +585,7 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 			return nil, err
 		}
 
-		aggrs := aggregations.NewAggregationsRuleStore(bucketClient, t.Overrides, util_log.Logger)
+		aggrs := aggregations.NewAggregationsRuleStore(bucketClient, t.Overrides, t.EphemeralKV, util_log.Logger)
 		mergedRuleStore := aggregations.NewMergeRuleStores(aggrs, t.RulerStorage)
 		t.RulerStorage = mergedRuleStore
 	}
@@ -737,6 +746,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.MemberlistKV.MetricsRegisterer = reg
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
+		ephemeral.GetCodec(),
 	}
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
@@ -757,6 +767,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Alertmanager.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.EphemeralMetricsKV.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -833,6 +844,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
 	mm.RegisterModule(All, nil)
+	mm.RegisterModule(EphemeralKV, t.initEphemeralMetricsKV, modules.UserInvisibleModule)
 
 	// Add dependencies
 	deps := map[string][]string{
@@ -855,7 +867,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV},
 		QueryScheduler:           {API, Overrides, MemberlistKV},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
-		RulerStorage:             {Overrides},
+		RulerStorage:             {Overrides, EphemeralKV},
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
@@ -864,6 +876,7 @@ func (t *Mimir) setupModuleManager() error {
 		Read:                     {QueryFrontend, Querier},
 		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		EphemeralKV:              {MemberlistKV},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

@@ -151,8 +151,6 @@ func TestMergeProperties(t *testing.T) {
 				require.Equal(t, e, ephemeralMetrics.IsEphemeral(k), k)
 			}
 		}
-
-		fmt.Println(round, ephemeralMetrics.Metrics)
 	}
 }
 

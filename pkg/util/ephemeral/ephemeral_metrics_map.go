@@ -111,12 +111,25 @@ func (m *Metrics) IsEphemeral(name string) bool {
 	return false
 }
 
+func (m *Metrics) EphemeralMetrics() []string {
+	result := make([]string, 0, len(m.Metrics))
+	for n, e := range m.Metrics {
+		if e.CreatedTimestamp > e.DeletedTimestamp {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
 func (m *Metrics) AddEphemeral(name string) {
 	m.addEphemeral(name, time.Now())
 }
 
 func (m *Metrics) addEphemeral(name string, now time.Time) {
-	m.Metrics[name] = Metric{CreatedTimestamp: now.Unix()}
+	prev := m.Metrics[name]
+	if prev.CreatedTimestamp == 0 || prev.CreatedTimestamp < prev.DeletedTimestamp {
+		m.Metrics[name] = Metric{CreatedTimestamp: now.Unix()}
+	}
 }
 
 func (m *Metrics) RemoveEphemeral(name string) {

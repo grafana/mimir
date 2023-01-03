@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
@@ -126,6 +127,8 @@ type Config struct {
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 
+	EphemeralMetricsKV kv.Config `yaml:"ephemeral_metrics_kv"`
+
 	Common CommonConfig `yaml:"common"`
 }
 
@@ -172,6 +175,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+
+	c.EphemeralMetricsKV.Store = "memberlist" // Default
+	c.EphemeralMetricsKV.RegisterFlagsWithPrefix("ephemeral.kv", "ephemeral/", f)
 
 	c.Common.RegisterFlags(f, logger)
 }
@@ -661,6 +667,8 @@ type Mimir struct {
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
+
+	EphemeralKV kv.Client
 }
 
 // New makes a new Mimir.
