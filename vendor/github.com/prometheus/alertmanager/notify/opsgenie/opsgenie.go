@@ -34,9 +34,6 @@ import (
 	"github.com/prometheus/alertmanager/types"
 )
 
-// https://docs.opsgenie.com/docs/alert-api - 130 characters meaning runes.
-const maxMessageLenRunes = 130
-
 // Notifier implements a Notifier for OpsGenie notifications.
 type Notifier struct {
 	conf    *config.OpsGenieConfig
@@ -174,9 +171,10 @@ func (n *Notifier) createRequests(ctx context.Context, as ...*types.Alert) ([]*h
 		}
 		requests = append(requests, req.WithContext(ctx))
 	default:
-		message, truncated := notify.TruncateInRunes(tmpl(n.conf.Message), maxMessageLenRunes)
+		// https://docs.opsgenie.com/docs/alert-api - 130 characters meaning runes.
+		message, truncated := notify.TruncateInRunes(tmpl(n.conf.Message), 130)
 		if truncated {
-			level.Warn(n.logger).Log("msg", "Truncated message", "alert", key, "max_runes", maxMessageLenRunes)
+			level.Debug(n.logger).Log("msg", "truncated message", "truncated_message", message, "alert", key)
 		}
 
 		createEndpointURL := n.conf.APIURL.Copy()

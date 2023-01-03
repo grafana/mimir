@@ -30,7 +30,7 @@ import (
 	"io/ioutil"
 	"os/exec"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/go/internal/gcimporter"
 )
 
 // Find returns the name of an object (.o) or archive (.a) file

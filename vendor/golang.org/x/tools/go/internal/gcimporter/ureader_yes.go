@@ -14,7 +14,7 @@ import (
 	"go/types"
 	"strings"
 
-	"golang.org/x/tools/internal/pkgbits"
+	"golang.org/x/tools/go/internal/pkgbits"
 )
 
 // A pkgReader holds the shared state for reading a unified IR package
@@ -158,17 +158,6 @@ func (pr *pkgReader) newReader(k pkgbits.RelocKind, idx pkgbits.Index, marker pk
 	}
 }
 
-func (pr *pkgReader) tempReader(k pkgbits.RelocKind, idx pkgbits.Index, marker pkgbits.SyncMarker) *reader {
-	return &reader{
-		Decoder: pr.TempDecoder(k, idx, marker),
-		p:       pr,
-	}
-}
-
-func (pr *pkgReader) retireReader(r *reader) {
-	pr.RetireDecoder(&r.Decoder)
-}
-
 // @@@ Positions
 
 func (r *reader) pos() token.Pos {
@@ -193,29 +182,26 @@ func (pr *pkgReader) posBaseIdx(idx pkgbits.Index) string {
 		return b
 	}
 
-	var filename string
-	{
-		r := pr.tempReader(pkgbits.RelocPosBase, idx, pkgbits.SyncPosBase)
+	r := pr.newReader(pkgbits.RelocPosBase, idx, pkgbits.SyncPosBase)
 
-		// Within types2, position bases have a lot more details (e.g.,
-		// keeping track of where //line directives appeared exactly).
-		//
-		// For go/types, we just track the file name.
+	// Within types2, position bases have a lot more details (e.g.,
+	// keeping track of where //line directives appeared exactly).
+	//
+	// For go/types, we just track the file name.
 
-		filename = r.String()
+	filename := r.String()
 
-		if r.Bool() { // file base
-			// Was: "b = token.NewTrimmedFileBase(filename, true)"
-		} else { // line base
-			pos := r.pos()
-			line := r.Uint()
-			col := r.Uint()
+	if r.Bool() { // file base
+		// Was: "b = token.NewTrimmedFileBase(filename, true)"
+	} else { // line base
+		pos := r.pos()
+		line := r.Uint()
+		col := r.Uint()
 
-			// Was: "b = token.NewLineBase(pos, filename, true, line, col)"
-			_, _, _ = pos, line, col
-		}
-		pr.retireReader(r)
+		// Was: "b = token.NewLineBase(pos, filename, true, line, col)"
+		_, _, _ = pos, line, col
 	}
+
 	b := filename
 	pr.posBases[idx] = b
 	return b
@@ -273,22 +259,22 @@ func (r *reader) doPkg() *types.Package {
 // packages rooted from pkgs.
 func flattenImports(pkgs []*types.Package) []*types.Package {
 	var res []*types.Package
-	seen := make(map[*types.Package]struct{})
-	for _, pkg := range pkgs {
-		if _, ok := seen[pkg]; ok {
-			continue
-		}
-		seen[pkg] = struct{}{}
-		res = append(res, pkg)
 
-		// pkg.Imports() is already flattened.
-		for _, pkg := range pkg.Imports() {
-			if _, ok := seen[pkg]; ok {
-				continue
-			}
-			seen[pkg] = struct{}{}
-			res = append(res, pkg)
+	seen := make(map[*types.Package]bool)
+	var add func(pkg *types.Package)
+	add = func(pkg *types.Package) {
+		if seen[pkg] {
+			return
 		}
+		seen[pkg] = true
+		res = append(res, pkg)
+		for _, imp := range pkg.Imports() {
+			add(imp)
+		}
+	}
+
+	for _, pkg := range pkgs {
+		add(pkg)
 	}
 	return res
 }
@@ -321,15 +307,12 @@ func (pr *pkgReader) typIdx(info typeInfo, dict *readerDict) types.Type {
 		return typ
 	}
 
-	var typ types.Type
-	{
-		r := pr.tempReader(pkgbits.RelocType, idx, pkgbits.SyncTypeIdx)
-		r.dict = dict
+	r := pr.newReader(pkgbits.RelocType, idx, pkgbits.SyncTypeIdx)
+	r.dict = dict
 
-		typ = r.doTyp()
-		assert(typ != nil)
-		pr.retireReader(r)
-	}
+	typ := r.doTyp()
+	assert(typ != nil)
+
 	// See comment in pkgReader.typIdx explaining how this happens.
 	if prev := *where; prev != nil {
 		return prev
@@ -495,27 +478,15 @@ func (r *reader) obj() (types.Object, []types.Type) {
 }
 
 func (pr *pkgReader) objIdx(idx pkgbits.Index) (*types.Package, string) {
+	rname := pr.newReader(pkgbits.RelocName, idx, pkgbits.SyncObject1)
 
-	var objPkg *types.Package
-	var objName string
-	var tag pkgbits.CodeObj
-	{
-		rname := pr.tempReader(pkgbits.RelocName, idx, pkgbits.SyncObject1)
+	objPkg, objName := rname.qualifiedIdent()
+	assert(objName != "")
 
-		objPkg, objName = rname.qualifiedIdent()
-		assert(objName != "")
-
-		tag = pkgbits.CodeObj(rname.Code(pkgbits.SyncCodeObj))
-		pr.retireReader(rname)
-	}
+	tag := pkgbits.CodeObj(rname.Code(pkgbits.SyncCodeObj))
 
 	if tag == pkgbits.ObjStub {
 		assert(objPkg == nil || objPkg == types.Unsafe)
-		return objPkg, objName
-	}
-
-	// Ignore local types promoted to global scope (#55110).
-	if _, suffix := splitVargenSuffix(objName); suffix != "" {
 		return objPkg, objName
 	}
 
@@ -612,28 +583,25 @@ func (pr *pkgReader) objIdx(idx pkgbits.Index) (*types.Package, string) {
 }
 
 func (pr *pkgReader) objDictIdx(idx pkgbits.Index) *readerDict {
+	r := pr.newReader(pkgbits.RelocObjDict, idx, pkgbits.SyncObject1)
 
 	var dict readerDict
 
-	{
-		r := pr.tempReader(pkgbits.RelocObjDict, idx, pkgbits.SyncObject1)
-		if implicits := r.Len(); implicits != 0 {
-			errorf("unexpected object with %v implicit type parameter(s)", implicits)
-		}
-
-		dict.bounds = make([]typeInfo, r.Len())
-		for i := range dict.bounds {
-			dict.bounds[i] = r.typInfo()
-		}
-
-		dict.derived = make([]derivedInfo, r.Len())
-		dict.derivedTypes = make([]types.Type, len(dict.derived))
-		for i := range dict.derived {
-			dict.derived[i] = derivedInfo{r.Reloc(pkgbits.RelocType), r.Bool()}
-		}
-
-		pr.retireReader(r)
+	if implicits := r.Len(); implicits != 0 {
+		errorf("unexpected object with %v implicit type parameter(s)", implicits)
 	}
+
+	dict.bounds = make([]typeInfo, r.Len())
+	for i := range dict.bounds {
+		dict.bounds[i] = r.typInfo()
+	}
+
+	dict.derived = make([]derivedInfo, r.Len())
+	dict.derivedTypes = make([]types.Type, len(dict.derived))
+	for i := range dict.derived {
+		dict.derived[i] = derivedInfo{r.Reloc(pkgbits.RelocType), r.Bool()}
+	}
+
 	// function references follow, but reader doesn't need those
 
 	return &dict

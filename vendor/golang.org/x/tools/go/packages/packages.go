@@ -303,9 +303,6 @@ type Package struct {
 	// of the package, or while parsing or type-checking its files.
 	Errors []Error
 
-	// TypeErrors contains the subset of errors produced during type checking.
-	TypeErrors []types.Error
-
 	// GoFiles lists the absolute file paths of the package's Go source files.
 	GoFiles []string
 
@@ -914,7 +911,6 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 
 		case types.Error:
 			// from type checker
-			lpkg.TypeErrors = append(lpkg.TypeErrors, err)
 			errs = append(errs, Error{
 				Pos:  err.Fset.Position(err.Pos).String(),
 				Msg:  err.Msg,
@@ -1021,7 +1017,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	tc := &types.Config{
 		Importer: importer,
 
-		// Type-check bodies of functions only in initial packages.
+		// Type-check bodies of functions only in non-initial packages.
 		// Example: for import graph A->B->C and initial packages {A,C},
 		// we can ignore function bodies in B.
 		IgnoreFuncBodies: ld.Mode&NeedDeps == 0 && !lpkg.initial,

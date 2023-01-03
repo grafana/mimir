@@ -20,7 +20,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -101,32 +100,15 @@ func TruncateInRunes(s string, n int) (string, bool) {
 
 // TruncateInBytes truncates a string to fit the given size in Bytes.
 func TruncateInBytes(s string, n int) (string, bool) {
-	// First, measure the string the w/o a to-rune conversion.
 	if len(s) <= n {
 		return s, false
 	}
 
-	// The truncationMarker itself is 3 bytes, we can't return any part of the string when it's less than 3.
 	if n <= 3 {
-		switch n {
-		case 3:
-			return truncationMarker, true
-		default:
-			return strings.Repeat(".", n), true
-		}
+		return string(s[:n]), true
 	}
 
-	// Now, to ensure we don't butcher the string we need to remove using runes.
-	r := []rune(s)
-	truncationTarget := n - 3
-
-	// Next, let's truncate the runes to the lower possible number.
-	truncatedRunes := r[:truncationTarget]
-	for len(string(truncatedRunes)) > truncationTarget {
-		truncatedRunes = r[:len(truncatedRunes)-1]
-	}
-
-	return string(truncatedRunes) + truncationMarker, true
+	return string(s[:n-3]) + truncationMarker, true // In bytes, the truncation marker is 3 bytes.
 }
 
 // TmplText is using monadic error handling in order to make string templating

@@ -604,12 +604,17 @@ func (state *golistState) createDriverResponse(words ...string) (*driverResponse
 
 		// Work around https://golang.org/issue/28749:
 		// cmd/go puts assembly, C, and C++ files in CompiledGoFiles.
-		// Remove files from CompiledGoFiles that are non-go files
-		// (or are not files that look like they are from the cache).
-		if len(pkg.CompiledGoFiles) > 0 {
+		// Filter out any elements of CompiledGoFiles that are also in OtherFiles.
+		// We have to keep this workaround in place until go1.12 is a distant memory.
+		if len(pkg.OtherFiles) > 0 {
+			other := make(map[string]bool, len(pkg.OtherFiles))
+			for _, f := range pkg.OtherFiles {
+				other[f] = true
+			}
+
 			out := pkg.CompiledGoFiles[:0]
 			for _, f := range pkg.CompiledGoFiles {
-				if ext := filepath.Ext(f); ext != ".go" && ext != "" { // ext == "" means the file is from the cache, so probably cgo-processed file
+				if other[f] {
 					continue
 				}
 				out = append(out, f)

@@ -36,13 +36,7 @@ import (
 	"github.com/prometheus/alertmanager/types"
 )
 
-const (
-	maxEventSize int = 512000
-	// https://developer.pagerduty.com/docs/ZG9jOjExMDI5NTc4-send-a-v1-event - 1024 characters or runes.
-	maxV1DescriptionLenRunes = 1024
-	// https://developer.pagerduty.com/docs/ZG9jOjExMDI5NTgx-send-an-alert-event - 1024 characters or runes.
-	maxV2SummaryLenRunes = 1024
-)
+const maxEventSize int = 512000
 
 // Notifier implements a Notifier for PagerDuty notifications.
 type Notifier struct {
@@ -155,9 +149,10 @@ func (n *Notifier) notifyV1(
 	var tmplErr error
 	tmpl := notify.TmplText(n.tmpl, data, &tmplErr)
 
-	description, truncated := notify.TruncateInRunes(tmpl(n.conf.Description), maxV1DescriptionLenRunes)
+	// https://developer.pagerduty.com/docs/ZG9jOjExMDI5NTgx-send-an-alert-event - 1204 characters or runes.
+	description, truncated := notify.TruncateInRunes(tmpl(n.conf.Description), 1024)
 	if truncated {
-		level.Warn(n.logger).Log("msg", "Truncated description", "key", key, "max_runes", maxV1DescriptionLenRunes)
+		level.Debug(n.logger).Log("msg", "Truncated description", "description", description, "key", key)
 	}
 
 	serviceKey := string(n.conf.ServiceKey)
@@ -220,9 +215,10 @@ func (n *Notifier) notifyV2(
 		n.conf.Severity = "error"
 	}
 
-	summary, truncated := notify.TruncateInRunes(tmpl(n.conf.Description), maxV2SummaryLenRunes)
+	// https://developer.pagerduty.com/docs/ZG9jOjExMDI5NTgx-send-an-alert-event - 1204 characters or runes.
+	summary, truncated := notify.TruncateInRunes(tmpl(n.conf.Description), 1024)
 	if truncated {
-		level.Warn(n.logger).Log("msg", "Truncated summary", "key", key, "max_runes", maxV2SummaryLenRunes)
+		level.Debug(n.logger).Log("msg", "Truncated summary", "summary", summary, "key", key)
 	}
 
 	routingKey := string(n.conf.RoutingKey)
