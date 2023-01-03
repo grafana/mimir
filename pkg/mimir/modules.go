@@ -48,6 +48,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler/aggregations"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -566,6 +568,18 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	}
 
 	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, util_log.Logger, t.Registerer)
+
+	// Inject aggregations rule store
+	if t.Cfg.RulerStorage.Backend != local.Name {
+		bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.RulerStorage.Config, "aggregations-storage", util_log.Logger, t.Registerer)
+		if err != nil {
+			return nil, err
+		}
+
+		aggrs := aggregations.NewAggregationsRuleStore(bucketClient, t.Overrides, util_log.Logger)
+		mergedRuleStore := aggregations.NewMergeRuleStores(aggrs, t.RulerStorage)
+		t.RulerStorage = mergedRuleStore
+	}
 	return
 }
 
