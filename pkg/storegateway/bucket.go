@@ -568,7 +568,7 @@ func blockSeries(
 	ctx context.Context,
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr chunkReader, // Chunk reader for block.
-	chunksPool *pool.BatchBytes, // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
+	chunksPool *pool.SafeSlabPool[byte], // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher, // Block-specific series hash cache (used only if shard selector is specified).
@@ -891,12 +891,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	)
 
 	if s.maxSeriesPerBatch <= 0 {
-		var chunksPool *pool.BatchBytes
+		var chunksPool *pool.SafeSlabPool[byte]
 
 		// All the memory allocated from the pool for the chunks will be released at the end.
 		// Required only if we'll fetch the chunks.
 		if !req.SkipChunks {
-			chunksPool = &pool.BatchBytes{Delegate: s.chunkPool}
+			chunksPool = pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 			defer chunksPool.Release()
 		}
 
@@ -907,7 +907,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			readers = newChunkReaders(chunkReaders)
 		}
 
-		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 
 	if err != nil {
@@ -995,7 +995,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	chunkReaders map[ulid.ULID]chunkReader,
-	chunksPool *pool.BatchBytes,
+	chunksPool *pool.SafeSlabPool[byte],
 	resHints *hintspb.SeriesResponseHints,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
@@ -1076,7 +1076,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	chunkReaders *bucketChunkReaders,
-	chunksPool pool.Bytes,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
 	chunksLimiter ChunksLimiter,
@@ -1156,7 +1155,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, s.maxSeriesPerBatch, stats, s.metrics.iteratorLoadDurations)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats, s.metrics.iteratorLoadDurations)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
 	}

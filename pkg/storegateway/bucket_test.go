@@ -2204,7 +2204,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
-				chunksPool := &pool.BatchBytes{Delegate: pool.NoopBytes{}}
+				chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, cachedSeriesHasher{seriesHashCache}, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
 				require.NoError(b, err)
