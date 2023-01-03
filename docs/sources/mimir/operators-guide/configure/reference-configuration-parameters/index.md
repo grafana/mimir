@@ -2507,11 +2507,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
-# Limit the query time range (end - start time). This limit is enforced in the
-# querier (on the query possibly split by the query-frontend) and ruler. 0 to
-# disable.
-# CLI flag: -store.max-query-length
-[max_query_length: <duration> | default = 0s]
+# Limit the time range for partial queries at the querier level. Defaults to the
+# value of -store.max-query-length if set to 0.
+# CLI flag: -querier.max-partial-query-length
+[max_partial_query_length: <duration> | default = 0s]
 
 # Maximum number of split (by time) or partial (by shard) queries that will be
 # scheduled in parallel by the query-frontend for a single input query. This

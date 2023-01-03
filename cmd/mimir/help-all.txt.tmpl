@@ -1265,6 +1265,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
+  -querier.max-partial-query-length duration
+    	Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
