@@ -228,7 +228,7 @@ git checkout release-<version>
 
 > **Note:** Homebrew's [autobump job](https://github.com/Homebrew/homebrew-core/actions/workflows/autobump.yml)
 > automatically updates the [`mimirtool` Homebrew formula](https://github.com/Homebrew/homebrew-core/blob/master/Formula/mimirtool.rb).
-> The autobump job runs once every 24 hours, so it may take a day or two for the updated formula to be created and published.
+> The autobump job runs once every 24 hours, so it might take a day or two for the updated formula to be created and published.
 
 To publish a stable release:
 
