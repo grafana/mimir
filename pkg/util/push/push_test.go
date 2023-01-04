@@ -148,8 +148,8 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint3.SetCount(50)
 	datapoint3.SetSum(100)
-	datapoint3.SetMExplicitBounds([]float64{0.1, 0.2, 0.3, 0.4, 0.5})
-	datapoint3.SetMBucketCounts([]uint64{10, 20, 30, 40, 50})
+	datapoint3.SetExplicitBounds(pcommon.NewImmutableFloat64Slice([]float64{0.1, 0.2, 0.3, 0.4, 0.5}))
+	datapoint3.SetBucketCounts(pcommon.NewImmutableUInt64Slice([]uint64{10, 20, 30, 40, 50}))
 	attributes.CopyTo(datapoint3.Attributes())
 
 	req = createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)

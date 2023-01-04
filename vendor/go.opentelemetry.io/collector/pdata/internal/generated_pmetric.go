@@ -1200,14 +1200,9 @@ func (ms NumberDataPoint) Exemplars() ExemplarSlice {
 	return newExemplarSlice(&(*ms.orig).Exemplars)
 }
 
-// Flags returns the flags associated with this NumberDataPoint.
-func (ms NumberDataPoint) Flags() MetricDataPointFlags {
-	return MetricDataPointFlags((*ms.orig).Flags)
-}
-
-// SetFlags replaces the flags associated with this NumberDataPoint.
-func (ms NumberDataPoint) SetFlags(v MetricDataPointFlags) {
-	(*ms.orig).Flags = uint32(v)
+// FlagsStruct returns the flagsstruct associated with this NumberDataPoint.
+func (ms NumberDataPoint) FlagsStruct() MetricDataPointFlagsStruct {
+	return newMetricDataPointFlagsStruct(&(*ms.orig).Flags)
 }
 
 // CopyTo copies all properties from the current struct to the dest.
@@ -1223,7 +1218,7 @@ func (ms NumberDataPoint) CopyTo(dest NumberDataPoint) {
 	}
 
 	ms.Exemplars().CopyTo(dest.Exemplars())
-	dest.SetFlags(ms.Flags())
+	ms.FlagsStruct().CopyTo(dest.FlagsStruct())
 }
 
 // HistogramDataPointSlice logically represents a slice of HistogramDataPoint.
@@ -1469,14 +1464,9 @@ func (ms HistogramDataPoint) Exemplars() ExemplarSlice {
 	return newExemplarSlice(&(*ms.orig).Exemplars)
 }
 
-// Flags returns the flags associated with this HistogramDataPoint.
-func (ms HistogramDataPoint) Flags() MetricDataPointFlags {
-	return MetricDataPointFlags((*ms.orig).Flags)
-}
-
-// SetFlags replaces the flags associated with this HistogramDataPoint.
-func (ms HistogramDataPoint) SetFlags(v MetricDataPointFlags) {
-	(*ms.orig).Flags = uint32(v)
+// FlagsStruct returns the flagsstruct associated with this HistogramDataPoint.
+func (ms HistogramDataPoint) FlagsStruct() MetricDataPointFlagsStruct {
+	return newMetricDataPointFlagsStruct(&(*ms.orig).Flags)
 }
 
 // Min returns the min associated with this HistogramDataPoint.
@@ -1536,7 +1526,7 @@ func (ms HistogramDataPoint) CopyTo(dest HistogramDataPoint) {
 	}
 
 	ms.Exemplars().CopyTo(dest.Exemplars())
-	dest.SetFlags(ms.Flags())
+	ms.FlagsStruct().CopyTo(dest.FlagsStruct())
 	if ms.HasMin() {
 		dest.SetMin(ms.Min())
 	}
@@ -1803,14 +1793,9 @@ func (ms ExponentialHistogramDataPoint) Exemplars() ExemplarSlice {
 	return newExemplarSlice(&(*ms.orig).Exemplars)
 }
 
-// Flags returns the flags associated with this ExponentialHistogramDataPoint.
-func (ms ExponentialHistogramDataPoint) Flags() MetricDataPointFlags {
-	return MetricDataPointFlags((*ms.orig).Flags)
-}
-
-// SetFlags replaces the flags associated with this ExponentialHistogramDataPoint.
-func (ms ExponentialHistogramDataPoint) SetFlags(v MetricDataPointFlags) {
-	(*ms.orig).Flags = uint32(v)
+// FlagsStruct returns the flagsstruct associated with this ExponentialHistogramDataPoint.
+func (ms ExponentialHistogramDataPoint) FlagsStruct() MetricDataPointFlagsStruct {
+	return newMetricDataPointFlagsStruct(&(*ms.orig).Flags)
 }
 
 // Min returns the min associated with this ExponentialHistogramDataPoint.
@@ -1860,7 +1845,7 @@ func (ms ExponentialHistogramDataPoint) CopyTo(dest ExponentialHistogramDataPoin
 	ms.Positive().CopyTo(dest.Positive())
 	ms.Negative().CopyTo(dest.Negative())
 	ms.Exemplars().CopyTo(dest.Exemplars())
-	dest.SetFlags(ms.Flags())
+	ms.FlagsStruct().CopyTo(dest.FlagsStruct())
 	if ms.HasMin() {
 		dest.SetMin(ms.Min())
 	}
@@ -2150,14 +2135,9 @@ func (ms SummaryDataPoint) QuantileValues() ValueAtQuantileSlice {
 	return newValueAtQuantileSlice(&(*ms.orig).QuantileValues)
 }
 
-// Flags returns the flags associated with this SummaryDataPoint.
-func (ms SummaryDataPoint) Flags() MetricDataPointFlags {
-	return MetricDataPointFlags((*ms.orig).Flags)
-}
-
-// SetFlags replaces the flags associated with this SummaryDataPoint.
-func (ms SummaryDataPoint) SetFlags(v MetricDataPointFlags) {
-	(*ms.orig).Flags = uint32(v)
+// FlagsStruct returns the flagsstruct associated with this SummaryDataPoint.
+func (ms SummaryDataPoint) FlagsStruct() MetricDataPointFlagsStruct {
+	return newMetricDataPointFlagsStruct(&(*ms.orig).Flags)
 }
 
 // CopyTo copies all properties from the current struct to the dest.
@@ -2168,7 +2148,7 @@ func (ms SummaryDataPoint) CopyTo(dest SummaryDataPoint) {
 	dest.SetCount(ms.Count())
 	dest.SetSum(ms.Sum())
 	ms.QuantileValues().CopyTo(dest.QuantileValues())
-	dest.SetFlags(ms.Flags())
+	ms.FlagsStruct().CopyTo(dest.FlagsStruct())
 }
 
 // ValueAtQuantileSlice logically represents a slice of ValueAtQuantile.
