@@ -334,7 +334,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	tsToIngest = f.pools.getTsSlice()
 	tsToForward = f.pools.getTsSlice()
 	counts := TimeseriesCounts{}
-	group := validation.GroupLabel(f.limits, user, tsSliceIn)
+	group := f.activeGroups.UpdateActiveGroupTimestamp(user, validation.GroupLabel(f.limits, user, tsSliceIn), time.Now())
 	var err error
 
 	for _, ts := range tsSliceIn {
@@ -344,7 +344,6 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.activeGroups.UpdateActiveGroupTimestamp(user, group, time.Now())
 					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
 				}
 			}
