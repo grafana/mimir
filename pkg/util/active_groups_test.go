@@ -18,13 +18,13 @@ const maxGroupsPerUser = 100
 func TestActiveGroups(t *testing.T) {
 	ag := NewActiveGroups(maxGroupsPerUser)
 
-	ag.UpdateGroupTimestampForUser("user1", "group1", 10)
-	ag.UpdateGroupTimestampForUser("user1", "group2", 15)
-	ag.UpdateGroupTimestampForUser("user1", "group3", 20)
+	ag.UpdateGroupTimestampForUser("user1", "group1", time.Unix(0, 10))
+	ag.UpdateGroupTimestampForUser("user1", "group2", time.Unix(0, 15))
+	ag.UpdateGroupTimestampForUser("user1", "group3", time.Unix(0, 20))
 
-	ag.UpdateGroupTimestampForUser("user2", "group4", 10)
-	ag.UpdateGroupTimestampForUser("user2", "group5", 15)
-	ag.UpdateGroupTimestampForUser("user2", "group6", 20)
+	ag.UpdateGroupTimestampForUser("user2", "group4", time.Unix(0, 10))
+	ag.UpdateGroupTimestampForUser("user2", "group5", time.Unix(0, 15))
+	ag.UpdateGroupTimestampForUser("user2", "group6", time.Unix(0, 20))
 
 	require.Nil(t, ag.PurgeInactiveGroupsForUser("user1", 5))
 	inactiveGroupsForUser1 := ag.PurgeInactiveGroupsForUser("user1", 16)
@@ -40,7 +40,7 @@ func TestActiveGroups(t *testing.T) {
 	require.False(t, slices.Contains(inactiveGroupsForUser2, "group5"))
 	require.False(t, slices.Contains(inactiveGroupsForUser2, "group6"))
 
-	ag.UpdateGroupTimestampForUser("user1", "group1", 25)
+	ag.UpdateGroupTimestampForUser("user1", "group1", time.Unix(0, 25))
 	inactiveGroupsForUser1 = ag.PurgeInactiveGroupsForUser("user1", 21)
 	require.Equal(t, 1, len(inactiveGroupsForUser1))
 	require.Equal(t, []string{"group3"}, inactiveGroupsForUser1)
@@ -60,7 +60,7 @@ func TestActiveGroupsConcurrentUpdateAndPurge(t *testing.T) {
 
 			for !stop.Load() {
 				ts := latestTS.Inc()
-				ag.UpdateGroupTimestampForUser("user1", fmt.Sprintf("%d", ts), ts)
+				ag.UpdateGroupTimestampForUser("user1", fmt.Sprintf("%d", ts), time.Unix(0, ts))
 				time.Sleep(1 * time.Millisecond)
 			}
 		}()
@@ -96,7 +96,7 @@ func TestActiveGroupLimitExceeded(t *testing.T) {
 
 	// Send number of groups to the limit
 	for i := 0; i < maxGroupsPerUser; i++ {
-		ag.UpdateGroupTimestampForUser("user1", fmt.Sprintf("%d", i), int64(i))
+		ag.UpdateGroupTimestampForUser("user1", fmt.Sprintf("%d", i), time.Unix(0, int64(i)))
 	}
 
 	// Active group limit exceeded when trying to add new group

@@ -26,7 +26,8 @@ func NewActiveGroups(maxGroupsPerUser int) *ActiveGroups {
 
 // UpdateGroupTimestampForUser function is only guaranteed to update to timestamp
 // provided even if it is smaller than the existing value
-func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, ts int64) {
+func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, now time.Time) {
+	ts := now.UnixNano()
 	ag.mu.RLock()
 	if groupTs := ag.timestampsPerUser[userID][group]; groupTs != nil {
 		ag.mu.RUnlock()
@@ -132,7 +133,7 @@ func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group stri
 	if s.activeGroups.ActiveGroupLimitExceeded(user, group) {
 		group = "other"
 	}
-	s.activeGroups.UpdateGroupTimestampForUser(user, group, now.UnixNano())
+	s.activeGroups.UpdateGroupTimestampForUser(user, group, now)
 	return group
 }
 
