@@ -866,7 +866,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	}
 
 	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_postings", printDiffEncodedPostings(entry.DiffEncodedPostings))
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -914,13 +914,13 @@ func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, user
 		"requested_shard_index", nonNilShard.ShardIndex,
 		"requested_shard_count", nonNilShard.ShardCount,
 		"postings_key", itemID.postingsKey,
-		"trimmed_postings", printDiffEncodedPostings(itemID.encodedPostings),
+		"trimmed_postings", previewDiffEncodedPostings(itemID.encodedPostings),
 	)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
 }
 
-// printDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
-func printDiffEncodedPostings(b []byte) string {
+// previewDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
+func previewDiffEncodedPostings(b []byte) string {
 	if len(b) > 100 {
 		b = b[:100]
 	}
