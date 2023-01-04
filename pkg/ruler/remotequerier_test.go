@@ -3,10 +3,14 @@
 package ruler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +18,9 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
@@ -170,4 +176,69 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 
 	require.True(t, ok)
 	require.Equal(t, codes.Code(http.StatusUnprocessableEntity), st.Code())
+}
+
+func BenchmarkRemoteQuerier_Decode(b *testing.B) {
+	sourceDir := "/Users/charleskorn/Desktop/queries/original-format"
+	groupDirs, err := os.ReadDir(sourceDir)
+	require.NoError(b, err)
+	require.NotEmpty(b, groupDirs)
+
+	for _, groupDir := range groupDirs {
+		if !groupDir.IsDir() {
+			continue
+		}
+
+		filePattern := filepath.Join(sourceDir, groupDir.Name(), "*.json")
+		files, err := filepath.Glob(filePattern)
+		require.NoError(b, err)
+		require.NotEmpty(b, files)
+
+		bodies := make([][]byte, 0, len(files))
+
+		for _, file := range files {
+			body, err := os.ReadFile(file)
+			require.NoError(b, err)
+			bodies = append(bodies, body)
+		}
+
+		b.Run(groupDir.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				body := bodies[i%len(bodies)]
+				_, err := originalDecode(body)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
+func originalDecode(body []byte) (promql.Vector, error) {
+	var apiResp struct {
+		Status    string          `json:"status"`
+		Data      json.RawMessage `json:"data"`
+		ErrorType string          `json:"errorType"`
+		Error     string          `json:"error"`
+	}
+
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", apiResp.Error)
+	}
+
+	v := struct {
+		Type   model.ValueType `json:"resultType"`
+		Result json.RawMessage `json:"result"`
+	}{}
+
+	if err := json.Unmarshal(apiResp.Data, &v); err != nil {
+		return nil, err
+	}
+
+	return decodeQueryResponse(v.Type, v.Result)
 }
