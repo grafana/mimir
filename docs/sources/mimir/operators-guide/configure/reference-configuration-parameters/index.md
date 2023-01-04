@@ -117,6 +117,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -shutdown-delay
 [shutdown_delay: <duration> | default = 0s]
 
+# (experimental) Maximum number of groups allowed per user by which specified
+# distributor and ingester metrics can be further separated.
+# CLI flag: -max-groups-per-user
+[max_groups_per_user: <int> | default = 1000]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
@@ -659,11 +664,6 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
-
-# Maximum number of groups allowed per user by which specified metrics can be
-# further separated.
-# CLI flag: -distributor.max-groups-per-user
-[max_groups_per_user: <int> | default = 1000]
 ```
 
 ### ingester
@@ -855,11 +855,6 @@ instance_limits:
 # the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
-
-# (advanced) Maximum number of groups allowed per user by which specified
-# metrics can be further separated.
-# CLI flag: -ingester.max-groups-per-user
-[max_groups_per_user: <int> | default = 1000]
 ```
 
 ### querier
@@ -2491,9 +2486,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# Label used to further separate specific distributor and ingester metrics. For
-# each write request, the group is obtained from the first non-empty group label
-# from the incoming list of timeseries.
+# (experimental) Label used to further separate specific distributor and
+# ingester metrics adding a 'group' label. For each write request, the group is
+# obtained from the first non-empty group label from the incoming list of
+# timeseries.
 # CLI flag: -validation.separate-metrics-label
 [separate_metrics_label: <string> | default = ""]
 
