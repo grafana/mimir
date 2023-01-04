@@ -5,14 +5,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/textproto"
 	"os"
 	"path"
 	"time"
 
-	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
@@ -22,14 +22,46 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-func main() {
-	rulesSource := "/Users/charleskorn/Desktop/rules.yaml"
-	orgID := "9960"
-	queryFrontendAddress := "localhost:9095"
-	evaluationTime := time.Now().UTC().Add(-5 * time.Minute)
-	outputDir := "/Users/charleskorn/Desktop/queries/original-format"
+type config struct {
+	rulesFile           string
+	orgID               string
+	outputDir           string
+	evaluationTime      flagext.Time
+	queryFrontendConfig ruler.QueryFrontendConfig
+}
 
-	bytes, err := os.ReadFile(rulesSource)
+// Run this with a command line like the following:
+// go run . --rules-file /tmp/rules.yaml --org-id 9960 --output-dir /tmp/queries/ --evaluation-time 2023-01-04T00:00:00Z --ruler.query-frontend.address localhost:9095
+func main() {
+	cfg := config{}
+	cfg.queryFrontendConfig.RegisterFlags(flag.CommandLine)
+	flag.StringVar(&cfg.rulesFile, "rules-file", "", "Path to YAML file containing rules to evaluate")
+	flag.StringVar(&cfg.orgID, "org-id", "", "Org ID to use when evaluating rules")
+	flag.StringVar(&cfg.outputDir, "output-dir", "", "Path to directory to write query results to")
+	flag.Var(&cfg.evaluationTime, "evaluation-time", "Timestamp to use when evaluating queries")
+	flag.Parse()
+
+	if cfg.rulesFile == "" {
+		fmt.Println("Missing required command line flag: rules file")
+		os.Exit(1)
+	}
+
+	if cfg.orgID == "" {
+		fmt.Println("Missing required command line flag: org ID")
+		os.Exit(1)
+	}
+
+	if cfg.outputDir == "" {
+		fmt.Println("Missing required command line flag: output directory")
+		os.Exit(1)
+	}
+
+	if cfg.evaluationTime == flagext.Time(time.Time{}) {
+		fmt.Println("Missing required command line flag: evaluation time")
+		os.Exit(1)
+	}
+
+	bytes, err := os.ReadFile(cfg.rulesFile)
 
 	if err != nil {
 		fmt.Printf("Error reading rules: %v\n", err)
@@ -42,45 +74,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := os.MkdirAll(outputDir, 0700); err != nil {
+	if err := os.MkdirAll(cfg.outputDir, 0700); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	cfg := ruler.QueryFrontendConfig{
-		Address: queryFrontendAddress,
-		GRPCClientConfig: grpcclient.Config{
-			MaxRecvMsgSize:      100 << 20,
-			MaxSendMsgSize:      100 << 20,
-			GRPCCompression:     "",
-			RateLimit:           0,
-			RateLimitBurst:      0,
-			BackoffOnRatelimits: false,
-			TLSEnabled:          false,
-			BackoffConfig: backoff.Config{
-				MinBackoff: 100 * time.Millisecond,
-				MaxBackoff: 10 * time.Second,
-				MaxRetries: 10,
-			},
-		},
-	}
-
-	client, err := DialQueryFrontend(cfg, orgID)
+	client, err := DialQueryFrontend(cfg.queryFrontendConfig, cfg.orgID)
 	if err != nil {
 		fmt.Printf("Error creating query frontend client: %v\n", err)
 		os.Exit(1)
 	}
 
-	querier := NewRemoteQuerier(client, 30*time.Second, "/prometheus", util_log.Logger, WithOrgIDMiddleware(orgID))
+	querier := NewRemoteQuerier(client, 30*time.Second, "/prometheus", util_log.Logger, WithOrgIDMiddleware(cfg.orgID))
 
 	for _, ruleGroup := range ruleGroups {
 		fmt.Printf("Evaluating group '%v'\n", ruleGroup.Name)
-		ruleGroupOutputDir := path.Join(outputDir, ruleGroup.Name)
-
-		if err := os.MkdirAll(ruleGroupOutputDir, 0700); err != nil {
-			fmt.Printf("Error creating output directory: %v\n", err)
-			os.Exit(1)
-		}
+		ruleGroupOutputDir := path.Join(cfg.outputDir, ruleGroup.Name)
 
 		for _, rule := range ruleGroup.Rules {
 			if rule.Alert.Value != "" {
@@ -90,7 +99,7 @@ func main() {
 			name := rule.Record.Value
 
 			fmt.Printf("> Evaluating rule '%v'\n", name)
-			_, response, err := querier.Query(context.Background(), rule.Expr.Value, evaluationTime, util_log.Logger)
+			_, response, err := querier.Query(context.Background(), rule.Expr.Value, time.Time(cfg.evaluationTime), util_log.Logger)
 
 			if err != nil {
 				fmt.Printf("Evaluation failed: %v\n", err)
@@ -101,6 +110,11 @@ func main() {
 
 			if err != nil {
 				fmt.Printf("Marshalling response as JSON failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := os.MkdirAll(ruleGroupOutputDir, 0700); err != nil {
+				fmt.Printf("Error creating output directory: %v\n", err)
 				os.Exit(1)
 			}
 
