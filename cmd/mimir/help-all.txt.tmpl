@@ -877,8 +877,6 @@ Usage of ./cmd/mimir/mimir:
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
-  -distributor.max-groups-per-user int
-    	Maximum number of groups allowed per user by which specified metrics can be further separated. (default 1000)
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.remote-timeout duration
@@ -1025,8 +1023,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
-  -ingester.max-groups-per-user int
-    	Maximum number of groups allowed per user by which specified metrics can be further separated. (default 1000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.out-of-order-time-window duration
@@ -1127,6 +1123,8 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -max-groups-per-user int
+    	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
     	Size of memory ballast to allocate.
   -memberlist.abort-if-join-fails
@@ -1996,6 +1994,6 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-metadata-length int
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.separate-metrics-label string
-    	Label used to further separate specific distributor and ingester metrics. For each write request, the group is obtained from the first non-empty group label from the incoming list of timeseries.
+    	[experimental] Label used to further separate specific distributor and ingester metrics adding a 'group' label. For each write request, the group is obtained from the first non-empty group label from the incoming list of timeseries.
   -version
     	Print application version and exit.
