@@ -110,3 +110,5 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
+- Overrides-exporter
+  - `-overrides-exporter.ring.enabled`

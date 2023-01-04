@@ -3,18 +3,19 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package validation
+package exporter
 
 import (
 	"bytes"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
-	exporter := NewOverridesExporter(&Limits{}, nil)
+	exporter, _ := NewOverridesExporter(Config{}, &validation.Limits{}, nil, nil, nil)
 
 	// With no updated override configurations, there should be no override metrics
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
@@ -26,7 +27,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
-	exporter := NewOverridesExporter(&Limits{}, NewMockTenantLimits(nil))
+	exporter, _ := NewOverridesExporter(Config{}, &validation.Limits{}, validation.NewMockTenantLimits(nil), nil, nil)
 
 	// With no updated override configurations, there should be no override metrics
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
@@ -38,7 +39,7 @@ func TestOverridesExporter_emptyConfig(t *testing.T) {
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
-	tenantLimits := map[string]*Limits{
+	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {
 			IngestionRate:                10,
 			IngestionBurstSize:           11,
@@ -53,7 +54,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		},
 	}
 
-	exporter := NewOverridesExporter(&Limits{
+	exporter, _ := NewOverridesExporter(Config{}, &validation.Limits{
 		IngestionRate:                22,
 		IngestionBurstSize:           23,
 		MaxGlobalSeriesPerUser:       24,
@@ -64,7 +65,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		MaxFetchedChunkBytesPerQuery: 29,
 		RulerMaxRulesPerRuleGroup:    31,
 		RulerMaxRuleGroupsPerTenant:  32,
-	}, NewMockTenantLimits(tenantLimits))
+	}, validation.NewMockTenantLimits(tenantLimits), nil, nil)
 	limitsMetrics := `
 # HELP cortex_limits_overrides Resource limit overrides applied to tenants
 # TYPE cortex_limits_overrides gauge

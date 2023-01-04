@@ -3,24 +3,55 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package validation
+package exporter
 
 import (
+	"flag"
+	"net/http"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+type Config struct {
+	Ring RingConfig `yaml:"ring"`
+}
 
 // OverridesExporter exposes per-tenant resource limit overrides as Prometheus metrics
 type OverridesExporter struct {
-	defaultLimits       *Limits
-	tenantLimits        TenantLimits
+	services.Service
+
+	defaultLimits       *validation.Limits
+	tenantLimits        validation.TenantLimits
 	overrideDescription *prometheus.Desc
 	defaultsDescription *prometheus.Desc
+
+	// OverridesExporter can optionally use a ring to uniquely shard tenants to
+	// instances and avoid export of duplicate metrics.
+	ring              *overridesExporterRing
+	subserviceManager *services.Manager
+	subserviceWatcher *services.FailureWatcher
+}
+
+func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.Ring.RegisterFlags(f, logger)
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
 // limits using the provided function.
-func NewOverridesExporter(defaultLimits *Limits, tenantLimits TenantLimits) *OverridesExporter {
-	return &OverridesExporter{
+func NewOverridesExporter(
+	config Config,
+	defaultLimits *validation.Limits,
+	tenantLimits validation.TenantLimits,
+	log log.Logger,
+	registerer prometheus.Registerer,
+) (*OverridesExporter, error) {
+	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
 		tenantLimits:  tenantLimits,
 		overrideDescription: prometheus.NewDesc(
@@ -35,7 +66,24 @@ func NewOverridesExporter(defaultLimits *Limits, tenantLimits TenantLimits) *Ove
 			[]string{"limit_name"},
 			nil,
 		),
+		subserviceWatcher: services.NewFailureWatcher(),
 	}
+
+	if config.Ring.Enabled {
+		oeRing, err := newRing(config.Ring, log, registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
+		}
+		exporter.ring = oeRing
+		manager, err := services.NewManager(oeRing.lifecycler)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create service manager")
+		}
+		exporter.subserviceManager = manager
+	}
+
+	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)
+	return exporter, nil
 }
 
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -67,6 +115,11 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
+		owned, _ := oe.ownsTenant(tenant)
+		if !owned {
+			continue
+		}
+
 		// Write path limits
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.IngestionBurstSize), "ingestion_burst_size", tenant)
@@ -83,4 +136,37 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant", tenant)
 	}
+}
+
+func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Request) {
+	if oe.ring != nil {
+		oe.ring.lifecycler.ServeHTTP(w, req)
+		return
+	}
+
+	ringDisabledPage := `
+		<!DOCTYPE html>
+		<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>Overrides-exporter Status</title>
+			</head>
+			<body>
+				<h1>Overrides-exporter Status</h1>
+				<p>Overrides-exporter hash ring is disabled.</p>
+			</body>
+		</html>`
+	util.WriteHTMLResponse(w, ringDisabledPage)
+}
+
+func (oe *OverridesExporter) ownsTenant(tenantId string) (bool, error) {
+	if oe.ring == nil {
+		// If sharding is not enabled, every instance exports metrics for every tenant
+		return true, nil
+	}
+	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.config.InstanceAddr, tenantId)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to determine tenant ownership from overrides-exporter ring")
+	}
+	return owned, nil
 }
