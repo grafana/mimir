@@ -147,8 +147,6 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
-
-	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
