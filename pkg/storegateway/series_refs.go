@@ -890,10 +890,10 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
 }
 
-func encodeCachedSeriesForPostings(set seriesChunkRefsSet, postings []byte) ([]byte, error) {
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings []byte) ([]byte, error) {
 	entry := &storepb.CachedSeries{
 		Series:              make([]mimirpb.PreallocatingMetric, set.len()),
-		DiffEncodedPostings: postings,
+		DiffEncodedPostings: diffEncodedPostings,
 	}
 	for i, s := range set.series {
 		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
