@@ -866,7 +866,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	}
 
 	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_trimmed_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -914,7 +914,7 @@ func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, user
 		"requested_shard_index", nonNilShard.ShardIndex,
 		"requested_shard_count", nonNilShard.ShardCount,
 		"postings_key", itemID.postingsKey,
-		"trimmed_postings", previewDiffEncodedPostings(itemID.encodedPostings),
+		"requested_trimmed_postings", previewDiffEncodedPostings(itemID.encodedPostings),
 	)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
 }
