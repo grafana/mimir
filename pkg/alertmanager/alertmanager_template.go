@@ -4,10 +4,9 @@ package alertmanager
 
 import (
 	"encoding/json"
-	tmpltext "text/template"
-
 	tmplhtml "html/template"
 	"net/url"
+	tmpltext "text/template"
 
 	"github.com/prometheus/alertmanager/template"
 )
