@@ -32,7 +32,7 @@ type grafanaExploreParams struct {
 }
 
 // grafanaURL is a template helper function to generate Grafana explore URL in the alert template.
-func grafanaURL(grafanaURL, datasource, from, to, expr string) string {
+func grafanaURL(grafanaURL, datasource, from, to, expr string) (string, error) {
 	res, err := json.Marshal(&grafanaExploreParams{
 		Datasource: datasource,
 		Range: grafanaExploreRange{
@@ -49,10 +49,7 @@ func grafanaURL(grafanaURL, datasource, from, to, expr string) string {
 			},
 		},
 	})
-	if err != nil {
-		panic(err)
-	}
-	return grafanaURL + "/explore?left=" + url.QueryEscape(string(res))
+	return grafanaURL + "/explore?left=" + url.QueryEscape(string(res)), err
 }
 
 // withCustomFunctions returns template.Option which adds additional template functions
