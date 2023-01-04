@@ -72,9 +72,9 @@ type IndexCache interface {
 	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 
 	// StoreSeriesForPostings stores a series set for the provided postings.
-	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
+	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
 	// FetchSeriesForPostings fetches a series set for the provided postings.
-	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
+	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
