@@ -21,7 +21,8 @@ option (gogoproto.goproto_sizecache_all) = false;
 
 message CachedSeries {
   repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric"];
-  uint64 shardIndex = 2;
-  uint64 shardCount = 3;
-  string matchersKey = 4;
+  reserved 2; // shard index; we don't need to store them in the cache entry because they are part of the cache key verbatim
+  reserved 3; // shard count; we don't need to store them in the cache entry because they are part of the cache key verbatim
+  reserved 4; // matchers key; we shouldn't cache by matchers key because same postings can be derived from different matchers
+  bytes diffEncodedPostings = 5;
 }

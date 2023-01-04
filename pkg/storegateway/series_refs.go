@@ -3,8 +3,9 @@
 package storegateway
 
 import (
+	"bytes"
 	"context"
-	"strings"
+	"fmt"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -609,7 +611,6 @@ type loadingSeriesChunkRefsSetIterator struct {
 	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
-	matchers            []*labels.Matcher
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	skipChunks          bool
@@ -659,7 +660,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		indexCache,
 		stats,
 		blockMeta,
-		matchers,
 		shard,
 		seriesHasher,
 		skipChunks,
@@ -680,7 +680,6 @@ func newLoadingSeriesChunkRefsSetIterator(
 	indexCache indexcache.IndexCache,
 	stats *safeQueryStats,
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,
@@ -700,7 +699,6 @@ func newLoadingSeriesChunkRefsSetIterator(
 		indexCache:          indexCache,
 		stats:               stats,
 		blockID:             blockMeta.ULID,
-		matchers:            matchers,
 		shard:               shard,
 		seriesHasher:        seriesHasher,
 		skipChunks:          skipChunks,
@@ -720,15 +718,21 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	nextPostings := s.postingsSetIterator.At()
 
-	var seriesCacheKey indexcache.PostingsKey
+	var cachedSeriesID cachedSeriesForPostingsID
 	if s.skipChunks {
-		// Calculate the cache key before we filter out anything from the postings,
+		var err error
+		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
-		// Calculate the postings key only if we'll actually use it.
-		seriesCacheKey = indexcache.CanonicalPostingsKey(nextPostings)
-		if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.matchers, s.shard, seriesCacheKey, s.logger); isCached {
-			s.currentSet = cachedSet
-			return true
+		// Calculate the cache item ID only if we'll actually use it.
+		cachedSeriesID.postingsKey = indexcache.CanonicalPostingsKey(nextPostings)
+		cachedSeriesID.encodedPostings, err = diffVarintSnappyEncode(index.NewListPostings(nextPostings), len(nextPostings))
+		if err != nil {
+			s.logger.Log("msg", "could not encode postings for series cache key", "err", err)
+		} else {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+				s.currentSet = cachedSet
+				return true
+			}
 		}
 	}
 
@@ -787,7 +791,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	s.currentSet = nextSet
 	if s.skipChunks {
-		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.matchers, s.shard, seriesCacheKey, nextSet, s.logger)
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
@@ -832,29 +836,33 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
-	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
+// cachedSeriesForPostingsID contains enough information to be able to tell whether a cache entry
+// is the right cache entry that we are looking for. We store only the postingsKey in the
+// cache key because the encoded postings are too big. We store the encoded postings within
+// the item and compare them when we need to fetch postings.
+type cachedSeriesForPostingsID struct {
+	postingsKey     indexcache.PostingsKey
+	encodedPostings []byte
+}
+
+func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, logger log.Logger) (seriesChunkRefsSet, bool) {
+	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey)
 	if !ok {
 		return seriesChunkRefsSet{}, false
 	}
 	data, err := snappy.Decode(nil, data)
 	if err != nil {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache snappy", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache snappy", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
 	var entry storepb.CachedSeries
 	if err = entry.Unmarshal(data); err != nil {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
 
-	if entry.MatchersKey != string(matchersKey) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
-		return seriesChunkRefsSet{}, false
-	}
-	if nonNilShard := maybeNilShard(shard); entry.ShardIndex != nonNilShard.ShardIndex || entry.ShardCount != nonNilShard.ShardCount {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard_index", entry.ShardIndex, "cached_shard_count", entry.ShardCount)
+	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_postings", printDiffEncodedPostings(entry.DiffEncodedPostings))
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -869,23 +877,19 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	return res, true
 }
 
-func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
-	nonNilShard := maybeNilShard(shard)
-	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, err := encodeCachedSeriesForPostings(set, matchersKey, nonNilShard)
+func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, set seriesChunkRefsSet, logger log.Logger) {
+	data, err := encodeCachedSeriesForPostings(set, itemID.encodedPostings)
 	if err != nil {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey, data)
+	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
 }
 
-func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) ([]byte, error) {
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, postings []byte) ([]byte, error) {
 	entry := &storepb.CachedSeries{
-		Series:      make([]mimirpb.PreallocatingMetric, set.len()),
-		MatchersKey: string(matchersKey),
-		ShardIndex:  nonNilShard.ShardIndex,
-		ShardCount:  nonNilShard.ShardCount,
+		Series:              make([]mimirpb.PreallocatingMetric, set.len()),
+		DiffEncodedPostings: postings,
 	}
 	for i, s := range set.series {
 		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
@@ -898,15 +902,25 @@ func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcach
 	return snappy.Encode(nil, uncompressed), nil
 }
 
-func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
+func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, msgAndArgs ...any) {
 	nonNilShard := maybeNilShard(shard)
-	var matchersStr strings.Builder
-	for _, m := range matchers {
-		matchersStr.WriteString(m.String())
-		matchersStr.WriteString(",")
-	}
-	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard_index", nonNilShard.ShardIndex, "requested_shard_count", nonNilShard.ShardCount, "postings_key", postingsKey)
+	msgAndArgs = append(msgAndArgs,
+		"tenant_id", userID,
+		"block_ulid", blockID.String(),
+		"requested_shard_index", nonNilShard.ShardIndex,
+		"requested_shard_count", nonNilShard.ShardCount,
+		"postings_key", itemID.postingsKey,
+		"trimmed_postings", printDiffEncodedPostings(itemID.encodedPostings),
+	)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
+}
+
+// printDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
+func printDiffEncodedPostings(b []byte) string {
+	if len(b) > 100 {
+		b = b[:100]
+	}
+	return fmt.Sprintf("%v", b)
 }
 
 type seriesHasher interface {

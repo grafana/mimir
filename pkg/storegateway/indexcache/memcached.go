@@ -237,22 +237,24 @@ func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersK
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *MemcachedIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.set(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, matchersKey, shard, postingsKey), v)
+func (c *MemcachedIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *MemcachedIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, matchersKey, shard, postingsKey))
+func (c *MemcachedIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey))
 }
 
-func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) string {
-	hash := blake2b.Sum256([]byte(matchersKey))
+func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) string {
 	// We use SP2: as
 	// * S: is already used for SeriesForRef
 	// * SS: is already used for Series
 	// * SP: was in use when using gob encoding
-	return "SP2:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	//
+	// "SP*" (3) + userID (150) + blockID (26) + shard (10 with up to 1000 shards) + ":" (4) = 193
+	// Memcached limits key length to 250, so we're left with 57 bytes for the postings key.
+	return "SP2:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey)
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.

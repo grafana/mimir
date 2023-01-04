@@ -2343,7 +2343,7 @@ func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID 
 	c.t.Fatalf("StoreSeries should not be called")
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
 	c.t.Fatalf("StoreSeriesForPostings should not be called")
 }
 
