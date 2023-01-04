@@ -685,6 +685,22 @@ alertmanager_config: |
     receiver: 'default-receiver'
 `,
 		},
+		{
+			name: "Should pass if template uses the grafanaExploreURL custom function",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      slack_configs:
+        - api_url: http://localhost
+          channel: "test"
+          title: "Hello {{ grafanaExploreURL \"https://foo.bar\" \"xyz\" \"now-12h\" \"now\" \"up{foo='bar'}\" }}"
+          text: "Hello {{ grafanaExploreURL \"https://foo.bar\" \"xyz\" \"now-12h\" \"now\" \"up{foo='bar'}\" }}"
+
+  route:
+    receiver: 'default-receiver'
+`,
+		},
 	}
 
 	limits := &mockAlertManagerLimits{}
