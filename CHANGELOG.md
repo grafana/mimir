@@ -7,6 +7,7 @@
 * [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779 #3839
+* [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
@@ -22,6 +23,7 @@
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
 * [ENHANCEMENT] Ingester: Improved series selection performance when some of the matchers do not match any series. #3827
+* [ENHANCEMENT] Alertmanager: Add new additional template function `tenantID` returning id of the tenant owning the alert. #3758
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
