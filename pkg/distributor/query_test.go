@@ -6,18 +6,25 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
 func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {
@@ -220,5 +227,72 @@ func BenchmarkMergeExemplars(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		// Merge input with itself three times
 		mergeExemplarQueryResponses([]interface{}{input, input, input})
+	}
+}
+
+func TestQueryPortForwardedIngesters(t *testing.T) {
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, "9960")
+
+	req := &ingester_client.QueryRequest{
+		StartTimestampMs: 1672820685000,
+		EndTimestampMs:   1672821240000,
+		Matchers: []*ingester_client.LabelMatcher{
+			{Type: ingester_client.EQUAL, Name: "cluster", Value: "dev-us-central-0"},
+			{Type: ingester_client.EQUAL, Name: "container", Value: "cortex-gw-internal"},
+			{Type: ingester_client.EQUAL, Name: "instance", Value: "cortex-gw-internal-79858854bf-gx8gk:cortex-gw-internal:http-metrics"},
+			{Type: ingester_client.EQUAL, Name: "job", Value: "mimir-dev-09/cortex-gw-internal"},
+			{Type: ingester_client.EQUAL, Name: "le", Value: "50.0"},
+			{Type: ingester_client.EQUAL, Name: "method", Value: "POST"},
+			{Type: ingester_client.EQUAL, Name: "namespace", Value: "mimir-dev-09"},
+			{Type: ingester_client.EQUAL, Name: "pod", Value: "cortex-gw-internal-79858854bf-gx8gk"},
+			{Type: ingester_client.EQUAL, Name: "route", Value: "api_v1_push"},
+			{Type: ingester_client.EQUAL, Name: "status_code", Value: "200"},
+			{Type: ingester_client.EQUAL, Name: "ws", Value: "false"},
+		},
+	}
+
+	addr := "localhost:9000"
+
+	client, err := ingester_client.MakeIngesterClient(addr, ingester_client.Config{
+		GRPCClientConfig: grpcclient.Config{
+			MaxRecvMsgSize: 10 * 1024 * 1024,
+			MaxSendMsgSize: 10 * 1024 * 1024,
+		},
+	})
+	require.NoError(t, err)
+
+	stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
+	require.NoError(t, err)
+
+	defer stream.CloseSend() //nolint:errcheck
+
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		for _, series := range resp.Chunkseries {
+			decodedChunks, err := chunkcompat.FromChunks(nil, series.Chunks)
+			require.NoError(t, err)
+
+			for _, decodedChunk := range decodedChunks {
+				fmt.Println("CHUNK")
+
+				samples, err := decodedChunk.Samples(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+
+				for idx, sample := range samples {
+					timestampDiff := int64(0)
+					if idx > 0 {
+						timestampDiff = int64(sample.Timestamp - samples[idx-1].Timestamp)
+					}
+
+					fmt.Println("T:", sample.Timestamp, "V:", sample.Value, "T diff from previous:", timestampDiff)
+				}
+			}
+		}
 	}
 }
