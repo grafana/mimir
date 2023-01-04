@@ -628,7 +628,7 @@ func newForwarder(tb testing.TB, cfg Config, start bool) (Forwarder, *prometheus
 	override, err := validation.NewOverrides(limits, nil)
 	require.NoError(tb, err)
 
-	forwarder := NewForwarder(cfg, reg, log, override)
+	forwarder := NewForwarder(cfg, reg, log, override, nil)
 
 	if start {
 		require.NoError(tb, services.StartAndAwaitRunning(context.Background(), forwarder))
