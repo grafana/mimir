@@ -727,7 +727,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		cachedSeriesID.postingsKey = indexcache.CanonicalPostingsKey(nextPostings)
 		cachedSeriesID.encodedPostings, err = diffVarintSnappyEncode(index.NewListPostings(nextPostings), len(nextPostings))
 		if err != nil {
-			s.logger.Log("msg", "could not encode postings for series cache key", "err", err)
+			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
 			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
@@ -790,7 +790,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks {
+	if s.skipChunks && cachedSeriesID.isSet() {
 		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
@@ -843,6 +843,10 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 type cachedSeriesForPostingsID struct {
 	postingsKey     indexcache.PostingsKey
 	encodedPostings []byte
+}
+
+func (i cachedSeriesForPostingsID) isSet() bool {
+	return i.postingsKey != "" && len(i.encodedPostings) > 0
 }
 
 func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, logger log.Logger) (seriesChunkRefsSet, bool) {

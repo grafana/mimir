@@ -252,7 +252,7 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 	// * SS: is already used for Series
 	// * SP: was in use when using gob encoding
 	//
-	// "SP*" (3) + userID (150) + blockID (26) + shard (10 with up to 1000 shards) + ":" (4) = 193
+	// "SP2" (3) + userID (150) + blockID (26) + shard (10 with up to 1000 shards) + ":" (4) = 193
 	// Memcached limits key length to 250, so we're left with 57 bytes for the postings key.
 	return "SP2:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey)
 }
