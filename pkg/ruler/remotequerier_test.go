@@ -25,6 +25,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	json_iterator "github.com/json-iterator/go"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -205,7 +207,7 @@ func BenchmarkRemoteQuerier_Decode(b *testing.B) {
 		b.Run(groupDir.Name(), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				body := bodies[i%len(bodies)]
-				_, err := originalDecode(body)
+				_, err := decodeWithJsonIterator(body)
 
 				if err != nil {
 					require.NoError(b, err)
@@ -241,4 +243,49 @@ func originalDecode(body []byte) (promql.Vector, error) {
 	}
 
 	return decodeQueryResponse(v.Type, v.Result)
+}
+
+func decodeWithJsonIterator(body []byte) (promql.Vector, error) {
+	var apiResp struct {
+		Status    string                   `json:"status"`
+		Data      json_iterator.RawMessage `json:"data"`
+		ErrorType string                   `json:"errorType"`
+		Error     string                   `json:"error"`
+	}
+
+	if err := json_iterator.NewDecoder(bytes.NewReader(body)).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", apiResp.Error)
+	}
+
+	v := struct {
+		Type   model.ValueType          `json:"resultType"`
+		Result json_iterator.RawMessage `json:"result"`
+	}{}
+
+	if err := json_iterator.Unmarshal(apiResp.Data, &v); err != nil {
+		return nil, err
+	}
+
+	switch v.Type {
+	case model.ValScalar:
+		var sv model.Scalar
+		if err := json_iterator.Unmarshal(v.Result, &sv); err != nil {
+			return nil, err
+		}
+		return scalarToPromQLVector(&sv), nil
+
+	case model.ValVector:
+		var vv model.Vector
+		if err := json_iterator.Unmarshal(v.Result, &vv); err != nil {
+			return nil, err
+		}
+		return vectorToPromQLVector(vv), nil
+
+	default:
+		return nil, fmt.Errorf("rule result is not a vector or scalar: %q", v.Type)
+	}
 }
