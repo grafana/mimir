@@ -177,9 +177,6 @@ type Config struct {
 
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
-
-	// Limit on number of groups by which specified metrics can be further separated.
-	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:"experimental"`
 }
 
 type InstanceLimits struct {
@@ -200,7 +197,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.IntVar(&cfg.MaxGroupsPerUser, "distributor.max-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified metrics can be further separated.")
 }
 
 // Validate config and returns error on failure
@@ -224,7 +220,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -426,9 +422,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
-	d.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(d.removeGroupMetricsForUser, d.cfg.MaxGroupsPerUser)
+	d.activeGroups = activeGroupsCleanupService
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits)
+	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits, d.activeGroups)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
@@ -436,7 +432,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
-	subservices = append(subservices, d.ingesterPool, d.activeUsers, d.activeGroups)
+	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -550,7 +546,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	}
 }
 
-func (d *Distributor) removeGroupMetricsForUser(userID, group string) {
+func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)

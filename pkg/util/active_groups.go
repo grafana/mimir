@@ -96,14 +96,14 @@ type ActiveGroupsCleanupService struct {
 	services.Service
 
 	activeGroups    *ActiveGroups
-	cleanupFunc     func(string, string) // Takes userID, group
+	cleanupFuncs    []func(string, string) // Takes userID, group
 	inactiveTimeout time.Duration
 }
 
-func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duration, maxGroupsPerUser int, cleanupFn func(string, string)) *ActiveGroupsCleanupService {
+func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duration, maxGroupsPerUser int, cleanupFns ...func(string, string)) *ActiveGroupsCleanupService {
 	s := &ActiveGroupsCleanupService{
 		activeGroups:    NewActiveGroups(maxGroupsPerUser),
-		cleanupFunc:     cleanupFn,
+		cleanupFuncs:    cleanupFns,
 		inactiveTimeout: inactiveTimeout,
 	}
 
@@ -111,8 +111,8 @@ func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duratio
 	return s
 }
 
-func NewActiveGroupsCleanupWithDefaultValues(cleanupFn func(string, string), maxGroupsPerUser int) *ActiveGroupsCleanupService {
-	return NewActiveGroupsCleanupService(1*time.Minute, 20*time.Minute, maxGroupsPerUser, cleanupFn)
+func NewActiveGroupsCleanupWithDefaultValues(maxGroupsPerUser int, cleanupFns ...func(string, string)) *ActiveGroupsCleanupService {
+	return NewActiveGroupsCleanupService(1*time.Minute, 20*time.Minute, maxGroupsPerUser, cleanupFns...)
 }
 
 func (ag *ActiveGroups) ActiveGroupLimitExceeded(userID, group string) bool {
@@ -140,7 +140,9 @@ func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
 	for userID := range s.activeGroups.timestampsPerUser {
 		inactiveGroups := s.activeGroups.PurgeInactiveGroupsForUser(userID, time.Now().Add(-s.inactiveTimeout).UnixNano())
 		for _, group := range inactiveGroups {
-			s.cleanupFunc(userID, group)
+			for _, cleanupFn := range s.cleanupFuncs {
+				cleanupFn(userID, group)
+			}
 		}
 	}
 	return nil

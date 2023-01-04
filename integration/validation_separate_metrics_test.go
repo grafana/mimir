@@ -201,8 +201,7 @@ func TestSeparateMetricsInactiveGroups(t *testing.T) {
 	)
 
 	flags["-validation.separate-metrics-label"] = "separate_metrics_group"
-	flags["-distributor.max-groups-per-user"] = strconv.Itoa(10)
-	flags["-ingester.max-groups-per-user"] = strconv.Itoa(10)
+	flags["-max-groups-per-user"] = strconv.Itoa(10)
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()

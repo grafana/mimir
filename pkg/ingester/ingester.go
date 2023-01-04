@@ -168,7 +168,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-	f.IntVar(&cfg.MaxGroupsPerUser, "ingester.max-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified metrics can be further separated.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -289,7 +288,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
 
 	i, err := newIngester(cfg, limits, registerer, logger)
@@ -298,6 +297,7 @@ func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registe
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.activeGroups = activeGroupsCleanupService
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -402,9 +402,6 @@ func (i *Ingester) starting(ctx context.Context) error {
 		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
 		servs = append(servs, closeIdleService)
 	}
-
-	i.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(i.removeGroupMetricsForUser, i.cfg.MaxGroupsPerUser)
-	servs = append(servs, i.activeGroups)
 
 	var err error
 	i.subservices, err = services.NewManager(servs...)
@@ -2102,7 +2099,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	return tsdbIdleClosed
 }
 
-func (i *Ingester) removeGroupMetricsForUser(userID, group string) {
+func (i *Ingester) RemoveGroupMetricsForUser(userID, group string) {
 	i.metrics.deletePerGroupMetricsForUser(userID, group)
 }
 

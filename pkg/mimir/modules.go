@@ -61,34 +61,35 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker          string = "activity-tracker"
-	API                      string = "api"
-	SanityCheck              string = "sanity-check"
-	Ring                     string = "ring"
-	RuntimeConfig            string = "runtime-config"
-	Overrides                string = "overrides"
-	OverridesExporter        string = "overrides-exporter"
-	Server                   string = "server"
-	Distributor              string = "distributor"
-	DistributorService       string = "distributor-service"
-	Ingester                 string = "ingester"
-	IngesterService          string = "ingester-service"
-	Flusher                  string = "flusher"
-	Querier                  string = "querier"
-	Queryable                string = "queryable"
-	StoreQueryable           string = "store-queryable"
-	QueryFrontend            string = "query-frontend"
-	QueryFrontendTripperware string = "query-frontend-tripperware"
-	RulerStorage             string = "ruler-storage"
-	Ruler                    string = "ruler"
-	AlertManager             string = "alertmanager"
-	Compactor                string = "compactor"
-	StoreGateway             string = "store-gateway"
-	MemberlistKV             string = "memberlist-kv"
-	QueryScheduler           string = "query-scheduler"
-	TenantFederation         string = "tenant-federation"
-	UsageStats               string = "usage-stats"
-	All                      string = "all"
+	ActivityTracker            string = "activity-tracker"
+	API                        string = "api"
+	SanityCheck                string = "sanity-check"
+	Ring                       string = "ring"
+	RuntimeConfig              string = "runtime-config"
+	Overrides                  string = "overrides"
+	OverridesExporter          string = "overrides-exporter"
+	Server                     string = "server"
+	ActiveGroupsCleanupService string = "active-groups-cleanup-service"
+	Distributor                string = "distributor"
+	DistributorService         string = "distributor-service"
+	Ingester                   string = "ingester"
+	IngesterService            string = "ingester-service"
+	Flusher                    string = "flusher"
+	Querier                    string = "querier"
+	Queryable                  string = "queryable"
+	StoreQueryable             string = "store-queryable"
+	QueryFrontend              string = "query-frontend"
+	QueryFrontendTripperware   string = "query-frontend-tripperware"
+	RulerStorage               string = "ruler-storage"
+	Ruler                      string = "ruler"
+	AlertManager               string = "alertmanager"
+	Compactor                  string = "compactor"
+	StoreGateway               string = "store-gateway"
+	MemberlistKV               string = "memberlist-kv"
+	QueryScheduler             string = "query-scheduler"
+	TenantFederation           string = "tenant-federation"
+	UsageStats                 string = "usage-stats"
+	All                        string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -286,7 +287,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -462,6 +463,12 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	}
 }
 
+func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
+	t.ActiveGroupsCleanup = util.NewActiveGroupsCleanupWithDefaultValues(t.Cfg.MaxGroupsPerUser, t.Distributor.RemoveGroupMetricsForUser, t.Ingester.RemoveGroupMetricsForUser)
+
+	return t.ActiveGroupsCleanup, nil
+}
+
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
@@ -472,7 +479,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -797,6 +804,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Ring, t.initRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
+	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
@@ -829,9 +837,9 @@ func (t *Mimir) setupModuleManager() error {
 		Ring:                     {API, RuntimeConfig, MemberlistKV},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides},
-		Distributor:              {DistributorService, API},
+		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
 		DistributorService:       {Ring, Overrides},
-		Ingester:                 {IngesterService, API},
+		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
 		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
