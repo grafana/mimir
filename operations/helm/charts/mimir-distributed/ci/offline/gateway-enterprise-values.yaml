@@ -1,7 +1,6 @@
 enterprise:
   enabled: true
 gateway:
-  enabled: true
   resources:
     requests:
       memory: 10Mi

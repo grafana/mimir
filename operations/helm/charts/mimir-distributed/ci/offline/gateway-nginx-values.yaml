@@ -1,7 +1,7 @@
 nginx:
   enabled: false
 gateway:
-  enabled: true
+  enabledNonEnterprise: true
   resources:
     requests:
       memory: 10Mi
