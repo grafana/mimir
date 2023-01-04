@@ -727,7 +727,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		cachedSeriesID.postingsKey = indexcache.CanonicalPostingsKey(nextPostings)
 		cachedSeriesID.encodedPostings, err = diffVarintSnappyEncode(index.NewListPostings(nextPostings), len(nextPostings))
 		if err != nil {
-			s.logger.Log("msg", "could not encode postings for series cache key", "err", err)
+			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
 			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
@@ -790,7 +790,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks {
+	if s.skipChunks && cachedSeriesID.isSet() {
 		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
@@ -845,6 +845,10 @@ type cachedSeriesForPostingsID struct {
 	encodedPostings []byte
 }
 
+func (i cachedSeriesForPostingsID) isSet() bool {
+	return i.postingsKey != "" && len(i.encodedPostings) > 0
+}
+
 func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, logger log.Logger) (seriesChunkRefsSet, bool) {
 	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey)
 	if !ok {
@@ -862,7 +866,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	}
 
 	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_postings", printDiffEncodedPostings(entry.DiffEncodedPostings))
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_trimmed_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -886,10 +890,10 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
 }
 
-func encodeCachedSeriesForPostings(set seriesChunkRefsSet, postings []byte) ([]byte, error) {
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings []byte) ([]byte, error) {
 	entry := &storepb.CachedSeries{
 		Series:              make([]mimirpb.PreallocatingMetric, set.len()),
-		DiffEncodedPostings: postings,
+		DiffEncodedPostings: diffEncodedPostings,
 	}
 	for i, s := range set.series {
 		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
@@ -910,13 +914,13 @@ func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, user
 		"requested_shard_index", nonNilShard.ShardIndex,
 		"requested_shard_count", nonNilShard.ShardCount,
 		"postings_key", itemID.postingsKey,
-		"trimmed_postings", printDiffEncodedPostings(itemID.encodedPostings),
+		"requested_trimmed_postings", previewDiffEncodedPostings(itemID.encodedPostings),
 	)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
 }
 
-// printDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
-func printDiffEncodedPostings(b []byte) string {
+// previewDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
+func previewDiffEncodedPostings(b []byte) string {
 	if len(b) > 100 {
 		b = b[:100]
 	}
