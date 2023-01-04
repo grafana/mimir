@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/textproto"
@@ -74,6 +73,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := os.RemoveAll(cfg.outputDir); err != nil {
+		fmt.Printf("Error cleaning output directory: %v\n", err)
+		os.Exit(1)
+	}
+
 	if err := os.MkdirAll(cfg.outputDir, 0700); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
 		os.Exit(1)
@@ -86,6 +90,7 @@ func main() {
 	}
 
 	querier := NewRemoteQuerier(client, 30*time.Second, "/prometheus", util_log.Logger, WithOrgIDMiddleware(cfg.orgID))
+	failures := 0
 
 	for _, ruleGroup := range ruleGroups {
 		fmt.Printf("Evaluating group '%v'\n", ruleGroup.Name)
@@ -99,18 +104,12 @@ func main() {
 			name := rule.Record.Value
 
 			fmt.Printf("> Evaluating rule '%v'\n", name)
-			_, response, err := querier.Query(context.Background(), rule.Expr.Value, time.Time(cfg.evaluationTime), util_log.Logger)
+			response, err := querier.Query(context.Background(), rule.Expr.Value, time.Time(cfg.evaluationTime), util_log.Logger)
 
 			if err != nil {
-				fmt.Printf("Evaluation failed: %v\n", err)
-				os.Exit(1)
-			}
-
-			bytes, err := json.Marshal(response)
-
-			if err != nil {
-				fmt.Printf("Marshalling response as JSON failed: %v\n", err)
-				os.Exit(1)
+				fmt.Printf("  Evaluation failed: %v\n", err)
+				failures++
+				continue
 			}
 
 			if err := os.MkdirAll(ruleGroupOutputDir, 0700); err != nil {
@@ -118,11 +117,13 @@ func main() {
 				os.Exit(1)
 			}
 
-			if err := os.WriteFile(path.Join(ruleGroupOutputDir, name+".json"), bytes, 0700); err != nil {
+			if err := os.WriteFile(path.Join(ruleGroupOutputDir, name+".json"), response, 0700); err != nil {
 				fmt.Printf("Writing response to file failed: %v\n", err)
 			}
 		}
 	}
+
+	fmt.Printf("Completed with %v query failures.\n", failures)
 }
 
 func WithOrgIDMiddleware(orgID string) func(ctx context.Context, req *httpgrpc.HTTPRequest) error {

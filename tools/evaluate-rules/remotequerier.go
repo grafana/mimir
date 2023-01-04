@@ -3,9 +3,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/textproto"
@@ -16,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -97,7 +94,7 @@ func NewRemoteQuerier(
 	}
 }
 
-func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time, logger log.Logger) (model.ValueType, json.RawMessage, error) {
+func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time, logger log.Logger) ([]byte, error) {
 	args := make(url.Values)
 	args.Set("query", query)
 	if !ts.IsZero() {
@@ -118,7 +115,7 @@ func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time, l
 
 	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, &req); err != nil {
-			return model.ValNone, nil, err
+			return nil, err
 		}
 	}
 
@@ -128,34 +125,14 @@ func (q *RemoteQuerier) Query(ctx context.Context, query string, ts time.Time, l
 	resp, err := q.sendRequest(ctx, &req)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
-		return model.ValNone, nil, err
+		return nil, err
 	}
 	if resp.Code/100 != 2 {
-		return model.ValNone, nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
+		return nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
-	var apiResp struct {
-		Status    string          `json:"status"`
-		Data      json.RawMessage `json:"data"`
-		ErrorType string          `json:"errorType"`
-		Error     string          `json:"error"`
-	}
-	if err := json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&apiResp); err != nil {
-		return model.ValNone, nil, err
-	}
-	if apiResp.Status == statusError {
-		return model.ValNone, nil, fmt.Errorf("query response error: %s", apiResp.Error)
-	}
-	v := struct {
-		Type   model.ValueType `json:"resultType"`
-		Result json.RawMessage `json:"result"`
-	}{}
-
-	if err := json.Unmarshal(apiResp.Data, &v); err != nil {
-		return model.ValNone, nil, err
-	}
-	return v.Type, v.Result, nil
+	return resp.Body, nil
 }
 
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
