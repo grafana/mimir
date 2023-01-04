@@ -8,7 +8,7 @@ title: Grafana Mimir configuration reference
 weight: 130
 ---
 
-# Grafana Mimir configuration parameters
+# Grafana Mimir configuration reference
 
 {{ .GeneratedFileWarning }}
 
