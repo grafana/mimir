@@ -7,6 +7,7 @@ import (
 
 const (
 	MemcachedPort = 11211
+	RedisPort     = 6379
 )
 
 func NewMemcached() *e2e.ConcreteService {
@@ -16,5 +17,15 @@ func NewMemcached() *e2e.ConcreteService {
 		nil,
 		e2e.NewTCPReadinessProbe(MemcachedPort),
 		MemcachedPort,
+	)
+}
+
+func NewRedis() *e2e.ConcreteService {
+	return e2e.NewConcreteService(
+		"redis",
+		images.Redis,
+		nil,
+		e2e.NewTCPReadinessProbe(RedisPort),
+		RedisPort,
 	)
 }

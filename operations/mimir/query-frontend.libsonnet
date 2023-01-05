@@ -10,10 +10,6 @@
 
       'server.http-listen-port': $._config.server_http_port,
 
-      // Increase HTTP server response write timeout, as we were seeing some
-      // queries that return a lot of data timeing out.
-      'server.http-write-timeout': '1m',
-
       // Cache query results.
       'query-frontend.align-queries-with-step': false,
       'query-frontend.cache-results': true,

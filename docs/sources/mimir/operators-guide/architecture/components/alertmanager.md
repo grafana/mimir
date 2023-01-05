@@ -93,6 +93,14 @@ When using a reverse proxy, use the following settings when you configure the HT
 - Set `-http.alertmanager-http-prefix` to match the proxy path in your reverse proxy configuration.
 - Set `-alertmanager.web.external-url` to the URL served by your reverse proxy.
 
+## Templating
+
+The Mimir Alertmanager adds some custom template functions to the default ones of the Prometheus Alertmanager.
+
+| Function   | Params | Description                                    |
+| ---------- | ------ | ---------------------------------------------- |
+| `tenantID` | -      | Returns ID of the tenant the alert belongs to. |
+
 ## Sharding and replication
 
 The Alertmanager shards and replicates alerts by tenant.

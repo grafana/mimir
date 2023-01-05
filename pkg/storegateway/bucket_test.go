@@ -2204,7 +2204,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
-				chunksPool := &pool.BatchBytes{Delegate: pool.NoopBytes{}}
+				chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, cachedSeriesHasher{seriesHashCache}, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
 				require.NoError(b, err)
@@ -2343,7 +2343,7 @@ func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID 
 	c.t.Fatalf("StoreSeries should not be called")
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
 	c.t.Fatalf("StoreSeriesForPostings should not be called")
 }
 

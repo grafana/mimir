@@ -26,6 +26,7 @@ func init() {
 	// Track the balance of gets/puts in pools in all tests.
 	seriesEntrySlicePool = &pool.TrackedPool{Parent: seriesEntrySlicePool}
 	seriesChunksSlicePool = &pool.TrackedPool{Parent: seriesChunksSlicePool}
+	chunkBytesSlicePool = &pool.TrackedPool{Parent: chunkBytesSlicePool}
 }
 
 func TestSeriesChunksSet(t *testing.T) {
@@ -580,9 +581,9 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesEntrySlicePool.(*pool.TrackedPool).Reset()
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
+			chunkBytesSlicePool.(*pool.TrackedPool).Reset()
 
 			// Setup
-			bytesPool := &trackedBytesPool{parent: pool.NoopBytes{}}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
 				readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
@@ -590,27 +591,17 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingSeriesChunksSetIterator(*readers, bytesPool, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
+			set := newLoadingSeriesChunksSetIterator(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
 			if testCase.expectedErr != "" {
 				assert.ErrorContains(t, set.Err(), testCase.expectedErr)
+				assert.Equal(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			} else {
 				assert.NoError(t, set.Err())
+				assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			}
-			// NoopBytes should allocate slices just the right size, so the packing optimization in BatchBytes should not be used
-			// This allows to assert on the exact number of bytes allocated.
-			var expectedReservedBytes int
-			for _, set := range testCase.expectedSets {
-				for _, s := range set.series {
-					for _, c := range s.chks {
-						expectedReservedBytes += len(c.Raw.Data)
-					}
-				}
-			}
-			assert.Equal(t, expectedReservedBytes, int(bytesPool.balance.Load()))
-
 			// Check that chunks bytes are what we expect
 			require.Len(t, loadedSets, len(testCase.expectedSets))
 			for i, loadedSet := range loadedSets {
@@ -628,7 +619,12 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				s.release()
 			}
 
-			assert.Zero(t, int(bytesPool.balance.Load()))
+			if testCase.expectedErr != "" {
+				assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
+			} else {
+				assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
+			}
+			assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Greater(t, seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
@@ -678,14 +674,13 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 			}
 
 			chunkReaders := newChunkReaders(readersMap)
-			chunksPool := &trackedBytesPool{parent: pool.NoopBytes{}}
 			stats := newSafeQueryStats()
 
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(*chunkReaders, chunksPool, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
+				it := newLoadingSeriesChunksSetIterator(*chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
 
 				actualSeries := 0
 				actualChunks := 0
@@ -751,17 +746,14 @@ func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.BatchBytes, _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
 	for chunkRef, indices := range f.toLoad {
 		// Take bytes from the pool, so we can assert on number of allocations and that frees are happening
 		chunkData := f.chunks[chunkRef].Raw.Data
-		copiedChunkData, err := chunksPool.Get(len(chunkData))
-		if err != nil {
-			return fmt.Errorf("couldn't copy test data: %w", err)
-		}
+		copiedChunkData := chunksPool.Get(len(chunkData))
 		copy(copiedChunkData, chunkData)
 		result[indices.seriesEntry].chks[indices.chunk].Raw = &storepb.Chunk{Data: copiedChunkData}
 	}

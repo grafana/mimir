@@ -16,12 +16,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-// Mimir compacts blocks up to 24h. Assuming a 5s scrape interval as worst case scenario,
-// and 120 samples per chunk, there could be 86400 * (1 / 5) * (1 / 120) = 144 chunks for
-// a series in the biggest block. Using a slab size of 1000 looks a good trade-off to support
-// high frequency scraping without wasting too much memory in case of queries hitting a low
-// number of chunks (across series).
-const seriesChunksSlabSize = 1000
+const (
+	// Mimir compacts blocks up to 24h. Assuming a 5s scrape interval as worst case scenario,
+	// and 120 samples per chunk, there could be 86400 * (1 / 5) * (1 / 120) = 144 chunks for
+	// a series in the biggest block. Using a slab size of 1000 looks a good trade-off to support
+	// high frequency scraping without wasting too much memory in case of queries hitting a low
+	// number of chunks (across series).
+	seriesChunksSlabSize = 1000
+
+	// Selected so that an individual chunk's data typically fits within the slab size (16 KiB)
+	chunkBytesSlabSize = 16_384
+)
 
 var (
 	seriesEntrySlicePool = pool.Interface(&sync.Pool{
@@ -31,6 +36,12 @@ var (
 	})
 
 	seriesChunksSlicePool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
+
+	chunkBytesSlicePool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
@@ -158,9 +169,9 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, chunksPool pool.Bytes, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, refsIterator, refsIteratorBatchSize, stats)
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
 	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
@@ -279,19 +290,17 @@ type loadingSeriesChunksSetIterator struct {
 	chunkReaders  bucketChunkReaders
 	from          seriesChunkRefsSetIterator
 	fromBatchSize int
-	chunksPool    pool.Bytes
 	stats         *safeQueryStats
 
 	current seriesChunksSet
 	err     error
 }
 
-func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		chunkReaders:  chunkReaders,
 		from:          from,
 		fromBatchSize: fromBatchSize,
-		chunksPool:    chunksPool,
 		stats:         stats,
 	}
 }
@@ -345,7 +354,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	}
 
 	// Create a batched memory pool that can be released all at once.
-	chunksPool := &pool.BatchBytes{Delegate: c.chunksPool}
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {

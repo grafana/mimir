@@ -669,6 +669,22 @@ template_files:
 			maxTemplateSize: 20,
 			err:             nil,
 		},
+		{
+			name: "Should pass if template uses the tenantID custom function",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      slack_configs:
+        - api_url: http://localhost
+          channel: "test"
+          title: "Hello {{tenantID}}"
+          text: "Hello {{tenantID}}"
+
+  route:
+    receiver: 'default-receiver'
+`,
+		},
 	}
 
 	limits := &mockAlertManagerLimits{}

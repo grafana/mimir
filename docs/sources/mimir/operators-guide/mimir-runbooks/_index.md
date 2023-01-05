@@ -495,6 +495,22 @@ Choose one of three options:
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant’s requests across all ingesters.
 - [Decrease the number of ingester replicas]({{< relref "../../operators-guide/run-production-environment/scaling-out.md#scaling-down-ingesters" >}}) to match the highest number of shards per tenant.
 
+### MimirRulerInstanceHasNoRuleGroups
+
+This alert fires when a ruler instance doesn't own any rule groups and is therefore idling.
+
+How it **works**:
+
+- When [ruler shuffle sharding]({{< relref "../../operators-guide/configure/configure-shuffle-sharding/index.md#ruler-shuffle-sharding" >}}) is enabled, a single tenant's rule groups are sharded across a subset of ruler instances, with a given rule group always being evaluated on a single ruler.
+- The parameters `-ruler.tenant-shard-size` or `ruler_tenant_shard_size` control how many ruler instances a tenant's rule groups are sharded across.
+- When the overall number of rule groups or the tenant's shard size is lower than the number of ruler replicas, some replicas might not be assigned any rule group to evaluate and remain idle.
+
+How to **fix** it:
+
+- Increase the shard size of one or more tenants to match the number of ruler replicas.
+- Set the shard size of one or more tenants to `0`; this will shard the given tenant's rule groups across all ingesters.
+- Decrease the total number of ruler replicas by the number of idle replicas.
+
 ### MimirQuerierHasNotScanTheBucket
 
 This alert fires when a Mimir querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
@@ -955,6 +971,20 @@ How it **works**:
 How to **fix** it:
 
 - Scale up alertmanager replicas; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of alertmanagers.
+
+### MimirAlertmanagerInstanceHasNoTenants
+
+This alert fires when an alertmanager instance doesn't own any tenants and is therefore idling.
+
+How it **works**:
+
+- Alerts handled by alertmanagers are sharded by tenant.
+- When the tenant shard size is lower than the number of alertmanager replicas, some replicas will not own any tenant and therefore idle.
+- This is more likely to happen in Mimir clusters with a lower number of tenants.
+
+How to **fix** it:
+
+- Decrease the number of alertmanager replicas
 
 ### MimirRolloutStuck
 

@@ -472,6 +472,7 @@ metadata:
   name: mimir-write
   namespace: default
 spec:
+  clusterIP: None
   ports:
   - name: mimir-write-gossip-ring
     port: 7946
@@ -911,7 +912,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -1009,7 +1009,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -1096,7 +1095,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet

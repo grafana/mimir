@@ -10,12 +10,14 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	tmplhtml "html/template"
 	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	tmpltext "text/template"
 	"time"
 
 	"github.com/go-kit/log"
@@ -39,6 +41,7 @@ import (
 	"github.com/prometheus/alertmanager/notify/sns"
 	"github.com/prometheus/alertmanager/notify/telegram"
 	"github.com/prometheus/alertmanager/notify/victorops"
+	"github.com/prometheus/alertmanager/notify/webex"
 	"github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/alertmanager/notify/wechat"
 	"github.com/prometheus/alertmanager/provider/mem"
@@ -300,6 +303,16 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 	}
 }
 
+// withTenantIDFunc returns template.Option which adds to the templates additional function tenantID
+// returning the userID of the alertmanager tenant.
+func withTenantIDFunc(userID string) template.Option {
+	funcs := tmpltext.FuncMap{"tenantID": func() string { return userID }}
+	return func(text *tmpltext.Template, html *tmplhtml.Template) {
+		text.Funcs(funcs)
+		html.Funcs(funcs)
+	}
+}
+
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
@@ -312,7 +325,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles...)
+	tmpl, err := template.FromGlobs(templateFiles, withTenantIDFunc(userID))
 	if err != nil {
 		return err
 	}
@@ -505,6 +518,9 @@ func buildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, fir
 	}
 	for i, c := range nc.DiscordConfigs {
 		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.WebexConfigs {
+		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

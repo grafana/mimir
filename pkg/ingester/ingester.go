@@ -149,9 +149,6 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	// For testing, you can override the address and ID of this ingester.
-	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
-
 	NativeHistogramsEnabled bool `yaml:"native_histograms_enabled" category:"advanced"`
 }
 
@@ -297,10 +294,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
-
-	if cfg.ingesterClientFactory == nil {
-		cfg.ingesterClientFactory = client.MakeIngesterClient
-	}
 
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
@@ -1646,27 +1639,30 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
-		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:               blockRanges[0],
-		MaxBlockDuration:               blockRanges[len(blockRanges)-1],
-		NoLockfile:                     true,
-		StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                 i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
-		WALSegmentSize:                 i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:        userDB,
-		BlocksToDelete:                 userDB.blocksToDelete,
-		EnableExemplarStorage:          true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                   int64(maxExemplars),
-		SeriesHashCache:                i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		IsolationDisabled:              true,
-		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:         i.cfg.NativeHistogramsEnabled,
+		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:                  blockRanges[0],
+		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
+		NoLockfile:                        true,
+		StripeSize:                        i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
+		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		SeriesLifecycleCallback:           userDB,
+		BlocksToDelete:                    userDB.blocksToDelete,
+		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                      int64(maxExemplars),
+		SeriesHashCache:                   i.seriesHashCache,
+		EnableMemorySnapshotOnShutdown:    i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		IsolationDisabled:                 true,
+		HeadChunksWriteQueueSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		AllowOverlappingCompaction:        false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderTimeWindow:              oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                  int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		HeadPostingsForMatchersCacheTTL:   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
+		HeadPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
+		EnableNativeHistograms:            i.cfg.NativeHistogramsEnabled,
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
