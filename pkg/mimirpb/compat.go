@@ -266,6 +266,29 @@ func getBucketBoundaries(bucket histogram.Bucket[float64]) int {
 	return boundaries
 }
 
+// FromHistogramToPromCommonHistogram converts histogram.FloatHistogram to SampleHistogram.
+func FromFloatHistogramToSampleHistogramProto(h histogram.FloatHistogram) SampleHistogram {
+	buckets := make([]*HistogramBucket, 0)
+	it := h.AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
+		buckets = append(buckets, &HistogramBucket{
+			Boundaries: int32(getBucketBoundaries(bucket)),
+			Lower:      bucket.Lower,
+			Upper:      bucket.Upper,
+			Count:      bucket.Count,
+		})
+	}
+	return SampleHistogram{
+		Count:   h.Count,
+		Sum:     h.Sum,
+		Buckets: buckets,
+	}
+}
+
 // FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
 func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 	samples := make([]SampleHistogramPair, 0, len(points))
@@ -274,27 +297,10 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 		if h == nil {
 			continue
 		}
-		buckets := make([]*HistogramBucket, 0)
-		it := h.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue // No need to expose empty buckets in JSON.
-			}
-			buckets = append(buckets, &HistogramBucket{
-				Boundaries: int32(getBucketBoundaries(bucket)),
-				Lower:      bucket.Lower,
-				Upper:      bucket.Upper,
-				Count:      bucket.Count,
-			})
-		}
+		histogram := FromFloatHistogramToSampleHistogramProto(*h)
 		samples = append(samples, SampleHistogramPair{
 			Timestamp: point.T,
-			Histogram: &SampleHistogram{
-				Count:   h.Count,
-				Sum:     h.Sum,
-				Buckets: buckets,
-			},
+			Histogram: &histogram,
 		})
 	}
 	return samples

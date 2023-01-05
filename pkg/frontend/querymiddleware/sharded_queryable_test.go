@@ -8,7 +8,6 @@ package querymiddleware
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -453,14 +452,20 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 
 		it := set.At().Iterator()
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
-				return nil, fmt.Errorf("unsupported value type %v", valType)
+			if valType == chunkenc.ValFloat {
+				t, v := it.At()
+				stream.Samples = append(stream.Samples, mimirpb.Sample{
+					Value:       v,
+					TimestampMs: t,
+				})
+			} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+				t, v := it.AtFloatHistogram()
+				histogram := mimirpb.FromFloatHistogramToSampleHistogramProto(*v)
+				stream.Histograms = append(stream.Histograms, mimirpb.SampleHistogramPair{
+					Histogram: &histogram,
+					Timestamp: t,
+				})
 			}
-			t, v := it.At()
-			stream.Samples = append(stream.Samples, mimirpb.Sample{
-				Value:       v,
-				TimestampMs: t,
-			})
 		}
 
 		if it.Err() != nil {

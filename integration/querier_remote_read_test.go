@@ -142,8 +142,19 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 		require.Equal(t, int64(expectedVectors[0].Timestamp), histogram.Timestamp)
 		require.Equal(t, uint64(expectedVectors[0].Histogram.Count), histogram.GetCountInt())
 		require.Equal(t, float64(expectedVectors[0].Histogram.Sum), histogram.Sum)
-		// TODO(zenador): compare the buckets instead of below
-		// require.Equal(t, expectedVectors[0].Histogram, histogram)
+		idx := 0
+		it := remote.HistogramProtoToHistogram(histogram).ToFloat().AllBucketIterator()
+		for it.Next() {
+			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Lower), bucket.Lower)
+			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Upper), bucket.Upper)
+			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Count), bucket.Count)
+			idx++
+		}
+		require.Equal(t, len(expectedVectors[0].Histogram.Buckets), idx)
 	}
 }
 

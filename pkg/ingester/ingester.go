@@ -1332,6 +1332,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	numSamples := 0
+	numHistograms := 0
 	numSeries := 0
 
 	streamType := QueryStreamSamples
@@ -1356,7 +1357,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, numHistograms, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
 	if err != nil {
 		return err
@@ -1364,14 +1365,15 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	i.metrics.queriedSeries.Observe(float64(numSeries))
 	i.metrics.queriedSamples.Observe(float64(numSamples))
-	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples)
+	i.metrics.queriedHistograms.Observe(float64(numHistograms))
+	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "histograms", numHistograms)
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples, numHistograms int, _ error) {
 	q, err := db.Querier(ctx, from, through)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer q.Close()
 
@@ -1383,7 +1385,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
 	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
-		return 0, 0, ss.Err()
+		return 0, 0, 0, ss.Err()
 	}
 
 	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
@@ -1398,13 +1400,26 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 		it := series.Iterator()
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
-				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+			if valType == chunkenc.ValFloat {
+				t, v := it.At()
+				ts.Samples = append(ts.Samples, mimirpb.Sample{
+					Value:       v,
+					TimestampMs: t,
+				})
+			} else if valType == chunkenc.ValHistogram {
+				t, v := it.AtHistogram()
+				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
+			} else {
+				return 0, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+				// TODO(zenador): figure out if we need to implement chunkenc.ValFloatHistogram here
+				// tricky as we need to change our histogram proto to accept floats in delta, but those
+				// cannot be converted back to histogram.Histogram which is needed in AppendHistogram
+				// t, v := it.AtFloatHistogram()
+				// ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			}
-			t, v := it.At()
-			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}
 		numSamples += len(ts.Samples)
+		numHistograms += len(ts.Histograms)
 		numSeries++
 		tsSize := ts.Size()
 
@@ -1415,7 +1430,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 				Timeseries: timeseries,
 			})
 			if err != nil {
-				return 0, 0, err
+				return 0, 0, 0, err
 			}
 
 			batchSizeBytes = 0
@@ -1428,7 +1443,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 	// Ensure no error occurred while iterating the series set.
 	if err := ss.Err(); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
 	// Final flush any existing metrics
@@ -1437,11 +1452,11 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 			Timeseries: timeseries,
 		})
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 
-	return numSeries, numSamples, nil
+	return numSeries, numSamples, numHistograms, nil
 }
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface

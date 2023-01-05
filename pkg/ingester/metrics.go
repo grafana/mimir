@@ -26,6 +26,7 @@ type ingesterMetrics struct {
 	ingestedMetadataFail    prometheus.Counter
 	queries                 prometheus.Counter
 	queriedSamples          prometheus.Histogram
+	queriedHistograms       prometheus.Histogram
 	queriedExemplars        prometheus.Histogram
 	queriedSeries           prometheus.Histogram
 	memMetadata             prometheus.Gauge
@@ -142,6 +143,12 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queried_samples",
 			Help: "The total number of samples returned from queries.",
 			// Could easily return 10m samples per query - 10*(8^(8-1)) = 20.9m.
+			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+		}),
+		queriedHistograms: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_ingester_queried_histograms",
+			Help: "The total number of histograms returned from queries.",
+			// Could easily return 10m histograms per query - 10*(8^(8-1)) = 20.9m.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 		}),
 		queriedExemplars: promauto.With(r).NewHistogram(prometheus.HistogramOpts{

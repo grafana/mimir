@@ -64,6 +64,7 @@ func genLabels(
 // newMockShardedQueryable creates a shard-aware in memory queryable.
 func newMockShardedQueryable(
 	nSamples int,
+	nHistograms int,
 	labelSet []string,
 	labelBuckets int,
 	delayPerSeries time.Duration,
@@ -75,8 +76,8 @@ func newMockShardedQueryable(
 			Value:     model.SampleValue(i),
 		})
 	}
-	histograms := make([]model.SampleHistogramPair, 0, nSamples)
-	for i := 0; i < nSamples; i++ {
+	histograms := make([]model.SampleHistogramPair, 0, nHistograms)
+	for i := 0; i < nHistograms; i++ {
 		histograms = append(histograms, model.SampleHistogramPair{
 			Timestamp: model.Time(i * 1000),
 			Histogram: *generateTestSampleHistogram(i),
@@ -246,24 +247,26 @@ func TestGenLabelsSize(t *testing.T) {
 
 func TestNewMockShardedqueryable(t *testing.T) {
 	for _, tc := range []struct {
-		shards                 uint64
-		nSamples, labelBuckets int
-		labelSet               []string
+		shards                              uint64
+		nSamples, nHistograms, labelBuckets int
+		labelSet                            []string
 	}{
 		{
 			nSamples:     100,
+			nHistograms:  30,
 			shards:       1,
 			labelBuckets: 3,
 			labelSet:     []string{"a", "b", "c"},
 		},
 		{
 			nSamples:     0,
+			nHistograms:  0,
 			shards:       2,
 			labelBuckets: 3,
 			labelSet:     []string{"a", "b", "c"},
 		},
 	} {
-		q := newMockShardedQueryable(tc.nSamples, tc.labelSet, tc.labelBuckets, 0)
+		q := newMockShardedQueryable(tc.nSamples, tc.nHistograms, tc.labelSet, tc.labelBuckets, 0)
 		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
 
 		seriesCt := 0
@@ -281,15 +284,19 @@ func TestNewMockShardedqueryable(t *testing.T) {
 			require.Nil(t, set.Err())
 
 			for set.Next() {
-				// TODO(zenador): fix for histograms
 				seriesCt++
 				iter := set.At().Iterator()
 				samples := 0
+				histograms := 0
 				for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
-					require.Equal(t, chunkenc.ValFloat, valType)
-					samples++
+					if valType == chunkenc.ValFloat {
+						samples++
+					} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+						histograms++
+					}
 				}
 				require.Equal(t, tc.nSamples, samples)
+				require.Equal(t, tc.nHistograms, histograms)
 			}
 
 		}
