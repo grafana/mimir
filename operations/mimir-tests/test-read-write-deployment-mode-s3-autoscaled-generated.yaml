@@ -277,6 +277,7 @@ metadata:
   name: mimir-read
   namespace: default
 spec:
+  clusterIP: None
   ports:
   - name: mimir-read-gossip-ring
     port: 7946
