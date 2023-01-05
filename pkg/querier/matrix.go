@@ -16,18 +16,20 @@ import (
 
 func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 	samples := make([][]model.SamplePair, 0, len(chunks))
+	histograms := make([][]model.SampleHistogramPair, 0, len(chunks))
 	for _, c := range chunks {
-		ss, err := c.Samples(from, through)
+		sf, sh, err := c.Samples(from, through)
 		if err != nil {
 			return series.NewErrIterator(err)
 		}
-
-		samples = append(samples, ss)
+		if len(sf) > 0 {
+			samples = append(samples, sf)
+		}
+		if len(sh) > 0 {
+			histograms = append(histograms, sh)
+		}
 	}
 	mergedSamples := util.MergeNSampleSets(samples...)
-
-	histograms := make([][]model.SampleHistogramPair, 0, len(chunks))
-	// TODO(zenador): fix like samples
 	mergedHistograms := util.MergeNSampleSets(histograms...)
 
 	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, mergedSamples, mergedHistograms))

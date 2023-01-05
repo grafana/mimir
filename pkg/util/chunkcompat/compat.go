@@ -52,18 +52,26 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 		}
 
 		samples := []model.SamplePair{}
+		histograms := []model.SampleHistogramPair{}
 		for _, chunk := range chunks {
-			ss, err := chunk.Samples(from, through)
+			sf, sh, err := chunk.Samples(from, through)
 			if err != nil {
 				return nil, err
 			}
-			samples = util.MergeSampleSets(samples, ss)
+			samples = util.MergeSampleSets(samples, sf)
+			histograms = util.MergeSampleSets(histograms, sh)
 		}
 
-		result = append(result, &model.SampleStream{
+		stream := &model.SampleStream{
 			Metric: metric,
-			Values: samples,
-		})
+		}
+		if len(samples) > 0 {
+			stream.Values = samples
+		}
+		if len(histograms) > 0 {
+			stream.Histograms = histograms
+		}
+		result = append(result, stream)
 	}
 	return result, nil
 }

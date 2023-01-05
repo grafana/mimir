@@ -64,6 +64,8 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
+	Histogram() model.SampleHistogramPair
+	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
 	Batch(size int, valueType chunkenc.ValueType) Batch
@@ -108,24 +110,31 @@ func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Ch
 	}
 }
 
-// Samples returns all SamplePairs for the chunk.
-func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
+// Samples returns all SamplePairs and SampleHistogramPairs for the chunk.
+func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []model.SampleHistogramPair, error) {
 	it := c.Data.NewIterator(nil)
 	return rangeValues(it, from, through)
 }
 
 // rangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
-	result := []model.SamplePair{}
-	if it.FindAtOrAfter(oldestInclusive) == chunkenc.ValNone {
-		return result, it.Err()
+func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []model.SampleHistogramPair, error) {
+	resultFloat := []model.SamplePair{}
+	resultHist := []model.SampleHistogramPair{}
+	currValType := it.FindAtOrAfter(oldestInclusive)
+	if currValType == chunkenc.ValNone {
+		return resultFloat, resultHist, it.Err()
 	}
-	for !it.Value().Timestamp.After(newestInclusive) {
-		result = append(result, it.Value())
-		if it.Scan() == chunkenc.ValNone {
+	for !model.Time(it.Timestamp()).After(newestInclusive) {
+		if currValType == chunkenc.ValFloat {
+			resultFloat = append(resultFloat, it.Value())
+		} else if currValType == chunkenc.ValHistogram || currValType == chunkenc.ValFloatHistogram {
+			resultHist = append(resultHist, it.Histogram())
+		}
+		currValType = it.Scan()
+		if currValType == chunkenc.ValNone {
 			break
 		}
 	}
-	return result, it.Err()
+	return resultFloat, resultHist, it.Err()
 }

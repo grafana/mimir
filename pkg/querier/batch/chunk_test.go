@@ -124,6 +124,14 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
+func (i *mockIterator) Histogram() model.SampleHistogramPair {
+	return model.SampleHistogramPair{}
+}
+
+func (i *mockIterator) Timestamp() int64 {
+	return 0
+}
+
 func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
 	batch := chunk.Batch{
 		Length:     chunk.BatchSize,

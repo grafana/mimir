@@ -250,6 +250,22 @@ func FromPointsToSamples(points []promql.Point) []Sample {
 	return samples
 }
 
+func getBucketBoundaries(bucket histogram.Bucket[float64]) int {
+	boundaries := 2 // Exclusive on both sides AKA open interval.
+	if bucket.LowerInclusive {
+		if bucket.UpperInclusive {
+			boundaries = 3 // Inclusive on both sides AKA closed interval.
+		} else {
+			boundaries = 1 // Inclusive only on lower end AKA right open.
+		}
+	} else {
+		if bucket.UpperInclusive {
+			boundaries = 0 // Inclusive only on upper end AKA left open.
+		}
+	}
+	return boundaries
+}
+
 // FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
 func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 	samples := make([]SampleHistogramPair, 0, len(points))
@@ -265,20 +281,8 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 			if bucket.Count == 0 {
 				continue // No need to expose empty buckets in JSON.
 			}
-			boundaries := 2 // Exclusive on both sides AKA open interval.
-			if bucket.LowerInclusive {
-				if bucket.UpperInclusive {
-					boundaries = 3 // Inclusive on both sides AKA closed interval.
-				} else {
-					boundaries = 1 // Inclusive only on lower end AKA right open.
-				}
-			} else {
-				if bucket.UpperInclusive {
-					boundaries = 0 // Inclusive only on upper end AKA left open.
-				}
-			}
 			buckets = append(buckets, &HistogramBucket{
-				Boundaries: int32(boundaries),
+				Boundaries: int32(getBucketBoundaries(bucket)),
 				Lower:      bucket.Lower,
 				Upper:      bucket.Upper,
 				Count:      bucket.Count,
@@ -294,6 +298,29 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 		})
 	}
 	return samples
+}
+
+// FromHistogramToPromCommonHistogram converts histogram.FloatHistogram to model.SampleHistogram.
+func FromHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.SampleHistogram {
+	buckets := make([]*model.HistogramBucket, 0)
+	it := h.AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
+		buckets = append(buckets, &model.HistogramBucket{
+			Boundaries: getBucketBoundaries(bucket),
+			Lower:      model.FloatString(bucket.Lower),
+			Upper:      model.FloatString(bucket.Upper),
+			Count:      model.FloatString(bucket.Count),
+		})
+	}
+	return model.SampleHistogram{
+		Count:   model.FloatString(h.Count),
+		Sum:     model.FloatString(h.Sum),
+		Buckets: buckets,
+	}
 }
 
 type byLabel []LabelAdapter
