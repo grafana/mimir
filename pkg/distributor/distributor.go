@@ -252,7 +252,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
-		ephemeralMetricsWatcher: NewEphemeralWatcher(ephemeralMetricsKV, log),
+		ephemeralMetricsWatcher: newEphemeralWatcher(ephemeralMetricsKV, log),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -1049,8 +1049,6 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 
 		ephemeralMetrics := d.ephemeralMetricsWatcher.metricsMapForUser(userID)
 		if ephemeralMetrics != nil {
-			level.Debug(d.log).Log("msg", "found ephemeral metrics map for user", "user", userID)
-
 			req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
 
 			for ix := 0; ix < len(req.Timeseries); {
@@ -1364,8 +1362,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		return err
 	}
 	c := h.(ingester_client.IngesterClient)
-
-	level.Debug(d.log).Log("msg", "forwarding to ingester", "ingester", ingester.Addr, "timeseries", len(timeseries), "ephemeral", len(ephemeral), "metadata", len(metadata), "source", source)
 
 	req := mimirpb.WriteRequest{
 		Timeseries:          timeseries,
