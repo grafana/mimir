@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/querier/querypb"
@@ -196,25 +197,32 @@ func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStri
 	originalStringCount := 0
 
 	for _, originalSample := range originalVector {
-		convertedMetric := make(internedStringMetric, len(originalSample.Metric))
-
+		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
+		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		for n, v := range originalSample.Metric {
-			if _, ok := invertedSymbols[string(n)]; !ok {
-				invertedSymbols[string(n)] = internedSymbolRef(len(invertedSymbols))
+			lb.Set(string(n), string(v))
+		}
+
+		metricSymbols := make(internedSymbolPairs, 0, len(originalSample.Metric)*2)
+
+		for _, l := range lb.Labels(nil) {
+			if _, ok := invertedSymbols[l.Name]; !ok {
+				invertedSymbols[l.Name] = internedSymbolRef(len(invertedSymbols))
 			}
 
-			if _, ok := invertedSymbols[string(v)]; !ok {
-				invertedSymbols[string(v)] = internedSymbolRef(len(invertedSymbols))
+			if _, ok := invertedSymbols[l.Value]; !ok {
+				invertedSymbols[l.Value] = internedSymbolRef(len(invertedSymbols))
 			}
 
-			convertedMetric[invertedSymbols[string(n)]] = invertedSymbols[string(v)]
+			metricSymbols = append(metricSymbols, invertedSymbols[l.Name], invertedSymbols[l.Value])
 			originalStringCount += 2
 		}
 
 		convertedSample := internedStringSample{
-			Value:     originalSample.Value,
-			Timestamp: originalSample.Timestamp,
-			Metric:    convertedMetric,
+			Value:         originalSample.Value,
+			Timestamp:     originalSample.Timestamp,
+			MetricSymbols: metricSymbols,
 		}
 
 		convertedVector = append(convertedVector, convertedSample)
@@ -263,27 +271,19 @@ type internedStringsData struct {
 type internedStringVector []internedStringSample
 
 type internedStringSample struct {
-	Metric    internedStringMetric `json:"metric"`
-	Value     model.SampleValue    `json:"value"`
-	Timestamp model.Time           `json:"timestamp"`
+	MetricSymbols internedSymbolPairs `json:"metric"`
+	Value         model.SampleValue   `json:"value"`
+	Timestamp     model.Time          `json:"timestamp"`
 }
 
 // This is based on model.Sample - it encodes the value as an array to avoid including lots of instances of
 // "value" and "timestamp" in the final JSON output.
 func (s internedStringSample) MarshalJSON() ([]byte, error) {
-	// Convert Metric to a slice to avoid encoding the label name ordinals as strings
-	// (JSON requires that object keys be strings)
-	metricAsSlice := make([]internedSymbolRef, 0, len(s.Metric)*2)
-
-	for n, v := range s.Metric {
-		metricAsSlice = append(metricAsSlice, n, v)
-	}
-
 	v := struct {
-		Metric []internedSymbolRef `json:"metric"`
-		Value  model.SamplePair    `json:"value"`
+		MetricSymbols []internedSymbolRef `json:"metric"`
+		Value         model.SamplePair    `json:"value"`
 	}{
-		Metric: metricAsSlice,
+		MetricSymbols: s.MetricSymbols,
 		Value: model.SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
@@ -293,7 +293,8 @@ func (s internedStringSample) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&v)
 }
 
-type internedStringMetric map[internedSymbolRef]internedSymbolRef
+// Ordered label name-value pair references.
+type internedSymbolPairs []internedSymbolRef
 
 type internedSymbolRef uint64
 
@@ -329,14 +330,14 @@ func convertToProtobufVector(d internedStringsData) *querypb.QueryResponse_Vecto
 	samples := make([]*querypb.Sample, len(vector))
 
 	for i, s := range vector {
-		symbols := make(map[uint64]uint64, len(s.Metric))
+		metricSymbols := make([]uint64, len(s.MetricSymbols))
 
-		for n, v := range s.Metric {
-			symbols[uint64(n)] = uint64(v)
+		for i, s := range s.MetricSymbols {
+			metricSymbols[i] = uint64(s)
 		}
 
 		samples[i] = &querypb.Sample{
-			MetricSymbols: symbols,
+			MetricSymbols: metricSymbols,
 			Value:         float64(s.Value),
 			Timestamp:     int64(s.Timestamp),
 		}

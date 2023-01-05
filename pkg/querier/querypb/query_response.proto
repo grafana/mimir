@@ -34,7 +34,8 @@ message VectorData {
 }
 
 message Sample {
-  map<uint64, uint64> MetricSymbols = 1;
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated uint64 MetricSymbols = 1;
   double Value = 2;
 
   // TODO: is there a better type to use here?
