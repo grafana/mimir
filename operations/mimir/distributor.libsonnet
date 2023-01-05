@@ -5,6 +5,7 @@
   distributor_args::
     $._config.usageStatsConfig +
     $._config.grpcConfig +
+    $._config.grpcIngressConfig +
     $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
     {
@@ -22,9 +23,6 @@
       'mem-ballast-size-bytes': 1 << 30,  // 1GB
 
       'server.http-listen-port': $._config.server_http_port,
-      'server.grpc.keepalive.max-connection-age': '2m',
-      'server.grpc.keepalive.max-connection-age-grace': '5m',
-      'server.grpc.keepalive.max-connection-idle': '1m',
 
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.store': 'consul',

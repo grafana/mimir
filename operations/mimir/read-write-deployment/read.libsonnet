@@ -11,6 +11,8 @@
   //
 
   mimir_read_args::
+    // The ruler remote evaluation (running in mimir-backend) connects to mimir-read via gRPC.
+    $._config.grpcIngressConfig +
     $.query_frontend_args +
     $.querier_args + {
       target: 'read',
