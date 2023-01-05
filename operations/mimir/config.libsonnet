@@ -126,6 +126,17 @@
       'server.grpc.keepalive.ping-without-stream-allowed': true,
     },
 
+    // gRPC server configuration to apply to ingress services used by clients doing
+    // client-side load balancing in front of it. Since gRPC clients re-resolve the configured
+    // address when a connection fails or is closed, we do force the clients to reconnect
+    // periodically in order to have them re-resolve the configured address and eventually
+    // discover new replicas (e.g. after a scale up event).
+    grpcIngressConfig:: {
+      'server.grpc.keepalive.max-connection-age': '2m',
+      'server.grpc.keepalive.max-connection-age-grace': '5m',
+      'server.grpc.keepalive.max-connection-idle': '1m',
+    },
+
     storageConfig: {
       'common.storage.backend': $._config.storage_backend,
     } + (
