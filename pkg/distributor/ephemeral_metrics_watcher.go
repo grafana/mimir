@@ -2,6 +2,7 @@ package distributor
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -37,13 +38,15 @@ func (w *ephemeralMetricsWatcher) starting(ctx context.Context) error {
 		return nil
 	}
 
-	keys, err := w.kv.List(ctx, "")
+	users, err := w.kv.List(ctx, "")
 	if err != nil {
 		level.Info(w.log).Log("msg", "failed to list users with ephememeral metrics from KV", "err", err)
 		return nil
 	}
 
-	for _, user := range keys {
+	level.Info(w.log).Log("msg", "fetching ephemeral metrics maps for users", "users", strings.Join(users, ", "))
+
+	for _, user := range users {
 		v, err := w.kv.Get(ctx, user)
 		if err != nil {
 			level.Info(w.log).Log("msg", "failed to fetch ephememeral metrics map for user", "user", user, "err", err)
