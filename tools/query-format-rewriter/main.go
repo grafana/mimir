@@ -46,15 +46,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Println("Name\tOriginal size (bytes)\tOriginal number of strings\tInterned JSON format size (bytes)\tUnique strings")
+
 	for _, originalFormatFile := range originalFormatFiles {
-		originalFormat, err := parseOriginalFormat(originalFormatFile)
+		originalFormat, originalFormatSize, err := parseOriginalFormat(originalFormatFile)
 
 		if err != nil {
 			fmt.Printf("Error reading %v: %v\n", originalFormatFile, err)
 			os.Exit(1)
 		}
 
-		internedStringsFormat, err := convertResponseToInternedStringsFormat(originalFormat)
+		internedStringsFormat, originalStringCount, uniqueStringCount, err := convertResponseToInternedStringsFormat(originalFormat)
 
 		if err != nil {
 			fmt.Printf("Error converting %v: %v\n", originalFormatFile, err)
@@ -68,6 +70,13 @@ func main() {
 			os.Exit(1)
 		}
 
+		internedStringsBytes, err := json.Marshal(internedStringsFormat)
+
+		if err != nil {
+			fmt.Printf("Error marshalling to JSON: %v\n", err)
+			os.Exit(1)
+		}
+
 		internedStringsFile := path.Join(internedJsonDir, relativeName)
 		parentDir := path.Dir(internedStringsFile)
 
@@ -76,44 +85,38 @@ func main() {
 			os.Exit(1)
 		}
 
-		jsonBytes, err := json.Marshal(internedStringsFormat)
-
-		if err != nil {
-			fmt.Printf("Error marshalling to JSON: %v\n", err)
-			os.Exit(1)
-		}
-
-		if err := os.WriteFile(internedStringsFile, jsonBytes, 0700); err != nil {
+		if err := os.WriteFile(internedStringsFile, internedStringsBytes, 0700); err != nil {
 			fmt.Printf("Error writing file %v: %v\n", internedStringsFile, err)
 			os.Exit(1)
 		}
+
+		fmt.Printf("%v\t%v\t%v\t%v\t%v\n", relativeName, originalFormatSize, originalStringCount, len(internedStringsBytes), uniqueStringCount)
 	}
 
 	// TODO: emit protobuf format as well
-	// TODO: emit statistics (before and after file sizes, number of unique strings, total number of strings)
 }
 
-func parseOriginalFormat(f string) (originalFormatAPIResponse, error) {
+func parseOriginalFormat(f string) (originalFormatAPIResponse, int, error) {
 	b, err := os.ReadFile(f)
 
 	if err != nil {
-		return originalFormatAPIResponse{}, err
+		return originalFormatAPIResponse{}, 0, err
 	}
 
 	resp := originalFormatAPIResponse{}
 
 	if err := json.Unmarshal(b, &resp); err != nil {
-		return originalFormatAPIResponse{}, err
+		return originalFormatAPIResponse{}, 0, err
 	}
 
-	return resp, nil
+	return resp, len(b), nil
 }
 
-func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (internedStringsAPIResponse, error) {
-	data, err := convertDataToInternedStringsFormat(o.Data)
+func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (internedStringsAPIResponse, int, int, error) {
+	data, originalStringCount, uniqueStringCount, err := convertDataToInternedStringsFormat(o.Data)
 
 	if err != nil {
-		return internedStringsAPIResponse{}, nil
+		return internedStringsAPIResponse{}, 0, 0, nil
 	}
 
 	return internedStringsAPIResponse{
@@ -121,16 +124,16 @@ func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (intern
 		Data:      data,
 		ErrorType: o.ErrorType,
 		Error:     o.Error,
-	}, nil
+	}, originalStringCount, uniqueStringCount, nil
 }
 
-func convertDataToInternedStringsFormat(o originalFormatData) (internedStringsData, error) {
+func convertDataToInternedStringsFormat(o originalFormatData) (internedStringsData, int, int, error) {
 	switch o.Type {
 	case model.ValVector:
 		return convertVectorDataToInternedStringsFormat(o.Result)
 
 	default:
-		return internedStringsData{}, fmt.Errorf("unsupported value type %v", o.Type)
+		return internedStringsData{}, 0, 0, fmt.Errorf("unsupported value type %v", o.Type)
 	}
 }
 
@@ -138,14 +141,15 @@ func convertDataToInternedStringsFormat(o originalFormatData) (internedStringsDa
 // label names, as we'd expect these would be repeated more often. The lower ordinals would encode as fewer
 // bytes if we use uvarints for encoding.
 // Easiest way to achieve this would be to scan through all label names first, then scan through label values.
-func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStringsData, error) {
+func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStringsData, int, int, error) {
 	var originalVector model.Vector
 	if err := json.Unmarshal(raw, &originalVector); err != nil {
-		return internedStringsData{}, fmt.Errorf("could not decode vector result: %w", err)
+		return internedStringsData{}, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
 	}
 
 	invertedSymbols := map[string]internedSymbolRef{}
 	convertedVector := make(internedStringVector, 0, len(originalVector))
+	originalStringCount := 0
 
 	for _, originalSample := range originalVector {
 		convertedMetric := make(internedStringMetric, len(originalSample.Metric))
@@ -160,6 +164,7 @@ func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStri
 			}
 
 			convertedMetric[invertedSymbols[string(n)]] = invertedSymbols[string(v)]
+			originalStringCount += 2
 		}
 
 		convertedSample := internedStringSample{
@@ -177,11 +182,13 @@ func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStri
 		symbols[i] = s
 	}
 
+	uniqueStringCount := len(symbols)
+
 	return internedStringsData{
 		Type:    model.ValVector,
 		Result:  convertedVector,
 		Symbols: symbols,
-	}, nil
+	}, originalStringCount, uniqueStringCount, nil
 }
 
 type originalFormatAPIResponse struct {
