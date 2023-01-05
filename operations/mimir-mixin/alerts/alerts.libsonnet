@@ -265,6 +265,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has no tenants assigned.' % $._config,
           },
         },
+        {
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          alert: $.alertName('RulerInstanceHasNoRuleGroups'),
+          'for': '1h',
+          expr: |||
+            # Alert on ruler instances in microservices mode that have no rule groups assigned,
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total{%(per_instance_label)s=~"%(rulerInstanceName)s"}) == 0
+            # but only if other ruler instances of the same cell do have rule groups assigned
+            and on (%(alert_aggregation_labels)s)
+            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
+            # and there are more than two instances overall
+            and on (%(alert_aggregation_labels)s)
+            (count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2)
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            rulerInstanceName: $._config.instance_names.ruler,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),

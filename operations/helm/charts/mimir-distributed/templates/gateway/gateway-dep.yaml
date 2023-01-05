@@ -27,8 +27,8 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" $ "component" "gateway") | nindent 8 }}
       annotations:
         {{- $annotations := include "mimir.podAnnotations" (dict "ctx" $ "component" "gateway") | fromYaml -}}
-        {{- if $isGEMGateway -}}
-        {{- $annotations = (dict "checksum/config" (include (print $.Template.BasePath "/gateway/nginx-configmap.yaml") $ | sha256sum )) | merge $annotations -}}
+        {{- if not $isGEMGateway -}}
+        {{- $annotations = (dict "checksum/config" (include (print $.Template.BasePath "/gateway/nginx-configmap.yaml") $ | sha256sum )) | mergeOverwrite $annotations -}}
         {{- end -}}
         {{- $annotations | toYaml | nindent 8 }}
       namespace: {{ $.Release.Namespace | quote }}

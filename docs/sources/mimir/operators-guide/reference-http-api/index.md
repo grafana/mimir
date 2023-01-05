@@ -25,6 +25,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
+| [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
 | [Runtime Configuration](#runtime-configuration)                                       | _All services_                 | `GET /runtime_config`                                                     |
 | [Services' status](#services-status)                                                  | _All services_                 | `GET /services`                                                           |
 | [Readiness probe](#readiness-probe)                                                   | _All services_                 | `GET /ready`                                                              |
@@ -139,6 +140,16 @@ GET /config?mode=defaults
 ```
 
 This endpoint displays the default configuration values.
+
+### Status Configuration
+
+```
+GET /api/v1/status/config
+```
+
+This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
+
+It is a simplified wrapper for `/config` to be compatible with the prometheus `/api/v1/status/config` API.
 
 ### Runtime Configuration
 

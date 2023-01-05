@@ -170,7 +170,6 @@ func TestConfigDiffHandler(t *testing.T) {
 			assert.Equal(t, tc.expectedBody, string(body))
 		})
 	}
-
 }
 
 func TestConfigOverrideHandler(t *testing.T) {
@@ -197,4 +196,42 @@ func TestConfigOverrideHandler(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("config"), body)
+}
+
+func TestStatusConfigHandler(t *testing.T) {
+	type testConfig struct {
+		Enabled bool `yaml:"enabled"`
+		MyInt   int  `yaml:"my_int"`
+	}
+
+	for _, tc := range []struct {
+		name               string
+		actualConfig       func() interface{}
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name: "normal config",
+			actualConfig: func() interface{} {
+				return &testConfig{Enabled: true, MyInt: 123}
+			},
+			expectedStatusCode: 200,
+			expectedBody:       "{\"status\":\"success\",\"data\":{\"yaml\":\"enabled: true\\nmy_int: 123\\n\"}}",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "http://test.com/api/v1/status/config", nil)
+			w := httptest.NewRecorder()
+
+			cfg := &Config{}
+			h := cfg.statusConfigHandler(tc.actualConfig())
+			h(w, req)
+			resp := w.Result()
+			assert.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedBody, string(body))
+		})
+	}
 }

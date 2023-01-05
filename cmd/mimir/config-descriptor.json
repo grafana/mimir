@@ -3105,12 +3105,12 @@
         },
         {
           "kind": "field",
-          "name": "max_query_length",
+          "name": "max_partial_query_length",
           "required": false,
-          "desc": "Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.",
+          "desc": "Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "store.max-query-length",
+          "fieldFlag": "querier.max-partial-query-length",
           "fieldType": "duration"
         },
         {
@@ -5932,6 +5932,39 @@
               "fieldFlag": "blocks-storage.tsdb.out-of-order-capacity-max",
               "fieldType": "int",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_ttl",
+              "required": false,
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_size",
+              "required": false,
+              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_force",
+              "required": false,
+              "desc": "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7549,9 +7582,9 @@
           "kind": "field",
           "name": "for_grace_period",
           "required": false,
-          "desc": "Minimum duration between alert and restored \"for\" state. This is maintained only for alerts with configured \"for\" time greater than grace period.",
+          "desc": "This grace period controls which alerts the ruler restores after a restart. Alerts with \"for\" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their \"for\" duration expires. Alerts with \"for\" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with \"for\" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart.",
           "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
+          "fieldDefaultValue": 120000000000,
           "fieldFlag": "ruler.for-grace-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"

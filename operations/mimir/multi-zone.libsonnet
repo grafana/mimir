@@ -195,15 +195,16 @@
   newStoreGatewayZoneContainer(zone, zone_args)::
     $.store_gateway_container +
     container.withArgs($.util.mapToFlags(
-      $.store_gateway_args + zone_args + {
+      // This first block contains flags that can be overridden.
+      {
+        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+        'store-gateway.sharding-ring.unregister-on-shutdown': false,
+      } + $.store_gateway_args + zone_args + {
         'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
         'store-gateway.sharding-ring.zone-awareness-enabled': true,
 
         // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
-
-        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-        'store-gateway.sharding-ring.unregister-on-shutdown': false,
       }
     )),
 

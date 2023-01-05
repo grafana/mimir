@@ -23,9 +23,9 @@
       'mem-ballast-size-bytes': null,
     },
 
-  mimir_write_zone_a_args:: {},
-  mimir_write_zone_b_args:: {},
-  mimir_write_zone_c_args:: {},
+  mimir_write_zone_a_args:: $.ingester_zone_a_args {},
+  mimir_write_zone_b_args:: $.ingester_zone_b_args {},
+  mimir_write_zone_c_args:: $.ingester_zone_c_args {},
 
   mimir_write_ports::
     std.uniq(
@@ -126,7 +126,11 @@
 
   // This service is used as ingress on the write path, and to access the admin UI.
   mimir_write_service: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirRolloutGroupService('mimir-write', [$.mimir_write_zone_a_statefulset, $.mimir_write_zone_b_statefulset, $.mimir_write_zone_c_statefulset], $._config.service_ignored_labels),
+    $.newMimirRolloutGroupService('mimir-write', [$.mimir_write_zone_a_statefulset, $.mimir_write_zone_b_statefulset, $.mimir_write_zone_c_statefulset], $._config.service_ignored_labels) +
+
+    // Must be an headless to ensure any gRPC-based gateway in front of it correctly
+    // balances requests across all mimir-write pods.
+    service.mixin.spec.withClusterIp('None'),
 
   mimir_write_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupPDB('mimir-write', 1),

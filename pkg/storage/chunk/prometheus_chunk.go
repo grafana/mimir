@@ -6,16 +6,52 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-// Wrapper around Prometheus chunk.
-type prometheusXorChunk struct {
+// Wrapper around a generic Prometheus chunk.
+type prometheusChunk struct {
 	chunk chunkenc.Chunk
+}
+
+func (p *prometheusChunk) NewIterator(iterator Iterator) Iterator {
+	if p.chunk == nil {
+		return errorIterator("Prometheus chunk is not set")
+	}
+
+	if pit, ok := iterator.(*prometheusChunkIterator); ok {
+		pit.c = p.chunk
+		pit.it = p.chunk.Iterator(pit.it)
+		return pit
+	}
+
+	return &prometheusChunkIterator{c: p.chunk, it: p.chunk.Iterator(nil)}
+}
+
+func (p *prometheusChunk) Marshal(i io.Writer) error {
+	if p.chunk == nil {
+		return errors.New("chunk data not set")
+	}
+	_, err := i.Write(p.chunk.Bytes())
+	return err
+}
+
+func (p *prometheusChunk) Len() int {
+	if p.chunk == nil {
+		return 0
+	}
+	return p.chunk.NumSamples()
+}
+
+// Wrapper around a Prometheus XOR chunk.
+type prometheusXorChunk struct {
+	prometheusChunk
 }
 
 func newPrometheusXorChunk() *prometheusXorChunk {
@@ -39,26 +75,8 @@ func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 	return nil, nil
 }
 
-func (p *prometheusXorChunk) NewIterator(iterator Iterator) Iterator {
-	if p.chunk == nil {
-		return errorIterator("Prometheus chunk is not set")
-	}
-
-	if pit, ok := iterator.(*prometheusChunkIterator); ok {
-		pit.c = p.chunk
-		pit.it = p.chunk.Iterator(pit.it)
-		return pit
-	}
-
-	return &prometheusChunkIterator{c: p.chunk, it: p.chunk.Iterator(nil)}
-}
-
-func (p *prometheusXorChunk) Marshal(i io.Writer) error {
-	if p.chunk == nil {
-		return errors.New("chunk data not set")
-	}
-	_, err := i.Write(p.chunk.Bytes())
-	return err
+func (p *prometheusXorChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram to sample chunk")
 }
 
 func (p *prometheusXorChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -75,11 +93,49 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 	return PrometheusXorChunk
 }
 
-func (p *prometheusXorChunk) Len() int {
+// Wrapper around a Prometheus histogram chunk.
+// TODO add unit tests as in chunk_test.go https://github.com/grafana/mimir/issues/3767
+type prometheusHistogramChunk struct {
+	prometheusChunk
+}
+
+func newPrometheusHistogramChunk() *prometheusHistogramChunk {
+	return &prometheusHistogramChunk{}
+}
+
+func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
+}
+
+// AddHistogram adds another histogram to the chunk. While Add works, it is only implemented
+// to make tests work, and should not be used in production. In particular, it appends
+// all histograms to single chunk, and uses new Appender for each Add.
+func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
 	if p.chunk == nil {
-		return 0
+		p.chunk = chunkenc.NewHistogramChunk()
 	}
-	return p.chunk.NumSamples()
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	app.AppendHistogram(timestamp, h)
+	return nil, nil
+}
+
+func (p *prometheusHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncHistogram, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusHistogramChunk) Encoding() Encoding {
+	return PrometheusHistogramChunk
 }
 
 type prometheusChunkIterator struct {
@@ -87,11 +143,11 @@ type prometheusChunkIterator struct {
 	it chunkenc.Iterator
 }
 
-func (p *prometheusChunkIterator) Scan() bool {
+func (p *prometheusChunkIterator) Scan() chunkenc.ValueType {
 	return p.it.Next()
 }
 
-func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) bool {
+func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType {
 	// FindAtOrAfter must return OLDEST value at given time. That means we need to start with a fresh iterator,
 	// otherwise we cannot guarantee OLDEST.
 	p.it = p.c.Iterator(p.it)
@@ -106,16 +162,24 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-func (p *prometheusChunkIterator) Batch(size int) Batch {
+// TODO native histograms support, assumes it's used on float chunk and only keeps floats
+// The Batch function takes a valueType since the first sample we process is already acquired
+// by a Next/Seek/etc and we cannot get its type otherwise.
+func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
 	var batch Batch
 	j := 0
 	for j < size {
-		t, v := p.it.At()
-		batch.Timestamps[j] = t
-		batch.Values[j] = v
-		j++
-		if j < size && !p.it.Next() {
-			break
+		if valueType == chunkenc.ValFloat {
+			t, v := p.it.At()
+			batch.Timestamps[j] = t
+			batch.Values[j] = v
+			j++
+		}
+		if j < size {
+			valueType = p.it.Next()
+			if valueType == chunkenc.ValNone {
+				break
+			}
 		}
 	}
 	batch.Index = 0
@@ -129,8 +193,8 @@ func (p *prometheusChunkIterator) Err() error {
 
 type errorIterator string
 
-func (e errorIterator) Scan() bool                         { return false }
-func (e errorIterator) FindAtOrAfter(time model.Time) bool { return false }
-func (e errorIterator) Value() model.SamplePair            { panic("no values") }
-func (e errorIterator) Batch(size int) Batch               { panic("no values") }
-func (e errorIterator) Err() error                         { return errors.New(string(e)) }
+func (e errorIterator) Scan() chunkenc.ValueType                           { return chunkenc.ValNone }
+func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType   { return chunkenc.ValNone }
+func (e errorIterator) Value() model.SamplePair                            { panic("no values") }
+func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
+func (e errorIterator) Err() error                                         { return errors.New(string(e)) }

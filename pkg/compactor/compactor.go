@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -37,8 +38,12 @@ import (
 )
 
 const (
-	// CompactorRingKey is the key under which we store the compactors ring in the KVStore.
-	CompactorRingKey = "compactor"
+	// ringKey is the key under which we store the compactors ring in the KVStore.
+	ringKey = "compactor"
+
+	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
+	// in the ring will be automatically removed after.
+	ringAutoForgetUnhealthyPeriods = 10
 )
 
 const (
@@ -225,7 +230,7 @@ type MultitenantCompactor struct {
 	bucketClient objstore.Bucket
 
 	// Ring used for sharding compactions.
-	ringLifecycler         *ring.Lifecycler
+	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
@@ -383,42 +388,36 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Initialize the compactors ring if sharding is enabled.
-	lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
-	c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
 	if err != nil {
-		return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
-	}
-
-	c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-	if err != nil {
-		return errors.Wrap(err, "unable to initialize compactor ring")
+		return err
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
-	if err == nil {
-		c.ringSubservicesWatcher = services.NewFailureWatcher()
-		c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
-
-		err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
+	if err != nil {
+		return errors.Wrap(err, "unable to create compactor ring dependencies")
 	}
 
-	if err != nil {
+	c.ringSubservicesWatcher = services.NewFailureWatcher()
+	c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
+	if err = c.ringSubservices.StartAsync(ctx); err != nil {
 		return errors.Wrap(err, "unable to start compactor ring dependencies")
 	}
 
-	// If sharding is enabled we should wait until this instance is
-	// ACTIVE within the ring. This MUST be done before starting the
-	// any other component depending on the users scanner, because the
-	// users scanner depends on the ring (to check whether an user belongs
-	// to this shard or not).
-	level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
-
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	ctxTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
 	defer cancel()
-	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.ID, ring.ACTIVE); err != nil {
-		level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
-		return err
+	if err = c.ringSubservices.AwaitHealthy(ctxTimeout); err != nil {
+		return errors.Wrap(err, "unable to start compactor ring dependencies")
 	}
+
+	// If sharding is enabled we should wait until this instance is ACTIVE within the ring. This
+	// MUST be done before starting any other component depending on the users scanner, because
+	// the users scanner depends on the ring (to check whether a user belongs to this shard or not).
+	level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
+	if err = ring.WaitInstanceState(ctxTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "compactor failed to become ACTIVE in the ring")
+	}
+
 	level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
 
 	// In the event of a cluster cold start or scale up of 2+ compactor instances at the same
@@ -456,6 +455,36 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
+	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize compactors' KV store")
+	}
+
+	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to build compactors' lifecycler config")
+	}
+
+	var delegate ring.BasicLifecyclerDelegate
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
+
+	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, reg)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize compactors' lifecycler")
+	}
+
+	compactorsRing, err := ring.New(cfg.ToRingConfig(), "compactor", ringKey, logger, reg)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize compactors' ring client")
+	}
+
+	return compactorsRing, compactorsLifecycler, nil
 }
 
 func (c *MultitenantCompactor) stopping(_ error) error {
@@ -745,11 +774,11 @@ type shardingStrategy interface {
 type splitAndMergeShardingStrategy struct {
 	allowedTenants *util.AllowedTenants
 	ring           *ring.Ring
-	ringLifecycler *ring.Lifecycler
+	ringLifecycler *ring.BasicLifecycler
 	configProvider ConfigProvider
 }
 
-func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
+func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
 	return &splitAndMergeShardingStrategy{
 		allowedTenants: allowedTenants,
 		ring:           ring,
@@ -766,7 +795,7 @@ func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (boo
 
 	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
 
-	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), userID)
 }
 
 // ALL compactors should plan jobs for all users.
@@ -777,7 +806,7 @@ func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, e
 
 	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
 
-	return r.HasInstance(s.ringLifecycler.ID), nil
+	return r.HasInstance(s.ringLifecycler.GetInstanceID()), nil
 }
 
 // Only single compactor should execute the job.
@@ -789,7 +818,7 @@ func (s *splitAndMergeShardingStrategy) ownJob(job *Job) (bool, error) {
 
 	r := s.ring.ShuffleShard(job.UserID(), s.configProvider.CompactorTenantShardSize(job.UserID()))
 
-	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, job.ShardingKey())
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.GetInstanceAddr(), job.ShardingKey())
 }
 
 func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {

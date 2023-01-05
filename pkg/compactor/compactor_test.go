@@ -32,8 +32,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
@@ -1426,9 +1428,12 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 
 func removeIgnoredLogs(input []string) []string {
 	ignoredLogStringsMap := map[string]struct{}{
+
 		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected but are just ring setup information.
 		`level=info component=compactor msg="ring doesn't exist in KV store yet"`:                                                                                 {},
 		`level=info component=compactor msg="not loading tokens from file, tokens file path is empty"`:                                                            {},
+		`level=info component=compactor msg="tokens verification succeeded" ring=compactor`:                                                                       {},
+		`level=info component=compactor msg="waiting stable tokens" ring=compactor`:                                                                               {},
 		`level=info component=compactor msg="instance not found in ring, adding with no tokens" ring=compactor`:                                                   {},
 		`level=debug component=compactor msg="JoinAfter expired" ring=compactor`:                                                                                  {},
 		`level=info component=compactor msg="auto-joining cluster after timeout" ring=compactor`:                                                                  {},
@@ -1436,17 +1441,18 @@ func removeIgnoredLogs(input []string) []string {
 		`level=info component=compactor msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
 		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
 		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
-		`level=debug component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                   {},
-		`level=info component=compactor msg="instance removed from the KV store" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                    {},
+		`level=info component=compactor msg="instance removed from the ring" ring=compactor`:                                                                      {},
 		`level=info component=compactor msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
 		`level=info component=compactor msg="lifecycler entering final sleep before shutdown" final_sleep=0s`:                                                     {},
+		`level=info component=compactor msg="ring lifecycler is shutting down" ring=compactor`:                                                                    {},
 	}
 
 	out := make([]string, 0, len(input))
 
 	for i := 0; i < len(input); i++ {
 		log := input[i]
-		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") {
+		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") || strings.Contains(log, "instance not found in the ring") {
 			continue
 		}
 
@@ -1758,18 +1764,13 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10
 
-	c, _, _, logs, _ := prepare(t, cfg, bucketClient)
+	c, _, _, _, _ := prepare(t, cfg, bucketClient)
 
 	// Try to start the compactor with a bad consul kv-store. The
 	err := services.StartAndAwaitRunning(context.Background(), c)
 
 	// Assert that the compactor timed out
-	assert.Equal(t, context.DeadlineExceeded, err)
-
-	assert.ElementsMatch(t, []string{
-		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
-		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
-	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 type ownUserReason int
@@ -1921,10 +1922,10 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		{
 			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20), newSample(21, 21)}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10), newSample(11, 11)}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)}),
 				// Extend block to cover 2h.
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0), newSample(2*time.Hour.Milliseconds()-1, 0)}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)}),
 			},
 		},
 	}
@@ -1981,10 +1982,27 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 }
 
 type sample struct {
-	t int64
-	v float64
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
-func (s sample) T() int64                          { return s.t }
-func (s sample) V() float64                        { return s.v }
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+	return sample{t, v, h, fh}
+}
+func (s sample) T() int64                      { return s.t }
+func (s sample) V() float64                    { return s.v }
+func (s sample) H() *histogram.Histogram       { return s.h }
+func (s sample) FH() *histogram.FloatHistogram { return s.fh }
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}

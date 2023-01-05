@@ -36,8 +36,8 @@
       },
 
       // The min/max replica count settings are reflected to HPA too.
-      maxReplicaCount: config.max_replica_count,
       minReplicaCount: config.min_replica_count,
+      maxReplicaCount: config.max_replica_count,
 
       // The pollingInterval defines how frequently KEDA will run the queries defined in triggers.
       // This setting is only effective when scaling from 0->N because the scale up from 0 is managed
@@ -49,7 +49,7 @@
           behavior: {
             scaleDown: {
               policies: [{
-                // Allow to scale down up to 10% of pods every 1m. This prevents from suddenly scaling to minRepliacs
+                // Allow to scale down up to 10% of pods every 1m. This prevents from suddenly scaling to minReplicas
                 // when Prometheus comes back up after a long outage (longer than stabilizationWindowSeconds=300s)
                 type: 'Percent',
                 value: 10,
@@ -67,7 +67,7 @@
             serverAddress: $._config.autoscaling_prometheus_url,
             query: trigger.query,
 
-            // The metric name uniquely identify a metric in the KEDA metrics server.
+            // The metric name uniquely identifies a metric in the KEDA metrics server.
             metricName: trigger.metric_name,
 
             // The threshold value is set to the HPA's targetAverageValue. The number of desired replicas is computed

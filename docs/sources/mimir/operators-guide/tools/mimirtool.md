@@ -51,7 +51,9 @@ Mimirtool interacts with:
 
 ## Installation
 
-To install Mimirtool, download the appropriate binary from the [latest release](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+To install Mimirtool with Homebrew on macOS, run `brew install mimirtool`.
+
+To install Mimirtool in other environments, download the appropriate binary from the [latest release](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
 
 Alternatively, use a command line tool such as `curl` to download `mimirtool`. For example, for Linux with the AMD64 architecture, use the following command:
 

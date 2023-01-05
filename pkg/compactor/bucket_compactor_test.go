@@ -83,10 +83,10 @@ func TestGroupMaxMinTime(t *testing.T) {
 func TestFilterOwnJobs(t *testing.T) {
 	jobsFn := func() []*Job {
 		return []*Job{
-			NewJob("user", "key1", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key2", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key3", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key4", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, ""),
+			NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
+			NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, ""),
+			NewJob("user", "key3", labels.EmptyLabels(), 0, false, 0, ""),
+			NewJob("user", "key4", labels.EmptyLabels(), 0, false, 0, ""),
 		}
 	}
 
@@ -133,7 +133,7 @@ func TestFilterOwnJobs(t *testing.T) {
 }
 
 func TestBlockMaxTimeDeltas(t *testing.T) {
-	j1 := NewJob("user", "key1", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, "")
+	j1 := NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j1.AppendMeta(&metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002700159,
@@ -141,7 +141,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 		},
 	}))
 
-	j2 := NewJob("user", "key2", labels.EmptyLabels(), 0, metadata.NoneFunc, false, 0, "")
+	j2 := NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j2.AppendMeta(&metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002600159,

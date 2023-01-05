@@ -352,7 +352,8 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    mimir:
      structuredConfig:
        blocks_storage:
-         flush_blocks_on_shutdown: true
+         tsdb:
+           flush_blocks_on_shutdown: true
        ingester:
          ring:
            unregister_on_shutdown: true
@@ -374,7 +375,8 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    mimir:
      structuredConfig:
        blocks_storage:
-         flush_blocks_on_shutdown: true
+         tsdb:
+           flush_blocks_on_shutdown: true
        ingester:
          ring:
            unregister_on_shutdown: true
@@ -401,7 +403,8 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    mimir:
      structuredConfig:
        blocks_storage:
-         flush_blocks_on_shutdown: true
+         tsdb:
+           flush_blocks_on_shutdown: true
        ingester:
          ring:
            unregister_on_shutdown: true

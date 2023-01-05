@@ -359,12 +359,11 @@ func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
-				{userID: user2, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value2}, // different user
-				{userID: user1, block: block1, matchers: matchers1, shard: shard2, postings: postings1, value: value2}, // different shard
-				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2}, // different matchers
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings1, value: value3}, // different block
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings2, value: value3}, // different postings
+				{userID: user1, block: block1, shard: shard1, postings: postings1, value: value1},
+				{userID: user2, block: block1, shard: shard1, postings: postings1, value: value2}, // different user
+				{userID: user1, block: block1, shard: shard2, postings: postings1, value: value2}, // different shard
+				{userID: user1, block: block2, shard: shard1, postings: postings1, value: value3}, // different block
+				{userID: user1, block: block2, shard: shard1, postings: postings2, value: value3}, // different postings
 			},
 			fetchUserID:  user1,
 			fetchBlockID: block1,
@@ -400,11 +399,11 @@ func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForPostings(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, CanonicalPostingsKey(p.postings), p.value)
+				c.StoreSeriesForPostings(ctx, p.userID, p.block, p.shard, CanonicalPostingsKey(p.postings), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchSeriesForPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard, CanonicalPostingsKey(testData.postings))
+			data, ok := c.FetchSeriesForPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchShard, CanonicalPostingsKey(testData.postings))
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 

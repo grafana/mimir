@@ -18,7 +18,8 @@
     $.store_gateway_args +
     $.compactor_args +
     $.query_scheduler_args +
-    $.ruler_args + {
+    $.ruler_args +
+    $.overrides_exporter_args {
       target: 'backend',
 
       // Do not conflict with /data/tsdb and /data/tokens used by store-gateway.
@@ -35,9 +36,9 @@
       'query-scheduler.max-used-instances': 2,
     },
 
-  mimir_backend_zone_a_args:: {},
-  mimir_backend_zone_b_args:: {},
-  mimir_backend_zone_c_args:: {},
+  mimir_backend_zone_a_args:: $.store_gateway_zone_a_args {},
+  mimir_backend_zone_b_args:: $.store_gateway_zone_b_args {},
+  mimir_backend_zone_c_args:: $.store_gateway_zone_c_args {},
 
   local mimir_backend_data_pvc =
     pvc.new() +
@@ -58,16 +59,19 @@
   newMimirBackendZoneContainer(zone, zone_args)::
     container.new('mimir-backend', $._images.mimir_backend) +
     container.withPorts($.mimir_backend_ports) +
-    container.withArgsMixin($.util.mapToFlags($.mimir_backend_args + zone_args + {
-      'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
-      'store-gateway.sharding-ring.zone-awareness-enabled': true,
+    container.withArgsMixin($.util.mapToFlags(
+      // This first block contains flags that can be overridden.
+      {
+        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+        'store-gateway.sharding-ring.unregister-on-shutdown': false,
+      } + $.mimir_backend_args + zone_args + {
+        'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
+        'store-gateway.sharding-ring.zone-awareness-enabled': true,
 
-      // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
-      'store-gateway.sharding-ring.prefix': 'multi-zone/',
-
-      // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-      'store-gateway.sharding-ring.unregister-on-shutdown': false,
-    })) +
+        // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
+        'store-gateway.sharding-ring.prefix': 'multi-zone/',
+      }
+    )) +
     container.withVolumeMountsMixin([volumeMount.new('mimir-backend-data', '/data')]) +
     $.util.resourcesRequests(1, '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +

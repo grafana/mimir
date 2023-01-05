@@ -40,11 +40,21 @@ message AggrChunk {
   int64 max_time = 2;
 
   Chunk raw     = 3;
-  Chunk count   = 4;
-  Chunk sum     = 5;
-  Chunk min     = 6;
-  Chunk max     = 7;
-  Chunk counter = 8;
+
+  // Thanos count.
+  reserved 4;
+
+  // Thanos sum.
+  reserved 5;
+
+  // Thanos min.
+  reserved 6;
+
+  // Thanos max.
+  reserved 7;
+
+  // Thanos counter.
+  reserved 8;
 }
 
 // Matcher specifies a rule, which can match or set of labels or not.

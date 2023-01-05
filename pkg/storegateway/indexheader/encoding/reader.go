@@ -156,6 +156,11 @@ func (f *fileReader) len() int {
 	return f.length - f.pos
 }
 
+// position returns the current position of this fileReader in f, relative to base.
+func (f *fileReader) position() int {
+	return f.pos
+}
+
 // close cleans up the underlying resources used by this fileReader.
 func (f *fileReader) close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:

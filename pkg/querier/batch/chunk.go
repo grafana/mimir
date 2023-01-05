@@ -7,6 +7,7 @@ package batch
 
 import (
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -28,11 +29,11 @@ func (i *chunkIterator) reset(chunk GenericChunk) {
 
 // Seek advances the iterator forward to the value at or after
 // the given timestamp.
-func (i *chunkIterator) Seek(t int64, size int) bool {
+func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
 	if i.chunk.MaxTime < t {
-		return false
+		return chunkenc.ValNone
 	}
 
 	// If the seek is to the middle of the current batch, and size fits, we can
@@ -43,23 +44,28 @@ func (i *chunkIterator) Seek(t int64, size int) bool {
 			i.batch.Index++
 		}
 		if i.batch.Index+size < i.batch.Length {
-			return true
+			// TODO for native histograms: check and return the Batch size if it matches
+			return chunkenc.ValFloat
 		}
 	}
 
-	if i.it.FindAtOrAfter(model.Time(t)) {
-		i.batch = i.it.Batch(size)
-		return i.batch.Length > 0
+	if typ := i.it.FindAtOrAfter(model.Time(t)); typ != chunkenc.ValNone {
+		i.batch = i.it.Batch(size, typ)
+		if i.batch.Length > 0 {
+			return typ
+		}
 	}
-	return false
+	return chunkenc.ValNone
 }
 
-func (i *chunkIterator) Next(size int) bool {
-	if i.it.Scan() {
-		i.batch = i.it.Batch(size)
-		return i.batch.Length > 0
+func (i *chunkIterator) Next(size int) chunkenc.ValueType {
+	if typ := i.it.Scan(); typ != chunkenc.ValNone {
+		i.batch = i.it.Batch(size, typ)
+		if i.batch.Length > 0 {
+			return typ
+		}
 	}
-	return false
+	return chunkenc.ValNone
 }
 
 func (i *chunkIterator) AtTime() int64 {

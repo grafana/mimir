@@ -3,19 +3,23 @@
 package storegateway
 
 import (
+	"bytes"
 	"context"
-	"strings"
+	"fmt"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -604,11 +608,9 @@ type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
-	seriesHashCache     *hashcache.BlockSeriesHashCache
 	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
-	matchers            []*labels.Matcher
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	skipChunks          bool
@@ -632,7 +634,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	blockMeta *metadata.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHasher seriesHasher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
@@ -656,12 +658,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
 		indexCache,
-		seriesHashCache,
 		stats,
 		blockMeta,
-		matchers,
 		shard,
-		cachedSeriesHasher{cache: seriesHashCache},
+		seriesHasher,
 		skipChunks,
 		minTime,
 		maxTime,
@@ -678,10 +678,8 @@ func newLoadingSeriesChunkRefsSetIterator(
 	postingsSetIterator *postingsSetsIterator,
 	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
-	seriesHashCache *hashcache.BlockSeriesHashCache,
 	stats *safeQueryStats,
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,
@@ -701,10 +699,8 @@ func newLoadingSeriesChunkRefsSetIterator(
 		indexCache:          indexCache,
 		stats:               stats,
 		blockID:             blockMeta.ULID,
-		matchers:            matchers,
 		shard:               shard,
 		seriesHasher:        seriesHasher,
-		seriesHashCache:     seriesHashCache,
 		skipChunks:          skipChunks,
 		minTime:             minTime,
 		maxTime:             maxTime,
@@ -722,15 +718,21 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	nextPostings := s.postingsSetIterator.At()
 
-	var seriesCacheKey indexcache.PostingsKey
+	var cachedSeriesID cachedSeriesForPostingsID
 	if s.skipChunks {
-		// Calculate the cache key before we filter out anything from the postings,
+		var err error
+		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
-		// Calculate the postings key only if we'll actually use it.
-		seriesCacheKey = indexcache.CanonicalPostingsKey(nextPostings)
-		if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.matchers, s.shard, seriesCacheKey, s.logger); isCached {
-			s.currentSet = cachedSet
-			return true
+		// Calculate the cache item ID only if we'll actually use it.
+		cachedSeriesID.postingsKey = indexcache.CanonicalPostingsKey(nextPostings)
+		cachedSeriesID.encodedPostings, err = diffVarintSnappyEncode(index.NewListPostings(nextPostings), len(nextPostings))
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
+		} else {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+				s.currentSet = cachedSet
+				return true
+			}
 		}
 	}
 
@@ -744,7 +746,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// not belonging to the shard.
 	if s.shard != nil {
 		var unsafeStats queryStats
-		nextPostings, unsafeStats = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHashCache)
+		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, &unsafeStats)
 		loadStats.merge(&unsafeStats)
 	}
 
@@ -788,8 +790,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks {
-		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.matchers, s.shard, seriesCacheKey, nextSet, s.logger)
+	if s.skipChunks && cachedSeriesID.isSet() {
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
@@ -834,89 +836,120 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-type seriesForPostingsCacheEntry struct {
-	LabelSets   []labels.Labels
-	MatchersKey indexcache.LabelMatchersKey
-	Shard       sharding.ShardSelector
+// cachedSeriesForPostingsID contains enough information to be able to tell whether a cache entry
+// is the right cache entry that we are looking for. We store only the postingsKey in the
+// cache key because the encoded postings are too big. We store the encoded postings within
+// the item and compare them when we need to fetch postings.
+type cachedSeriesForPostingsID struct {
+	postingsKey     indexcache.PostingsKey
+	encodedPostings []byte
 }
 
-func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
-	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
+func (i cachedSeriesForPostingsID) isSet() bool {
+	return i.postingsKey != "" && len(i.encodedPostings) > 0
+}
+
+func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, logger log.Logger) (seriesChunkRefsSet, bool) {
+	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey)
 	if !ok {
 		return seriesChunkRefsSet{}, false
 	}
+	data, err := snappy.Decode(nil, data)
+	if err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache snappy", "err", err)
+		return seriesChunkRefsSet{}, false
+	}
+	var entry storepb.CachedSeries
+	if err = entry.Unmarshal(data); err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache", "err", err)
+		return seriesChunkRefsSet{}, false
+	}
 
-	var entry seriesForPostingsCacheEntry
-	if err := decodeSnappyGob(data, &entry); err != nil {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
-		return seriesChunkRefsSet{}, false
-	}
-	if entry.MatchersKey != matchersKey {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
-		return seriesChunkRefsSet{}, false
-	}
-	if entry.Shard != maybeNilShard(shard) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard)
+	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_trimmed_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
 		return seriesChunkRefsSet{}, false
 	}
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
 	// after Next() will be called again.
-	res := newSeriesChunkRefsSet(len(entry.LabelSets), true)
-	for _, lset := range entry.LabelSets {
+	res := newSeriesChunkRefsSet(len(entry.Series), true)
+	for _, lset := range entry.Series {
 		res.series = append(res.series, seriesChunkRefs{
-			lset: lset,
+			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
 		})
 	}
 	return res, true
 }
 
-func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
-	entry := seriesForPostingsCacheEntry{
-		LabelSets:   make([]labels.Labels, set.len()),
-		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
-		Shard:       maybeNilShard(shard),
-	}
-	for i, s := range set.series {
-		entry.LabelSets[i] = s.lset
-	}
-
-	data, err := encodeSnappyGob(entry)
+func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, set seriesChunkRefsSet, logger log.Logger) {
+	data, err := encodeCachedSeriesForPostings(set, itemID.encodedPostings)
 	if err != nil {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
+	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
 }
 
-func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
-	var matchersStr strings.Builder
-	for _, m := range matchers {
-		matchersStr.WriteString(m.String())
-		matchersStr.WriteString(",")
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings []byte) ([]byte, error) {
+	entry := &storepb.CachedSeries{
+		Series:              make([]mimirpb.PreallocatingMetric, set.len()),
+		DiffEncodedPostings: diffEncodedPostings,
 	}
-	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard", maybeNilShard(shard), "postings_key", postingsKey)
+	for i, s := range set.series {
+		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
+	}
+
+	uncompressed, err := entry.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, uncompressed), nil
+}
+
+func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, itemID cachedSeriesForPostingsID, msgAndArgs ...any) {
+	nonNilShard := maybeNilShard(shard)
+	msgAndArgs = append(msgAndArgs,
+		"tenant_id", userID,
+		"block_ulid", blockID.String(),
+		"requested_shard_index", nonNilShard.ShardIndex,
+		"requested_shard_count", nonNilShard.ShardCount,
+		"postings_key", itemID.postingsKey,
+		"requested_trimmed_postings", previewDiffEncodedPostings(itemID.encodedPostings),
+	)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
+}
+
+// previewDiffEncodedPostings truncates the postings to just 100 bytes and prints them as a golang byte slice
+func previewDiffEncodedPostings(b []byte) string {
+	if len(b) > 100 {
+		b = b[:100]
+	}
+	return fmt.Sprintf("%v", b)
 }
 
 type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
+	CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool)
 }
 
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
 }
 
-func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+func (b cachedSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
 	stats.seriesHashCacheRequests++
+	hash, isCached := b.cache.Fetch(seriesID)
+	if isCached {
+		stats.seriesHashCacheHits++
+	}
+	return hash, isCached
+}
 
-	hash, ok := b.cache.Fetch(id)
+func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	hash, ok := b.CachedHash(id, stats)
 	if !ok {
 		hash = lset.Hash()
 		b.cache.Store(id, hash)
-	} else {
-		stats.seriesHashCacheHits++
 	}
 	return hash
 }

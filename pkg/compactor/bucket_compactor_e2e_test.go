@@ -471,7 +471,7 @@ func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockge
 	if b.numSamples == 0 {
 		id, err = createEmptyBlock(prepareDir, b.mint, b.maxt, b.extLset, b.res)
 	} else {
-		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numSamples, b.mint, b.maxt, b.extLset, b.res, false, metadata.NoneFunc)
+		id, err = createBlockWithOptions(ctx, prepareDir, b.series, b.numSamples, b.mint, b.maxt, b.extLset, b.res, false)
 	}
 	require.NoError(t, err)
 
@@ -668,7 +668,6 @@ func createBlockWithOptions(
 	extLset labels.Labels,
 	resolution int64,
 	tombstones bool,
-	hashFunc metadata.HashFunc,
 ) (id ulid.ULID, err error) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
@@ -739,36 +738,11 @@ func createBlockWithOptions(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	files := []metadata.File{}
-	if hashFunc != metadata.NoneFunc {
-		paths := []string{}
-		if err := filepath.Walk(blockDir, func(path string, info os.FileInfo, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-			paths = append(paths, path)
-			return nil
-		}); err != nil {
-			return id, errors.Wrapf(err, "walking %s", dir)
-		}
-
-		for _, p := range paths {
-			pHash, err := metadata.CalculateHash(p, metadata.SHA256Func, log.NewNopLogger())
-			if err != nil {
-				return id, errors.Wrapf(err, "calculating hash of %s", blockDir+p)
-			}
-			files = append(files, metadata.File{
-				RelPath: strings.TrimPrefix(p, blockDir+"/"),
-				Hash:    &pHash,
-			})
-		}
-	}
-
 	if _, err = metadata.InjectThanos(log.NewNopLogger(), blockDir, metadata.Thanos{
 		Labels:     extLset.Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: resolution},
 		Source:     metadata.TestSource,
-		Files:      files,
+		Files:      []metadata.File{},
 	}, nil); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}

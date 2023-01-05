@@ -18,6 +18,7 @@ import (
 	"net/textproto"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,6 +32,14 @@ var (
 		NotifierConfig: NotifierConfig{
 			VSendResolved: true,
 		},
+	}
+
+	// DefaultWebexConfig defines default values for Webex configurations.
+	DefaultWebexConfig = WebexConfig{
+		NotifierConfig: NotifierConfig{
+			VSendResolved: true,
+		},
+		Message: `{{ template "webex.default.message" . }}`,
 	}
 
 	// DefaultDiscordConfig defines default values for Discord configurations.
@@ -164,6 +173,35 @@ type NotifierConfig struct {
 
 func (nc *NotifierConfig) SendResolved() bool {
 	return nc.VSendResolved
+}
+
+// WebexConfig configures notifications via Webex.
+type WebexConfig struct {
+	NotifierConfig `yaml:",inline" json:",inline"`
+	HTTPConfig     *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	APIURL         *URL                        `yaml:"api_url,omitempty" json:"api_url,omitempty"`
+
+	Message string `yaml:"message,omitempty" json:"message,omitempty"`
+	RoomID  string `yaml:"room_id" json:"room_id"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *WebexConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultWebexConfig
+	type plain WebexConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	if c.RoomID == "" {
+		return fmt.Errorf("missing room_id on webex_config")
+	}
+
+	if c.HTTPConfig == nil || c.HTTPConfig.Authorization == nil {
+		return fmt.Errorf("missing webex_configs.http_config.authorization")
+	}
+
+	return nil
 }
 
 // DiscordConfig configures notifications via Discord.
@@ -541,9 +579,16 @@ func (c *OpsGenieConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 			return errors.Errorf("opsGenieConfig responder %v has to have at least one of id, username or name specified", r)
 		}
 
-		r.Type = strings.ToLower(r.Type)
-		if !opsgenieTypeMatcher.MatchString(r.Type) {
-			return errors.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
+		if strings.Contains(r.Type, "{{") {
+			_, err := template.New("").Parse(r.Type)
+			if err != nil {
+				return errors.Errorf("opsGenieConfig responder %v type is not a valid template: %v", r, err)
+			}
+		} else {
+			r.Type = strings.ToLower(r.Type)
+			if !opsgenieTypeMatcher.MatchString(r.Type) {
+				return errors.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
+			}
 		}
 	}
 

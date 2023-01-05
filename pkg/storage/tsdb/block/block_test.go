@@ -100,7 +100,7 @@ func TestDelete(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	{
 		b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -114,7 +114,7 @@ func TestDelete(t *testing.T) {
 	}
 	{
 		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -138,7 +138,7 @@ func TestUpload(t *testing.T) {
 		labels.FromStrings("a", "3"),
 		labels.FromStrings("a", "4"),
 		labels.FromStrings("b", "1"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
 
@@ -248,7 +248,7 @@ func TestUpload(t *testing.T) {
 			labels.FromStrings("a", "3"),
 			labels.FromStrings("a", "4"),
 			labels.FromStrings("b", "1"),
-		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
+		}, 100, 0, 1000, labels.EmptyLabels(), 124)
 		require.NoError(t, err)
 
 		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
@@ -279,7 +279,7 @@ func TestUpload(t *testing.T) {
 			labels.FromStrings("a", "3"),
 			labels.FromStrings("a", "4"),
 			labels.FromStrings("b", "1"),
-		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
+		}, 100, 0, 1000, labels.EmptyLabels(), 124)
 		require.NoError(t, err)
 
 		// Prepare metadata that will be uploaded to the bucket.
@@ -350,7 +350,7 @@ func TestMarkForDeletion(t *testing.T) {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
@@ -399,7 +399,7 @@ func TestMarkForNoCompact(t *testing.T) {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
@@ -423,7 +423,7 @@ func TestUploadCleanup(t *testing.T) {
 
 	bkt := objstore.NewInMemBucket()
 	b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-		100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+		100, 0, 1000, labels.FromStrings("ext1", "val1"), 124)
 	require.NoError(t, err)
 
 	{

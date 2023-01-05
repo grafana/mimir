@@ -138,41 +138,102 @@ func (p *BucketedBytes) Put(b *[]byte) {
 	}
 }
 
-// BatchBytes uses a Bytes pool to hand out byte slices, but they don't need to be
-// individually put back into the pool. Instead, they can be all released at once.
-// Additionally, BatchBytes combines results from the other two.
-// BatchBytes is concurrency safe.
-type BatchBytes struct {
-	Delegate Bytes
-
-	mtx   sync.Mutex
-	slabs []*[]byte
+// SlabPool wraps Interface and adds support to get a sub-slice of the data type T
+// from the pool, trying to fit the slices picked from the pool as much as possible.
+//
+// The slices returned by SlabPool.Get() will be released back to the pool once
+// SlabPool.Release() is called.
+//
+// SlabPool is NOT concurrency safe.
+type SlabPool[T any] struct {
+	delegate Interface
+	slabSize int
+	slabs    []*[]T
 }
 
-func (b *BatchBytes) Release() {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
-
-	for _, slab := range b.slabs {
-		b.Delegate.Put(slab)
+func NewSlabPool[T any](delegate Interface, slabSize int) *SlabPool[T] {
+	return &SlabPool[T]{
+		delegate: delegate,
+		slabSize: slabSize,
 	}
+}
+
+// Release all slices returned by Get. It's unsafe to access slices previously returned by Get
+// after calling Release().
+func (b *SlabPool[T]) Release() {
+	for _, slab := range b.slabs {
+		// The slab length will be reset to 0 in the Get().
+		b.delegate.Put(slab)
+	}
+
 	b.slabs = b.slabs[:0]
 }
 
-func (b *BatchBytes) Get(sz int) ([]byte, error) {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
+// Get returns a slice of T with the given length and capacity (both matches).
+func (b *SlabPool[T]) Get(size int) []T {
+	const lookback = 3
 
-	if len(b.slabs) == 0 ||
-		// Ensure we never grow slab beyond original capacity.
-		cap(*b.slabs[len(b.slabs)-1])-len(*b.slabs[len(b.slabs)-1]) < sz {
-		s, err := b.Delegate.Get(sz)
-		if err != nil {
-			return nil, errors.Wrap(err, "allocate chunk bytes")
-		}
-		b.slabs = append(b.slabs, s)
+	if size <= 0 {
+		return nil
 	}
-	slab := b.slabs[len(b.slabs)-1]
-	*slab = (*slab)[:len(*slab)+sz]
-	return (*slab)[len(*slab)-sz : len(*slab) : len(*slab)], nil
+
+	// If the requested size is bigger than the slab size, then the slice
+	// can't be handled by this pool and will be allocated outside it.
+	if size > b.slabSize {
+		return make([]T, size)
+	}
+
+	var slab *[]T
+
+	// Look in the last few slabs if there's any space left.
+	for i := len(b.slabs) - 1; i >= len(b.slabs)-lookback && i >= 0; i-- {
+		if cap(*b.slabs[i])-len(*b.slabs[i]) >= size {
+			slab = b.slabs[i]
+			break
+		}
+	}
+
+	// Get a new one if there's no space available in the last few slabs.
+	if slab == nil {
+		if reused := b.delegate.Get(); reused != nil {
+			slab = reused.(*[]T)
+			*slab = (*slab)[:0]
+		} else {
+			newSlab := make([]T, 0, b.slabSize)
+			slab = &newSlab
+		}
+
+		// Add the slab to the list of slabs.
+		b.slabs = append(b.slabs, slab)
+	}
+
+	// Resize the slab length and return a sub-slice.
+	*slab = (*slab)[:len(*slab)+size]
+	return (*slab)[len(*slab)-size : len(*slab) : len(*slab)]
+}
+
+// SafeSlabPool wraps SlabPool to make it safe for concurrent use from multiple goroutines
+type SafeSlabPool[T any] struct {
+	wrappedMx sync.Mutex
+	wrapped   *SlabPool[T]
+}
+
+func NewSafeSlabPool[T any](delegate Interface, slabSize int) *SafeSlabPool[T] {
+	return &SafeSlabPool[T]{
+		wrapped: NewSlabPool[T](delegate, slabSize),
+	}
+}
+
+func (b *SafeSlabPool[T]) Release() {
+	b.wrappedMx.Lock()
+	defer b.wrappedMx.Unlock()
+
+	b.wrapped.Release()
+}
+
+func (b *SafeSlabPool[T]) Get(size int) []T {
+	b.wrappedMx.Lock()
+	defer b.wrappedMx.Unlock()
+
+	return b.wrapped.Get(size)
 }

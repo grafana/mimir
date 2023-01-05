@@ -1344,11 +1344,18 @@ alertmanager_client:
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
 
-# (advanced) Minimum duration between alert and restored "for" state. This is
-# maintained only for alerts with configured "for" time greater than grace
-# period.
+# (advanced) This grace period controls which alerts the ruler restores after a
+# restart. Alerts with "for" duration lower than this grace period are not
+# restored after a ruler restart. This means that if the alerts have been firing
+# before the ruler restarted, they will now go to pending state and then to
+# firing again after their "for" duration expires. Alerts with "for" duration
+# greater than or equal to this grace period that have been pending before the
+# ruler restart will remain in pending state for at least this grace period.
+# Alerts with "for" duration greater than or equal to this grace period that
+# have been firing before the ruler restart will continue to be firing after the
+# restart.
 # CLI flag: -ruler.for-grace-period
-[for_grace_period: <duration> | default = 10m]
+[for_grace_period: <duration> | default = 2m]
 
 # (advanced) Minimum amount of time to wait before resending an alert to
 # Alertmanager.
@@ -2500,11 +2507,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
-# Limit the query time range (end - start time). This limit is enforced in the
-# querier (on the query possibly split by the query-frontend) and ruler. 0 to
-# disable.
-# CLI flag: -store.max-query-length
-[max_query_length: <duration> | default = 0s]
+# Limit the time range for partial queries at the querier level. Defaults to the
+# value of -store.max-query-length if set to 0.
+# CLI flag: -querier.max-partial-query-length
+[max_partial_query_length: <duration> | default = 0s]
 
 # Maximum number of split (by time) or partial (by shard) queries that will be
 # scheduled in parallel by the query-frontend for a single input query. This
@@ -3141,6 +3147,21 @@ tsdb:
   # 1 and 255.
   # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-max
   [out_of_order_capacity_max: <int> | default = 32]
+
+  # (experimental) How long to cache postings for matchers in the Head and
+  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
+  [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in the Head and OOOHead when ttl > 0.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
+  [head_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in the
+  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
+  [head_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 
 ### compactor

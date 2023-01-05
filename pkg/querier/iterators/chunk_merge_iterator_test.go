@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -58,13 +59,13 @@ func TestChunkMergeIterator(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			iter := NewChunkMergeIterator(tc.chunks, 0, 0)
 			for i := tc.mint; i < tc.maxt; i++ {
-				require.True(t, iter.Next())
+				require.Equal(t, chunkenc.ValFloat, iter.Next())
 				ts, s := iter.At()
 				assert.Equal(t, i, ts)
 				assert.Equal(t, float64(i), s)
 				assert.NoError(t, iter.Err())
 			}
-			assert.False(t, iter.Next())
+			assert.Equal(t, chunkenc.ValNone, iter.Next())
 		})
 	}
 }
@@ -77,20 +78,20 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 	}, 0, 0)
 
 	for i := int64(0); i < 10; i += 20 {
-		require.True(t, iter.Seek(i))
+		require.Equal(t, chunkenc.ValFloat, iter.Seek(i))
 		ts, s := iter.At()
 		assert.Equal(t, i, ts)
 		assert.Equal(t, float64(i), s)
 		assert.NoError(t, iter.Err())
 
 		for j := i + 1; j < 200; j++ {
-			require.True(t, iter.Next())
+			require.Equal(t, chunkenc.ValFloat, iter.Next())
 			ts, s := iter.At()
 			assert.Equal(t, j, ts)
 			assert.Equal(t, float64(j), s)
 			assert.NoError(t, iter.Err())
 		}
-		assert.False(t, iter.Next())
+		assert.Equal(t, chunkenc.ValNone, iter.Next())
 	}
 }
 

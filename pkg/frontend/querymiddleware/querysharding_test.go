@@ -932,6 +932,10 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		"scalar": {},
 		"vector": {},
 		"pi":     {},
+		// Until support is added for querying histograms, these can be ignored:
+		"histogram_count":    {},
+		"histogram_sum":      {},
+		"histogram_fraction": {},
 	}
 
 	for expectedFn := range promql.FunctionCalls {

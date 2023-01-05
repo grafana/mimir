@@ -167,6 +167,23 @@ groups:
     for: 1h
     labels:
       severity: warning
+  - alert: MimirRulerInstanceHasNoRuleGroups
+    annotations:
+      message: Mimir ruler {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has no rule groups assigned.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerinstancehasnorulegroups
+    expr: |
+      # Alert on ruler instances in microservices mode that have no rule groups assigned,
+      min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
+      # but only if other ruler instances of the same cell do have rule groups assigned
+      and on (cluster, namespace)
+      (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
+      # and there are more than two instances overall
+      and on (cluster, namespace)
+      (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
+    for: 1h
+    labels:
+      severity: warning
   - alert: MimirRingMembersMismatch
     annotations:
       message: |
@@ -576,6 +593,20 @@ groups:
     for: 15m
     labels:
       severity: critical
+  - alert: MimirAlertmanagerInstanceHasNoTenants
+    annotations:
+      message: Mimir alertmanager {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} owns no tenants.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinstancehasnotenants
+    expr: |
+      # Alert on alertmanager instances in microservices mode that own no tenants,
+      min by(cluster, namespace, pod) (cortex_alertmanager_tenants_owned{pod=~"(.*-mimir-)?alertmanager.*"}) == 0
+      # but only if other instances of the same cell do have tenants assigned.
+      and on (cluster, namespace)
+      max by(cluster, namespace) (cortex_alertmanager_tenants_owned) > 0
+    for: 1h
+    labels:
+      severity: warning
 - name: mimir_blocks_alerts
   rules:
   - alert: MimirIngesterHasNotShippedBlocks
@@ -773,6 +804,8 @@ groups:
         }} has not successfully cleaned up blocks in the last 6 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullycleanedupblocks
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
     for: 1h
     labels:
@@ -783,6 +816,8 @@ groups:
         }} has not run compaction in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullyruncompaction
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
       and
       (cortex_compactor_last_successful_run_timestamp_seconds > 0)
@@ -796,6 +831,8 @@ groups:
         }} has not run compaction in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullyruncompaction
     expr: |
+      # The "last successful run" metric is updated even if the compactor owns no tenants,
+      # so this alert correctly doesn't fire if compactor has nothing to do.
       cortex_compactor_last_successful_run_timestamp_seconds == 0
     for: 24h
     labels:
@@ -817,9 +854,13 @@ groups:
         }} has not uploaded any block in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
     expr: |
-      (time() - thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 60 * 60 * 24)
+      (time() - (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"})) > 60 * 60 * 24)
       and
-      (thanos_objstore_bucket_last_successful_upload_time{component="compactor"} > 0)
+      (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
+      and
+      # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
+      # (e.g. there are more replicas than required because running as part of mimir-backend).
+      (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
     for: 15m
     labels:
       severity: critical
@@ -829,7 +870,11 @@ groups:
         }} has not uploaded any block in the last 24 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
     expr: |
-      thanos_objstore_bucket_last_successful_upload_time{component="compactor"} == 0
+      (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
+      and
+      # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
+      # (e.g. there are more replicas than required because running as part of mimir-backend).
+      (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
     for: 24h
     labels:
       severity: critical

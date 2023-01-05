@@ -577,7 +577,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -658,7 +657,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
@@ -900,7 +898,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -978,7 +975,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
