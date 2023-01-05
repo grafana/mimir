@@ -79,7 +79,7 @@ func (w *ephemeralMetricsWatcher) running(ctx context.Context) error {
 			return true
 		}
 
-		level.Info(w.log).Log("msg", "updated key", "user", user, "metrics", len(em.EphemeralMetrics()))
+		level.Info(w.log).Log("msg", "ephemeral metrics map for user updated", "user", user, "metrics", len(em.EphemeralMetrics()))
 
 		// Keep this value. This is a copy of what's in KV store.
 		w.setMetricsMapForUser(user, em)
