@@ -298,6 +298,7 @@ metadata:
   name: mimir-write
   namespace: default
 spec:
+  clusterIP: None
   ports:
   - name: mimir-write-gossip-ring
     port: 7946
