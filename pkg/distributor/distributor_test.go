@@ -4984,9 +4984,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		totalMetadata += len(ing[ix].metadata)
 
 		for _, ts := range ing[ix].timeseries {
-			token, err := distrib.tokenForLabels(userName, ts.Labels)
-			require.NoError(t, err)
-
+			token := distrib.tokenForLabels(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ing)
 			assert.Equal(t, ix, ingIx)
 		}
