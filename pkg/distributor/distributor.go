@@ -548,8 +548,8 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) (uint32, error) {
-	return shardByAllLabels(userID, labels), nil
+func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+	return shardByAllLabels(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
@@ -1185,14 +1185,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	// For each timeseries, compute a hash to distribute across ingesters
 	for _, ts := range req.Timeseries {
-		// Generate the sharding token based on the series labels without the HA replica
-		// label and dropped labels (if any)
-		key, err := d.tokenForLabels(userID, ts.Labels)
-		if err != nil {
-			return nil, err
-		}
-
-		seriesKeys = append(seriesKeys, key)
+		seriesKeys = append(seriesKeys, d.tokenForLabels(userID, ts.Labels))
 	}
 
 	for _, m := range req.Metadata {
