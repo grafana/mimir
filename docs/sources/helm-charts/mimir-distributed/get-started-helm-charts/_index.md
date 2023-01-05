@@ -1,15 +1,20 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/getting-started-helm-charts/
+  - /docs/helm-charts/mimir-distributed/latest/get-started/
 description: Learn how to get started with Grafana Mimir using the Helm chart.
-menuTitle: Getting started using the Helm chart
-title: Getting started with Grafana Mimir using the Helm chart
-weight: 25
+menuTitle: Get started
+title: Get started with Grafana Mimir using the Helm chart
+weight: 20
+keywords:
+  - Helm chart
+  - Kubernetes
+  - Grafana Mimir
 ---
 
-# Getting started with Grafana Mimir using the Helm chart
+# Get started with Grafana Mimir using the Helm chart
 
-The [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
+The Grafana Mimir [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 
 ## Before you begin
 
@@ -17,7 +22,7 @@ The instructions that follow are common across any flavor of Kubernetes. They al
 
 It also assumes that you have an understanding of what the `kubectl` command does.
 
-> **Caution:** This getting-started procedure is primarily aimed at local or development setups. For setting up in a production environment refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}).
+> **Caution:** This procedure is primarily aimed at local or development setups. To set up in a production environment, see [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm/" >}}).
 
 ### Hardware requirements
 
@@ -47,7 +52,7 @@ The reason is that the installation includes a deployment of MinIO. The [minio/m
 is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
 
 If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with MinIO.
-Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}) for instructions on
+Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm/" >}}) for instructions on
 setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
 
 If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
@@ -261,7 +266,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
    You should be able to query metrics in [Grafana Explore](http://localhost:3000/explore),
    as well as create dashboard panels by using your newly configured `Mimir` data source.
-   For more information, see [Monitor Grafana Mimir]({{< relref "../../monitor-grafana-mimir" >}}).
+   For more information, see [Monitor Grafana Mimir]({{< relref "/docs/mimir/latest/operators-guide/monitor-grafana-mimir/" >}}).
 
 ## Set up metamonitoring
 
@@ -296,7 +301,7 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
 
 1. Install Grafana in the same Kubernetes cluster.
 
-   For details, see [Deploy Grafana on Kubernetes](https://grafana.com/docs/grafana/latest/setup-grafana/installation/kubernetes/).
+   For details, see [Deploy Grafana on Kubernetes](/docs/grafana/latest/setup-grafana/installation/kubernetes/).
 
 1. Stop the Grafana instance that is running in the Docker container, to allow for port-forwarding.
 
@@ -316,7 +321,7 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
    | Name  | Mimir                                           |
    | URL   | http://mimir-nginx.mimir-test.svc:80/prometheus |
 
-   To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+   To add a data source, see [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
 
 1. Verify success:
 

@@ -1,18 +1,18 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/
-description: "Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0"
-title: "Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0"
-menuTitle: "Upgrade Helm chart 2.1 to 3.0"
+description: "Migrate the Helm chart from version 2.1 to 3.0"
+title: "Migrate the Helm chart from version 2.1 to 3.0"
+menuTitle: "Migrate Helm chart 2.1 to 3.0"
 weight: 100
 ---
 
-# Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0
+# Migrate the Helm chart from version 2.1 to 3.0
 
 There are breaking changes between the Grafana Mimir Helm chart versions 2.1 and 3.0.
 Several parameters that were available in version 2.1 of the mimir-distributed Helm chart have changed.
 
-**To upgrade from Helm chart 2.1 to 3.0:**
+**To migrate from Helm chart 2.1 to 3.0:**
 
 1. Understand the improvements that we made to the Mimir configuration in the Helm chart:
 
