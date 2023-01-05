@@ -1269,6 +1269,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
+	// All tokens, stored in order: series, metadata, ephemeral series.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys)+len(ephemeralSeriesKeys))
 	initialMetadataIndex := len(seriesKeys)
 	initialEphemeralIndex := initialMetadataIndex + len(metadataKeys)

@@ -709,8 +709,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	var (
 		startAppend = time.Now()
 
-		longTermMetrics  pushMetrics
-		ephemeralMetrics pushMetrics
+		persistentSeries pushMetrics
+		ephemeralSeries  pushMetrics
 
 		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
 
@@ -746,15 +746,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 	}
 
-	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
+	level.Debug(spanlog).Log("event", "got appender", "persistentSeries", len(req.Timeseries), "ephemeralSeries", len(req.EphemeralTimeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, &longTermMetrics, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, true, db)
+	err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, &persistentSeries, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, true, db)
 	if err != nil {
 		rollback()
 		return nil, err
 	}
-	err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, &ephemeralMetrics, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, false, db)
+	err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, &ephemeralSeries, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, false, db)
 	if err != nil {
 		rollback()
 		return nil, err
@@ -765,15 +765,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", longTermMetrics.succeededSamplesCount,
-		"failedSamplesCount", longTermMetrics.failedSamplesCount,
-		"succeededExemplarsCount", longTermMetrics.succeededExemplarsCount,
-		"failedExemplarsCount", longTermMetrics.failedExemplarsCount,
+		"succeededSamplesCount", persistentSeries.succeededSamplesCount,
+		"failedSamplesCount", persistentSeries.failedSamplesCount,
+		"succeededExemplarsCount", persistentSeries.succeededExemplarsCount,
+		"failedExemplarsCount", persistentSeries.failedExemplarsCount,
 
-		"ephemeralSucceededSamplesCount", ephemeralMetrics.succeededSamplesCount,
-		"ephemeralFailedSamplesCount", ephemeralMetrics.failedSamplesCount,
-		"ephemeralSucceededExemplarsCount", ephemeralMetrics.succeededExemplarsCount,
-		"ephemeralFailedExemplarsCount", ephemeralMetrics.failedExemplarsCount,
+		"ephemeralSucceededSamplesCount", ephemeralSeries.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralSeries.failedSamplesCount,
+		"ephemeralSucceededExemplarsCount", ephemeralSeries.succeededExemplarsCount,
+		"ephemeralFailedExemplarsCount", ephemeralSeries.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
@@ -796,51 +796,51 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if longTermMetrics.succeededSamplesCount > 0 || ephemeralMetrics.succeededSamplesCount > 0 {
+	if persistentSeries.succeededSamplesCount > 0 || ephemeralSeries.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(longTermMetrics.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(longTermMetrics.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(longTermMetrics.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(longTermMetrics.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(longTermMetrics.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(longTermMetrics.succeededExemplarsCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentSeries.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentSeries.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(persistentSeries.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(persistentSeries.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(persistentSeries.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(persistentSeries.succeededExemplarsCount))
 
-	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralMetrics.succeededSamplesCount))
-	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralMetrics.failedSamplesCount))
+	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralSeries.succeededSamplesCount))
+	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralSeries.failedSamplesCount))
 
-	if longTermMetrics.sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfBoundsCount))
+	if persistentSeries.sampleOutOfBoundsCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(persistentSeries.sampleOutOfBoundsCount))
 	}
-	if longTermMetrics.sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfOrderCount))
+	if persistentSeries.sampleOutOfOrderCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(persistentSeries.sampleOutOfOrderCount))
 	}
-	if longTermMetrics.sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(longTermMetrics.sampleTooOldCount))
+	if persistentSeries.sampleTooOldCount > 0 {
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(persistentSeries.sampleTooOldCount))
 	}
-	if longTermMetrics.newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(longTermMetrics.newValueForTimestampCount))
+	if persistentSeries.newValueForTimestampCount > 0 {
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(persistentSeries.newValueForTimestampCount))
 	}
-	if longTermMetrics.perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perUserSeriesLimitCount))
+	if persistentSeries.perUserSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(persistentSeries.perUserSeriesLimitCount))
 	}
-	if longTermMetrics.perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perMetricSeriesLimitCount))
+	if persistentSeries.perMetricSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(persistentSeries.perMetricSeriesLimitCount))
 	}
-	if longTermMetrics.succeededSamplesCount > 0 {
-		i.ingestionRate.Add(int64(longTermMetrics.succeededSamplesCount))
+	if persistentSeries.succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(persistentSeries.succeededSamplesCount))
 
 		switch req.Source {
 		case mimirpb.RULE:
-			db.ingestedRuleSamples.Add(int64(longTermMetrics.succeededSamplesCount))
+			db.ingestedRuleSamples.Add(int64(persistentSeries.succeededSamplesCount))
 		case mimirpb.API:
 			fallthrough
 		default:
-			db.ingestedAPISamples.Add(int64(longTermMetrics.succeededSamplesCount))
+			db.ingestedAPISamples.Add(int64(persistentSeries.succeededSamplesCount))
 		}
 	}
 
