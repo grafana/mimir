@@ -7,9 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,12 +21,15 @@ import (
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/querier/querypb"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -215,20 +220,79 @@ func BenchmarkRemoteQuerier_Decode(b *testing.B) {
 	}
 }
 
+func TestDecoders(t *testing.T) {
+	rootDir := "/Users/charleskorn/Desktop/queries"
+	originalFormatDir := path.Join(rootDir, "original-format")
+	jsonFormatDir := path.Join(rootDir, "interned-json")
+	protoFormatDir := path.Join(rootDir, "interned-protobuf")
+
+	originalFileNames, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
+	require.NoError(t, err)
+
+	for _, originalFileName := range originalFileNames {
+		relativeName, err := filepath.Rel(originalFormatDir, originalFileName)
+		require.NoError(t, err)
+
+		t.Run(relativeName, func(t *testing.T) {
+			originalBytes, err := os.ReadFile(originalFileName)
+			require.NoError(t, err)
+
+			expected, err := originalDecode(originalBytes)
+			require.NoError(t, err)
+
+			t.Run("interned-json", func(t *testing.T) {
+				jsonBytes, err := os.ReadFile(path.Join(jsonFormatDir, relativeName))
+				require.NoError(t, err)
+
+				actualJson, err := jsonDecode(jsonBytes)
+				require.NoError(t, err)
+				requireEqual(t, expected, actualJson)
+			})
+
+			t.Run("interned-protobuf", func(t *testing.T) {
+				protoBytes, err := os.ReadFile(path.Join(protoFormatDir, relativeName+".pb"))
+				require.NoError(t, err)
+
+				actualProto, err := protoDecode(protoBytes)
+				require.NoError(t, err)
+				requireEqual(t, expected, actualProto)
+			})
+		})
+	}
+}
+
+func requireEqual(t *testing.T, expected promql.Vector, actual promql.Vector) {
+	require.Len(t, actual, len(expected))
+
+	for i, actualSample := range actual {
+		expectedSample := expected[i]
+
+		if math.IsNaN(expectedSample.Point.V) && math.IsNaN(actualSample.Point.V) {
+			// NaN != NaN, so we can't assert that the two points are the same. Instead, check the other elements of the point.
+			require.Equal(t, expectedSample.Point.H, actualSample.Point.H)
+			require.Equal(t, expectedSample.Point.T, actualSample.Point.T)
+		} else {
+			require.Equal(t, expectedSample.Point, actualSample.Point)
+		}
+
+		require.ElementsMatch(t, expectedSample.Metric, actualSample.Metric)
+	}
+}
+
 func originalDecode(body []byte) (promql.Vector, error) {
-	var apiResp struct {
+	var resp struct {
 		Status    string          `json:"status"`
 		Data      json.RawMessage `json:"data"`
 		ErrorType string          `json:"errorType"`
 		Error     string          `json:"error"`
 	}
 
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&apiResp); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&resp); err != nil {
 		return nil, err
 	}
 
-	if apiResp.Status == statusError {
-		return nil, fmt.Errorf("query response error: %s", apiResp.Error)
+	if resp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", resp.Error)
 	}
 
 	v := struct {
@@ -236,9 +300,152 @@ func originalDecode(body []byte) (promql.Vector, error) {
 		Result json.RawMessage `json:"result"`
 	}{}
 
-	if err := json.Unmarshal(apiResp.Data, &v); err != nil {
+	if err := json.Unmarshal(resp.Data, &v); err != nil {
 		return nil, err
 	}
 
 	return decodeQueryResponse(v.Type, v.Result)
+}
+
+func jsonDecode(body []byte) (promql.Vector, error) {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			Type    model.ValueType `json:"resultType"`
+			Result  json.RawMessage `json:"result"`
+			Symbols []string        `json:"symbols"`
+		} `json:"data"`
+		ErrorType string `json:"errorType"`
+		Error     string `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", resp.Error)
+	}
+
+	switch resp.Data.Type {
+	case model.ValScalar:
+		return jsonDecodeScalar(resp.Data.Result)
+
+	case model.ValVector:
+		return jsonDecodeVector(resp.Data.Result, resp.Data.Symbols)
+
+	default:
+		panic(fmt.Sprintf("unknown data type: %v", resp.Data.Type))
+	}
+}
+
+func jsonDecodeScalar(raw json.RawMessage) (promql.Vector, error) {
+	var sv model.Scalar
+	if err := json.Unmarshal(raw, &sv); err != nil {
+		return nil, err
+	}
+	return scalarToPromQLVector(&sv), nil
+}
+
+type internedStringVector []internedStringSample
+
+type internedStringSample struct {
+	MetricSymbols internedSymbolPairs `json:"metric"`
+	Value         model.SamplePair    `json:"value"`
+}
+
+type internedSymbolPairs []internedSymbolRef
+
+type internedSymbolRef uint64
+
+func jsonDecodeVector(raw json.RawMessage, symbols []string) (promql.Vector, error) {
+	var resp internedStringVector
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, err
+	}
+
+	v := make(promql.Vector, 0, len(resp))
+
+	for _, s := range resp {
+		labelCount := len(s.MetricSymbols) / 2
+		metric := make(labels.Labels, labelCount)
+
+		for i := 0; i < labelCount; i++ {
+			name := symbols[s.MetricSymbols[2*i]]
+			value := symbols[s.MetricSymbols[2*i+1]]
+
+			metric[i] = labels.Label{Name: name, Value: value}
+		}
+
+		v = append(v, promql.Sample{
+			Metric: metric,
+			Point: promql.Point{
+				V: float64(s.Value.Value),
+				T: int64(s.Value.Timestamp),
+			},
+		})
+	}
+
+	return v, nil
+}
+
+func protoDecode(body []byte) (promql.Vector, error) {
+	resp := querypb.QueryResponse{}
+
+	if err := resp.Unmarshal(body); err != nil {
+		return nil, err
+	}
+
+	if resp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", resp.Error)
+	}
+
+	switch t := resp.Data.(type) {
+	case *querypb.QueryResponse_Scalar:
+		return protoDecodeScalar(t.Scalar), nil
+
+	case *querypb.QueryResponse_Vector:
+		return protoDecodeVector(t.Vector), nil
+
+	default:
+		panic(fmt.Sprintf("unknown data type: %v", t))
+	}
+}
+
+func protoDecodeScalar(s *querypb.ScalarData) promql.Vector {
+	return promql.Vector{
+		promql.Sample{
+			Point: promql.Point{
+				V: s.Value,
+				T: s.Timestamp,
+			},
+			Metric: labels.EmptyLabels(),
+		},
+	}
+}
+
+func protoDecodeVector(v *querypb.VectorData) promql.Vector {
+	vec := make(promql.Vector, len(v.Samples))
+	symbols := v.Symbols
+
+	for i, s := range v.Samples {
+		labelCount := len(s.MetricSymbols) / 2
+		metric := make(labels.Labels, labelCount)
+
+		for i := 0; i < labelCount; i++ {
+			name := symbols[s.MetricSymbols[2*i]]
+			value := symbols[s.MetricSymbols[2*i+1]]
+			metric[i] = labels.Label{Name: name, Value: value}
+		}
+
+		vec[i] = promql.Sample{
+			Point: promql.Point{
+				V: s.Value,
+				T: s.Timestamp,
+			},
+			Metric: metric,
+		}
+	}
+
+	return vec
 }
