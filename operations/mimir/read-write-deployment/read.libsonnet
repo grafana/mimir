@@ -1,6 +1,7 @@
 {
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
+  local service = $.core.v1.service,
 
   // Utils.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -51,5 +52,9 @@
     (if $._config.memberlist_ring_enabled then gossipLabel else {}),
 
   mimir_read_service: if !$._config.is_read_write_deployment_mode then null else
-    $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels),
+    $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels) +
+
+    // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
+    // correctly balances requests across all mimir-read pods.
+    service.mixin.spec.withClusterIp('None'),
 }

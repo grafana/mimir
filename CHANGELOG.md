@@ -57,7 +57,7 @@
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
 * [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
-* [BUGFIX] Fixed `mimir-write` Kubernetes service to correctly balance route requests among mimir-write pods. #3855
+* [BUGFIX] Fixed `mimir-write` and `mimir-read` Kubernetes service to correctly balance requests among pods. #3855 #3864
 * [BUGFIX] Fixed `ruler-query-frontend` and `mimir-read` gRPC server configuration to force clients to periodically re-resolve the backend addresses. #3862
 
 ### Mimirtool
