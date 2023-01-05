@@ -35,8 +35,8 @@ spec:
           imagePullPolicy: 
           args:
             - "-tests.smoke-test"
-            - "-tests.write-endpoint=http://gateway-nginx-values-mimir-nginx.citestns.svc:80"
-            - "-tests.read-endpoint=http://gateway-nginx-values-mimir-nginx.citestns.svc:80/prometheus"
+            - "-tests.write-endpoint=http://gateway-nginx-values-mimir-gateway.citestns.svc:80"
+            - "-tests.read-endpoint=http://gateway-nginx-values-mimir-gateway.citestns.svc:80/prometheus"
             - "-tests.tenant-id="
             - "-tests.write-read-series-test.num-series=1000"
             - "-tests.write-read-series-test.max-query-age=48h"
