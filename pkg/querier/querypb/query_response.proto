@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package querypb;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message QueryResponse {
+  string Status = 1; // TODO: could this be an enum rather than a string?
+  string ErrorType = 2; // TODO: could this be an enum rather than a string?
+  string Error = 3;
+
+  oneof Data {
+    VectorData Vector = 4;
+    ScalarData Scalar = 5;
+
+    // TODO: if we want to use this for all query types, we'd need to add support for matrix and string values
+  }
+}
+
+message VectorData {
+  repeated string Symbols = 1;
+  repeated Sample Samples = 2;
+}
+
+message Sample {
+  map<uint64, uint64> MetricSymbols = 1;
+  double Value = 2;
+
+  // TODO: is there a better type to use here?
+  int64 Timestamp = 3; // milliseconds
+}
+
+message ScalarData {
+  double Value = 1;
+
+  // TODO: is there a better type to use here?
+  int64 Timestamp = 2; // milliseconds
+}

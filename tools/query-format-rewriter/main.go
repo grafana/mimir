@@ -12,6 +12,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
+
+	"github.com/grafana/mimir/pkg/querier/querypb"
 )
 
 func main() {
@@ -35,18 +37,16 @@ func main() {
 	slices.Sort(originalFormatFiles)
 
 	internedJsonDir := path.Join(workingDir, "interned-json")
+	internedProtobufDir := path.Join(workingDir, "interned-protobuf")
 
-	if err := os.RemoveAll(internedJsonDir); err != nil {
-		fmt.Printf("Error cleaning output directory: %v\n", err)
-		os.Exit(1)
+	for _, d := range []string{internedJsonDir, internedProtobufDir} {
+		if err := ensureCreatedAndClean(d); err != nil {
+			fmt.Printf("Could not create output directory %v: %v\n", d, err)
+			os.Exit(1)
+		}
 	}
 
-	if err := os.Mkdir(internedJsonDir, 0700); err != nil {
-		fmt.Printf("Error creating output directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Name\tOriginal size (bytes)\tOriginal number of strings\tInterned JSON format size (bytes)\tUnique strings")
+	fmt.Println("Name\tOriginal number of strings\tUnique strings\tOriginal size (bytes)\tInterned JSON format size (bytes)\tInterned Protobuf format size (bytes)")
 
 	for _, originalFormatFile := range originalFormatFiles {
 		originalFormat, originalFormatSize, err := parseOriginalFormat(originalFormatFile)
@@ -63,6 +63,20 @@ func main() {
 			os.Exit(1)
 		}
 
+		internedJSONBytes, err := json.Marshal(internedStringsFormat)
+
+		if err != nil {
+			fmt.Printf("Error marshalling to JSON: %v\n", err)
+			os.Exit(1)
+		}
+
+		internedProtobufBytes, err := convertToProtobufResponse(internedStringsFormat)
+
+		if err != nil {
+			fmt.Printf("Error converting to protobuf: %v\n", err)
+			os.Exit(1)
+		}
+
 		relativeName, err := filepath.Rel(originalFormatDir, originalFormatFile)
 
 		if err != nil {
@@ -70,30 +84,48 @@ func main() {
 			os.Exit(1)
 		}
 
-		internedStringsBytes, err := json.Marshal(internedStringsFormat)
+		internedJSONFile := path.Join(internedJsonDir, relativeName)
 
-		if err != nil {
-			fmt.Printf("Error marshalling to JSON: %v\n", err)
+		if err := createParentAndWriteFile(internedJSONFile, internedJSONBytes); err != nil {
+			fmt.Printf("Error writing file %v: %v\n", internedJSONFile, err)
 			os.Exit(1)
 		}
 
-		internedStringsFile := path.Join(internedJsonDir, relativeName)
-		parentDir := path.Dir(internedStringsFile)
+		internedProtobufFile := path.Join(internedProtobufDir, relativeName+".pb")
 
-		if err := os.MkdirAll(parentDir, 0700); err != nil {
-			fmt.Printf("Error creating output directory: %v\n", err)
+		if err := createParentAndWriteFile(internedProtobufFile, internedProtobufBytes); err != nil {
+			fmt.Printf("Error writing file %v: %v\n", internedProtobufFile, err)
 			os.Exit(1)
 		}
 
-		if err := os.WriteFile(internedStringsFile, internedStringsBytes, 0700); err != nil {
-			fmt.Printf("Error writing file %v: %v\n", internedStringsFile, err)
-			os.Exit(1)
-		}
+		fmt.Printf("%v\t%v\t%v\t%v\t%v\t%v\n", relativeName, originalStringCount, uniqueStringCount, originalFormatSize, len(internedJSONBytes), len(internedProtobufBytes))
+	}
+}
 
-		fmt.Printf("%v\t%v\t%v\t%v\t%v\n", relativeName, originalFormatSize, originalStringCount, len(internedStringsBytes), uniqueStringCount)
+func ensureCreatedAndClean(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("cleaning directory: %w", err)
 	}
 
-	// TODO: emit protobuf format as well
+	if err := os.Mkdir(dir, 0700); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	return nil
+}
+
+func createParentAndWriteFile(file string, data []byte) error {
+	parentDir := path.Dir(file)
+
+	if err := os.MkdirAll(parentDir, 0700); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+
+	if err := os.WriteFile(file, data, 0700); err != nil {
+		return fmt.Errorf("writing file: %w", err)
+	}
+
+	return nil
 }
 
 func parseOriginalFormat(f string) (originalFormatAPIResponse, int, error) {
@@ -263,4 +295,71 @@ func (s internedStringSample) MarshalJSON() ([]byte, error) {
 
 type internedStringMetric map[internedSymbolRef]internedSymbolRef
 
-type internedSymbolRef uint
+type internedSymbolRef uint64
+
+func convertToProtobufResponse(r internedStringsAPIResponse) ([]byte, error) {
+	resp := querypb.QueryResponse{
+		Status:    r.Status,
+		ErrorType: r.ErrorType,
+		Error:     r.Error,
+	}
+
+	switch r.Data.Type {
+	case model.ValVector:
+		resp.Data = convertToProtobufVector(r.Data)
+
+	case model.ValScalar:
+		data, err := convertToProtobufScalar(r.Data)
+
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Data = data
+
+	default:
+		panic(fmt.Sprintf("unsupported data type: %v", r.Data.Type))
+	}
+
+	return resp.Marshal()
+}
+
+func convertToProtobufVector(d internedStringsData) *querypb.QueryResponse_Vector {
+	vector := d.Result.(internedStringVector)
+	samples := make([]*querypb.Sample, len(vector))
+
+	for i, s := range vector {
+		symbols := make(map[uint64]uint64, len(s.Metric))
+
+		for n, v := range s.Metric {
+			symbols[uint64(n)] = uint64(v)
+		}
+
+		samples[i] = &querypb.Sample{
+			MetricSymbols: symbols,
+			Value:         float64(s.Value),
+			Timestamp:     int64(s.Timestamp),
+		}
+	}
+
+	return &querypb.QueryResponse_Vector{
+		Vector: &querypb.VectorData{
+			Symbols: d.Symbols,
+			Samples: samples,
+		},
+	}
+}
+
+func convertToProtobufScalar(d internedStringsData) (*querypb.QueryResponse_Scalar, error) {
+	var originalScalar model.Scalar
+	if err := json.Unmarshal(d.Result.(json.RawMessage), &originalScalar); err != nil {
+		return nil, fmt.Errorf("could not decode scalar result: %w", err)
+	}
+
+	return &querypb.QueryResponse_Scalar{
+		Scalar: &querypb.ScalarData{
+			Timestamp: int64(originalScalar.Timestamp),
+			Value:     float64(originalScalar.Value),
+		},
+	}, nil
+}
