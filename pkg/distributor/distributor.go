@@ -558,8 +558,8 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) (uint32, error) {
-	return shardByAllLabels(userID, labels), nil
+func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+	return shardByAllLabels(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
@@ -1045,20 +1045,29 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			return next(ctx, pushReq)
 		}
 
+		req.EphemeralTimeseries = nil
+
 		ephemeralMetrics := d.ephemeralMetricsWatcher.metricsMapForUser(userID)
 		if ephemeralMetrics != nil {
-			for _, ts := range req.Timeseries {
-				ts.Ephemeral = false
+			req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
 
+			for ix := 0; ix < len(req.Timeseries); {
+				ts := req.Timeseries[ix]
 				metric, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 				if metric == "" {
+					ix++
 					continue
 				}
 
-				if ephemeralMetrics.IsEphemeral(metric) {
-					ts.Ephemeral = true
-					mimirpb.ClearExemplars(ts.TimeSeries)
+				if !ephemeralMetrics.IsEphemeral(metric) {
+					ix++
+					continue
 				}
+
+				// Move this series from persistent to ephemeral storage. We don't ingest exemplars for ephemeral series.
+				mimirpb.ClearExemplars(ts.TimeSeries)
+				req.EphemeralTimeseries = append(req.EphemeralTimeseries, ts)
+				req.Timeseries = append(req.Timeseries[:ix], req.Timeseries[ix+1:]...)
 			}
 		}
 
@@ -1191,7 +1200,10 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
-	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
+	pushReq.AddCleanup(func() {
+		mimirpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.EphemeralTimeseries)
+	})
 
 	return d.pushWithMiddlewares(ctx, pushReq)
 }
@@ -1226,7 +1238,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	d.updateReceivedMetrics(req, userID)
 
-	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 && len(req.Metadata) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -1235,21 +1247,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		span.SetTag("organization", userID)
 	}
 
+	// For each timeseries and ephemeral timeseries, compute a hash to distribute across ingesters
+	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
+	ephemeralSeriesKeys := d.getTokensForSeries(userID, req.EphemeralTimeseries)
+
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
-	seriesKeys := make([]uint32, 0, len(req.Timeseries))
-
-	// For each timeseries, compute a hash to distribute across ingesters
-	for _, ts := range req.Timeseries {
-		// Generate the sharding token based on the series labels without the HA replica
-		// label and dropped labels (if any)
-		key, err := d.tokenForLabels(userID, ts.Labels)
-		if err != nil {
-			return nil, err
-		}
-
-		seriesKeys = append(seriesKeys, key)
-	}
-
 	for _, m := range req.Metadata {
 		metadataKeys = append(metadataKeys, d.tokenForMetadata(userID, m.MetricFamilyName))
 	}
@@ -1267,8 +1269,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
-	keys := append(seriesKeys, metadataKeys...)
+	keys := make([]uint32, len(seriesKeys)+len(metadataKeys)+len(ephemeralSeriesKeys))
 	initialMetadataIndex := len(seriesKeys)
+	initialEphemeralIndex := initialMetadataIndex + len(metadataKeys)
+	copy(keys, seriesKeys)
+	copy(keys[initialMetadataIndex:], metadataKeys)
+	copy(keys[initialEphemeralIndex:], ephemeralSeriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
@@ -1276,17 +1282,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
+		ephemeral := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
 		var metadata []*mimirpb.MetricMetadata
 
 		for _, i := range indexes {
-			if i >= initialMetadataIndex {
+			if i >= initialEphemeralIndex {
+				ephemeral = append(ephemeral, req.EphemeralTimeseries[i-initialEphemeralIndex])
+			} else if i >= initialMetadataIndex {
 				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
 			} else {
 				timeseries = append(timeseries, req.Timeseries[i])
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, ephemeral, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1297,6 +1306,14 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, nil
+}
+
+func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+	result := make([]uint32, 0, len(series))
+	for _, ts := range series {
+		result = append(result, d.tokenForLabels(userID, ts.Labels))
+	}
+	return result
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
@@ -1338,7 +1355,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	})
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries, ephemeral []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1346,9 +1363,10 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	c := h.(ingester_client.IngesterClient)
 
 	req := mimirpb.WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     source,
+		Timeseries:          timeseries,
+		EphemeralTimeseries: ephemeral,
+		Metadata:            metadata,
+		Source:              source,
 	}
 	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {

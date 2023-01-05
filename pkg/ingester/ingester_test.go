@@ -858,14 +858,12 @@ func TestIngester_PushEphemeral(t *testing.T) {
 				mimirpb.ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
-					true,
 					nil,
 					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-					true,
 					nil,
 					[]*mimirpb.MetricMetadata{
 						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
@@ -890,9 +888,6 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# HELP cortex_ingester_memory_ephemeral_series_removed_total The total number of series that were removed per user.
 					# TYPE cortex_ingester_memory_ephemeral_series_removed_total counter
 					cortex_ingester_memory_ephemeral_series_removed_total{user="test"} 0
-					# HELP cortex_ingester_active_series Number of currently active series per user.
-        	        # TYPE cortex_ingester_active_series gauge
-        	        cortex_ingester_active_series{user="test"} 1
 					# HELP cortex_ingester_memory_users The current number of users in memory.
 					# TYPE cortex_ingester_memory_users gauge
 					cortex_ingester_memory_users 1

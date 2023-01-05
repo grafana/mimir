@@ -54,11 +54,10 @@ func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exempla
 	return req
 }
 
-func ToWriteRequestEphemeral(lbls []labels.Labels, samples []Sample, ephemeral bool, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+func ToWriteRequestEphemeral(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	req := ToWriteRequest(lbls, samples, exemplars, metadata, source)
-	for i := range req.Timeseries {
-		req.Timeseries[i].Ephemeral = ephemeral
-	}
+	req.EphemeralTimeseries = req.Timeseries
+	req.Timeseries = nil
 	return req
 }
 

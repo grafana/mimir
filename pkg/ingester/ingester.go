@@ -686,7 +686,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 {
+	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -721,47 +721,146 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 	)
 
-	var hasEphemeralSamples, hasPersistentSamples bool
-	for _, ts := range req.Timeseries {
-		if !hasEphemeralSamples && ts.Ephemeral {
-			hasEphemeralSamples = true
-		}
-		if !hasPersistentSamples && !ts.Ephemeral {
-			hasPersistentSamples = true
-		}
-		if hasEphemeralSamples && hasPersistentSamples {
-			// exit loop early.
-			break
-		}
-	}
-
 	// Walk the samples, appending them to the users database
 	var persistentApp, ephemeralApp extendedAppender
-	if hasPersistentSamples {
+	if len(req.Timeseries) > 0 {
 		persistentApp = db.Appender(ctx).(extendedAppender)
 	}
-	if hasEphemeralSamples {
+	if len(req.EphemeralTimeseries) > 0 {
 		a := db.EphemeralAppender(ctx)
 		if a != nil {
 			ephemeralApp = a.(extendedAppender)
 		}
 	}
 
+	rollback := func() {
+		if persistentApp != nil {
+			if rollbackErr := persistentApp.Rollback(); rollbackErr != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
+			}
+		}
+		if ephemeralApp != nil {
+			if rollbackErr := ephemeralApp.Rollback(); rollbackErr != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral on error", "user", userID, "err", rollbackErr)
+			}
+		}
+	}
+
 	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	for _, ts := range req.Timeseries {
-		var perSeries *pushMetrics
+	err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, &longTermMetrics, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, true, db)
+	if err != nil {
+		rollback()
+		return nil, err
+	}
+	err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, &ephemeralMetrics, oooTW, minAppendTime, minAppendTimeAvailable, updateFirstPartial, startAppend, false, db)
+	if err != nil {
+		rollback()
+		return nil, err
+	}
 
-		var app extendedAppender
-		if ts.Ephemeral {
-			app = ephemeralApp
-			perSeries = &ephemeralMetrics
-		} else {
-			app = persistentApp
-			perSeries = &longTermMetrics
+	// At this point all samples have been added to the appender, so we can track the time it took.
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", longTermMetrics.succeededSamplesCount,
+		"failedSamplesCount", longTermMetrics.failedSamplesCount,
+		"succeededExemplarsCount", longTermMetrics.succeededExemplarsCount,
+		"failedExemplarsCount", longTermMetrics.failedExemplarsCount,
+
+		"ephemeralSucceededSamplesCount", ephemeralMetrics.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralMetrics.failedSamplesCount,
+		"ephemeralSucceededExemplarsCount", ephemeralMetrics.succeededExemplarsCount,
+		"ephemeralFailedExemplarsCount", ephemeralMetrics.failedExemplarsCount,
+	)
+
+	startCommit := time.Now()
+	if ephemeralApp != nil {
+		if err := ephemeralApp.Commit(); err != nil {
+			rollback()
+			return nil, wrapWithUser(err, userID)
 		}
+		ephemeralApp = nil
+	}
+	if persistentApp != nil {
+		if err := persistentApp.Commit(); err != nil {
+			return nil, wrapWithUser(err, userID)
+		}
+		persistentApp = nil
+	}
 
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
+
+	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
+	if longTermMetrics.succeededSamplesCount > 0 || ephemeralMetrics.succeededSamplesCount > 0 {
+		db.setLastUpdate(time.Now())
+	}
+
+	// Increment metrics only if the samples have been successfully committed.
+	// If the code didn't reach this point, it means that we returned an error
+	// which will be converted into an HTTP 5xx and the client should/will retry.
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(longTermMetrics.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(longTermMetrics.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(longTermMetrics.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(longTermMetrics.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(longTermMetrics.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(longTermMetrics.succeededExemplarsCount))
+
+	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralMetrics.succeededSamplesCount))
+	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralMetrics.failedSamplesCount))
+
+	if longTermMetrics.sampleOutOfBoundsCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfBoundsCount))
+	}
+	if longTermMetrics.sampleOutOfOrderCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfOrderCount))
+	}
+	if longTermMetrics.sampleTooOldCount > 0 {
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(longTermMetrics.sampleTooOldCount))
+	}
+	if longTermMetrics.newValueForTimestampCount > 0 {
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(longTermMetrics.newValueForTimestampCount))
+	}
+	if longTermMetrics.perUserSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perUserSeriesLimitCount))
+	}
+	if longTermMetrics.perMetricSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perMetricSeriesLimitCount))
+	}
+	if longTermMetrics.succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(longTermMetrics.succeededSamplesCount))
+
+		switch req.Source {
+		case mimirpb.RULE:
+			db.ingestedRuleSamples.Add(int64(longTermMetrics.succeededSamplesCount))
+		case mimirpb.API:
+			fallthrough
+		default:
+			db.ingestedAPISamples.Add(int64(longTermMetrics.succeededSamplesCount))
+		}
+	}
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, perSeries *pushMetrics,
+	oooTW model.Duration, minAppendTime int64, minAppendTimeAvailable bool, updateFirstPartial func(errFn func() error), startAppend time.Time,
+	updateActiveSeries bool, db *userTSDB,
+) error {
+	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -851,22 +950,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 				continue
 			}
 
-			// The error looks an issue on our side, so we should rollback
-			if persistentApp != nil {
-				if rollbackErr := persistentApp.Rollback(); rollbackErr != nil {
-					level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
-				}
-			}
-			if ephemeralApp != nil {
-				if rollbackErr := ephemeralApp.Rollback(); rollbackErr != nil {
-					level.Warn(i.logger).Log("msg", "failed to rollback ephemeral on error", "user", userID, "err", rollbackErr)
-				}
-			}
-
-			return nil, wrapWithUser(err, userID)
+			return wrapWithUser(err, userID)
 		}
 
-		if i.cfg.ActiveSeriesMetricsEnabled && perSeries.succeededSamplesCount > oldSucceededSamplesCount {
+		if updateActiveSeries && i.cfg.ActiveSeriesMetricsEnabled && perSeries.succeededSamplesCount > oldSucceededSamplesCount {
 			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
@@ -890,6 +977,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
 					}
 
+					var err error
 					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
 						perSeries.succeededExemplarsCount++
 						continue
@@ -904,98 +992,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			}
 		}
 	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	level.Debug(spanlog).Log(
-		"event", "start commit",
-		"succeededSamplesCount", longTermMetrics.succeededSamplesCount,
-		"failedSamplesCount", longTermMetrics.failedSamplesCount,
-		"succeededExemplarsCount", longTermMetrics.succeededExemplarsCount,
-		"failedExemplarsCount", longTermMetrics.failedExemplarsCount,
-
-		"ephemeralSucceededSamplesCount", ephemeralMetrics.succeededSamplesCount,
-		"ephemeralFailedSamplesCount", ephemeralMetrics.failedSamplesCount,
-		"ephemeralSucceededExemplarsCount", ephemeralMetrics.succeededExemplarsCount,
-		"ephemeralFailedExemplarsCount", ephemeralMetrics.failedExemplarsCount,
-	)
-
-	startCommit := time.Now()
-	if hasEphemeralSamples {
-		if err := ephemeralApp.Commit(); err != nil {
-			return nil, wrapWithUser(err, userID)
-		}
-	}
-	if hasPersistentSamples {
-		if err := persistentApp.Commit(); err != nil {
-			return nil, wrapWithUser(err, userID)
-		}
-	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
-
-	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if longTermMetrics.succeededSamplesCount > 0 || ephemeralMetrics.succeededSamplesCount > 0 {
-		db.setLastUpdate(time.Now())
-	}
-
-	// Increment metrics only if the samples have been successfully committed.
-	// If the code didn't reach this point, it means that we returned an error
-	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(longTermMetrics.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(longTermMetrics.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(longTermMetrics.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(longTermMetrics.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(longTermMetrics.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(longTermMetrics.succeededExemplarsCount))
-
-	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralMetrics.succeededSamplesCount))
-	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralMetrics.failedSamplesCount))
-
-	if longTermMetrics.sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfBoundsCount))
-	}
-	if longTermMetrics.sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfOrderCount))
-	}
-	if longTermMetrics.sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(longTermMetrics.sampleTooOldCount))
-	}
-	if longTermMetrics.newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(longTermMetrics.newValueForTimestampCount))
-	}
-	if longTermMetrics.perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perUserSeriesLimitCount))
-	}
-	if longTermMetrics.perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perMetricSeriesLimitCount))
-	}
-	if longTermMetrics.succeededSamplesCount > 0 {
-		i.ingestionRate.Add(int64(longTermMetrics.succeededSamplesCount))
-
-		switch req.Source {
-		case mimirpb.RULE:
-			db.ingestedRuleSamples.Add(int64(longTermMetrics.succeededSamplesCount))
-		case mimirpb.API:
-			fallthrough
-		default:
-			db.ingestedAPISamples.Add(int64(longTermMetrics.succeededSamplesCount))
-		}
-	}
-
-	if firstPartialErr != nil {
-		code := http.StatusBadRequest
-		var ve *validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
-		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
-	}
-
-	return &mimirpb.WriteResponse{}, nil
+	return nil
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
@@ -2391,7 +2388,10 @@ func (i *Ingester) checkRunning() error {
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
-	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
+	pushReq.AddCleanup(func() {
+		mimirpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.EphemeralTimeseries)
+	})
 	return i.PushWithCleanup(ctx, pushReq)
 }
 
