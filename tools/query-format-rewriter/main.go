@@ -116,7 +116,7 @@ func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (intern
 	data, originalStringCount, uniqueStringCount, err := convertDataToInternedStringsFormat(o.Data)
 
 	if err != nil {
-		return internedStringsAPIResponse{}, 0, 0, nil
+		return internedStringsAPIResponse{}, 0, 0, err
 	}
 
 	return internedStringsAPIResponse{
@@ -129,12 +129,24 @@ func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (intern
 
 func convertDataToInternedStringsFormat(o originalFormatData) (internedStringsData, int, int, error) {
 	switch o.Type {
+	case model.ValScalar:
+		return convertScalarDataToInternedStringsFormat(o.Result)
+
 	case model.ValVector:
 		return convertVectorDataToInternedStringsFormat(o.Result)
 
 	default:
 		return internedStringsData{}, 0, 0, fmt.Errorf("unsupported value type %v", o.Type)
 	}
+}
+
+func convertScalarDataToInternedStringsFormat(raw json.RawMessage) (internedStringsData, int, int, error) {
+	// Scalars have no labels, so there is no conversion required.
+
+	return internedStringsData{
+		Type:   model.ValScalar,
+		Result: raw,
+	}, 0, 0, nil
 }
 
 // TODO: for protobuf, we might get a small payload size reduction if we use lower symbol ordinals for
@@ -213,7 +225,7 @@ type internedStringsAPIResponse struct {
 type internedStringsData struct {
 	Type    model.ValueType `json:"resultType"`
 	Result  any             `json:"result"`
-	Symbols []string        `json:"symbols"`
+	Symbols []string        `json:"symbols,omitempty"`
 }
 
 type internedStringVector []internedStringSample
