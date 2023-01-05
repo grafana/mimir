@@ -60,9 +60,9 @@ require (
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
-	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.54.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.57.2
 	github.com/thanos-io/objstore v0.0.0-20221213124554-e4d8ba6bc6f3
-	go.opentelemetry.io/collector/pdata v0.54.0
+	go.opentelemetry.io/collector/pdata v0.57.2
 	go.opentelemetry.io/otel v1.11.1
 	go.opentelemetry.io/otel/trace v1.11.1
 	go.uber.org/multierr v1.8.0
@@ -179,6 +179,7 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/ncw/swift v1.0.53 // indirect
 	github.com/oklog/run v1.1.0 // indirect
+	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.57.2 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
@@ -191,7 +192,7 @@ require (
 	github.com/sercand/kuberesolver v2.4.0+incompatible // indirect
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
-	github.com/spf13/cobra v1.4.0 // indirect
+	github.com/spf13/cobra v1.5.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
@@ -203,8 +204,8 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
 	go.mongodb.org/mongo-driver v1.11.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.opentelemetry.io/collector v0.54.0 // indirect
-	go.opentelemetry.io/collector/semconv v0.54.0 // indirect
+	go.opentelemetry.io/collector v0.57.2 // indirect
+	go.opentelemetry.io/collector/semconv v0.57.2 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.36.4 // indirect
 	go.opentelemetry.io/otel/metric v0.33.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
