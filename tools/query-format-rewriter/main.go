@@ -220,12 +220,19 @@ type internedStringSample struct {
 // This is based on model.Sample - it encodes the value as an array to avoid including lots of instances of
 // "value" and "timestamp" in the final JSON output.
 func (s internedStringSample) MarshalJSON() ([]byte, error) {
+	// Convert Metric to a slice to avoid encoding the label name ordinals as strings
+	// (JSON requires that object keys be strings)
+	metricAsSlice := make([]internedSymbolRef, 0, len(s.Metric)*2)
+
+	for n, v := range s.Metric {
+		metricAsSlice = append(metricAsSlice, n, v)
+	}
+
 	v := struct {
-		Metric internedStringMetric `json:"metric"`
-		Value  model.SamplePair     `json:"value"`
+		Metric []internedSymbolRef `json:"metric"`
+		Value  model.SamplePair    `json:"value"`
 	}{
-		// TODO: convert Metric to an array to avoid encoding the label name ordinals as strings
-		Metric: s.Metric,
+		Metric: metricAsSlice,
 		Value: model.SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
