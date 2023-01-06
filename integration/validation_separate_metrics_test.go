@@ -31,7 +31,7 @@ func TestValidateSeparateMetrics(t *testing.T) {
 		BlocksStorageS3Flags(),
 	)
 
-	flags["-validation.separate-metrics-label"] = "group_1"
+	flags["-validation.separate-metrics-group-label"] = "group_1"
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
@@ -148,7 +148,7 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 		BlocksStorageS3Flags(),
 	)
 
-	flags["-validation.separate-metrics-label"] = "separate_metrics_group"
+	flags["-validation.separate-metrics-group-label"] = "separate_metrics_group"
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
@@ -218,7 +218,7 @@ func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 		BlocksStorageS3Flags(),
 	)
 
-	flags["-validation.separate-metrics-label"] = "separate_metrics_group"
+	flags["-validation.separate-metrics-group-label"] = "separate_metrics_group"
 	flags["-max-groups-per-user"] = strconv.Itoa(10)
 
 	// Start dependencies.

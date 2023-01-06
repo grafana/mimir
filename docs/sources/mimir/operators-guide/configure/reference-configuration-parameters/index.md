@@ -2486,12 +2486,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# (experimental) Label used to further separate specific distributor and
-# ingester metrics adding a 'group' label. For each write request, the group is
-# obtained from the first non-empty group label from the incoming list of
-# timeseries.
-# CLI flag: -validation.separate-metrics-label
-[separate_metrics_label: <string> | default = ""]
+# (experimental) Label used to define the group label for metrics separation.
+# For each write request, the group is obtained from the first non-empty group
+# label from the incoming list of timeseries. Specific distributor and ingester
+# metrics will be further separated adding a 'group' label with group label's
+# value.
+# CLI flag: -validation.separate-metrics-group-label
+[separate_metrics_group_label: <string> | default = ""]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and

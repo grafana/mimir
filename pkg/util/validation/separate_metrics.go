@@ -14,7 +14,7 @@ func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimese
 		return ""
 	}
 
-	groupLabel := o.SeparateMetricsLabel(userID)
+	groupLabel := o.SeparateMetricsGroupLabel(userID)
 	if groupLabel == "" {
 		// If not set, label value will be "" and dropped by Prometheus
 		return groupLabel

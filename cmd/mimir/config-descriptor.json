@@ -3076,12 +3076,12 @@
         },
         {
           "kind": "field",
-          "name": "separate_metrics_label",
+          "name": "separate_metrics_group_label",
           "required": false,
-          "desc": "Label used to further separate specific distributor and ingester metrics adding a 'group' label. For each write request, the group is obtained from the first non-empty group label from the incoming list of timeseries.",
+          "desc": "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "validation.separate-metrics-label",
+          "fieldFlag": "validation.separate-metrics-group-label",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
