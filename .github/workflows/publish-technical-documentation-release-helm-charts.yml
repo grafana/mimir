@@ -77,4 +77,4 @@ jobs:
         github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
         source_folder: "docs/sources/helm-charts/mimir-distributed"
         # Append ".x" to target to produce a v<major>.<minor>.x directory.
-        target_folder: "content/docs/helm-charts/mimir-distributedp/${{ steps.target.outputs.target }}.x"
+        target_folder: "content/docs/helm-charts/mimir-distributed/${{ steps.target.outputs.target }}.x"
