@@ -22,101 +22,119 @@ import (
 )
 
 func TestValidateSeparateMetrics(t *testing.T) {
-	tests := map[string]struct {
-		labelToSearch string
-		configFlagSet bool
-		metricExists  bool
-	}{
-		"No separate metrics label present": {
-			labelToSearch: "",
-			configFlagSet: false,
-			metricExists:  true,
-		},
-		"Check for correct label": {
-			labelToSearch: "test-group",
-			configFlagSet: true,
-			metricExists:  true,
-		},
-		"Check for incorrect label": {
-			labelToSearch: "incorrect-group",
-			configFlagSet: true,
-			metricExists:  false,
-		},
-	}
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+	)
 
-			flags := mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-			)
+	flags["-validation.separate-metrics-label"] = "group_1"
 
-			if testData.configFlagSet {
-				flags["-validation.separate-metrics-label"] = "group_1"
-			}
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(consul, minio))
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
-			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
-			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
-			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-			// Wait until distributor has updated the ring.
-			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+	// Wait until ingesters have heartbeated the ring after all ingesters were active,
+	// in order to update the number of instances. Since we have no metric, we have to
+	// rely on a ugly sleep.
+	time.Sleep(2 * time.Second)
 
-			// Wait until ingesters have heartbeated the ring after all ingesters were active,
-			// in order to update the number of instances. Since we have no metric, we have to
-			// rely on a ugly sleep.
-			time.Sleep(2 * time.Second)
+	now := time.Now()
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+	require.NoError(t, err)
 
-			now := time.Now()
-			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
-			require.NoError(t, err)
+	// Push an invalid metric to increment cortex_discarded_samples_total
+	series, _, _ := generateSeries("TestMetric", now, prompb.Label{
+		Name:  "Test|Invalid|Label|Char",
+		Value: "123",
+	}, prompb.Label{
+		Name:  "group_1",
+		Value: "test-group",
+	})
 
-			// Push an invalid metric to increment cortex_discarded_samples_total
-			series, _, _ := generateSeries("TestMetric", now, prompb.Label{
-				Name:  "Test|Invalid|Label|Char",
-				Value: "123",
-			}, prompb.Label{
-				Name:  "group_1",
-				Value: "test-group",
-			})
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 400, res.StatusCode)
 
-			res, err := client.Push(series)
-			require.NoError(t, err)
-			require.Equal(t, 400, res.StatusCode)
+	metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "test-group")),
+		e2e.WaitMissingMetrics)
 
-			metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
-				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", testData.labelToSearch)),
-				e2e.WaitMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(metricNumSeries))
+	require.Equal(t, float64(1), metricNumSeries[0])
 
-			if !testData.metricExists {
-				require.ErrorContains(t, err, "metric not found")
-				// Check the counter was at least updated, regardless of label
-				var metricNumSeriesNoLabel []float64
-				metricNumSeriesNoLabel, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"})
-				require.NoError(t, err)
-				require.Equal(t, []float64{1}, metricNumSeriesNoLabel)
-				return
-			}
+	// Push series with no group label
+	series, _, _ = generateSeries("TestMetric", now, prompb.Label{
+		Name:  "Test|Invalid|Label|Char",
+		Value: "123",
+	})
 
-			require.NoError(t, err)
-			require.Equal(t, 1, len(metricNumSeries))
-			require.Equal(t, float64(1), metricNumSeries[0])
-		})
-	}
+	res, err = client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 400, res.StatusCode)
+
+	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "")),
+		e2e.WaitMissingMetrics)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(metricNumSeries))
+	require.Equal(t, float64(1), metricNumSeries[0])
+
+	// Push two series, group label only present in second series
+	series1, _, _ := generateSeries("TestMetric", now, prompb.Label{
+		Name:  "Test|Invalid|Label|Char",
+		Value: "123",
+	})
+
+	res, err = client.Push(series1)
+	require.NoError(t, err)
+	require.Equal(t, 400, res.StatusCode)
+
+	series2, _, _ := generateSeries("TestMetric", now, prompb.Label{
+		Name:  "Test|Invalid|Label|Char",
+		Value: "123",
+	}, prompb.Label{
+		Name:  "group_1",
+		Value: "second-series",
+	})
+
+	res, err = client.Push(series2)
+	require.NoError(t, err)
+	require.Equal(t, 400, res.StatusCode)
+
+	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "")),
+		e2e.WaitMissingMetrics)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(metricNumSeries))
+	require.Equal(t, float64(2), metricNumSeries[0])
+
+	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "second-series")),
+		e2e.WaitMissingMetrics)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(metricNumSeries))
+	require.Equal(t, float64(1), metricNumSeries[0])
 }
 
 func TestPushMultipleInvalidLabels(t *testing.T) {
@@ -189,7 +207,7 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 	require.Equal(t, float64(5), metricNumSeriesEven[0])
 }
 
-func TestSeparateMetricsInactiveGroups(t *testing.T) {
+func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -257,6 +275,17 @@ func TestSeparateMetricsInactiveGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 400, res.StatusCode)
 
+	for i := 0; i < 10; i++ {
+		metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", strconv.Itoa(i))),
+			e2e.WaitMissingMetrics)
+
+		require.NoError(t, err)
+		require.Equal(t, 1, len(metricNumSeries))
+		require.Equal(t, float64(1), metricNumSeries[0])
+
+	}
+
 	metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "other")),
 		e2e.WaitMissingMetrics)
@@ -264,5 +293,4 @@ func TestSeparateMetricsInactiveGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(metricNumSeries))
 	require.Equal(t, float64(1), metricNumSeries[0])
-
 }

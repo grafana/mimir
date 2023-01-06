@@ -292,6 +292,10 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 		return
 	}
 
+	if t.ActiveGroupsCleanup != nil {
+		t.ActiveGroupsCleanup.Register(t.Distributor)
+	}
+
 	return t.Distributor, nil
 }
 
@@ -464,7 +468,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 }
 
 func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
-	t.ActiveGroupsCleanup = util.NewActiveGroupsCleanupWithDefaultValues(t.Cfg.MaxGroupsPerUser, t.Distributor.RemoveGroupMetricsForUser, t.Ingester.RemoveGroupMetricsForUser)
+	t.ActiveGroupsCleanup = util.NewActiveGroupsCleanupWithDefaultValues(t.Cfg.MaxGroupsPerUser)
 
 	return t.ActiveGroupsCleanup, nil
 }
@@ -482,6 +486,10 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
+	}
+
+	if t.ActiveGroupsCleanup != nil {
+		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
 
 	return t.Ingester, nil

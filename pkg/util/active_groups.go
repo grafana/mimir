@@ -24,8 +24,8 @@ func NewActiveGroups(maxGroupsPerUser int) *ActiveGroups {
 	}
 }
 
-// UpdateGroupTimestampForUser function is only guaranteed to update to timestamp
-// provided even if it is smaller than the existing value
+// UpdateGroupTimestampForUser function is only guaranteed to update to the
+// timestamp provided even if it is smaller than the existing value
 func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, now time.Time) {
 	ts := now.UnixNano()
 	ag.mu.RLock()
@@ -45,9 +45,7 @@ func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, now ti
 		return
 	}
 
-	groupTs := ag.timestampsPerUser[userID][group]
-
-	if groupTs != nil {
+	if groupTs := ag.timestampsPerUser[userID][group]; groupTs != nil {
 		groupTs.Store(ts)
 		return
 	}
@@ -101,6 +99,10 @@ type ActiveGroupsCleanupService struct {
 	inactiveTimeout time.Duration
 }
 
+type UserGroupMetricsCleaner interface {
+	RemoveGroupMetricsForUser(userID, group string)
+}
+
 func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duration, maxGroupsPerUser int, cleanupFns ...func(string, string)) *ActiveGroupsCleanupService {
 	s := &ActiveGroupsCleanupService{
 		activeGroups:    NewActiveGroups(maxGroupsPerUser),
@@ -147,4 +149,8 @@ func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *ActiveGroupsCleanupService) Register(metricsCleaner UserGroupMetricsCleaner) {
+	s.cleanupFuncs = append(s.cleanupFuncs, metricsCleaner.RemoveGroupMetricsForUser)
 }
