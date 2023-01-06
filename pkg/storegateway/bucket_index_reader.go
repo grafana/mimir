@@ -169,52 +169,12 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
-	var (
-		postingGroups []*postingGroup
-		allRequested  = false
-		hasAdds       = false
-		keys          []labels.Label
-	)
-
-	// NOTE: Derived from tsdb.PostingsForMatchers.
-	for _, m := range ms {
-		// Each group is separate to tell later what postings are intersecting with what.
-		pg, err := toPostingGroup(r.block.indexHeaderReader, m)
-		if err != nil {
-			return nil, errors.Wrap(err, "toPostingGroup")
-		}
-
-		// If this groups adds nothing, it's an empty group. We can shortcut this, since intersection with empty
-		// postings would return no postings anyway.
-		// E.g. label="non-existing-value" returns empty group.
-		if !pg.addAll && len(pg.addKeys) == 0 {
-			return nil, nil
-		}
-
-		postingGroups = append(postingGroups, pg)
-		allRequested = allRequested || pg.addAll
-		hasAdds = hasAdds || len(pg.addKeys) > 0
-
-		// Postings returned by fetchPostings will be in the same order as keys
-		// so it's important that we iterate them in the same order later.
-		// We don't have any other way of pairing keys and fetched postings.
-		keys = append(keys, pg.addKeys...)
-		keys = append(keys, pg.removeKeys...)
+	postingGroups, keys, err := toPostingGroups(ms, r.block.indexHeaderReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "toPostingGroups")
 	}
-
-	if len(postingGroups) == 0 {
+	if len(keys) == 0 {
 		return nil, nil
-	}
-
-	// We only need special All postings if there are no other adds. If there are, we can skip fetching
-	// special All postings completely.
-	if allRequested && !hasAdds {
-		// add group with label to fetch "special All postings".
-		name, value := index.AllPostingsKey()
-		allPostingsLabel := labels.Label{Name: name, Value: value}
-
-		postingGroups = append(postingGroups, newPostingGroup(true, []labels.Label{allPostingsLabel}, nil))
-		keys = append(keys, allPostingsLabel)
 	}
 
 	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
@@ -266,6 +226,95 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	return ps, nil
+}
+
+// toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
+// each postingGroup's addKeys and removeKeys exist in the index. The order of the returned labels
+// is the same as iterating through the posting groups and for each group adding all addKeys and then adding all removeKeys.
+func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, []labels.Label, error) {
+	var (
+		postingGroups     = make([]postingGroup, 0, len(ms))
+		lazyPostingGroups []lazyPostingGroup
+		allRequested      = false
+		hasAdds           = false
+	)
+
+	// NOTE: Derived from tsdb.PostingsForMatchers.
+	for _, m := range ms {
+		// Each group is separate to tell later what postings are intersecting with what.
+		pg, lazyPg, isLazy := toPostingGroup(m)
+		if isLazy {
+			lazyPostingGroups = append(lazyPostingGroups, lazyPg)
+		} else {
+			postingGroups = append(postingGroups, pg)
+		}
+	}
+
+	// Next we check whether the posting groups won't select an empty set of postings.
+	// We start with the ones that have a known set of values because it's less expensive to check them in
+	// the index header.
+	numKeys := 0
+	for i, pg := range postingGroups {
+		var err error
+		pg, err = pg.filterNonExistentKeys(indexhdr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "filtering posting group")
+		}
+		postingGroups[i] = pg
+
+		// If this groups adds nothing, it's an empty group. We can shortcut this, since intersection with empty
+		// postings would return no postings anyway.
+		// E.g. label="non-existing-value" returns empty group.
+		if !pg.addAll && len(pg.addKeys) == 0 {
+			return nil, nil, nil
+		}
+
+		allRequested = allRequested || pg.addAll
+		hasAdds = hasAdds || len(pg.addKeys) > 0
+
+		numKeys += len(pg.addKeys)
+		numKeys += len(pg.removeKeys)
+	}
+
+	// We continue with the posting groups that require to scan all the label values from the index.
+	for _, lazyPg := range lazyPostingGroups {
+		pg, err := lazyPg.toPostingGroup(indexhdr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "toPostingGroup")
+		}
+		postingGroups = append(postingGroups, pg)
+		// If this groups adds nothing, it's an empty group. We can shortcut this, since intersection with empty
+		// postings would return no postings anyway.
+		// E.g. label="non-existing-value" returns empty group.
+		if !pg.addAll && len(pg.addKeys) == 0 {
+			return nil, nil, nil
+		}
+
+		allRequested = allRequested || pg.addAll
+		hasAdds = hasAdds || len(pg.addKeys) > 0
+
+		numKeys += len(pg.addKeys)
+		numKeys += len(pg.removeKeys)
+	}
+
+	// We only need special All postings if there are no other adds. If there are, we can skip fetching
+	// special All postings completely.
+	if allRequested && !hasAdds {
+		// add group with label to fetch "special All postings".
+		name, value := index.AllPostingsKey()
+		allPostingsLabel := labels.Label{Name: name, Value: value}
+
+		postingGroups = append(postingGroups, newPostingGroup(true, []labels.Label{allPostingsLabel}, nil))
+		numKeys++
+	}
+
+	keys := make([]labels.Label, 0, numKeys)
+	for _, pg := range postingGroups {
+		keys = append(keys, pg.addKeys...)
+		keys = append(keys, pg.removeKeys...)
+	}
+
+	return postingGroups, keys, nil
 }
 
 // FetchPostings fills postings requested by posting groups.
