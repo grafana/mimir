@@ -70,7 +70,9 @@ jobs:
         repository: "grafana/website"
         branch: "master"
         host: "github.com"
-        github_pat: "${{ secrets.GH_BOT_ACCESS_TOKEN }}"
+        # PUBLISH_TO_WEBSITE_MIMIR is a fine-grained GitHub Personal Access Token that expires.
+        # It must be updated in the grafanabot GitHub account.
+        github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
         source_folder: "docs/sources/mimir"
         # Append ".x" to target to produce a v<major>.<minor>.x directory.
         target_folder: "content/docs/mimir/${{ steps.target.outputs.target }}.x"
