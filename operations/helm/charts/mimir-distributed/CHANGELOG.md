@@ -104,6 +104,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
 * [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
 
+## 3.3.0
+
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.4.0. #3445
+
 ## 3.2.0
 
 * [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
