@@ -627,3 +627,22 @@ func TestCustomTrackerConfigDeserialize(t *testing.T) {
 	assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
 	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
 }
+
+func TestUnmarshalInvalidMetricRelabelConfig(t *testing.T) {
+	t.Run("yaml", func(t *testing.T) {
+		limits := Limits{}
+		cfg := `
+metric_relabel_configs:
+  -
+`
+		err := yaml.Unmarshal([]byte(cfg), &limits)
+		require.ErrorContains(t, err, "invalid metric_relabel_configs")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		limits := Limits{}
+		cfg := `{"metric_relabel_configs": [null]}`
+		err := json.Unmarshal([]byte(cfg), &limits)
+		require.ErrorContains(t, err, "invalid metric_relabel_configs")
+	})
+}
