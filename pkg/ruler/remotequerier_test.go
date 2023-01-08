@@ -223,7 +223,6 @@ func BenchmarkRemoteQuerier_Decode(b *testing.B) {
 func TestDecoders(t *testing.T) {
 	rootDir := "/Users/charleskorn/Desktop/queries"
 	originalFormatDir := path.Join(rootDir, "original-format")
-	jsonFormatDir := path.Join(rootDir, "interned-json")
 	protoFormatDir := path.Join(rootDir, "interned-protobuf")
 
 	originalFileNames, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
@@ -239,15 +238,6 @@ func TestDecoders(t *testing.T) {
 
 			expected, err := originalDecode(originalBytes)
 			require.NoError(t, err)
-
-			t.Run("interned-json", func(t *testing.T) {
-				jsonBytes, err := os.ReadFile(path.Join(jsonFormatDir, relativeName))
-				require.NoError(t, err)
-
-				actualJson, err := jsonDecode(jsonBytes)
-				require.NoError(t, err)
-				requireEqual(t, expected, actualJson)
-			})
 
 			t.Run("interned-protobuf", func(t *testing.T) {
 				protoBytes, err := os.ReadFile(path.Join(protoFormatDir, relativeName+".pb"))
@@ -305,88 +295,6 @@ func originalDecode(body []byte) (promql.Vector, error) {
 	}
 
 	return decodeQueryResponse(v.Type, v.Result)
-}
-
-func jsonDecode(body []byte) (promql.Vector, error) {
-	var resp struct {
-		Status string `json:"status"`
-		Data   struct {
-			Type    model.ValueType `json:"resultType"`
-			Result  json.RawMessage `json:"result"`
-			Symbols []string        `json:"symbols"`
-		} `json:"data"`
-		ErrorType string `json:"errorType"`
-		Error     string `json:"error"`
-	}
-
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-
-	if resp.Status == statusError {
-		return nil, fmt.Errorf("query response error: %s", resp.Error)
-	}
-
-	switch resp.Data.Type {
-	case model.ValScalar:
-		return jsonDecodeScalar(resp.Data.Result)
-
-	case model.ValVector:
-		return jsonDecodeVector(resp.Data.Result, resp.Data.Symbols)
-
-	default:
-		panic(fmt.Sprintf("unknown data type: %v", resp.Data.Type))
-	}
-}
-
-func jsonDecodeScalar(raw json.RawMessage) (promql.Vector, error) {
-	var sv model.Scalar
-	if err := json.Unmarshal(raw, &sv); err != nil {
-		return nil, err
-	}
-	return scalarToPromQLVector(&sv), nil
-}
-
-type internedStringVector []internedStringSample
-
-type internedStringSample struct {
-	MetricSymbols internedSymbolPairs `json:"metric"`
-	Value         model.SamplePair    `json:"value"`
-}
-
-type internedSymbolPairs []internedSymbolRef
-
-type internedSymbolRef uint64
-
-func jsonDecodeVector(raw json.RawMessage, symbols []string) (promql.Vector, error) {
-	var resp internedStringVector
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, err
-	}
-
-	v := make(promql.Vector, 0, len(resp))
-
-	for _, s := range resp {
-		labelCount := len(s.MetricSymbols) / 2
-		metric := make(labels.Labels, labelCount)
-
-		for i := 0; i < labelCount; i++ {
-			name := symbols[s.MetricSymbols[2*i]]
-			value := symbols[s.MetricSymbols[2*i+1]]
-
-			metric[i] = labels.Label{Name: name, Value: value}
-		}
-
-		v = append(v, promql.Sample{
-			Metric: metric,
-			Point: promql.Point{
-				V: float64(s.Value.Value),
-				T: int64(s.Value.Timestamp),
-			},
-		})
-	}
-
-	return v, nil
 }
 
 func protoDecode(body []byte) (promql.Vector, error) {
