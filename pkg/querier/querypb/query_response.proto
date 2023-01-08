@@ -12,7 +12,7 @@ option (gogoproto.unmarshaler_all) = true;
 // HACK
 // I've thrown this definition together without thinking too deeply about it.
 // Things we'd need to consider, but I haven't thought through:
-// - backwards compatibility considerations if we ever need to add or change this
+// - forwards compatibility considerations if we ever need to add or change this
 // - any protobuf gotchas (I haven't used protobuf for a few years)
 
 message QueryResponse {
