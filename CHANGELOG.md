@@ -35,6 +35,7 @@
 * [BUGFIX] Update `github.com/thanos-io/objstore` to address issue with Multipart PUT on s3-compatible Object Storage. #3802 #3821
 * [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 * [BUGFIX] Querier: canceled requests are no longer reported as "consistency check" failures. #3837
+* [BUGFIX] Distributor: don't panic when `metric_relabel_configs` in overrides contains null element. #3868
 
 ### Mixin
 

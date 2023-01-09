@@ -271,7 +271,7 @@ func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
-	return nil
+	return l.validate()
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
@@ -292,6 +292,16 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	err := dec.Decode((*plain)(l))
 	if err != nil {
 		return err
+	}
+
+	return l.validate()
+}
+
+func (l *Limits) validate() error {
+	for _, cfg := range l.MetricRelabelConfigs {
+		if cfg == nil {
+			return fmt.Errorf("invalid metric_relabel_configs")
+		}
 	}
 
 	return nil
