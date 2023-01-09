@@ -225,7 +225,7 @@ type rampingUpRateLimiter struct {
 
 func newRampingUpRateLimiter(rampUpDuration, rampUpInterval time.Duration, startRate, finalRate float64) *rampingUpRateLimiter {
 	l := &rampingUpRateLimiter{
-		l:   rate.NewLimiter(rate.Limit(startRate), int(startRate)),
+		l:   rate.NewLimiter(rate.Limit(startRate), 0),
 		mtx: &sync.RWMutex{},
 	}
 	go l.rampUp(rampUpDuration, rampUpInterval, startRate, finalRate)
