@@ -100,7 +100,7 @@ The Mimir Alertmanager adds some custom template functions to the default ones o
 | Function            | Params                                        | Description                                                                                                                                                 |
 | ------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tenantID`          | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                              |
-| `grafanaExploreURL` | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" "up{foo=\"bar\"}" }}` |
+| `grafanaExploreURL` | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" "up{foo=\"bar\"}" }}` |
 
 ## Sharding and replication
 

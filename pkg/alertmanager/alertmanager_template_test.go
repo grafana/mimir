@@ -29,7 +29,7 @@ func Test_withCustomFunctions(t *testing.T) {
 		{
 			name:     "generate grafana explore URL",
 			template: `{{ grafanaExploreURL "https://foo.bar" "test_datasoruce" "now-12h" "now" "up{foo!=\"bar\"}" }}`,
-			result:   `https://foo.bar/explore?left=` + url.QueryEscape(`{"datasource":"test_datasoruce","range":{"from":"now-12h","to":"now"},"queries":[{"datasource":"test_datasoruce","expr":"up{foo!=\"bar\"}","instant":false,"range":true,"refId":"A"}]}`),
+			result:   `https://foo.bar/explore?left=` + url.QueryEscape(`{"range":{"from":"now-12h","to":"now"},"queries":[{"datasource":{"type":"prometheus","uid":"test_datasoruce"},"expr":"up{foo!=\"bar\"}","instant":false,"range":true,"refId":"A"}]}`),
 		},
 		{
 			name:        "invalid params for grafanaExploreURL",
