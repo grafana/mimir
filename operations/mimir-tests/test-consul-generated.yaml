@@ -938,6 +938,7 @@ spec:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-total-query-length=12000h
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.timeout=500ms
@@ -946,7 +947,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store.max-query-length=12000h
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0

@@ -79,6 +79,7 @@ data:
     limits:
       max_cache_freshness: 10m
       max_query_parallelism: 240
+      max_total_query_length: 12000h
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false

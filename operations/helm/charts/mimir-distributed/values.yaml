@@ -277,6 +277,8 @@ mimir:
     {{- end }}
 
     limits:
+      # Limit queries to 500 days. You can override this on a per-tenant basis.
+      max_total_query_length: 12000h
       # Adjust max query parallelism to 16x sharding, without sharding we can run 15d queries fully in parallel.
       # With sharding we can further shard each day another 16 times. 15 days * 16 shards = 240 subqueries.
       max_query_parallelism: 240
