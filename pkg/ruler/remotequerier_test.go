@@ -20,6 +20,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/internedquerypb"
 	"github.com/grafana/mimir/pkg/querier/uninternedquerypb"
 )
@@ -428,4 +430,117 @@ func internedProtoDecodeVector(v *internedquerypb.VectorData) promql.Vector {
 	}
 
 	return vec
+}
+
+func BenchmarkRemoteQuerier_Encode(b *testing.B) {
+	sourceDir := "/Users/charleskorn/Desktop/queries/original-format"
+	groupDirs, err := os.ReadDir(sourceDir)
+	require.NoError(b, err)
+	require.NotEmpty(b, groupDirs)
+
+	for _, groupDir := range groupDirs {
+		if !groupDir.IsDir() {
+			continue
+		}
+
+		filePattern := filepath.Join(sourceDir, groupDir.Name(), "*.json")
+		files, err := filepath.Glob(filePattern)
+		require.NoError(b, err)
+		require.NotEmpty(b, files)
+
+		bodies := make([]querymiddleware.PrometheusResponse, 0, len(files))
+
+		for _, file := range files {
+			body, err := os.ReadFile(file)
+			require.NoError(b, err)
+
+			resp := querymiddleware.PrometheusResponse{}
+			err = json.Unmarshal(body, &resp)
+			require.NoError(b, err)
+			bodies = append(bodies, resp)
+		}
+
+		b.Run(groupDir.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, body := range bodies {
+					//_, err := originalEncode(body)
+					_, err := uninternedProtobufEncode(body)
+
+					if err != nil {
+						require.NoError(b, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+var jsonEncoder = jsoniter.Config{
+	EscapeHTML:             false, // No HTML in our responses.
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+}.Froze()
+
+func originalEncode(body querymiddleware.PrometheusResponse) ([]byte, error) {
+	return jsonEncoder.Marshal(body)
+}
+
+// FIXME: may be able to make this more efficient by simply using the querymiddleware.PrometheusResponse type,
+// which already supports being marshalled to protobuf format
+// FIXME: regardless of the above, why do we have slightly different formats in different places?
+func uninternedProtobufEncode(body querymiddleware.PrometheusResponse) ([]byte, error) {
+	resp := uninternedquerypb.QueryResponse{
+		Status:    body.Status,
+		ErrorType: body.ErrorType,
+		Error:     body.Error,
+	}
+
+	switch body.Data.ResultType {
+	case "vector":
+		vector := uninternedquerypb.VectorData{}
+
+		for _, stream := range body.Data.Result {
+			metric := make([]string, len(stream.Labels)*2)
+
+			for i, l := range stream.Labels {
+				metric[2*i] = l.Name
+				metric[2*i+1] = l.Value
+			}
+
+			for _, sample := range stream.Samples {
+				vector.Samples = append(vector.Samples, &uninternedquerypb.Sample{
+					Metric:    metric,
+					Value:     sample.Value,
+					Timestamp: sample.TimestampMs,
+				})
+			}
+		}
+
+		resp.Data = &uninternedquerypb.QueryResponse_Vector{
+			Vector: &vector,
+		}
+
+	case "scalar":
+		if len(body.Data.Result) != 1 {
+			return nil, fmt.Errorf("unexpected number of streams: %v", len(body.Data.Result))
+		}
+
+		stream := body.Data.Result[0]
+		if len(stream.Samples) != 1 {
+			return nil, fmt.Errorf("unexpected number of samples: %v", len(stream.Samples))
+		}
+
+		sample := stream.Samples[0]
+		resp.Data = &uninternedquerypb.QueryResponse_Scalar{
+			Scalar: &uninternedquerypb.ScalarData{
+				Value:     sample.Value,
+				Timestamp: sample.TimestampMs,
+			},
+		}
+
+	default:
+		panic(fmt.Sprintf("unknown result type %v", body.Data.ResultType))
+	}
+
+	return resp.Marshal()
 }
