@@ -1835,10 +1835,6 @@ func (b *bucketBlock) Close() error {
 	return b.indexHeaderReader.Close()
 }
 
-type labelValuesReader interface {
-	LabelValues(name string, filter func(string) bool) ([]string, error)
-}
-
 type Part struct {
 	Start uint64
 	End   uint64

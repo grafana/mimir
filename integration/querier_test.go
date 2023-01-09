@@ -111,7 +111,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Wait until the TSDB head is compacted and shipped to the storage.
-	// The shipped block contains the 1st series, while the 2ns series in in the head.
+	// The shipped block contains the 1st series, while the 2ns series is in the head.
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
@@ -218,7 +218,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
 			expectedFetchedSeries += 2 // Ingester + storage.
-			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 3, Series: 2
+			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 2, Series: 2
 			instantQueriesCount++
 
 			result, err = c.Query("series_3", series3Timestamp)
@@ -226,18 +226,18 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
 			expectedFetchedSeries++ // Ingester only.
-			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 5, Series: 2
+			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 2, Series: 2
 			instantQueriesCount++
 
 			// Check the in-memory index cache metrics (in the store-gateway).
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(12), "thanos_store_index_cache_requests_total")) // 5 + 5 + 2
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))      // no cache hit cause the cache was empty
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
 
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(21), "thanos_memcached_operations_total")) // (7+5) gets + (4+5) sets (5 from expanded postings)
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2), "thanos_memcached_operations_total")) // one set for each get
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
@@ -247,14 +247,14 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			assert.Equal(t, expectedVector1, result.(model.Vector))
 			expectedFetchedSeries++ // Storage only.
 
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(12+2), "thanos_store_index_cache_requests_total"))
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+2), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // as before
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(21+2), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2+2), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
 			}
 
 			// Query range. We expect 1 data point with a value of 3 (number of series).
@@ -441,47 +441,65 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			const shippedBlocks = 2
 			require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
 
+			var expectedCacheRequests int
+
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
+			// For every series in a block we expect
+			// - 1 cache request for expanded postings
+			// - 1 cache request for postings for each matcher (provided matchers are simple MatchEQ matchers)
+			// - 1 cache request for each series
+			//
+			// If the series does not exist in the block, then we return early after checking expanded postings and
+			// subsequently the index on disk.
 			result, err := c.Query("series_1", series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
+			expectedCacheRequests += seriesReplicationFactor * 3 // expanded postings, postings, series
 
 			result, err = c.Query("series_2", series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
+			expectedCacheRequests += seriesReplicationFactor*3 + seriesReplicationFactor // expanded postings, postings, series for 1 time range; only expaned postings for another
 
 			result, err = c.Query("series_3", series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
+			expectedCacheRequests += seriesReplicationFactor * 2 // expanded postings for 2 time ranges
+
+			expectedMemcachedOps := 2 * expectedCacheRequests // Same reasoning as for expectedCacheRequests, but this also includes a set for each get
 
 			// Check the in-memory index cache metrics (in the store-gateway).
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(12*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
+			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total")) // no cache hit cause the cache was empty
-
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(21*seriesReplicationFactor)), "thanos_memcached_operations_total")) // (7+5) gets + (4+5) sets (5 from expanded postings)
+				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_memcached_operations_total"))
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
+			// It should get a hit on expanded postings; this means that it will not request individual postings for matchers.
+			// It should get a hit on series.
+			// We expect 3 cache requests and 3 cache hits.
 			result, err = c.Query("series_1", series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
+			expectedCacheRequests += seriesReplicationFactor * 2 // expanded postings and series
+			expectedMemcachedOps += seriesReplicationFactor * 2  // there is no set after the gets this time
 
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((12+2)*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
+			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*seriesReplicationFactor)), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // as before
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((21+2)*seriesReplicationFactor)), "thanos_memcached_operations_total")) // as before + 2 gets
+				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_memcached_operations_total"))
 			}
 
 			// Query metadata.
