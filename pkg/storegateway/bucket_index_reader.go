@@ -270,7 +270,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
 		allRequested = allRequested || pg.isSubtract
 
-		hasAdds = hasAdds || (!pg.isSubtract && len(pg.keys) > 0)
+		hasAdds = hasAdds || !pg.isSubtract
 
 		numKeys += len(pg.keys)
 	}
