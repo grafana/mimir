@@ -240,12 +240,25 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		rawPostingGroups = append(rawPostingGroups, toPostingGroup(m))
 	}
 
-	// First iterate through the non-lazy groups. We can check whether their requested values exist
-	// in the index. After that we can check the lazy groups. The lazy groups require calling LabelValues
-	// which is more expensive, so we leave them for last.
+	// We can check whether their requested values exist
+	// in the index. We do these checks in a specific order so we minimize the reads from disk.
+	// which is more expensive, so we leave them for last. Within each group of
 	sort.Slice(rawPostingGroups, func(i, j int) bool {
-		return (!rawPostingGroups[i].isLazy && rawPostingGroups[j].isLazy) ||
-			(len(rawPostingGroups[i].keys) < len(rawPostingGroups[j].keys))
+		// First we check the non-lazy groups, since for those we only need to call PostingsOffset, which
+		// is less expensive than LabelValues for the lazy groups.
+		ri, rj := rawPostingGroups[i], rawPostingGroups[j]
+		if ri.isLazy != rj.isLazy {
+			return !ri.isLazy
+		}
+
+		// Within the lazy/non-lazy groups we sort by the number of keys they have.
+		// The idea is that groups with fewer keys are more likely to match no actual series.
+		if len(ri.keys) != len(rj.keys) {
+			return len(ri.keys) < len(rj.keys)
+		}
+
+		// Sort by label name to make this a deterministic sort.
+		return ri.labelName < rj.labelName
 	})
 
 	filteredPostingGroups := make([]postingGroup, 0, len(rawPostingGroups))
