@@ -229,36 +229,36 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 // is the same as iterating through the posting groups and for each group adding all keys.
 func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, []labels.Label, error) {
 	var (
-		postingGroups = make([]postingGroup, 0, len(ms))
-		allRequested  = false
-		hasAdds       = false
+		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
+		allRequested     = false
+		hasAdds          = false
 	)
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
-		postingGroups = append(postingGroups, toPostingGroup(m))
+		rawPostingGroups = append(rawPostingGroups, toPostingGroup(m))
 	}
 
 	// First iterate through the non-lazy groups. We can check whether their requested values exist
 	// in the index. After that we can check the lazy groups. The lazy groups require calling LabelValues
 	// which is more expensive, so we leave them for last.
-	sort.Slice(postingGroups, func(i, j int) bool {
-		return (!postingGroups[i].isLazy && postingGroups[j].isLazy) ||
-			(len(postingGroups[i].keys) < len(postingGroups[j].keys))
+	sort.Slice(rawPostingGroups, func(i, j int) bool {
+		return (!rawPostingGroups[i].isLazy && rawPostingGroups[j].isLazy) ||
+			(len(rawPostingGroups[i].keys) < len(rawPostingGroups[j].keys))
 	})
 
+	filteredPostingGroups := make([]postingGroup, 0, len(rawPostingGroups))
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// We start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
 	numKeys := 0
-	for i, pg := range postingGroups {
-		var err error
-		pg, err = pg.prepare(indexhdr)
+	for _, rawGroup := range rawPostingGroups {
+		pg, err := rawGroup.prepare(indexhdr)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filtering posting group")
 		}
-		postingGroups[i] = pg
+		filteredPostingGroups = append(filteredPostingGroups, pg)
 
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
@@ -282,7 +282,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		name, value := index.AllPostingsKey()
 		allPostingsLabel := labels.Label{Name: name, Value: value}
 
-		postingGroups = append(postingGroups, newPostingGroup(false, name, []labels.Label{allPostingsLabel}))
+		filteredPostingGroups = append(filteredPostingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
 		numKeys++
 	}
 
@@ -295,11 +295,11 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	}
 
 	keys := make([]labels.Label, 0, numKeys)
-	for _, pg := range postingGroups {
+	for _, pg := range filteredPostingGroups {
 		keys = append(keys, pg.keys...)
 	}
 
-	return postingGroups, keys, nil
+	return filteredPostingGroups, keys, nil
 }
 
 // FetchPostings fills postings requested by posting groups.

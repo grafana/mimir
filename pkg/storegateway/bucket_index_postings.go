@@ -19,12 +19,14 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
-// postingGroup keeps posting keys for single matcher. Logical result of the group is:
+// rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
+// that the keys in the gorup have a corresponding postings list in the index.
+// Logical result of the group is:
 // If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call prepare() to populate the keys.
 // If isSubtract == true: special All postings minus postings for keys labels.
 // If isSubtract == false: merge of postings for keys labels.
-// This computation happens in expandedPostings.
-type postingGroup struct {
+// This computation happens in toPostingGroups.
+type rawPostingGroup struct {
 	isSubtract bool
 	labelName  string
 	keys       []labels.Label
@@ -33,16 +35,16 @@ type postingGroup struct {
 	lazyMatcher func(string) bool
 }
 
-func newPostingGroup(isSubtract bool, labelName string, keys []labels.Label) postingGroup {
-	return postingGroup{
+func newRawPostingGroup(isSubtract bool, labelName string, keys []labels.Label) rawPostingGroup {
+	return rawPostingGroup{
 		isSubtract: isSubtract,
 		labelName:  labelName,
 		keys:       keys,
 	}
 }
 
-func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string) bool) postingGroup {
-	return postingGroup{
+func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string) bool) rawPostingGroup {
+	return rawPostingGroup{
 		isLazy:      true,
 		isSubtract:  isSubtract,
 		labelName:   labelName,
@@ -50,7 +52,7 @@ func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string)
 	}
 }
 
-func (g postingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
+func (g rawPostingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
 	var keys []labels.Label
 	if g.isLazy {
 		vals, err := r.LabelValues(g.labelName, g.lazyMatcher)
@@ -71,12 +73,11 @@ func (g postingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
 
 	return postingGroup{
 		isSubtract: g.isSubtract,
-		labelName:  g.labelName,
 		keys:       keys,
 	}, nil
 }
 
-func (g postingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
+func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
 	keys := g.keys
 	existingKeys := 0
 	for i, l := range keys {
@@ -109,27 +110,27 @@ func (g postingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
 	return filtered, nil
 }
 
-// toPostingGroup returns a postingGroup. toPostingGroup does not guarantee that
-// they keys of each postingGroup exist in the index of the block. To verify this,
-// call postingGroup.prepare() with an index reader.
+// toPostingGroup returns a rawPostingGroup. toPostingGroup does not guarantee that
+// they keys of each rawPostingGroup exist in the index of the block. To verify this,
+// call rawPostingGroup.prepare() with an index reader.
 // NOTE: Derived from tsdb.postingsForMatcher
-func toPostingGroup(m *labels.Matcher) postingGroup {
+func toPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newPostingGroup(true, m.Name, keys)
+			return newRawPostingGroup(true, m.Name, keys)
 		}
-		return newPostingGroup(false, m.Name, keys)
+		return newRawPostingGroup(false, m.Name, keys)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newPostingGroup(false, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawPostingGroup(false, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -137,7 +138,7 @@ func toPostingGroup(m *labels.Matcher) postingGroup {
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newPostingGroup(true, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawPostingGroup(true, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 	}
 
@@ -158,6 +159,16 @@ func toPostingGroup(m *labels.Matcher) postingGroup {
 
 func not(filter func(string) bool) func(string) bool {
 	return func(s string) bool { return !filter(s) }
+}
+
+// rawPostingGroup keeps posting keys for single matcher. Logical result of the group is:
+// If isSubtract == true: special All postings minus postings for keys labels.
+// If isSubtract == false: merge of postings for keys labels.
+// All the labels in keys should have a corresponding postings list in the index.
+// This computation happens in expandedPostings.
+type postingGroup struct {
+	isSubtract bool
+	keys       []labels.Label
 }
 
 type postingPtr struct {
