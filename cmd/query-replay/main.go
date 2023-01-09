@@ -40,6 +40,7 @@ func main() {
 	if err != nil {
 		panic(errors.Wrap(err, "open queries"))
 	}
+
 	defer reader.Close()
 
 	stats := requestStats{
@@ -225,7 +226,7 @@ type rampingUpRateLimiter struct {
 
 func newRampingUpRateLimiter(rampUpDuration, rampUpInterval time.Duration, startRate, finalRate float64) *rampingUpRateLimiter {
 	l := &rampingUpRateLimiter{
-		l:   rate.NewLimiter(rate.Limit(startRate), 0),
+		l:   rate.NewLimiter(rate.Limit(startRate), 1),
 		mtx: &sync.RWMutex{},
 	}
 	go l.rampUp(rampUpDuration, rampUpInterval, startRate, finalRate)
