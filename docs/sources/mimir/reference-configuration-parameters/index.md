@@ -748,6 +748,11 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
+
+# (experimental) Mark series as ephemeral based on the given matchers in the
+# runtime config.
+# CLI flag: -distributor.mark-ephemeral
+[mark_ephemeral: <boolean> | default = false]
 ```
 
 ### ingester
@@ -2837,6 +2842,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
+
+# Matchers to check if a series should be marked ephemeral, matching series get
+# marked to be stored in the ephemeral store.
+ephemeral_series_matchers:
 ```
 
 ### blocks_storage

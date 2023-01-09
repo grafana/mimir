@@ -45,6 +45,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -117,6 +118,8 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
+	EphemeralSeriesProvider ephemeralSeriesProvider
+
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	ingesterChunksDeduplicated       prometheus.Counter
@@ -149,6 +152,10 @@ type Distributor struct {
 	pushWithMiddlewares push.Func
 }
 
+type ephemeralSeriesProvider interface {
+	EphemeralSeriesChecker(string) ephemeral.SeriesChecker
+}
+
 // Config contains the configuration required to
 // create a Distributor
 type Config struct {
@@ -177,6 +184,9 @@ type Config struct {
 
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
+
+	// Enable the experimental feature to mark metrics as ephemeral.
+	MarkEphemeral bool `yaml:"mark_ephemeral" category:"experimental"`
 }
 
 type InstanceLimits struct {
@@ -197,6 +207,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.BoolVar(&cfg.MarkEphemeral, "distributor.mark-ephemeral", false, "Mark series as ephemeral based on the given matchers in the runtime config.")
 }
 
 // Validate config and returns error on failure
@@ -433,6 +444,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+	if d.cfg.MarkEphemeral {
+		d.EphemeralSeriesProvider = d.limits
+	}
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -660,7 +674,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-		ts.Exemplars = nil
+		mimirpb.ClearExemplars(ts.TimeSeries)
 		return nil
 	}
 
@@ -700,6 +714,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
 	if externalMiddleware != nil {
 		middlewares = append(middlewares, externalMiddleware)
 	}
@@ -1025,6 +1040,61 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 		}
 
 		return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
+	}
+}
+
+// prePushEphemeralMiddleware is used as push.Func middleware in front of push method.
+// If marking series as ephemeral is enabled, this middleware uses the ephemeral series
+// provider to determine whether a time series should be marked as ephemeral.
+func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
+	if !d.cfg.MarkEphemeral {
+		return next
+	}
+
+	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return nil, err
+		}
+
+		// No ephemeral series from ruler.
+		if req.Source == mimirpb.RULE {
+			return next(ctx, pushReq)
+		}
+
+		req.EphemeralTimeseries = nil
+
+		ephemeralSeriesChecker := d.EphemeralSeriesProvider.EphemeralSeriesChecker(userID)
+		if ephemeralSeriesChecker != nil {
+			req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
+
+			var deleteTs []int
+			for ix := 0; ix < len(req.Timeseries); ix++ {
+				ts := req.Timeseries[ix]
+
+				if !ephemeralSeriesChecker.IsEphemeral(ts.Labels) {
+					continue
+				}
+
+				if cap(deleteTs) == 0 {
+					deleteTs = make([]int, 0, len(req.Timeseries)-ix)
+				}
+
+				// Move this series from persistent to ephemeral storage. We don't ingest exemplars for ephemeral series.
+				mimirpb.ClearExemplars(ts.TimeSeries)
+				req.EphemeralTimeseries = append(req.EphemeralTimeseries, ts)
+				deleteTs = append(deleteTs, ix)
+			}
+
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, deleteTs)
+		}
+
+		return next(ctx, pushReq)
 	}
 }
 

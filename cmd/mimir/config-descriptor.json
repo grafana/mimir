@@ -1695,6 +1695,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "mark_ephemeral",
+          "required": false,
+          "desc": "Mark series as ephemeral based on the given matchers in the runtime config.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.mark-ephemeral",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -3532,6 +3543,14 @@
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldType": "map of string to validation.ForwardingRule"
+        },
+        {
+          "kind": "block",
+          "name": "ephemeral_series_matchers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
