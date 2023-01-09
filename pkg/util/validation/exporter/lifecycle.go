@@ -3,9 +3,8 @@ package exporter
 import (
 	"context"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
 )
 
 func (oe *OverridesExporter) starting(ctx context.Context) error {
