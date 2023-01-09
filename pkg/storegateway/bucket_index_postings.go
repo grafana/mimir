@@ -20,132 +20,116 @@ import (
 )
 
 // postingGroup keeps posting keys for single matcher. Logical result of the group is:
-// If addAll is set: special All postings minus postings for removeKeys labels. No need to merge postings for addKeys in this case.
-// If addAll is not set: Merge of postings for "addKeys" labels minus postings for removeKeys labels
-// This computation happens in ExpandedPostings.
+// If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call prepare() to populate the keys.
+// If isSubtract == true: special All postings minus postings for keys labels.
+// If isSubtract == false: merge of postings for keys labels.
+// This computation happens in expandedPostings.
 type postingGroup struct {
-	addAll     bool
-	addKeys    []labels.Label
-	removeKeys []labels.Label
+	isSubtract bool
+	labelName  string
+	keys       []labels.Label
+
+	isLazy      bool
+	lazyMatcher func(string) bool
 }
 
-func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) postingGroup {
+func newPostingGroup(isSubtract bool, labelName string, keys []labels.Label) postingGroup {
 	return postingGroup{
-		addAll:     addAll,
-		addKeys:    addKeys,
-		removeKeys: removeKeys,
+		isSubtract: isSubtract,
+		labelName:  labelName,
+		keys:       keys,
 	}
 }
 
-func (g postingGroup) filterNonExistentKeys(preader postingsOffsetReader) (_ postingGroup, retErr error) {
-	filterKeys := func(keys []labels.Label) []labels.Label {
-		existingKeys := 0
-		for i, l := range keys {
-			if _, err := preader.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
-				// This label name and value doesn't exist in this block, so there are 0 postings we can match.
-				// Set it to an empty value, so we can filter it out later.
-				keys[i] = labels.Label{}
-				// Try with the rest of the set matchers, maybe they can match some series.
-				continue
-			} else if err != nil {
-				retErr = err
-				return nil
-			}
-			existingKeys++
-		}
-		if existingKeys == len(keys) {
-			return keys
-		}
-		if existingKeys == 0 {
-			return nil
-		}
+func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string) bool) postingGroup {
+	return postingGroup{
+		isLazy:      true,
+		isSubtract:  isSubtract,
+		labelName:   labelName,
+		lazyMatcher: matcher,
+	}
+}
 
-		filtered := make([]labels.Label, 0, existingKeys)
-		for _, k := range keys {
-			if k == (labels.Label{}) {
-				continue
-			}
-			filtered = append(filtered, k)
+func (g postingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
+	var keys []labels.Label
+	if g.isLazy {
+		vals, err := r.LabelValues(g.labelName, g.lazyMatcher)
+		if err != nil {
+			return postingGroup{}, err
 		}
-		return filtered
+		keys = make([]labels.Label, len(vals))
+		for i := range vals {
+			keys[i] = labels.Label{Name: g.labelName, Value: vals[i]}
+		}
+	} else {
+		var err error
+		keys, err = g.filterKeys(r)
+		if err != nil {
+			return postingGroup{}, errors.Wrap(err, "filter posting keys")
+		}
 	}
 
 	return postingGroup{
-		addAll:     g.addAll,
-		addKeys:    filterKeys(g.addKeys),
-		removeKeys: filterKeys(g.removeKeys),
-	}, retErr
-}
-
-type lazyPostingGroup struct {
-	isRemoveGroup bool
-	labelName     string
-	matcher       func(string) bool
-	addAll        bool
-}
-
-func newLazyPostingGroup(addAll bool, isRemoveGroup bool, labelName string, matcher func(string) bool) lazyPostingGroup {
-	return lazyPostingGroup{
-		isRemoveGroup: isRemoveGroup,
-		labelName:     labelName,
-		matcher:       matcher,
-		addAll:        addAll,
-	}
-}
-
-// toPostingGroup guarantees that all the keys in the returned postingGroup exist in the index
-func (g lazyPostingGroup) toPostingGroup(lvr labelValuesReader) (postingGroup, error) {
-	vals, err := lvr.LabelValues(g.labelName, g.matcher)
-	if err != nil {
-		return postingGroup{}, err
-	}
-	keys := make([]labels.Label, len(vals))
-	for i := range vals {
-		keys[i] = labels.Label{Name: g.labelName, Value: vals[i]}
-	}
-
-	if g.isRemoveGroup {
-		return postingGroup{
-			addAll:     g.addAll,
-			removeKeys: keys,
-		}, nil
-	}
-	return postingGroup{
-		addAll:  g.addAll,
-		addKeys: keys,
+		isSubtract: g.isSubtract,
+		labelName:  g.labelName,
+		keys:       keys,
 	}, nil
 }
 
-type postingsOffsetReader interface {
-	PostingsOffset(name string, value string) (index.Range, error)
+func (g postingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
+	keys := g.keys
+	existingKeys := 0
+	for i, l := range keys {
+		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
+			// Set it to an empty value, so we can filter it out later.
+			keys[i] = labels.Label{}
+			// Try with the rest of the set matchers, maybe they can match some series.
+			continue
+		} else if err != nil {
+
+			return nil, err
+		}
+		existingKeys++
+	}
+	if existingKeys == len(keys) {
+		return keys, nil
+	}
+	if existingKeys == 0 {
+		return nil, nil
+	}
+
+	filtered := make([]labels.Label, 0, existingKeys)
+	for _, k := range keys {
+		if k == (labels.Label{}) {
+			continue
+		}
+		filtered = append(filtered, k)
+	}
+	return filtered, nil
 }
 
-type labelValuesReader interface {
-	LabelValues(name string, filter func(string) bool) ([]string, error)
-}
-
-// toPostingGroup returns either a postingGroup or a lazyPostingGroup. It returns a postingGroup when it can
-// derive all the possible values that would satisfy the matcher without looking up the index
-// (e.g. pod="compactor=1"` or pod=~"compactor-(0|1|2|3)")
-// If the matcher needs to use the index, then toPostingGroup returns a lazyPostingGroup (e.g. pod=~"compactor.*").
+// toPostingGroup returns a postingGroup. toPostingGroup does not guarantee that
+// they keys of each postingGroup exist in the index of the block. To verify this,
+// call postingGroup.prepare() with an index reader.
 // NOTE: Derived from tsdb.postingsForMatcher
-func toPostingGroup(m *labels.Matcher) (_ postingGroup, _ lazyPostingGroup, isLazy bool) {
+func toPostingGroup(m *labels.Matcher) postingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newPostingGroup(true, nil, keys), lazyPostingGroup{}, false
+			return newPostingGroup(true, m.Name, keys)
 		}
-		return newPostingGroup(false, keys, nil), lazyPostingGroup{}, false
+		return newPostingGroup(false, m.Name, keys)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), lazyPostingGroup{}, false
+			return newPostingGroup(false, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -153,7 +137,7 @@ func toPostingGroup(m *labels.Matcher) (_ postingGroup, _ lazyPostingGroup, isLa
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newPostingGroup(true, nil, []labels.Label{{Name: m.Name, Value: m.Value}}), lazyPostingGroup{}, false
+			return newPostingGroup(true, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 	}
 
@@ -164,12 +148,12 @@ func toPostingGroup(m *labels.Matcher) (_ postingGroup, _ lazyPostingGroup, isLa
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		return postingGroup{}, newLazyPostingGroup(true, true, m.Name, not(m.Matches)), true
+		return newLazyPostingGroup(true, m.Name, not(m.Matches))
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	return postingGroup{}, newLazyPostingGroup(false, false, m.Name, m.Matches), true
+	return newLazyPostingGroup(false, m.Name, m.Matches)
 }
 
 func not(filter func(string) bool) func(string) bool {

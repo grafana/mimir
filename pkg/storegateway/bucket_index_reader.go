@@ -182,27 +182,23 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		return nil, errors.Wrap(err, "get postings")
 	}
 
-	// Get "add" and "remove" postings from groups. We iterate over postingGroups and their keys
-	// again, and this is exactly the same order as before (when building the groups), so we can simply
-	// use one incrementing index to fetch postings from returned slice.
 	postingIndex := 0
 
 	var groupAdds, groupRemovals []index.Postings
 	for _, g := range postingGroups {
-		// We cannot add empty set to groupAdds, since they are intersected.
-		if len(g.addKeys) > 0 {
-			toMerge := make([]index.Postings, 0, len(g.addKeys))
-			for _, l := range g.addKeys {
+		if g.isSubtract {
+			for _, l := range g.keys {
+				groupRemovals = append(groupRemovals, checkNilPosting(l, fetchedPostings[postingIndex]))
+				postingIndex++
+			}
+		} else {
+			toMerge := make([]index.Postings, 0, len(g.keys))
+			for _, l := range g.keys {
 				toMerge = append(toMerge, checkNilPosting(l, fetchedPostings[postingIndex]))
 				postingIndex++
 			}
 
 			groupAdds = append(groupAdds, index.Merge(toMerge...))
-		}
-
-		for _, l := range g.removeKeys {
-			groupRemovals = append(groupRemovals, checkNilPosting(l, fetchedPostings[postingIndex]))
-			postingIndex++
 		}
 	}
 
@@ -229,26 +225,28 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 }
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
-// each postingGroup's addKeys and removeKeys exist in the index. The order of the returned labels
-// is the same as iterating through the posting groups and for each group adding all addKeys and then adding all removeKeys.
+// each postingGroup's keys exist in the index. The order of the returned labels
+// is the same as iterating through the posting groups and for each group adding all keys.
 func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, []labels.Label, error) {
 	var (
-		postingGroups     = make([]postingGroup, 0, len(ms))
-		lazyPostingGroups []lazyPostingGroup
-		allRequested      = false
-		hasAdds           = false
+		postingGroups = make([]postingGroup, 0, len(ms))
+		allRequested  = false
+		hasAdds       = false
 	)
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
-		pg, lazyPg, isLazy := toPostingGroup(m)
-		if isLazy {
-			lazyPostingGroups = append(lazyPostingGroups, lazyPg)
-		} else {
-			postingGroups = append(postingGroups, pg)
-		}
+		postingGroups = append(postingGroups, toPostingGroup(m))
 	}
+
+	// First iterate through the non-lazy groups. We can check whether their requested values exist
+	// in the index. After that we can check the lazy groups. The lazy groups require calling LabelValues
+	// which is more expensive, so we leave them for last.
+	sort.Slice(postingGroups, func(i, j int) bool {
+		return (!postingGroups[i].isLazy && postingGroups[j].isLazy) ||
+			(len(postingGroups[i].keys) < len(postingGroups[j].keys))
+	})
 
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// We start with the ones that have a known set of values because it's less expensive to check them in
@@ -256,45 +254,25 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	numKeys := 0
 	for i, pg := range postingGroups {
 		var err error
-		pg, err = pg.filterNonExistentKeys(indexhdr)
+		pg, err = pg.prepare(indexhdr)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filtering posting group")
 		}
 		postingGroups[i] = pg
 
-		// If this groups adds nothing, it's an empty group. We can shortcut this, since intersection with empty
-		// postings would return no postings anyway.
-		// E.g. label="non-existing-value" returns empty group.
-		if !pg.addAll && len(pg.addKeys) == 0 {
+		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
+		// We can shortcut this, since intersection with empty postings would return no postings.
+		// E.g. `label="non-existent-value"` returns empty group.
+		if !pg.isSubtract && len(pg.keys) == 0 {
 			return nil, nil, nil
 		}
 
-		allRequested = allRequested || pg.addAll
-		hasAdds = hasAdds || len(pg.addKeys) > 0
+		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
+		allRequested = allRequested || pg.isSubtract
 
-		numKeys += len(pg.addKeys)
-		numKeys += len(pg.removeKeys)
-	}
+		hasAdds = hasAdds || (!pg.isSubtract && len(pg.keys) > 0)
 
-	// We continue with the posting groups that require to scan all the label values from the index.
-	for _, lazyPg := range lazyPostingGroups {
-		pg, err := lazyPg.toPostingGroup(indexhdr)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "toPostingGroup")
-		}
-		postingGroups = append(postingGroups, pg)
-		// If this groups adds nothing, it's an empty group. We can shortcut this, since intersection with empty
-		// postings would return no postings anyway.
-		// E.g. label="non-existing-value" returns empty group.
-		if !pg.addAll && len(pg.addKeys) == 0 {
-			return nil, nil, nil
-		}
-
-		allRequested = allRequested || pg.addAll
-		hasAdds = hasAdds || len(pg.addKeys) > 0
-
-		numKeys += len(pg.addKeys)
-		numKeys += len(pg.removeKeys)
+		numKeys += len(pg.keys)
 	}
 
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
@@ -304,14 +282,21 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		name, value := index.AllPostingsKey()
 		allPostingsLabel := labels.Label{Name: name, Value: value}
 
-		postingGroups = append(postingGroups, newPostingGroup(true, []labels.Label{allPostingsLabel}, nil))
+		postingGroups = append(postingGroups, newPostingGroup(false, name, []labels.Label{allPostingsLabel}))
 		numKeys++
+	}
+
+	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.
+	// If all postings also weren't requested, then we will only be subtracting from an empty set.
+	// Shortcut doing any set operations and just return an empty set here.
+	// A query that might end up in this case is `{pod=~"non-existent-value.*"}`.
+	if !allRequested && !hasAdds {
+		return nil, nil, nil
 	}
 
 	keys := make([]labels.Label, 0, numKeys)
 	for _, pg := range postingGroups {
-		keys = append(keys, pg.addKeys...)
-		keys = append(keys, pg.removeKeys...)
+		keys = append(keys, pg.keys...)
 	}
 
 	return postingGroups, keys, nil
