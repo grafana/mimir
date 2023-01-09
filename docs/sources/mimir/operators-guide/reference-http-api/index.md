@@ -22,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 ## Endpoints
 
 | API                                                                                   | Service                        | Endpoint                                                                  |
-| ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
+|---------------------------------------------------------------------------------------| ------------------------------ | ------------------------------------------------------------------------- |
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
 | [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
@@ -85,6 +85,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload)                                             | Compactor                      | `GET /api/v1/upload/block/{block}/check`                                  |
 | [Tenant delete request](#tenant-delete-request)                                       | Compactor                      | `POST /compactor/delete_tenant`                                           |
 | [Tenant delete status](#tenant-delete-status)                                         | Compactor                      | `GET /compactor/delete_tenant_status`                                     |
+| [Overrides-exporter ring status](#overrides-exporter-ring-status)                     | Overrides-exporter             | `GET /overrides-exporter/ring`                                            |
 
 ### Path prefixes
 
@@ -1072,3 +1073,14 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+## Overrides-exporter
+
+### Overrides-exporter ring status
+
+```
+GET /overrides-exporter/ring
+```
+
+Displays a web page with the overrides-exporter hash ring status, including the state, healthy and last heartbeat time of each overrides-exporter.
+The query-scheduler ring is available only when `-overrides-exporter.ring.enabled` is set to `true`.
