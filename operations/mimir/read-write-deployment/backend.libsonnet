@@ -40,8 +40,6 @@
   mimir_backend_zone_b_args:: $.store_gateway_zone_b_args {},
   mimir_backend_zone_c_args:: $.store_gateway_zone_c_args {},
 
-
-
   mimir_backend_ports::
     std.uniq(
       std.sort(
