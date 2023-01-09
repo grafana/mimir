@@ -117,7 +117,7 @@ type Limits struct {
 	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length" category:"experimental"`
+	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
