@@ -497,50 +497,63 @@ func uninternedProtobufEncode(body querymiddleware.PrometheusResponse) ([]byte, 
 
 	switch body.Data.ResultType {
 	case "vector":
-		vector := uninternedquerypb.VectorData{}
-
-		for _, stream := range body.Data.Result {
-			metric := make([]string, len(stream.Labels)*2)
-
-			for i, l := range stream.Labels {
-				metric[2*i] = l.Name
-				metric[2*i+1] = l.Value
-			}
-
-			for _, sample := range stream.Samples {
-				vector.Samples = append(vector.Samples, &uninternedquerypb.Sample{
-					Metric:    metric,
-					Value:     sample.Value,
-					Timestamp: sample.TimestampMs,
-				})
-			}
-		}
-
-		resp.Data = &uninternedquerypb.QueryResponse_Vector{
-			Vector: &vector,
-		}
+		resp.Data = uninternedVectorEncode(body.Data)
 
 	case "scalar":
-		if len(body.Data.Result) != 1 {
-			return nil, fmt.Errorf("unexpected number of streams: %v", len(body.Data.Result))
+		data, err := uninternedScalarEncode(body.Data)
+		if err != nil {
+			return nil, err
 		}
 
-		stream := body.Data.Result[0]
-		if len(stream.Samples) != 1 {
-			return nil, fmt.Errorf("unexpected number of samples: %v", len(stream.Samples))
-		}
-
-		sample := stream.Samples[0]
-		resp.Data = &uninternedquerypb.QueryResponse_Scalar{
-			Scalar: &uninternedquerypb.ScalarData{
-				Value:     sample.Value,
-				Timestamp: sample.TimestampMs,
-			},
-		}
+		resp.Data = data
 
 	default:
 		panic(fmt.Sprintf("unknown result type %v", body.Data.ResultType))
 	}
 
 	return resp.Marshal()
+}
+
+func uninternedVectorEncode(data *querymiddleware.PrometheusData) *uninternedquerypb.QueryResponse_Vector {
+	vector := uninternedquerypb.VectorData{}
+
+	for _, stream := range data.Result {
+		metric := make([]string, len(stream.Labels)*2)
+
+		for i, l := range stream.Labels {
+			metric[2*i] = l.Name
+			metric[2*i+1] = l.Value
+		}
+
+		for _, sample := range stream.Samples {
+			vector.Samples = append(vector.Samples, &uninternedquerypb.Sample{
+				Metric:    metric,
+				Value:     sample.Value,
+				Timestamp: sample.TimestampMs,
+			})
+		}
+	}
+
+	return &uninternedquerypb.QueryResponse_Vector{
+		Vector: &vector,
+	}
+}
+
+func uninternedScalarEncode(data *querymiddleware.PrometheusData) (*uninternedquerypb.QueryResponse_Scalar, error) {
+	if len(data.Result) != 1 {
+		return nil, fmt.Errorf("unexpected number of streams: %v", len(data.Result))
+	}
+
+	stream := data.Result[0]
+	if len(stream.Samples) != 1 {
+		return nil, fmt.Errorf("unexpected number of samples: %v", len(stream.Samples))
+	}
+
+	sample := stream.Samples[0]
+	return &uninternedquerypb.QueryResponse_Scalar{
+		Scalar: &uninternedquerypb.ScalarData{
+			Value:     sample.Value,
+			Timestamp: sample.TimestampMs,
+		},
+	}, nil
 }
