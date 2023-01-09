@@ -1726,6 +1726,17 @@ func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx 
 	return nil, nil
 }
 
+type forbiddenFetchMultiPostingsIndexCache struct {
+	indexcache.IndexCache
+
+	t *testing.T
+}
+
+func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+	assert.Fail(c.t, "index cache FetchMultiPostings should not be called")
+	return nil, nil
+}
+
 func extractLabelsFromSeriesChunkRefsSets(sets []seriesChunkRefsSet) (result []labels.Labels) {
 	for _, set := range sets {
 		for _, series := range set.series {
