@@ -572,6 +572,7 @@ spec:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-total-query-length=12000h
         - -query-frontend.parallelize-shardable-queries=true
         - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-total-shards=0
@@ -584,7 +585,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store.max-query-length=12000h
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0
