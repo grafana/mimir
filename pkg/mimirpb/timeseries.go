@@ -288,6 +288,10 @@ func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
 
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
 func ReuseSlice(ts []PreallocTimeseries) {
+	if cap(ts) == 0 {
+		return
+	}
+
 	for i := range ts {
 		ReusePreallocTimeseries(&ts[i])
 	}

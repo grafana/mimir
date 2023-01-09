@@ -3783,6 +3783,7 @@ type mockIngester struct {
 	happy                         bool
 	stats                         client.UsersStatsResponse
 	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
+	ephemeralTimeseries           map[uint32]*mimirpb.PreallocTimeseries
 	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
 	queryDelay                    time.Duration
 	pushDelay                     time.Duration
@@ -3834,8 +3835,12 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		return nil, context.DeadlineExceeded
 	}
 
-	if i.timeseries == nil {
+	if len(req.Timeseries) > 0 && i.timeseries == nil {
 		i.timeseries = map[uint32]*mimirpb.PreallocTimeseries{}
+	}
+
+	if len(req.EphemeralTimeseries) > 0 && i.ephemeralTimeseries == nil {
+		i.ephemeralTimeseries = map[uint32]*mimirpb.PreallocTimeseries{}
 	}
 
 	if i.metadata == nil {
@@ -3847,10 +3852,23 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		return nil, err
 	}
 
-	for j := range req.Timeseries {
-		series := req.Timeseries[j]
+	for j := range append(req.Timeseries, req.EphemeralTimeseries...) {
+		var series mimirpb.PreallocTimeseries
+		ephemeral := false
+		if j < len(req.Timeseries) {
+			series = req.Timeseries[j]
+		} else {
+			series = req.EphemeralTimeseries[j-len(req.Timeseries)]
+			ephemeral = true
+		}
 		hash := shardByAllLabels(orgid, series.Labels)
-		existing, ok := i.timeseries[hash]
+		var existing *mimirpb.PreallocTimeseries
+		var ok bool
+		if ephemeral {
+			existing, ok = i.ephemeralTimeseries[hash]
+		} else {
+			existing, ok = i.timeseries[hash]
+		}
 		if !ok {
 			// Make a copy because the request Timeseries are reused
 			item := mimirpb.TimeSeries{
@@ -3861,7 +3879,11 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 			copy(item.Labels, series.TimeSeries.Labels)
 			copy(item.Samples, series.TimeSeries.Samples)
 
-			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
+			if ephemeral {
+				i.ephemeralTimeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
+			} else {
+				i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
+			}
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
 		}
@@ -4969,6 +4991,9 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	const userName = "userName"
 
 	req := makeWriteRequestForGenerators(series, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+	all := req.Timeseries
+	req.Timeseries = all[:len(all)/2]
+	req.EphemeralTimeseries = all[len(all)/2:]
 
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
@@ -4978,12 +5003,20 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that each ingester only received series and metadata that it should receive.
 	totalSeries := 0
+	totalEphemeral := 0
 	totalMetadata := 0
 	for ix := range ing {
 		totalSeries += len(ing[ix].timeseries)
+		totalEphemeral += len(ing[ix].ephemeralTimeseries)
 		totalMetadata += len(ing[ix].metadata)
 
 		for _, ts := range ing[ix].timeseries {
+			token := distrib.tokenForLabels(userName, ts.Labels)
+			ingIx := getIngesterIndexForToken(token, ing)
+			assert.Equal(t, ix, ingIx)
+		}
+
+		for _, ts := range ing[ix].ephemeralTimeseries {
 			token := distrib.tokenForLabels(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ing)
 			assert.Equal(t, ix, ingIx)
@@ -4997,7 +5030,26 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, series, totalSeries)
+
+	// Verify that timeseries were forwarded as timeseries, and ephemeral timeseries as ephemeral timeseries, and there is no mixup.
+	for _, ts := range req.Timeseries {
+		token := distrib.tokenForLabels(userName, ts.Labels)
+		ingIx := getIngesterIndexForToken(token, ing)
+
+		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
+		assert.Equal(t, (*mimirpb.PreallocTimeseries)(nil), ing[ingIx].ephemeralTimeseries[token])
+	}
+
+	for _, ts := range req.EphemeralTimeseries {
+		token := distrib.tokenForLabels(userName, ts.Labels)
+		ingIx := getIngesterIndexForToken(token, ing)
+
+		assert.Equal(t, ts.Labels, ing[ingIx].ephemeralTimeseries[token].Labels)
+		assert.Equal(t, (*mimirpb.PreallocTimeseries)(nil), ing[ingIx].timeseries[token])
+	}
+
+	assert.Equal(t, series/2, totalSeries)
+	assert.Equal(t, series/2, totalEphemeral)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
 }
 
