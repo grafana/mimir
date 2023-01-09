@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
-	"github.com/grafana/mimir/pkg/querier/querypb"
+	"github.com/grafana/mimir/pkg/querier/internedquerypb"
 )
 
 func main() {
@@ -136,7 +136,7 @@ type originalFormatData struct {
 }
 
 func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalStringCount int, uniqueStringCount int, err error) {
-	resp := querypb.QueryResponse{
+	resp := internedquerypb.QueryResponse{
 		Status:    r.Status,
 		ErrorType: r.ErrorType,
 		Error:     r.Error,
@@ -180,14 +180,14 @@ func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalS
 	}
 }
 
-func convertToProtobufVector(original originalFormatData) (v *querypb.QueryResponse_Vector, originalStringCount int, uniqueStringCount int, err error) {
+func convertToProtobufVector(original originalFormatData) (v *internedquerypb.QueryResponse_Vector, originalStringCount int, uniqueStringCount int, err error) {
 	var originalVector model.Vector
 	if err := json.Unmarshal(original.Result, &originalVector); err != nil {
 		return nil, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
 	}
 
 	invertedSymbols := map[string]uint64{}
-	samples := make([]*querypb.Sample, len(originalVector))
+	samples := make([]*internedquerypb.Sample, len(originalVector))
 	originalStringCount = 0
 
 	for i, originalSample := range originalVector {
@@ -213,7 +213,7 @@ func convertToProtobufVector(original originalFormatData) (v *querypb.QueryRespo
 			originalStringCount += 2
 		}
 
-		samples[i] = &querypb.Sample{
+		samples[i] = &internedquerypb.Sample{
 			Value:         float64(originalSample.Value),
 			Timestamp:     int64(originalSample.Timestamp),
 			MetricSymbols: metricSymbols,
@@ -228,22 +228,22 @@ func convertToProtobufVector(original originalFormatData) (v *querypb.QueryRespo
 
 	uniqueStringCount = len(symbols)
 
-	return &querypb.QueryResponse_Vector{
-		Vector: &querypb.VectorData{
+	return &internedquerypb.QueryResponse_Vector{
+		Vector: &internedquerypb.VectorData{
 			Symbols: symbols,
 			Samples: samples,
 		},
 	}, originalStringCount, uniqueStringCount, nil
 }
 
-func convertToProtobufScalar(d originalFormatData) (*querypb.QueryResponse_Scalar, error) {
+func convertToProtobufScalar(d originalFormatData) (*internedquerypb.QueryResponse_Scalar, error) {
 	var originalScalar model.Scalar
 	if err := json.Unmarshal(d.Result, &originalScalar); err != nil {
 		return nil, fmt.Errorf("could not decode scalar result: %w", err)
 	}
 
-	return &querypb.QueryResponse_Scalar{
-		Scalar: &querypb.ScalarData{
+	return &internedquerypb.QueryResponse_Scalar{
+		Scalar: &internedquerypb.ScalarData{
 			Timestamp: int64(originalScalar.Timestamp),
 			Value:     float64(originalScalar.Value),
 		},

@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/querier/querypb"
+	"github.com/grafana/mimir/pkg/querier/internedquerypb"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -299,7 +299,7 @@ func originalDecode(body []byte) (promql.Vector, error) {
 }
 
 func protoDecode(body []byte) (promql.Vector, error) {
-	resp := querypb.QueryResponse{}
+	resp := internedquerypb.QueryResponse{}
 
 	if err := resp.Unmarshal(body); err != nil {
 		return nil, err
@@ -310,10 +310,10 @@ func protoDecode(body []byte) (promql.Vector, error) {
 	}
 
 	switch t := resp.Data.(type) {
-	case *querypb.QueryResponse_Scalar:
+	case *internedquerypb.QueryResponse_Scalar:
 		return protoDecodeScalar(t.Scalar), nil
 
-	case *querypb.QueryResponse_Vector:
+	case *internedquerypb.QueryResponse_Vector:
 		return protoDecodeVector(t.Vector), nil
 
 	default:
@@ -321,7 +321,7 @@ func protoDecode(body []byte) (promql.Vector, error) {
 	}
 }
 
-func protoDecodeScalar(s *querypb.ScalarData) promql.Vector {
+func protoDecodeScalar(s *internedquerypb.ScalarData) promql.Vector {
 	return promql.Vector{
 		promql.Sample{
 			Point: promql.Point{
@@ -333,7 +333,7 @@ func protoDecodeScalar(s *querypb.ScalarData) promql.Vector {
 	}
 }
 
-func protoDecodeVector(v *querypb.VectorData) promql.Vector {
+func protoDecodeVector(v *internedquerypb.VectorData) promql.Vector {
 	vec := make(promql.Vector, len(v.Samples))
 	symbols := v.Symbols
 
