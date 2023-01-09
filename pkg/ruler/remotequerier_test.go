@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/internedquerypb"
+	"github.com/grafana/mimir/pkg/querier/uninternedquerypb"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -224,7 +225,8 @@ func BenchmarkRemoteQuerier_Decode(b *testing.B) {
 func TestDecoders(t *testing.T) {
 	rootDir := "/Users/charleskorn/Desktop/queries"
 	originalFormatDir := path.Join(rootDir, "original-format")
-	protoFormatDir := path.Join(rootDir, "interned-protobuf")
+	uninternedProtoFormatDir := path.Join(rootDir, "uninterned-protobuf")
+	internedProtoFormatDir := path.Join(rootDir, "interned-protobuf")
 
 	originalFileNames, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
 	require.NoError(t, err)
@@ -240,11 +242,20 @@ func TestDecoders(t *testing.T) {
 			expected, err := originalDecode(originalBytes)
 			require.NoError(t, err)
 
-			t.Run("interned-protobuf", func(t *testing.T) {
-				protoBytes, err := os.ReadFile(path.Join(protoFormatDir, relativeName+".pb"))
+			t.Run("uninterned-protobuf", func(t *testing.T) {
+				protoBytes, err := os.ReadFile(path.Join(uninternedProtoFormatDir, relativeName+".pb"))
 				require.NoError(t, err)
 
-				actualProto, err := protoDecode(protoBytes)
+				actualProto, err := uninternedProtoDecode(protoBytes)
+				require.NoError(t, err)
+				requireEqual(t, expected, actualProto)
+			})
+
+			t.Run("interned-protobuf", func(t *testing.T) {
+				protoBytes, err := os.ReadFile(path.Join(internedProtoFormatDir, relativeName+".pb"))
+				require.NoError(t, err)
+
+				actualProto, err := internedProtoDecode(protoBytes)
 				require.NoError(t, err)
 				requireEqual(t, expected, actualProto)
 			})
@@ -298,7 +309,67 @@ func originalDecode(body []byte) (promql.Vector, error) {
 	return decodeQueryResponse(v.Type, v.Result)
 }
 
-func protoDecode(body []byte) (promql.Vector, error) {
+func uninternedProtoDecode(body []byte) (promql.Vector, error) {
+	resp := uninternedquerypb.QueryResponse{}
+
+	if err := resp.Unmarshal(body); err != nil {
+		return nil, err
+	}
+
+	if resp.Status == statusError {
+		return nil, fmt.Errorf("query response error: %s", resp.Error)
+	}
+
+	switch t := resp.Data.(type) {
+	case *uninternedquerypb.QueryResponse_Scalar:
+		return uninternedProtoDecodeScalar(t.Scalar), nil
+
+	case *uninternedquerypb.QueryResponse_Vector:
+		return uninternedProtoDecodeVector(t.Vector), nil
+
+	default:
+		panic(fmt.Sprintf("unknown data type: %v", t))
+	}
+}
+
+func uninternedProtoDecodeScalar(s *uninternedquerypb.ScalarData) promql.Vector {
+	return promql.Vector{
+		promql.Sample{
+			Point: promql.Point{
+				V: s.Value,
+				T: s.Timestamp,
+			},
+			Metric: labels.EmptyLabels(),
+		},
+	}
+}
+
+func uninternedProtoDecodeVector(v *uninternedquerypb.VectorData) promql.Vector {
+	vec := make(promql.Vector, len(v.Samples))
+
+	for i, s := range v.Samples {
+		labelCount := len(s.Metric) / 2
+		metric := make(labels.Labels, labelCount)
+
+		for i := 0; i < labelCount; i++ {
+			name := s.Metric[2*i]
+			value := s.Metric[2*i+1]
+			metric[i] = labels.Label{Name: name, Value: value}
+		}
+
+		vec[i] = promql.Sample{
+			Point: promql.Point{
+				V: s.Value,
+				T: s.Timestamp,
+			},
+			Metric: metric,
+		}
+	}
+
+	return vec
+}
+
+func internedProtoDecode(body []byte) (promql.Vector, error) {
 	resp := internedquerypb.QueryResponse{}
 
 	if err := resp.Unmarshal(body); err != nil {
@@ -311,17 +382,17 @@ func protoDecode(body []byte) (promql.Vector, error) {
 
 	switch t := resp.Data.(type) {
 	case *internedquerypb.QueryResponse_Scalar:
-		return protoDecodeScalar(t.Scalar), nil
+		return internedProtoDecodeScalar(t.Scalar), nil
 
 	case *internedquerypb.QueryResponse_Vector:
-		return protoDecodeVector(t.Vector), nil
+		return internedProtoDecodeVector(t.Vector), nil
 
 	default:
 		panic(fmt.Sprintf("unknown data type: %v", t))
 	}
 }
 
-func protoDecodeScalar(s *internedquerypb.ScalarData) promql.Vector {
+func internedProtoDecodeScalar(s *internedquerypb.ScalarData) promql.Vector {
 	return promql.Vector{
 		promql.Sample{
 			Point: promql.Point{
@@ -333,7 +404,7 @@ func protoDecodeScalar(s *internedquerypb.ScalarData) promql.Vector {
 	}
 }
 
-func protoDecodeVector(v *internedquerypb.VectorData) promql.Vector {
+func internedProtoDecodeVector(v *internedquerypb.VectorData) promql.Vector {
 	vec := make(promql.Vector, len(v.Samples))
 	symbols := v.Symbols
 
