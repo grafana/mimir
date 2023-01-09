@@ -3806,17 +3806,6 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 	return result
 }
 
-func (i *mockIngester) ephemeralSeries() map[uint32]*mimirpb.PreallocTimeseries {
-	i.Lock()
-	defer i.Unlock()
-
-	result := map[uint32]*mimirpb.PreallocTimeseries{}
-	for k, v := range i.ephemeralTimeseries {
-		result[k] = v
-	}
-	return result
-}
-
 func (i *mockIngester) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
 	i.Lock()
 	defer i.Unlock()
