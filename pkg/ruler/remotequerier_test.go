@@ -209,11 +209,12 @@ func BenchmarkRemoteQuerier_Decode(b *testing.B) {
 
 		b.Run(groupDir.Name(), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				body := bodies[i%len(bodies)]
-				_, err := originalDecode(body)
+				for _, body := range bodies {
+					_, err := originalDecode(body)
 
-				if err != nil {
-					require.NoError(b, err)
+					if err != nil {
+						require.NoError(b, err)
+					}
 				}
 			}
 		})
