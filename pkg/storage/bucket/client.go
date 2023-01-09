@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-	thazure "github.com/thanos-io/objstore/providers/azure"
 
 	"github.com/grafana/regexp"
 
@@ -165,7 +164,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	case GCS:
 		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger)
 	case Azure:
-		backendClient, err = azure.NewBucketClient(cfg.Azure, name, logger, thazure.NewBucket)
+		backendClient, err = azure.NewBucketClient(cfg.Azure, name, logger)
 	case Swift:
 		backendClient, err = swift.NewBucketClient(cfg.Swift, name, logger)
 	case Filesystem:
