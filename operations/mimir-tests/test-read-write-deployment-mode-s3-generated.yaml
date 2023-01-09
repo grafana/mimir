@@ -918,7 +918,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1
@@ -1091,7 +1091,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1
@@ -1264,7 +1264,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1
