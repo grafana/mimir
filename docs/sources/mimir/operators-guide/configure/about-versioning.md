@@ -86,7 +86,6 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
 - Query-frontend
-  - `-query-frontend.max-total-query-length`
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)

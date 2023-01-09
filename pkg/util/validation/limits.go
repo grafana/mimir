@@ -32,7 +32,6 @@ const (
 	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
 	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
-	maxPartialQueryLengthFlag  = "querier.max-partial-query-length"
 	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
 	maxLabelNameLengthFlag     = "validation.max-length-label-name"
 	maxLabelValueLengthFlag    = "validation.max-length-label-value"
@@ -117,7 +116,7 @@ type Limits struct {
 	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length" category:"experimental"`
+	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`

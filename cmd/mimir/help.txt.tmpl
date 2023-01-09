@@ -411,6 +411,8 @@ Usage of ./cmd/mimir/mimir:
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
+  -query-frontend.max-total-query-length duration
+    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.query-sharding-max-sharded-queries int
