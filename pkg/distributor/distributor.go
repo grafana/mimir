@@ -1245,6 +1245,10 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 }
 
 func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+	if len(series) == 0 {
+		return nil
+	}
+
 	result := make([]uint32, 0, len(series))
 	for _, ts := range series {
 		result = append(result, d.tokenForLabels(userID, ts.Labels))
