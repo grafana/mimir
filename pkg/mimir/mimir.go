@@ -94,13 +94,13 @@ var errInvalidBucketConfig = errors.New("invalid bucket config")
 
 // Config is the root config for Mimir.
 type Config struct {
-	Target              flagext.StringSliceCSV `yaml:"target"`
-	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
-	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
-	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"experimental"`
-	MaxGroupsPerUser    int                    `yaml:"max_groups_per_user" category:"experimental"`
-	PrintConfig         bool                   `yaml:"-"`
-	ApplicationName     string                 `yaml:"-"`
+	Target                          flagext.StringSliceCSV `yaml:"target"`
+	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
+	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
+	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
+	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
+	PrintConfig                     bool                   `yaml:"-"`
+	ApplicationName                 string                 `yaml:"-"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -148,7 +148,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
-	f.IntVar(&c.MaxGroupsPerUser, "max-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
+	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)

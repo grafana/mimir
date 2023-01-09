@@ -119,8 +119,8 @@ where `default_value` is the value to use if the environment variable is undefin
 
 # (experimental) Maximum number of groups allowed per user by which specified
 # distributor and ingester metrics can be further separated.
-# CLI flag: -max-groups-per-user
-[max_groups_per_user: <int> | default = 1000]
+# CLI flag: -max-separate-metrics-groups-per-user
+[max_separate_metrics_groups_per_user: <int> | default = 1000]
 
 api:
   # (advanced) Allows to skip label name validation via
@@ -2488,9 +2488,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Label used to define the group label for metrics separation.
 # For each write request, the group is obtained from the first non-empty group
-# label from the incoming list of timeseries. Specific distributor and ingester
-# metrics will be further separated adding a 'group' label with group label's
-# value.
+# label from the first timeseries in the incoming list of timeseries. Specific
+# distributor and ingester metrics will be further separated adding a 'group'
+# label with group label's value.
 # CLI flag: -validation.separate-metrics-group-label
 [separate_metrics_group_label: <string> | default = ""]
 

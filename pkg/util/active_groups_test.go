@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 )
 
 const maxGroupsPerUser = 100
@@ -28,22 +27,15 @@ func TestActiveGroups(t *testing.T) {
 
 	require.Nil(t, ag.PurgeInactiveGroupsForUser("user1", 5))
 	inactiveGroupsForUser1 := ag.PurgeInactiveGroupsForUser("user1", 16)
-	require.Equal(t, 2, len(inactiveGroupsForUser1))
-	require.True(t, slices.Contains(inactiveGroupsForUser1, "group1"))
-	require.True(t, slices.Contains(inactiveGroupsForUser1, "group2"))
-	require.False(t, slices.Contains(inactiveGroupsForUser1, "group3"))
+	require.ElementsMatch(t, inactiveGroupsForUser1, []string{"group1", "group2"})
 
 	require.Nil(t, ag.PurgeInactiveGroupsForUser("user2", 5))
 	inactiveGroupsForUser2 := ag.PurgeInactiveGroupsForUser("user2", 11)
-	require.Equal(t, 1, len(inactiveGroupsForUser2))
-	require.True(t, slices.Contains(inactiveGroupsForUser2, "group4"))
-	require.False(t, slices.Contains(inactiveGroupsForUser2, "group5"))
-	require.False(t, slices.Contains(inactiveGroupsForUser2, "group6"))
+	require.ElementsMatch(t, inactiveGroupsForUser2, []string{"group4"})
 
 	ag.UpdateGroupTimestampForUser("user1", "group1", time.Unix(0, 25))
 	inactiveGroupsForUser1 = ag.PurgeInactiveGroupsForUser("user1", 21)
-	require.Equal(t, 1, len(inactiveGroupsForUser1))
-	require.Equal(t, []string{"group3"}, inactiveGroupsForUser1)
+	require.ElementsMatch(t, inactiveGroupsForUser1, []string{"group3"})
 }
 
 func TestActiveGroupsConcurrentUpdateAndPurge(t *testing.T) {
@@ -107,7 +99,7 @@ func TestActiveGroupLimitExceeded(t *testing.T) {
 }
 
 func TestUpdateActiveGroups(t *testing.T) {
-	s := NewActiveGroupsCleanupWithDefaultValues(maxGroupsPerUser, func(string, string) {})
+	s := NewActiveGroupsCleanupService(3*time.Minute, 20*time.Minute, maxGroupsPerUser)
 
 	// Hit the group limit for user1
 	for i := 0; i < maxGroupsPerUser; i++ {

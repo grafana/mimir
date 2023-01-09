@@ -8,7 +8,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// For each write request, the group is obtained from the first non-empty group label from the list of timeseries
+// GroupLabel obtains the first non-empty group label from the first timeseries in the list of incoming timeseries.
 func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimeseries) string {
 	if len(timeseries) == 0 {
 		return ""

@@ -38,9 +38,8 @@ func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, now ti
 
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	groupTimestamps := ag.timestampsPerUser[userID]
 
-	if groupTimestamps == nil {
+	if ag.timestampsPerUser[userID] == nil {
 		ag.timestampsPerUser[userID] = map[string]*atomic.Int64{group: atomic.NewInt64(ts)}
 		return
 	}
@@ -55,13 +54,7 @@ func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, now ti
 
 func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64) []string {
 	ag.mu.RLock()
-	totalGroups := len(ag.timestampsPerUser[userID])
-	if totalGroups == 0 {
-		ag.mu.RUnlock()
-		return nil
-	}
-
-	inactiveGroups := make([]string, 0, totalGroups)
+	var inactiveGroups []string
 	groupTimestamps := ag.timestampsPerUser[userID]
 
 	for group, ts := range groupTimestamps {
@@ -71,7 +64,7 @@ func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64
 	}
 	ag.mu.RUnlock()
 
-	if groupTimestamps == nil || len(inactiveGroups) == 0 {
+	if len(inactiveGroups) == 0 {
 		return nil
 	}
 
@@ -91,11 +84,31 @@ func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64
 	return deletedGroups
 }
 
+func (ag *ActiveGroups) PurgeInactiveGroups(inactiveTimeout time.Duration, cleanupFuncs ...func(string, string)) {
+	userIDs := make([]string, len(ag.timestampsPerUser))
+	ag.mu.RLock()
+	i := 0
+	for userID := range ag.timestampsPerUser {
+		userIDs[i] = userID
+		i++
+	}
+	ag.mu.RUnlock()
+
+	for _, userID := range userIDs {
+		inactiveGroups := ag.PurgeInactiveGroupsForUser(userID, time.Now().Add(-inactiveTimeout).UnixNano())
+		for _, group := range inactiveGroups {
+			for _, cleanupFn := range cleanupFuncs {
+				cleanupFn(userID, group)
+			}
+		}
+	}
+}
+
 type ActiveGroupsCleanupService struct {
 	services.Service
 
 	activeGroups    *ActiveGroups
-	cleanupFuncs    []func(string, string) // Takes userID, group
+	cleanupFuncs    []func(userID, group string)
 	inactiveTimeout time.Duration
 }
 
@@ -112,10 +125,6 @@ func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duratio
 
 	s.Service = services.NewTimerService(cleanupInterval, nil, s.iteration, nil).WithName("active groups cleanup")
 	return s
-}
-
-func NewActiveGroupsCleanupWithDefaultValues(maxGroupsPerUser int, cleanupFns ...func(string, string)) *ActiveGroupsCleanupService {
-	return NewActiveGroupsCleanupService(1*time.Minute, 20*time.Minute, maxGroupsPerUser, cleanupFns...)
 }
 
 func (ag *ActiveGroups) ActiveGroupLimitExceeded(userID, group string) bool {
@@ -140,17 +149,12 @@ func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group stri
 }
 
 func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
-	for userID := range s.activeGroups.timestampsPerUser {
-		inactiveGroups := s.activeGroups.PurgeInactiveGroupsForUser(userID, time.Now().Add(-s.inactiveTimeout).UnixNano())
-		for _, group := range inactiveGroups {
-			for _, cleanupFn := range s.cleanupFuncs {
-				cleanupFn(userID, group)
-			}
-		}
-	}
+	s.activeGroups.PurgeInactiveGroups(s.inactiveTimeout, s.cleanupFuncs...)
 	return nil
 }
 
+// Register registers the cleanup function from metricsCleaner to be called during each cleanup iteration.
+// This function is NOT thread safe
 func (s *ActiveGroupsCleanupService) Register(metricsCleaner UserGroupMetricsCleaner) {
 	s.cleanupFuncs = append(s.cleanupFuncs, metricsCleaner.RemoveGroupMetricsForUser)
 }

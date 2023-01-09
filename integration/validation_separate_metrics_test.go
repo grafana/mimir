@@ -50,11 +50,6 @@ func TestValidateSeparateMetrics(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	// Wait until ingesters have heartbeated the ring after all ingesters were active,
-	// in order to update the number of instances. Since we have no metric, we have to
-	// rely on a ugly sleep.
-	time.Sleep(2 * time.Second)
-
 	now := time.Now()
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
@@ -92,6 +87,15 @@ func TestValidateSeparateMetrics(t *testing.T) {
 
 	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "")),
+		e2e.WaitMissingMetrics)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(metricNumSeries))
+	require.Equal(t, float64(1), metricNumSeries[0])
+
+	// Ensure previous series didn't disappear
+	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "test-group")),
 		e2e.WaitMissingMetrics)
 
 	require.NoError(t, err)
@@ -167,16 +171,11 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	// Wait until ingesters have heartbeated the ring after all ingesters were active,
-	// in order to update the number of instances. Since we have no metric, we have to
-	// rely on a ugly sleep.
-	time.Sleep(2 * time.Second)
-
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
 
 	// Push invalid series with different groups
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 9; i++ {
 		series, _, _ := generateSeries("TestMetric", time.Now(), prompb.Label{
 			Name:  "separate_metrics_group",
 			Value: strconv.Itoa(i % 2),
@@ -196,10 +195,10 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 1, len(metricNumSeriesOdd))
-	require.Equal(t, float64(5), metricNumSeriesOdd[0])
+	require.Equal(t, float64(4), metricNumSeriesOdd[0])
 
 	metricNumSeriesEven, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
-		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "1")),
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "0")),
 		e2e.WaitMissingMetrics)
 
 	require.NoError(t, err)
@@ -219,7 +218,7 @@ func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 	)
 
 	flags["-validation.separate-metrics-group-label"] = "separate_metrics_group"
-	flags["-max-groups-per-user"] = strconv.Itoa(10)
+	flags["-max-separate-metrics-groups-per-user"] = strconv.Itoa(10)
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
@@ -237,11 +236,6 @@ func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-	// Wait until ingesters have heartbeated the ring after all ingesters were active,
-	// in order to update the number of instances. Since we have no metric, we have to
-	// rely on a ugly sleep.
-	time.Sleep(2 * time.Second)
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
