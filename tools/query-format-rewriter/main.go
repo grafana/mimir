@@ -15,6 +15,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/querier/internedquerypb"
+	"github.com/grafana/mimir/pkg/querier/uninternedquerypb"
 )
 
 func main() {
@@ -27,58 +28,74 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := run(workingDir); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(workingDir string) error {
 	originalFormatDir := path.Join(workingDir, "original-format")
 	originalFormatFiles, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
 
 	if err != nil {
-		fmt.Printf("Error listing original format files: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("listing original format files: %w", err)
 	}
 
 	slices.Sort(originalFormatFiles)
 
+	uninternedProtobufDir := path.Join(workingDir, "uninterned-protobuf")
 	internedProtobufDir := path.Join(workingDir, "interned-protobuf")
 
-	for _, d := range []string{internedProtobufDir} {
+	for _, d := range []string{uninternedProtobufDir, internedProtobufDir} {
 		if err := ensureCreatedAndClean(d); err != nil {
-			fmt.Printf("Could not create output directory %v: %v\n", d, err)
-			os.Exit(1)
+			return fmt.Errorf("creating output directory %v: %w", d, err)
 		}
 	}
 
-	fmt.Println("Name\tOriginal number of strings\tUnique strings\tOriginal size (bytes)\tInterned Protobuf format size (bytes)")
+	fmt.Println("Name\tOriginal number of strings\tUnique strings\tOriginal size (bytes)\tUninterned Protobuf format size(bytes)\tInterned Protobuf format size (bytes)")
 
 	for _, originalFormatFile := range originalFormatFiles {
 		originalFormat, originalFormatSize, err := parseOriginalFormat(originalFormatFile)
 
 		if err != nil {
-			fmt.Printf("Error reading %v: %v\n", originalFormatFile, err)
-			os.Exit(1)
+			return fmt.Errorf("reading %v: %w", originalFormatFile, err)
 		}
 
-		internedProtobufBytes, originalStringCount, uniqueStringCount, err := convertToProtobufResponse(originalFormat)
+		uninternedProtobufBytes, err := convertToUninternedProtobufResponse(originalFormat)
 
 		if err != nil {
-			fmt.Printf("Error converting to protobuf: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("converting to uninterned Protobuf: %w", err)
+		}
+
+		internedProtobufBytes, originalStringCount, uniqueStringCount, err := convertToInternedProtobufResponse(originalFormat)
+
+		if err != nil {
+			return fmt.Errorf("converting to interned Protobuf: %w", err)
 		}
 
 		relativeName, err := filepath.Rel(originalFormatDir, originalFormatFile)
 
 		if err != nil {
-			fmt.Printf("Error determining relative path: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("determining relative path: %w", err)
+		}
+
+		uninternedProtobufFile := path.Join(uninternedProtobufDir, relativeName+".pb")
+
+		if err := createParentAndWriteFile(uninternedProtobufFile, uninternedProtobufBytes); err != nil {
+			return fmt.Errorf("writing file %v: %w", uninternedProtobufFile, err)
 		}
 
 		internedProtobufFile := path.Join(internedProtobufDir, relativeName+".pb")
 
 		if err := createParentAndWriteFile(internedProtobufFile, internedProtobufBytes); err != nil {
-			fmt.Printf("Error writing file %v: %v\n", internedProtobufFile, err)
-			os.Exit(1)
+			return fmt.Errorf("writing file %v: %w", internedProtobufFile, err)
 		}
 
-		fmt.Printf("%v\t%v\t%v\t%v\t%v\n", relativeName, originalStringCount, uniqueStringCount, originalFormatSize, len(internedProtobufBytes))
+		fmt.Printf("%v\t%v\t%v\t%v\t%v\t%v\n", relativeName, originalStringCount, uniqueStringCount, originalFormatSize, len(uninternedProtobufBytes), len(internedProtobufBytes))
 	}
+
+	return nil
 }
 
 func ensureCreatedAndClean(dir string) error {
@@ -135,7 +152,109 @@ type originalFormatData struct {
 	Result json.RawMessage `json:"result"`
 }
 
-func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalStringCount int, uniqueStringCount int, err error) {
+func convertToUninternedProtobufResponse(r originalFormatAPIResponse) (b []byte, err error) {
+	resp := uninternedquerypb.QueryResponse{
+		Status:    r.Status,
+		ErrorType: r.ErrorType,
+		Error:     r.Error,
+	}
+
+	switch r.Data.Type {
+	case model.ValVector:
+		data, err := convertToUninternedProtobufVector(r.Data)
+
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, err
+		}
+
+		return b, nil
+
+	case model.ValScalar:
+		data, err := convertToUninternedProtobufScalar(r.Data)
+
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, err
+		}
+
+		return b, nil
+
+	default:
+		panic(fmt.Sprintf("unsupported data type: %v", r.Data.Type))
+	}
+}
+
+func convertToUninternedProtobufVector(original originalFormatData) (v *uninternedquerypb.QueryResponse_Vector, err error) {
+	var originalVector model.Vector
+	if err := json.Unmarshal(original.Result, &originalVector); err != nil {
+		return nil, fmt.Errorf("could not decode vector result: %w", err)
+	}
+
+	invertedSymbols := map[string]uint64{}
+	samples := make([]*uninternedquerypb.Sample, len(originalVector))
+
+	for i, originalSample := range originalVector {
+		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
+		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		for n, v := range originalSample.Metric {
+			lb.Set(string(n), string(v))
+		}
+
+		metric := make([]string, 0, len(originalSample.Metric)*2)
+
+		for _, l := range lb.Labels(nil) {
+			metric = append(metric, l.Name, l.Value)
+		}
+
+		samples[i] = &uninternedquerypb.Sample{
+			Value:     float64(originalSample.Value),
+			Timestamp: int64(originalSample.Timestamp),
+			Metric:    metric,
+		}
+	}
+
+	symbols := make([]string, len(invertedSymbols))
+
+	for s, i := range invertedSymbols {
+		symbols[i] = s
+	}
+
+	return &uninternedquerypb.QueryResponse_Vector{
+		Vector: &uninternedquerypb.VectorData{
+			Samples: samples,
+		},
+	}, nil
+}
+
+func convertToUninternedProtobufScalar(d originalFormatData) (*uninternedquerypb.QueryResponse_Scalar, error) {
+	var originalScalar model.Scalar
+	if err := json.Unmarshal(d.Result, &originalScalar); err != nil {
+		return nil, fmt.Errorf("could not decode scalar result: %w", err)
+	}
+
+	return &uninternedquerypb.QueryResponse_Scalar{
+		Scalar: &uninternedquerypb.ScalarData{
+			Timestamp: int64(originalScalar.Timestamp),
+			Value:     float64(originalScalar.Value),
+		},
+	}, nil
+}
+
+func convertToInternedProtobufResponse(r originalFormatAPIResponse) (b []byte, originalStringCount int, uniqueStringCount int, err error) {
 	resp := internedquerypb.QueryResponse{
 		Status:    r.Status,
 		ErrorType: r.ErrorType,
@@ -144,7 +263,7 @@ func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalS
 
 	switch r.Data.Type {
 	case model.ValVector:
-		data, originalStringCount, uniqueStringCount, err := convertToProtobufVector(r.Data)
+		data, originalStringCount, uniqueStringCount, err := convertToInternedProtobufVector(r.Data)
 
 		if err != nil {
 			return nil, 0, 0, err
@@ -160,7 +279,7 @@ func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalS
 		return b, originalStringCount, uniqueStringCount, nil
 
 	case model.ValScalar:
-		data, err := convertToProtobufScalar(r.Data)
+		data, err := convertToInternedProtobufScalar(r.Data)
 
 		if err != nil {
 			return nil, 0, 0, err
@@ -180,7 +299,7 @@ func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalS
 	}
 }
 
-func convertToProtobufVector(original originalFormatData) (v *internedquerypb.QueryResponse_Vector, originalStringCount int, uniqueStringCount int, err error) {
+func convertToInternedProtobufVector(original originalFormatData) (v *internedquerypb.QueryResponse_Vector, originalStringCount int, uniqueStringCount int, err error) {
 	var originalVector model.Vector
 	if err := json.Unmarshal(original.Result, &originalVector); err != nil {
 		return nil, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
@@ -236,7 +355,7 @@ func convertToProtobufVector(original originalFormatData) (v *internedquerypb.Qu
 	}, originalStringCount, uniqueStringCount, nil
 }
 
-func convertToProtobufScalar(d originalFormatData) (*internedquerypb.QueryResponse_Scalar, error) {
+func convertToInternedProtobufScalar(d originalFormatData) (*internedquerypb.QueryResponse_Scalar, error) {
 	var originalScalar model.Scalar
 	if err := json.Unmarshal(d.Result, &originalScalar); err != nil {
 		return nil, fmt.Errorf("could not decode scalar result: %w", err)

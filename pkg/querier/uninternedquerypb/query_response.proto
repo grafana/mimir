@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package uninternedquerypb;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// HACK
+// I've thrown this definition together without thinking too deeply about it.
+// Things we'd need to consider, but I haven't thought through:
+// - forwards compatibility considerations if we ever need to add or change this
+// - any protobuf gotchas (I haven't used protobuf for a few years)
+
+message QueryResponse {
+  string Status = 1; // TODO: could this be an enum rather than a string?
+  string ErrorType = 2; // TODO: could this be an enum rather than a string?
+  string Error = 3;
+
+  oneof Data {
+    VectorData Vector = 4;
+    ScalarData Scalar = 5;
+
+    // TODO: if we want to use this for all query types, we'd need to add support for matrix and string values
+  }
+}
+
+message VectorData {
+  repeated Sample Samples = 2;
+}
+
+message Sample {
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated string Metric = 1;
+  double Value = 2;
+
+  // TODO: is there a better type to use here?
+  int64 Timestamp = 3; // milliseconds
+}
+
+message ScalarData {
+  double Value = 1;
+
+  // TODO: is there a better type to use here?
+  int64 Timestamp = 2; // milliseconds
+}
