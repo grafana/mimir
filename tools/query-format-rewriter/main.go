@@ -37,17 +37,16 @@ func main() {
 
 	slices.Sort(originalFormatFiles)
 
-	internedJsonDir := path.Join(workingDir, "interned-json")
 	internedProtobufDir := path.Join(workingDir, "interned-protobuf")
 
-	for _, d := range []string{internedJsonDir, internedProtobufDir} {
+	for _, d := range []string{internedProtobufDir} {
 		if err := ensureCreatedAndClean(d); err != nil {
 			fmt.Printf("Could not create output directory %v: %v\n", d, err)
 			os.Exit(1)
 		}
 	}
 
-	fmt.Println("Name\tOriginal number of strings\tUnique strings\tOriginal size (bytes)\tInterned JSON format size (bytes)\tInterned Protobuf format size (bytes)")
+	fmt.Println("Name\tOriginal number of strings\tUnique strings\tOriginal size (bytes)\tInterned Protobuf format size (bytes)")
 
 	for _, originalFormatFile := range originalFormatFiles {
 		originalFormat, originalFormatSize, err := parseOriginalFormat(originalFormatFile)
@@ -57,21 +56,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		internedStringsFormat, originalStringCount, uniqueStringCount, err := convertResponseToInternedStringsFormat(originalFormat)
-
-		if err != nil {
-			fmt.Printf("Error converting %v: %v\n", originalFormatFile, err)
-			os.Exit(1)
-		}
-
-		internedJSONBytes, err := json.Marshal(internedStringsFormat)
-
-		if err != nil {
-			fmt.Printf("Error marshalling to JSON: %v\n", err)
-			os.Exit(1)
-		}
-
-		internedProtobufBytes, err := convertToProtobufResponse(internedStringsFormat)
+		internedProtobufBytes, originalStringCount, uniqueStringCount, err := convertToProtobufResponse(originalFormat)
 
 		if err != nil {
 			fmt.Printf("Error converting to protobuf: %v\n", err)
@@ -85,13 +70,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		internedJSONFile := path.Join(internedJsonDir, relativeName)
-
-		if err := createParentAndWriteFile(internedJSONFile, internedJSONBytes); err != nil {
-			fmt.Printf("Error writing file %v: %v\n", internedJSONFile, err)
-			os.Exit(1)
-		}
-
 		internedProtobufFile := path.Join(internedProtobufDir, relativeName+".pb")
 
 		if err := createParentAndWriteFile(internedProtobufFile, internedProtobufBytes); err != nil {
@@ -99,7 +77,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		fmt.Printf("%v\t%v\t%v\t%v\t%v\t%v\n", relativeName, originalStringCount, uniqueStringCount, originalFormatSize, len(internedJSONBytes), len(internedProtobufBytes))
+		fmt.Printf("%v\t%v\t%v\t%v\t%v\n", relativeName, originalStringCount, uniqueStringCount, originalFormatSize, len(internedProtobufBytes))
 	}
 }
 
@@ -145,104 +123,6 @@ func parseOriginalFormat(f string) (originalFormatAPIResponse, int, error) {
 	return resp, len(b), nil
 }
 
-func convertResponseToInternedStringsFormat(o originalFormatAPIResponse) (internedStringsAPIResponse, int, int, error) {
-	data, originalStringCount, uniqueStringCount, err := convertDataToInternedStringsFormat(o.Data)
-
-	if err != nil {
-		return internedStringsAPIResponse{}, 0, 0, err
-	}
-
-	return internedStringsAPIResponse{
-		Status:    o.Status,
-		Data:      data,
-		ErrorType: o.ErrorType,
-		Error:     o.Error,
-	}, originalStringCount, uniqueStringCount, nil
-}
-
-func convertDataToInternedStringsFormat(o originalFormatData) (internedStringsData, int, int, error) {
-	switch o.Type {
-	case model.ValScalar:
-		return convertScalarDataToInternedStringsFormat(o.Result)
-
-	case model.ValVector:
-		return convertVectorDataToInternedStringsFormat(o.Result)
-
-	default:
-		return internedStringsData{}, 0, 0, fmt.Errorf("unsupported value type %v", o.Type)
-	}
-}
-
-func convertScalarDataToInternedStringsFormat(raw json.RawMessage) (internedStringsData, int, int, error) {
-	// Scalars have no labels, so there is no conversion required.
-
-	return internedStringsData{
-		Type:   model.ValScalar,
-		Result: raw,
-	}, 0, 0, nil
-}
-
-// TODO: for protobuf, we might get a small payload size reduction if we use lower symbol ordinals for
-// label names, as we'd expect these would be repeated more often. The lower ordinals would encode as fewer
-// bytes if we use uvarints for encoding.
-// Easiest way to achieve this would be to scan through all label names first, then scan through label values.
-func convertVectorDataToInternedStringsFormat(raw json.RawMessage) (internedStringsData, int, int, error) {
-	var originalVector model.Vector
-	if err := json.Unmarshal(raw, &originalVector); err != nil {
-		return internedStringsData{}, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
-	}
-
-	invertedSymbols := map[string]internedSymbolRef{}
-	convertedVector := make(internedStringVector, 0, len(originalVector))
-	originalStringCount := 0
-
-	for _, originalSample := range originalVector {
-		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
-		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
-		lb := labels.NewBuilder(labels.EmptyLabels())
-		for n, v := range originalSample.Metric {
-			lb.Set(string(n), string(v))
-		}
-
-		metricSymbols := make(internedSymbolPairs, 0, len(originalSample.Metric)*2)
-
-		for _, l := range lb.Labels(nil) {
-			if _, ok := invertedSymbols[l.Name]; !ok {
-				invertedSymbols[l.Name] = internedSymbolRef(len(invertedSymbols))
-			}
-
-			if _, ok := invertedSymbols[l.Value]; !ok {
-				invertedSymbols[l.Value] = internedSymbolRef(len(invertedSymbols))
-			}
-
-			metricSymbols = append(metricSymbols, invertedSymbols[l.Name], invertedSymbols[l.Value])
-			originalStringCount += 2
-		}
-
-		convertedSample := internedStringSample{
-			Value:         originalSample.Value,
-			Timestamp:     originalSample.Timestamp,
-			MetricSymbols: metricSymbols,
-		}
-
-		convertedVector = append(convertedVector, convertedSample)
-	}
-
-	symbols := make([]string, len(invertedSymbols))
-
-	for s, i := range invertedSymbols {
-		symbols[i] = s
-	}
-
-	uniqueStringCount := len(symbols)
-
-	return internedStringsData{
-		Type:    model.ValVector,
-		Result:  convertedVector,
-		Symbols: symbols,
-	}, originalStringCount, uniqueStringCount, nil
-}
-
 type originalFormatAPIResponse struct {
 	Status    string             `json:"status"`
 	Data      originalFormatData `json:"data"`
@@ -255,50 +135,7 @@ type originalFormatData struct {
 	Result json.RawMessage `json:"result"`
 }
 
-type internedStringsAPIResponse struct {
-	Status    string              `json:"status"`
-	Data      internedStringsData `json:"data"`
-	ErrorType string              `json:"errorType,omitempty"`
-	Error     string              `json:"error,omitempty"`
-}
-
-type internedStringsData struct {
-	Type    model.ValueType `json:"resultType"`
-	Result  any             `json:"result"`
-	Symbols []string        `json:"symbols,omitempty"`
-}
-
-type internedStringVector []internedStringSample
-
-type internedStringSample struct {
-	MetricSymbols internedSymbolPairs `json:"metric"`
-	Value         model.SampleValue   `json:"value"`
-	Timestamp     model.Time          `json:"timestamp"`
-}
-
-// This is based on model.Sample - it encodes the value as an array to avoid including lots of instances of
-// "value" and "timestamp" in the final JSON output.
-func (s internedStringSample) MarshalJSON() ([]byte, error) {
-	v := struct {
-		MetricSymbols []internedSymbolRef `json:"metric"`
-		Value         model.SamplePair    `json:"value"`
-	}{
-		MetricSymbols: s.MetricSymbols,
-		Value: model.SamplePair{
-			Timestamp: s.Timestamp,
-			Value:     s.Value,
-		},
-	}
-
-	return json.Marshal(&v)
-}
-
-// Ordered label name-value pair references.
-type internedSymbolPairs []internedSymbolRef
-
-type internedSymbolRef uint64
-
-func convertToProtobufResponse(r internedStringsAPIResponse) ([]byte, error) {
+func convertToProtobufResponse(r originalFormatAPIResponse) (b []byte, originalStringCount int, uniqueStringCount int, err error) {
 	resp := querypb.QueryResponse{
 		Status:    r.Status,
 		ErrorType: r.ErrorType,
@@ -307,53 +144,101 @@ func convertToProtobufResponse(r internedStringsAPIResponse) ([]byte, error) {
 
 	switch r.Data.Type {
 	case model.ValVector:
-		resp.Data = convertToProtobufVector(r.Data)
+		data, originalStringCount, uniqueStringCount, err := convertToProtobufVector(r.Data)
+
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
+		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
+		return b, originalStringCount, uniqueStringCount, nil
 
 	case model.ValScalar:
 		data, err := convertToProtobufScalar(r.Data)
 
 		if err != nil {
-			return nil, err
+			return nil, 0, 0, err
 		}
 
 		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
+		return b, 0, 0, nil
 
 	default:
 		panic(fmt.Sprintf("unsupported data type: %v", r.Data.Type))
 	}
-
-	return resp.Marshal()
 }
 
-func convertToProtobufVector(d internedStringsData) *querypb.QueryResponse_Vector {
-	vector := d.Result.(internedStringVector)
-	samples := make([]*querypb.Sample, len(vector))
+func convertToProtobufVector(original originalFormatData) (v *querypb.QueryResponse_Vector, originalStringCount int, uniqueStringCount int, err error) {
+	var originalVector model.Vector
+	if err := json.Unmarshal(original.Result, &originalVector); err != nil {
+		return nil, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
+	}
 
-	for i, s := range vector {
-		metricSymbols := make([]uint64, len(s.MetricSymbols))
+	invertedSymbols := map[string]uint64{}
+	samples := make([]*querypb.Sample, len(originalVector))
+	originalStringCount = 0
 
-		for i, s := range s.MetricSymbols {
-			metricSymbols[i] = uint64(s)
+	for i, originalSample := range originalVector {
+		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
+		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		for n, v := range originalSample.Metric {
+			lb.Set(string(n), string(v))
+		}
+
+		metricSymbols := make([]uint64, 0, len(originalSample.Metric)*2)
+
+		for _, l := range lb.Labels(nil) {
+			if _, ok := invertedSymbols[l.Name]; !ok {
+				invertedSymbols[l.Name] = uint64(len(invertedSymbols))
+			}
+
+			if _, ok := invertedSymbols[l.Value]; !ok {
+				invertedSymbols[l.Value] = uint64(len(invertedSymbols))
+			}
+
+			metricSymbols = append(metricSymbols, invertedSymbols[l.Name], invertedSymbols[l.Value])
+			originalStringCount += 2
 		}
 
 		samples[i] = &querypb.Sample{
+			Value:         float64(originalSample.Value),
+			Timestamp:     int64(originalSample.Timestamp),
 			MetricSymbols: metricSymbols,
-			Value:         float64(s.Value),
-			Timestamp:     int64(s.Timestamp),
 		}
 	}
 
+	symbols := make([]string, len(invertedSymbols))
+
+	for s, i := range invertedSymbols {
+		symbols[i] = s
+	}
+
+	uniqueStringCount = len(symbols)
+
 	return &querypb.QueryResponse_Vector{
 		Vector: &querypb.VectorData{
-			Symbols: d.Symbols,
+			Symbols: symbols,
 			Samples: samples,
 		},
-	}
+	}, originalStringCount, uniqueStringCount, nil
 }
 
-func convertToProtobufScalar(d internedStringsData) (*querypb.QueryResponse_Scalar, error) {
+func convertToProtobufScalar(d originalFormatData) (*querypb.QueryResponse_Scalar, error) {
 	var originalScalar model.Scalar
-	if err := json.Unmarshal(d.Result.(json.RawMessage), &originalScalar); err != nil {
+	if err := json.Unmarshal(d.Result, &originalScalar); err != nil {
 		return nil, fmt.Errorf("could not decode scalar result: %w", err)
 	}
 
