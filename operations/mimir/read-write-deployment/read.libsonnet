@@ -14,8 +14,10 @@
   mimir_read_args::
     // The ruler remote evaluation (running in mimir-backend) connects to mimir-read via gRPC.
     $._config.grpcIngressConfig +
-    $.query_frontend_args +
-    $.querier_args + {
+    $.querier_args +
+    // Query-frontend configuration takes precedence over querier configuration (e.g. HTTP / gRPC settings) because
+    // the query-frontend is the ingress service.
+    $.query_frontend_args {
       target: 'read',
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,
