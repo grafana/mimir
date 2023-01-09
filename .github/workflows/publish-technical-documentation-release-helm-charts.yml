@@ -68,7 +68,7 @@ jobs:
       id: "publish-release"
       with:
         repository: "grafana/website"
-        branch: "master"
+        branch: "nbwalters/docs-helm-landing-page" # Change to "master" once this branch is merged.
         host: "github.com"
         github_pat: "${{ secrets.GH_BOT_ACCESS_TOKEN }}"
         source_folder: "docs/sources/helm-charts/mimir-distributed"
