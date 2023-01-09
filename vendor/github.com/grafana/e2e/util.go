@@ -262,7 +262,7 @@ func GetTempDirectory() (string, error) {
 // based on GenerateTestHistograms in github.com/prometheus/prometheus/tsdb
 func GenerateTestHistogram(i int) *histogram.Histogram {
 	return &histogram.Histogram{
-		Count:         5 + uint64(i*4),
+		Count:         10 + uint64(i*8),
 		ZeroCount:     2 + uint64(i),
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
@@ -272,14 +272,43 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{int64(i + 1), 1, -1, 0},
 	}
 }
 
 func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	return &model.SampleHistogram{
-		Count: model.FloatString(5 + i*4),
+		Count: model.FloatString(10 + i*8),
 		Sum:   model.FloatString(18.4 * float64(i+1)),
 		Buckets: model.HistogramBuckets{
+			&model.HistogramBucket{
+				Boundaries: 1,
+				Lower:      -4,
+				Upper:      -2.82842712474619,
+				Count:      model.FloatString(1 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 1,
+				Lower:      -2.82842712474619,
+				Upper:      -2,
+				Count:      model.FloatString(1 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 1,
+				Lower:      -1.414213562373095,
+				Upper:      -1,
+				Count:      model.FloatString(2 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 1,
+				Lower:      -1,
+				Upper:      -0.7071067811865475,
+				Count:      model.FloatString(1 + i),
+			},
 			&model.HistogramBucket{
 				Boundaries: 3,
 				Lower:      -0.001,
