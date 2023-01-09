@@ -253,7 +253,7 @@ func (l *rampingUpRateLimiter) rampUp(duration, interval time.Duration, startRat
 		}
 		logger.Log("msg", "ramping up request rate to", "rate", currentRate)
 		l.mtx.Lock()
-		l.l = rate.NewLimiter(rate.Limit(currentRate), int(currentRate))
+		l.l = rate.NewLimiter(rate.Limit(currentRate), 1)
 		l.mtx.Unlock()
 	}
 }
