@@ -299,6 +299,15 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 	)
 }
 
+func NewOverridesExporter(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":    "overrides-exporter",
+			"-log.level": "warn",
+		}, flags, options...)
+}
+
 // Options holds a set of options for running services, they can be altered passing Option funcs.
 type Options struct {
 	Image      string
