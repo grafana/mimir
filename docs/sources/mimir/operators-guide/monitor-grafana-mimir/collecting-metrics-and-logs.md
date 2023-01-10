@@ -268,4 +268,3 @@ metrics:
     scrape_interval: 15s
   wal_directory: /tmp/grafana-agent-wal
 ```
-
