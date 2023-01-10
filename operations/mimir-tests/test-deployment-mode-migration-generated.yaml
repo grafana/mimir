@@ -451,6 +451,27 @@ metadata:
   name: mimir-read
   namespace: default
 spec:
+  ports:
+  - name: mimir-read-gossip-ring
+    port: 7946
+    targetPort: 7946
+  - name: mimir-read-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: mimir-read-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: mimir-read
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: mimir-read
+  name: mimir-read-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: mimir-read-gossip-ring
@@ -2201,7 +2222,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2373,7 +2394,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2545,7 +2566,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
