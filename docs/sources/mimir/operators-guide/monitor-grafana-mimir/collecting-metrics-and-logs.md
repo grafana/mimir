@@ -56,7 +56,7 @@ Managing your own Agent comes with some caveats:
   configuration cannot account for multiple installations of the Helm chart.
 
 If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
-the [built-in Grafana Agent operator](#collect-metrics-and-logs-via-the-helm-chart). Using the Agent operator allows the
+the [built-in Grafana Agent operator](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). Using the Agent operator allows the
 chart to automatically configure the Agent, eliminating the aforementioned caveats.
 
 #### Example Agent configuration
