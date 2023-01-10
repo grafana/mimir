@@ -134,7 +134,7 @@ func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *
 		}
 
 		dropped := len(multierr.Errors(errs))
-		discardedDueToOtelParseError.WithLabelValues(userID).Add(float64(dropped))
+		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {

@@ -107,3 +107,6 @@ The following features are currently experimental:
 - Anonymous usage statistics tracking
 - Read-write deployment mode
 - `/api/v1/user_limits` API endpoint
+- Metric separation by an additionally configured group label
+  - `-validation.separate-metrics-group-label`
+  - `-max-separate-metrics-groups-per-user`

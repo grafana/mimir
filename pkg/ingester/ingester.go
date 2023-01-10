@@ -213,7 +213,8 @@ type Ingester struct {
 	// Value used by shipper as external label.
 	shipperIngesterID string
 
-	subservices *services.Manager
+	subservices  *services.Manager
+	activeGroups *util.ActiveGroupsCleanupService
 
 	tsdbMetrics *tsdbMetrics
 
@@ -285,7 +286,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
 
 	i, err := newIngester(cfg, limits, registerer, logger)
@@ -294,6 +295,7 @@ func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registe
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.activeGroups = activeGroupsCleanupService
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -883,23 +885,25 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), time.Now())
+
 	if sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(sampleOutOfBoundsCount))
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(sampleOutOfBoundsCount))
 	}
 	if sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(sampleOutOfOrderCount))
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID, group).Add(float64(sampleOutOfOrderCount))
 	}
 	if sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(sampleTooOldCount))
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID, group).Add(float64(sampleTooOldCount))
 	}
 	if newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(newValueForTimestampCount))
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID, group).Add(float64(newValueForTimestampCount))
 	}
 	if perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(perUserSeriesLimitCount))
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, group).Add(float64(perUserSeriesLimitCount))
 	}
 	if perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(perMetricSeriesLimitCount))
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(perMetricSeriesLimitCount))
 	}
 	if succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(succeededSamplesCount))
@@ -2091,6 +2095,10 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	level.Info(i.logger).Log("msg", "deleted local TSDB, due to being idle", "user", userID, "dir", dir)
 	return tsdbIdleClosed
+}
+
+func (i *Ingester) RemoveGroupMetricsForUser(userID, group string) {
+	i.metrics.deletePerGroupMetricsForUser(userID, group)
 }
 
 // TransferOut implements ring.FlushTransferer.

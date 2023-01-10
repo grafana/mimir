@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -58,9 +59,11 @@ type forwarder struct {
 	pools              *pools
 	client             http.Client
 	log                log.Logger
+	limits             *validation.Overrides
 	workerWg           sync.WaitGroup
 	reqCh              chan *request
 	httpGrpcClientPool *client.Pool
+	activeGroups       *util.ActiveGroupsCleanupService
 
 	requestsTotal           prometheus.Counter
 	errorsTotal             *prometheus.CounterVec
@@ -73,16 +76,17 @@ type forwarder struct {
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
-func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forwarder {
+func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService) Forwarder {
 	if !cfg.Enabled {
 		return nil
 	}
 
 	f := &forwarder{
-		cfg:   cfg,
-		pools: newPools(),
-		log:   log,
-		reqCh: make(chan *request, cfg.RequestConcurrency),
+		cfg:    cfg,
+		pools:  newPools(),
+		log:    log,
+		limits: limits,
+		reqCh:  make(chan *request, cfg.RequestConcurrency),
 		client: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:        0,                      // no limit
@@ -91,7 +95,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 				IdleConnTimeout:     10 * time.Second,       // don't keep unused connections for too long
 			},
 		},
-
+		activeGroups: activeGroupsCleanupService,
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_total",
@@ -330,6 +334,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	tsToIngest = f.pools.getTsSlice()
 	tsToForward = f.pools.getTsSlice()
 	counts := TimeseriesCounts{}
+	group := f.activeGroups.UpdateActiveGroupTimestamp(user, validation.GroupLabel(f.limits, user, tsSliceIn), time.Now())
 	var err error
 
 	for _, ts := range tsSliceIn {
@@ -339,7 +344,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user).Add(float64(filteredSamples))
+					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
 				}
 			}
 

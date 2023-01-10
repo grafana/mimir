@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -222,7 +223,7 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{reason="forwarded-sample-too-old",user="user"} 3
+			cortex_discarded_samples_total{group="",reason="forwarded-sample-too-old",user="user"} 3
 `,
 		}, {
 			name: "split one sample slice in the middle",
@@ -622,8 +623,12 @@ func getForwarderWithValidatingPools(t *testing.T, tsSliceCap, protobufCap, snap
 func newForwarder(tb testing.TB, cfg Config, start bool) (Forwarder, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	log := log.NewNopLogger()
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	override, err := validation.NewOverrides(limits, nil)
+	require.NoError(tb, err)
 
-	forwarder := NewForwarder(cfg, reg, log)
+	forwarder := NewForwarder(cfg, reg, log, override, nil)
 
 	if start {
 		require.NoError(tb, services.StartAndAwaitRunning(context.Background(), forwarder))

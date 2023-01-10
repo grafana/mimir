@@ -1610,7 +1610,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				numDistributors: 1,
 			})
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, ts, "user", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, ts, "user", "test-group", false, tc.minExemplarTS)
 				assert.NoError(t, err)
 			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -1834,7 +1834,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -3523,7 +3523,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 
 		if cfg.forwarding && cfg.getForwarder != nil {

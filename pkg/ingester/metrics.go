@@ -292,15 +292,25 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
-	m.discardedSamplesSampleOutOfBounds.DeleteLabelValues(userID)
-	m.discardedSamplesSampleOutOfOrder.DeleteLabelValues(userID)
-	m.discardedSamplesSampleTooOld.DeleteLabelValues(userID)
-	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID)
-	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID)
-	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID)
+	filter := prometheus.Labels{"user": userID}
+	m.discardedSamplesSampleOutOfBounds.DeletePartialMatch(filter)
+	m.discardedSamplesSampleOutOfOrder.DeletePartialMatch(filter)
+	m.discardedSamplesSampleTooOld.DeletePartialMatch(filter)
+	m.discardedSamplesNewValueForTimestamp.DeletePartialMatch(filter)
+	m.discardedSamplesPerUserSeriesLimit.DeletePartialMatch(filter)
+	m.discardedSamplesPerMetricSeriesLimit.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+}
+
+func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
+	m.discardedSamplesSampleOutOfBounds.DeleteLabelValues(userID, group)
+	m.discardedSamplesSampleOutOfOrder.DeleteLabelValues(userID, group)
+	m.discardedSamplesSampleTooOld.DeleteLabelValues(userID, group)
+	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID, group)
+	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID, group)
+	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID, group)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {

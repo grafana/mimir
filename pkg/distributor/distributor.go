@@ -110,7 +110,8 @@ type Distributor struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	activeUsers *util.ActiveUsersCleanupService
+	activeUsers  *util.ActiveUsersCleanupService
+	activeGroups *util.ActiveGroupsCleanupService
 
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -219,7 +220,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -421,8 +422,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
+	d.activeGroups = activeGroupsCleanupService
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
+	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits, d.activeGroups)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
@@ -526,10 +528,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
-	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
+	filter := prometheus.Labels{"user": userID}
+	d.dedupedSamples.DeletePartialMatch(filter)
+	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
+	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 
-	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
-	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
@@ -541,6 +544,13 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	if d.forwarder != nil {
 		d.forwarder.DeleteMetricsForUser(userID)
 	}
+}
+
+func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
+	d.dedupedSamples.DeleteLabelValues(userID, group)
+	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
+	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
+	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -630,8 +640,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -644,7 +654,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -737,6 +747,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		numSamples := 0
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
 		}
@@ -750,7 +761,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID).Add(float64(numSamples))
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -858,6 +869,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
 		validatedSamples := 0
@@ -896,7 +909,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, ts, userID, group, skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -945,7 +958,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
+			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 			// Return a 429 here to tell the client it is going too fast.
