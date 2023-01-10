@@ -15,7 +15,7 @@ or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/do
 .
 
 It is easier and best to monitor a cluster if it was installed via the Grafana Mimir Helm chart.
-For more information, see the [documentation for the Grafana Mimir Helm chart](/docs/helm-charts/mimir-distributed/latest/).
+For more information, see the [documentation for the Grafana Mimir Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
 It is also possible to use this integration if Mimir was deployed another way.
 For more information, see [Collect metrics and logs without the Helm chart]({{< relref "#collect-metrics-and-logs-without-the-helm-chart" >}}).
