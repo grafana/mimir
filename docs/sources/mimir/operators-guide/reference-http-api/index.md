@@ -22,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 ## Endpoints
 
 | API                                                                                   | Service                        | Endpoint                                                                  |
-|---------------------------------------------------------------------------------------| ------------------------------ | ------------------------------------------------------------------------- |
+| ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
 | [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
