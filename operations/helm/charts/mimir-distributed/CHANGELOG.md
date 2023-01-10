@@ -26,6 +26,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 4.0.1
+
+* [ENHANCEMENT] Bump Grafana Enterprise Metrics image version to 2.5.1 #XXXX
+
 ## 4.0.0
 
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
