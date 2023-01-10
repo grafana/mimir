@@ -266,7 +266,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
    You should be able to query metrics in [Grafana Explore](http://localhost:3000/explore),
    as well as create dashboard panels by using your newly configured `Mimir` data source.
-   For more information, see [Monitor Grafana Mimir]({{< relref "/docs/mimir/latest/operators-guide/monitor-grafana-mimir/" >}}).
+   For more information, see [Monitor Grafana Mimir]({{< relref "../run-production-environment-with-helm/monitor-system-health.md" >}}).
 
 ## Set up metamonitoring
 
