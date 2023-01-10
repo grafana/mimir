@@ -115,7 +115,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
-		owned, _ := oe.ownsTenant(tenant)
+		owned := oe.ownsTenant(tenant)
 		if !owned {
 			continue
 		}
@@ -159,14 +159,16 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 	util.WriteHTMLResponse(w, ringDisabledPage)
 }
 
-func (oe *OverridesExporter) ownsTenant(tenantId string) (bool, error) {
+func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
 	if oe.ring == nil {
 		// If sharding is not enabled, every instance exports metrics for every tenant
-		return true, nil
+		return true
 	}
-	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.config.InstanceAddr, tenantId)
+	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.config.InstanceAddr, tenantID)
 	if err != nil {
-		return false, errors.Wrap(err, "failed to determine tenant ownership from overrides-exporter ring")
+		// if there was an error establishing ownership using the ring, err on the safe
+		// side and assume this instance owns the tenant
+		return true
 	}
-	return owned, nil
+	return owned
 }
