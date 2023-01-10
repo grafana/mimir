@@ -24,7 +24,7 @@ import (
 
 const (
 	// ringKey is the key under which we store the overrides-exporter's ring in the KVStore.
-	ringKey = "ring"
+	ringKey = "overrides-exporter"
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the ring.
 	// Overrides-exporters use a ring for discovery only, so one token is enough.
