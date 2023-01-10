@@ -1230,9 +1230,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
-		var ephemeral []mimirpb.PreallocTimeseries
-		var metadata []*mimirpb.MetricMetadata
+		var timeseriesCount, ephemeralCount, metadataCount int
+		for _, i := range indexes {
+			if i >= initialEphemeralIndex {
+				ephemeralCount++
+			} else if i >= initialMetadataIndex {
+				metadataCount++
+			} else {
+				timeseriesCount++
+			}
+		}
+
+		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
+		ephemeral := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](ephemeralCount)
+		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
 		for _, i := range indexes {
 			if i >= initialEphemeralIndex {
@@ -1255,6 +1266,13 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, nil
+}
+
+func preallocSliceIfNeeded[T any](size int) []T {
+	if size > 0 {
+		return make([]T, 0, size)
+	}
+	return nil
 }
 
 func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
