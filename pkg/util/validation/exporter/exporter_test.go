@@ -9,9 +9,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
