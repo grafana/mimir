@@ -860,10 +860,11 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			// Read all returned series and their values.
 			var actualSeries []seriesResult
+			var it chunkenc.Iterator
 			for set.Next() {
 				var actualValues []valueResult
 
-				it := set.At().Iterator()
+				it = set.At().Iterator(it)
 				for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 					assert.Equal(t, valType, chunkenc.ValFloat)
 					t, v := it.At()

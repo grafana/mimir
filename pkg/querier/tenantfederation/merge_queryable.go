@@ -398,6 +398,6 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new, independent iterator of the data of the series.
-func (a *addLabelsSeries) Iterator() chunkenc.Iterator {
-	return a.upstream.Iterator()
+func (a *addLabelsSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
+	return a.upstream.Iterator(i)
 }
