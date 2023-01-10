@@ -10,6 +10,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+var (
+	_ Cache = (*MemcachedCache)(nil)
+	_ Cache = (*RedisCache)(nil)
+)
+
 // MemcachedCache is a memcached-based cache.
 type MemcachedCache struct {
 	*remoteCache
@@ -103,10 +108,10 @@ func (c *remoteCache) Store(ctx context.Context, data map[string][]byte, ttl tim
 
 // Fetch fetches multiple keys and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *remoteCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
+func (c *remoteCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	// Fetch the keys from remote cache in a single request.
 	c.requests.Add(float64(len(keys)))
-	results := c.remoteClient.GetMulti(ctx, keys)
+	results := c.remoteClient.GetMulti(ctx, keys, opts...)
 	c.hits.Add(float64(len(results)))
 	return results
 }

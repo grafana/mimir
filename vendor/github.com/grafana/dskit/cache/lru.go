@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+var _ Cache = (*LRUCache)(nil)
+
 type LRUCache struct {
 	c          Cache
 	defaultTTL time.Duration
@@ -87,7 +89,7 @@ func (l *LRUCache) Store(ctx context.Context, data map[string][]byte, ttl time.D
 	}
 }
 
-func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
+func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	l.requests.Add(float64(len(keys)))
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -115,7 +117,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 	l.hits.Add(float64(len(found)))
 
 	if len(miss) > 0 {
-		result = l.c.Fetch(ctx, miss)
+		result = l.c.Fetch(ctx, miss, opts...)
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
 			l.lru.Add(k, &Item{
