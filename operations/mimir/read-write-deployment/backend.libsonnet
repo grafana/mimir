@@ -30,7 +30,7 @@
 
       // Use ruler's remote evaluation mode.
       'querier.frontend-address': null,
-      'ruler.query-frontend.address': 'dns:///mimir-read.%s.svc.cluster.local:9095' % $._config.namespace,
+      'ruler.query-frontend.address': 'dns:///mimir-read-headless.%s.svc.cluster.local:9095' % $._config.namespace,
 
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,

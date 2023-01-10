@@ -54,7 +54,11 @@
     (if $._config.memberlist_ring_enabled then gossipLabel else {}),
 
   mimir_read_service: if !$._config.is_read_write_deployment_mode then null else
+    $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels),
+
+  mimir_read_headless_service: if !$._config.is_read_write_deployment_mode then null else
     $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels) +
+    service.mixin.metadata.withName('mimir-read-headless') +
 
     // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
     // correctly balances requests across all mimir-read pods.
