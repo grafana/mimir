@@ -63,6 +63,7 @@
 * [CHANGE] Changed default `mimir_backend_data_disk_size` from `100Gi` to `250Gi`. #3894
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
+* [ENHANCEMENT] Update memcached image from `memcached:1.6.16-alpine` to `memcached:1.6.17-alpine`. #3914
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
 * [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
 * [BUGFIX] Fixed `mimir-write` and `mimir-read` Kubernetes service to correctly balance requests among pods. #3855 #3864 #3906
