@@ -67,7 +67,7 @@ As part of this chart many different pods and services are installed which all
 have varying resource requirements. Please make sure that you have sufficient
 resources (CPU/memory) available in your cluster before installing Grafana Mimir Helm Chart.
 
-For details about setting up Grafana Mimir, refer to [Get started with Grafana Mimir using the Helm chart](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/get-started-helm-charts/).
+For details about setting up Grafana Mimir, refer to [Get started with Grafana Mimir using the Helm chart](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/getting-started-helm-charts/).
 
 ### Migrate from Cortex to Grafana Mimir
 
