@@ -14,6 +14,10 @@ You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collectin
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
 > see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts.md) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
 
+To monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart]({{< relref "/docs/mimir/next/monitor-grafana-mimir/collecting-metrics-and-logs.md#collect-metrics-and-logs-without-the-helm-chart" >}}).
+
+## Configure the Grafana Agent operator via the Helm chart
+
 In the Helm chart, you can configure where to send metrics and logs.
 You can send metrics to a Prometheus-compatible server
 and logs to a Loki cluster.
@@ -22,8 +26,6 @@ The Helm chart can also scrape additional metrics from kube-state-metrics, kubel
 The Helm chart does not collect Prometheus node_exporter metrics;
 metrics from node_exporter must all have an instance label on them
 that has the same value as the instance label on Mimir metrics.
-
-## Configure the Grafana Agent operator via the Helm chart
 
 You can configure your collection of metrics and logs
 by using the [Grafana Agent operator](/docs/agent/latest/operator/).
