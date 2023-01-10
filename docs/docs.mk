@@ -29,6 +29,7 @@ define docs_podman_run
 		read -p "Press a key to continue"; \
 	fi
 	@$(PODMAN) run -ti \
+		--init \
 		-v $(GIT_ROOT)/docs/sources/mimir:/hugo/content/docs/mimir/$(MIMIR_VERSION):ro,z \
 		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION):ro,z \
 		-e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) \
