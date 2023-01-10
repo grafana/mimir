@@ -166,7 +166,7 @@ func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.config.InstanceAddr, tenantID)
+	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.lifecycler.GetInstanceAddr(), tenantID)
 	if err != nil {
 		_ = level.Warn(oe.logger).Log("msg", "determining tenant ownership failed", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe

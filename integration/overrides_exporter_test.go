@@ -44,6 +44,11 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 	exporter2 := e2emimir.NewOverridesExporter("overrides-exporter-2", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(exporter2))
 
+	// Wait until instances have joined the ring
+	require.NoError(t, exporter2.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "overrides-exporter"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	metrics := []string{"cortex_limits_overrides"}
 	opts := []e2e.MetricsOption{
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "tenant-a")),
