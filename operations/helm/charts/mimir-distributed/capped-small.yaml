@@ -60,7 +60,7 @@ distributor:
 
 ingester:
   persistentVolume:
-    size: 15Gi
+    size: 50Gi
   replicas: 3
   resources:
     limits:
