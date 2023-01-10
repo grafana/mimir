@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 4.0.1
 
-* [ENHANCEMENT] Bump Grafana Enterprise Metrics image version to 2.5.1 #XXXX
+* [ENHANCEMENT] Bump Grafana Enterprise Metrics image version to 2.5.1 #3902
 
 ## 4.0.0
 
