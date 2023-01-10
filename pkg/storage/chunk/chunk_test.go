@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -43,27 +45,26 @@ func TestLen(t *testing.T) {
 var step = int(15 * time.Second / time.Millisecond)
 
 func TestChunk(t *testing.T) {
-	const (
-		encoding   = PrometheusXorChunk
-		maxSamples = 2048
-	)
+	const maxSamples = 2048
 
-	for samples := maxSamples / 10; samples < maxSamples; samples += maxSamples / 10 {
-		t.Run(fmt.Sprintf("testChunkEncoding/%s/%d", encoding.String(), samples), func(t *testing.T) {
-			testChunkEncoding(t, encoding, samples)
-		})
+	for _, enc := range []Encoding{PrometheusXorChunk, PrometheusHistogramChunk} {
+		for samples := maxSamples / 10; samples < maxSamples; samples += maxSamples / 10 {
+			t.Run(fmt.Sprintf("testChunkEncoding/%s/%d", enc.String(), samples), func(t *testing.T) {
+				testChunkEncoding(t, enc, samples)
+			})
 
-		t.Run(fmt.Sprintf("testChunkSeek/%s/%d", encoding.String(), samples), func(t *testing.T) {
-			testChunkSeek(t, encoding, samples)
-		})
+			t.Run(fmt.Sprintf("testChunkSeek/%s/%d", enc.String(), samples), func(t *testing.T) {
+				testChunkSeek(t, enc, samples)
+			})
 
-		t.Run(fmt.Sprintf("testChunkSeekForward/%s/%d", encoding.String(), samples), func(t *testing.T) {
-			testChunkSeekForward(t, encoding, samples)
-		})
+			t.Run(fmt.Sprintf("testChunkSeekForward/%s/%d", enc.String(), samples), func(t *testing.T) {
+				testChunkSeekForward(t, enc, samples)
+			})
 
-		t.Run(fmt.Sprintf("testChunkBatch/%s/%d", encoding.String(), samples), func(t *testing.T) {
-			testChunkBatch(t, encoding, samples)
-		})
+			t.Run(fmt.Sprintf("testChunkBatch/%s/%d", enc.String(), samples), func(t *testing.T) {
+				testChunkBatch(t, enc, samples)
+			})
+		}
 	}
 }
 
@@ -72,12 +73,21 @@ func mkChunk(t *testing.T, encoding Encoding, samples int) EncodedChunk {
 	require.NoError(t, err)
 
 	for i := 0; i < samples; i++ {
-		newChunk, err := chunk.Add(model.SamplePair{
-			Timestamp: model.Time(i * step),
-			Value:     model.SampleValue(i),
-		})
+		var overflowChunk EncodedChunk
+		switch encoding {
+		case PrometheusXorChunk:
+			overflowChunk, err = chunk.Add(model.SamplePair{
+				Timestamp: model.Time(i * step),
+				Value:     model.SampleValue(i),
+			})
+		case PrometheusHistogramChunk:
+			overflowChunk, err = chunk.AddHistogram(int64(i*step), e2e.GenerateTestHistogram(i))
+		default:
+			require.FailNow(t, "Unexpected encoding: %x", encoding)
+		}
+
 		require.NoError(t, err)
-		require.Nil(t, newChunk)
+		require.Nil(t, overflowChunk)
 	}
 
 	return chunk
@@ -101,18 +111,29 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 	// Check all the samples are in there.
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; i++ {
-		require.True(t, iter.Scan() == chunkenc.ValFloat)
-		sample := iter.Value()
-		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-		require.EqualValues(t, model.SampleValue(i), sample.Value)
+		switch encoding {
+		case PrometheusXorChunk:
+			require.True(t, iter.Scan() == chunkenc.ValFloat)
+			sample := iter.Value()
+			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+			require.EqualValues(t, model.SampleValue(i), sample.Value)
+		case PrometheusHistogramChunk:
+			require.True(t, iter.Scan() == chunkenc.ValHistogram)
+			sample := iter.Histogram()
+			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+			require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(i).ToFloat()), sample.Histogram)
+		default:
+			require.FailNow(t, "Unexpected encoding: %x", encoding)
+		}
 	}
-	require.False(t, iter.Scan() == chunkenc.ValFloat)
+	require.True(t, iter.Scan() == chunkenc.ValNone)
 	require.NoError(t, iter.Err())
 
 	// Check seek works after unmarshal
 	iter = chunk.NewIterator(iter)
 	for i := 0; i < samples; i += samples / 10 {
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
+		val := iter.FindAtOrAfter(model.Time(i * step))
+		require.True(t, val != chunkenc.ValNone)
 	}
 
 	// Check the byte representation after another Marshall is the same.
@@ -133,29 +154,56 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 	for i := 0; i < samples; i += samples / 10 {
 		if i > 0 {
 			// Seek one millisecond before the actual time
-			require.True(t, iter.FindAtOrAfter(model.Time(i*step-1)) == chunkenc.ValFloat, "1ms before step %d not found", i)
+			require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step-1)), "1ms before step %d not found", i)
+			switch encoding {
+			case PrometheusXorChunk:
+				sample := iter.Value()
+				require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+				require.EqualValues(t, model.SampleValue(i), sample.Value)
+			case PrometheusHistogramChunk:
+				sample := iter.Histogram()
+				require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+				require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(i).ToFloat()), sample.Histogram)
+			default:
+				require.FailNow(t, "Unexpected encoding: %x", encoding)
+			}
+		}
+		// Now seek to exactly the right time
+		require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step)))
+		switch encoding {
+		case PrometheusXorChunk:
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
+		case PrometheusHistogramChunk:
+			sample := iter.Histogram()
+			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+			require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(i).ToFloat()), sample.Histogram)
+		default:
+			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
-		// Now seek to exactly the right time
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
-		sample := iter.Value()
-		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-		require.EqualValues(t, model.SampleValue(i), sample.Value)
 
 		j := i + 1
 		for ; j < samples; j++ {
-			require.True(t, iter.Scan() == chunkenc.ValFloat)
-			sample := iter.Value()
-			require.EqualValues(t, model.Time(j*step), sample.Timestamp)
-			require.EqualValues(t, model.SampleValue(j), sample.Value)
+			require.NotEqual(t, chunkenc.ValNone, iter.Scan())
+			switch encoding {
+			case PrometheusXorChunk:
+				sample := iter.Value()
+				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
+				require.EqualValues(t, model.SampleValue(j), sample.Value)
+			case PrometheusHistogramChunk:
+				sample := iter.Histogram()
+				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
+				require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(j).ToFloat()), sample.Histogram)
+			default:
+				require.FailNow(t, "Unexpected encoding: %x", encoding)
+			}
 		}
-		require.False(t, iter.Scan() == chunkenc.ValFloat)
+		require.Equal(t, chunkenc.ValNone, iter.Scan())
 		require.NoError(t, iter.Err())
 	}
 	// Check seek past the end of the chunk returns failure
-	require.False(t, iter.FindAtOrAfter(model.Time(samples*step+1)) == chunkenc.ValFloat)
+	require.Equal(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(samples*step+1)))
 }
 
 func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
@@ -163,20 +211,38 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; i += samples / 10 {
-		require.True(t, iter.FindAtOrAfter(model.Time(i*step)) == chunkenc.ValFloat)
-		sample := iter.Value()
-		require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-		require.EqualValues(t, model.SampleValue(i), sample.Value)
+		require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step)))
+		switch encoding {
+		case PrometheusXorChunk:
+			sample := iter.Value()
+			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+			require.EqualValues(t, model.SampleValue(i), sample.Value)
+		case PrometheusHistogramChunk:
+			sample := iter.Histogram()
+			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
+			require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(i).ToFloat()), sample.Histogram)
+		default:
+			require.FailNow(t, "Unexpected encoding: %x", encoding)
+		}
 
 		j := i + 1
 		for ; j < (i+samples/10) && j < samples; j++ {
-			require.True(t, iter.Scan() == chunkenc.ValFloat)
-			sample := iter.Value()
-			require.EqualValues(t, model.Time(j*step), sample.Timestamp)
-			require.EqualValues(t, model.SampleValue(j), sample.Value)
+			require.NotEqual(t, chunkenc.ValNone, iter.Scan())
+			switch encoding {
+			case PrometheusXorChunk:
+				sample := iter.Value()
+				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
+				require.EqualValues(t, model.SampleValue(j), sample.Value)
+			case PrometheusHistogramChunk:
+				sample := iter.Histogram()
+				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
+				require.EqualValues(t, mimirpb.FromHistogramToPromCommonHistogram(*e2e.GenerateTestHistogram(j).ToFloat()), sample.Histogram)
+			default:
+				require.FailNow(t, "Unexpected encoding: %x", encoding)
+			}
 		}
 	}
-	require.False(t, iter.Scan() == chunkenc.ValFloat)
+	require.Equal(t, chunkenc.ValNone, iter.Scan())
 	require.NoError(t, iter.Err())
 }
 
@@ -186,14 +252,24 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 	// Check all the samples are in there.
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; {
-		require.True(t, iter.Scan() == chunkenc.ValFloat)
-		batch := iter.Batch(BatchSize, chunkenc.ValFloat)
-		for j := 0; j < batch.Length; j++ {
-			require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-			require.EqualValues(t, float64(i+j), batch.SampleValues[j])
+		require.NotEqual(t, chunkenc.ValNone, iter.Scan())
+		var batch Batch
+		switch encoding {
+		case PrometheusXorChunk:
+			batch = iter.Batch(BatchSize, chunkenc.ValFloat)
+			for j := 0; j < batch.Length; j++ {
+				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
+				require.EqualValues(t, float64(i+j), batch.SampleValues[j])
+			}
+		case PrometheusHistogramChunk:
+			batch = iter.Batch(BatchSize, chunkenc.ValHistogram)
+			for j := 0; j < batch.Length; j++ {
+				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
+				require.EqualValues(t, e2e.GenerateTestHistogram(i+j), batch.HistogramValues[j])
+			}
 		}
 		i += batch.Length
 	}
-	require.False(t, iter.Scan() == chunkenc.ValFloat)
+	require.Equal(t, chunkenc.ValNone, iter.Scan())
 	require.NoError(t, iter.Err())
 }

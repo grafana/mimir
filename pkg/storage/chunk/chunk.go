@@ -27,7 +27,7 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
 	Add(sample model.SamplePair) (EncodedChunk, error)
-	// Add adds a histogram to the chunks, performs any necessary
+	// AddHistogram adds a histogram to the chunks, performs any necessary
 	// re-encoding, and creates any necessary overflow chunk.
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
