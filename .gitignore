@@ -37,6 +37,9 @@ metrics-activity.log
 # This is custom Makefile modification, if it exists.
 Makefile.local
 
+# This helps with helm chart development but should not be committed.
+operations/helm/charts/mimir-distributed/scripts/license.jwt
+
 .idea
 .vscode
 compose
