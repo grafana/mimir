@@ -115,8 +115,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
-		owned := oe.ownsTenant(tenant)
-		if !owned {
+		if !oe.ownsTenant(tenant) {
 			continue
 		}
 
