@@ -1,7 +1,7 @@
 SHELL = /usr/bin/env bash
 
 DOCS_IMAGE   = grafana/docs-base:latest
-DOCS_DOCKER_CONTAINER = mimir-docs
+DOCS_CONTAINER = mimir-docs
 
 # This allows ports and base URL to be overridden, so services like ngrok.io can
 # be used to share a local running docs instances.
@@ -16,8 +16,11 @@ HUGO_REFLINKSERRORLEVEL ?= WARNING
 
 GIT_ROOT = $(shell git rev-parse --show-toplevel)
 
+# Support podman over Docker if it is available.
+PODMAN := $(shell if command -v podman &>/dev/null; then echo podman; else echo docker; fi)
+
 # This wrapper will serve documentation on a local webserver.
-define docs_docker_run
+define docs_podman_run
 	@echo "Documentation will be served at:"
 	@echo "http://$(DOCS_BASE_URL)/docs/mimir/$(MIMIR_VERSION)/"
 	@echo "http://$(DOCS_BASE_URL)/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION)/"
@@ -25,26 +28,26 @@ define docs_docker_run
 	@if [[ -z $${NON_INTERACTIVE} ]]; then \
 		read -p "Press a key to continue"; \
 	fi
-	@docker run -ti \
+	@$(PODMAN) run -ti \
 		-v $(GIT_ROOT)/docs/sources/mimir:/hugo/content/docs/mimir/$(MIMIR_VERSION):ro,z \
 		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION):ro,z \
 		-e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) \
 		-p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) \
-		--name $(DOCS_DOCKER_CONTAINER) \
+		--name $(DOCS_CONTAINER) \
 		--rm \
 		$(DOCS_IMAGE) \
 			/bin/bash -c "sed -i'' -e s/latest/$(DOCS_VERSION)/ content/docs/mimir/_index.md && exec $(1)"
 endef
 
-.PHONY: docs-docker-rm
-docs-docker-rm: ## Remove the docs container.
-	docker rm -f $(DOCS_DOCKER_CONTAINER)
+.PHONY: docs-rm
+docs-rm: ## Remove the docs container.
+	$(PODMAN) rm -f $(DOCS_CONTAINER)
 
 .PHONY: docs-pull
 docs-pull: ## Pull documentation base image.
-	docker pull $(DOCS_IMAGE)
+	$(PODMAN) pull $(DOCS_IMAGE)
 
 .PHONY: docs
 docs: ## Serve documentation locally.
 docs: docs-pull
-	$(call docs_docker_run,make server HUGO_PORT=$(DOCS_LISTEN_PORT))
+	$(call docs_podman_run,make server HUGO_PORT=$(DOCS_LISTEN_PORT))
