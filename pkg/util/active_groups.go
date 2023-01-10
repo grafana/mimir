@@ -85,17 +85,16 @@ func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64
 }
 
 func (ag *ActiveGroups) PurgeInactiveGroups(inactiveTimeout time.Duration, cleanupFuncs ...func(string, string)) {
-	userIDs := make([]string, len(ag.timestampsPerUser))
 	ag.mu.RLock()
-	i := 0
+	userIDs := make([]string, 0, len(ag.timestampsPerUser))
 	for userID := range ag.timestampsPerUser {
-		userIDs[i] = userID
-		i++
+		userIDs = append(userIDs, userID)
 	}
 	ag.mu.RUnlock()
 
+	currentTime := time.Now()
 	for _, userID := range userIDs {
-		inactiveGroups := ag.PurgeInactiveGroupsForUser(userID, time.Now().Add(-inactiveTimeout).UnixNano())
+		inactiveGroups := ag.PurgeInactiveGroupsForUser(userID, currentTime.Add(-inactiveTimeout).UnixNano())
 		for _, group := range inactiveGroups {
 			for _, cleanupFn := range cleanupFuncs {
 				cleanupFn(userID, group)
