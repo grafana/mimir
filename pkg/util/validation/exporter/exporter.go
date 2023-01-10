@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -186,6 +187,13 @@ func (oe *OverridesExporter) starting(ctx context.Context) error {
 	if err := services.StartManagerAndAwaitHealthy(ctx, oe.subserviceManager); err != nil {
 		return errors.Wrap(err, "unable to start overrides-exporter subserviceManager")
 	}
+
+	_ = level.Info(oe.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, oe.ring.client, oe.ring.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
+	}
+
+	_ = level.Info(oe.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
 
 	return nil
 }
