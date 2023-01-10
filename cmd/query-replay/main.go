@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	queriesPath    = "/Users/dimitar/Documents/proba/-/range-queries.txt"
+	queriesPath    = "/Users/dimitar/Documents/proba/goldman-sachs-queries/range-queries.txt"
 	queryEndpoint1 = "http://localhost:8080/prometheus"
 	queryEndpoint2 = "http://localhost:8081/prometheus"
 	tenantID       = "417760"
