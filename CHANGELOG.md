@@ -25,6 +25,7 @@
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
 * [ENHANCEMENT] Ingester: Improved series selection performance when some of the matchers do not match any series. #3827
 * [ENHANCEMENT] Alertmanager: Add new additional template function `tenantID` returning id of the tenant owning the alert. #3758
+* [ENHANCEMENT] Alertmanager: Add additional template function `grafanaExploreURL` returning URL to grafana explore with range query. #3849
 * [ENHANCEMENT] Reduce overhead of debug logging when filtered out. #3875
 * [ENHANCEMENT] Update Docker base images from `alpine:3.16.2` to `alpine:3.17.1`. #3898
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
