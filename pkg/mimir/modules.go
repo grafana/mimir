@@ -854,7 +854,7 @@ func (t *Mimir) setupModuleManager() error {
 		RuntimeConfig:            {API},
 		Ring:                     {API, RuntimeConfig, MemberlistKV},
 		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides},
+		OverridesExporter:        {Overrides, MemberlistKV},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
 		DistributorService:       {Ring, Overrides},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
