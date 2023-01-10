@@ -2485,12 +2485,11 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		expected   = make([]*storepb.Series, 0, opts.Series)
 	)
 
+	var builder labels.ScratchBuilder
 	all := allPostings(t, ir)
 	for all.Next() {
-		var lset labels.Labels
-
-		assert.NoError(t, ir.Series(all.At(), &lset, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset)})
+		assert.NoError(t, ir.Series(all.At(), &builder, &chunkMetas))
+		expected = append(expected, &storepb.Series{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
 
 		if opts.SkipChunks {
 			continue
