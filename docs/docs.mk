@@ -14,6 +14,8 @@ HELM_CHARTS_VERSION = next
 
 HUGO_REFLINKSERRORLEVEL ?= WARNING
 
+GIT_ROOT = $(shell git rev-parse --show-toplevel)
+
 # This wrapper will serve documentation on a local webserver.
 define docs_docker_run
 	@echo "Documentation will be served at:"
@@ -24,8 +26,8 @@ define docs_docker_run
 		read -p "Press a key to continue"; \
 	fi
 	@docker run -ti \
-		-v $(CURDIR)/sources/mimir:/hugo/content/docs/mimir/$(MIMIR_VERSION):ro,z \
-		-v $(CURDIR)/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION):ro,z \
+		-v $(GIT_ROOT)/docs/sources/mimir:/hugo/content/docs/mimir/$(MIMIR_VERSION):ro,z \
+		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION):ro,z \
 		-e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) \
 		-p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) \
 		--name $(DOCS_DOCKER_CONTAINER) \
