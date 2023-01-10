@@ -24,7 +24,7 @@ import (
 
 const (
 	// ringKey is the key under which we store the overrides-exporter's ring in the KVStore.
-	ringKey = "overrides-exporter"
+	ringKey = "ring"
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the ring.
 	// Overrides-exporters use a ring for discovery only, so one token is enough.
@@ -95,8 +95,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 		return nil, errors.Wrap(err, "failed to initialize overrides-exporter's KV store")
 	}
 
-	var delegate ring.BasicLifecyclerDelegate
-	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens)
+	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.HeartbeatTimeout, delegate, logger)
 

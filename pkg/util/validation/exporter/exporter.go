@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +31,7 @@ type OverridesExporter struct {
 	tenantLimits        validation.TenantLimits
 	overrideDescription *prometheus.Desc
 	defaultsDescription *prometheus.Desc
+	logger              log.Logger
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
@@ -66,6 +68,7 @@ func NewOverridesExporter(
 			[]string{"limit_name"},
 			nil,
 		),
+		logger:            log,
 		subserviceWatcher: services.NewFailureWatcher(),
 	}
 
@@ -165,6 +168,7 @@ func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
 	}
 	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.config.InstanceAddr, tenantID)
 	if err != nil {
+		_ = level.Warn(oe.logger).Log("msg", "determining tenant ownership failed", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe
 		// side and assume this instance owns the tenant
 		return true

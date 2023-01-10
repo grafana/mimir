@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -31,18 +32,19 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 
 	require.NoError(t, writeFileToSharedDir(s, overridesFileName, []byte(overridesFileContent)))
 
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
 	flags := map[string]string{
 		"-overrides-exporter.ring.enabled": "true",
 		"-runtime-config.file":             filepath.Join(e2e.ContainerSharedDir, overridesFileName),
 	}
 
-	exporter1 := e2emimir.NewOverridesExporter("overrides-exporter-1", flags)
+	exporter1 := e2emimir.NewOverridesExporter("overrides-exporter-1", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(exporter1))
-	exporter2 := e2emimir.NewOverridesExporter("overrides-exporter-2", flags)
+	exporter2 := e2emimir.NewOverridesExporter("overrides-exporter-2", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(exporter2))
 
 	metrics := []string{"cortex_limits_overrides"}
-
 	opts := []e2e.MetricsOption{
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "tenant-a")),
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "limit_name", "ingestion_rate")),

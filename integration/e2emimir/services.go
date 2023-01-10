@@ -299,12 +299,15 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 	)
 }
 
-func NewOverridesExporter(name string, flags map[string]string, options ...Option) *MimirService {
+func NewOverridesExporter(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
 			"-target":    "overrides-exporter",
 			"-log.level": "warn",
+			// overrides-exporter ring backend.
+			"-overrides-exporter.ring.store":           "consul",
+			"-overrides-exporter.ring.consul.hostname": consulAddress,
 		}, flags, options...)
 }
 
