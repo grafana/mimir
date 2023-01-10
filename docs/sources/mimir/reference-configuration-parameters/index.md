@@ -2491,7 +2491,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # For each write request, the group is obtained from the first non-empty group
 # label from the first timeseries in the incoming list of timeseries. Specific
 # distributor and ingester metrics will be further separated adding a 'group'
-# label with group label's value.
+# label with group label's value. Currently applies to the following metrics:
+# cortex_discarded_samples_total
 # CLI flag: -validation.separate-metrics-group-label
 [separate_metrics_group_label: <string> | default = ""]
 

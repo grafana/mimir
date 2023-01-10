@@ -3078,7 +3078,7 @@
           "kind": "field",
           "name": "separate_metrics_group_label",
           "required": false,
-          "desc": "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value.",
+          "desc": "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "validation.separate-metrics-group-label",
