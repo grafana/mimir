@@ -464,7 +464,8 @@ func BenchmarkRemoteQuerier_Encode(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, body := range bodies {
 					//_, err := originalEncode(body)
-					_, err := uninternedProtobufEncode(body)
+					//_, err := uninternedProtobufEncode(body)
+					_, err := internedProtobufEncode(body)
 
 					if err != nil {
 						require.NoError(b, err)
@@ -552,6 +553,102 @@ func uninternedScalarEncode(data *querymiddleware.PrometheusData) (*uninternedqu
 	sample := stream.Samples[0]
 	return &uninternedquerypb.QueryResponse_Scalar{
 		Scalar: &uninternedquerypb.ScalarData{
+			Value:     sample.Value,
+			Timestamp: sample.TimestampMs,
+		},
+	}, nil
+}
+
+func internedProtobufEncode(body querymiddleware.PrometheusResponse) ([]byte, error) {
+	resp := internedquerypb.QueryResponse{
+		Status:    body.Status,
+		ErrorType: body.ErrorType,
+		Error:     body.Error,
+	}
+
+	switch body.Data.ResultType {
+	case "vector":
+		resp.Data = internedVectorEncode(body.Data)
+
+	case "scalar":
+		data, err := internedScalarEncode(body.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Data = data
+
+	default:
+		panic(fmt.Sprintf("unknown result type %v", body.Data.ResultType))
+	}
+
+	return resp.Marshal()
+}
+
+func internedVectorEncode(data *querymiddleware.PrometheusData) *internedquerypb.QueryResponse_Vector {
+	sampleCount := 0
+	invertedSymbols := map[string]uint64{}
+
+	for _, stream := range data.Result {
+		for _, l := range stream.Labels {
+			if _, ok := invertedSymbols[l.Name]; !ok {
+				invertedSymbols[l.Name] = uint64(len(invertedSymbols))
+			}
+
+			if _, ok := invertedSymbols[l.Value]; !ok {
+				invertedSymbols[l.Value] = uint64(len(invertedSymbols))
+			}
+		}
+
+		sampleCount += len(stream.Samples)
+	}
+
+	samples := make([]*internedquerypb.Sample, 0, sampleCount)
+
+	for _, stream := range data.Result {
+		metricSymbols := make([]uint64, len(stream.Labels)*2)
+
+		for i, l := range stream.Labels {
+			metricSymbols[2*i] = invertedSymbols[l.Name]
+			metricSymbols[2*i+1] = invertedSymbols[l.Value]
+		}
+
+		for _, sample := range stream.Samples {
+			samples = append(samples, &internedquerypb.Sample{
+				MetricSymbols: metricSymbols,
+				Value:         sample.Value,
+				Timestamp:     sample.TimestampMs,
+			})
+		}
+	}
+
+	symbols := make([]string, len(invertedSymbols))
+
+	for s, i := range invertedSymbols {
+		symbols[i] = s
+	}
+
+	return &internedquerypb.QueryResponse_Vector{
+		Vector: &internedquerypb.VectorData{
+			Samples: samples,
+			Symbols: symbols,
+		},
+	}
+}
+
+func internedScalarEncode(data *querymiddleware.PrometheusData) (*internedquerypb.QueryResponse_Scalar, error) {
+	if len(data.Result) != 1 {
+		return nil, fmt.Errorf("unexpected number of streams: %v", len(data.Result))
+	}
+
+	stream := data.Result[0]
+	if len(stream.Samples) != 1 {
+		return nil, fmt.Errorf("unexpected number of samples: %v", len(stream.Samples))
+	}
+
+	sample := stream.Samples[0]
+	return &internedquerypb.QueryResponse_Scalar{
+		Scalar: &internedquerypb.ScalarData{
 			Value:     sample.Value,
 			Timestamp: sample.TimestampMs,
 		},
