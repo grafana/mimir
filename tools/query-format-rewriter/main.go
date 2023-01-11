@@ -224,7 +224,7 @@ func convertToUninternedProtobufVector(original originalFormatData) (v *unintern
 		return nil, fmt.Errorf("could not decode vector result: %w", err)
 	}
 
-	samples := make([]*uninternedquerypb.VectorSample, len(originalVector))
+	samples := make([]uninternedquerypb.VectorSample, len(originalVector))
 
 	for i, originalSample := range originalVector {
 		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
@@ -241,7 +241,7 @@ func convertToUninternedProtobufVector(original originalFormatData) (v *unintern
 			metric = append(metric, l.Name, l.Value)
 		}
 
-		samples[i] = &uninternedquerypb.VectorSample{
+		samples[i] = uninternedquerypb.VectorSample{
 			Value:     float64(originalSample.Value),
 			Timestamp: int64(originalSample.Timestamp),
 			Metric:    metric,
@@ -275,7 +275,7 @@ func convertToUninternedProtobufMatrix(original originalFormatData) (v *unintern
 		return nil, fmt.Errorf("could not decode matrix result: %w", err)
 	}
 
-	series := make([]*uninternedquerypb.MatrixSeries, 0, len(originalMatrix))
+	series := make([]uninternedquerypb.MatrixSeries, 0, len(originalMatrix))
 
 	for _, originalStream := range originalMatrix {
 		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
@@ -292,18 +292,18 @@ func convertToUninternedProtobufMatrix(original originalFormatData) (v *unintern
 			metric = append(metric, l.Name, l.Value)
 		}
 
-		samples := make([]*uninternedquerypb.MatrixSample, 0, len(originalStream.Values))
+		samples := make([]uninternedquerypb.MatrixSample, 0, len(originalStream.Values))
 
 		for _, s := range originalStream.Values {
 			// FIXME: assign directly to indices of sample rather than using append
-			samples = append(samples, &uninternedquerypb.MatrixSample{
+			samples = append(samples, uninternedquerypb.MatrixSample{
 				Value:     float64(s.Value),
 				Timestamp: int64(s.Timestamp),
 			})
 		}
 
 		// FIXME: assign directly to indices of series rather than using append
-		series = append(series, &uninternedquerypb.MatrixSeries{
+		series = append(series, uninternedquerypb.MatrixSeries{
 			Metric:  metric,
 			Samples: samples,
 		})
@@ -384,7 +384,7 @@ func convertToInternedProtobufVector(original originalFormatData) (v *internedqu
 	}
 
 	invertedSymbols := map[string]uint64{}
-	samples := make([]*internedquerypb.VectorSample, len(originalVector))
+	samples := make([]internedquerypb.VectorSample, len(originalVector))
 	originalStringCount = 0
 
 	for i, originalSample := range originalVector {
@@ -411,7 +411,7 @@ func convertToInternedProtobufVector(original originalFormatData) (v *internedqu
 			originalStringCount += 2
 		}
 
-		samples[i] = &internedquerypb.VectorSample{
+		samples[i] = internedquerypb.VectorSample{
 			Value:         float64(originalSample.Value),
 			Timestamp:     int64(originalSample.Timestamp),
 			MetricSymbols: metricSymbols,
@@ -455,7 +455,7 @@ func convertToInternedProtobufMatrix(original originalFormatData) (v *internedqu
 	}
 
 	invertedSymbols := map[string]uint64{}
-	series := make([]*internedquerypb.MatrixSeries, len(originalMatrix))
+	series := make([]internedquerypb.MatrixSeries, len(originalMatrix))
 	originalStringCount = 0
 
 	for i, originalSeries := range originalMatrix {
@@ -482,16 +482,16 @@ func convertToInternedProtobufMatrix(original originalFormatData) (v *internedqu
 			originalStringCount += 2
 		}
 
-		samples := make([]*internedquerypb.MatrixSample, 0, len(originalSeries.Values))
+		samples := make([]internedquerypb.MatrixSample, 0, len(originalSeries.Values))
 
 		for _, s := range originalSeries.Values {
-			samples = append(samples, &internedquerypb.MatrixSample{
+			samples = append(samples, internedquerypb.MatrixSample{
 				Value:     float64(s.Value),
 				Timestamp: int64(s.Timestamp),
 			})
 		}
 
-		series[i] = &internedquerypb.MatrixSeries{
+		series[i] = internedquerypb.MatrixSeries{
 			MetricSymbols: metricSymbols,
 			Samples:       samples,
 		}

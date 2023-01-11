@@ -15,8 +15,6 @@ option (gogoproto.unmarshaler_all) = true;
 // - forwards compatibility considerations if we ever need to add or change this
 // - any protobuf gotchas (I haven't used protobuf for a few years)
 
-// TODO: annotate fields with gogoproto.nullable = false where appropriate
-
 message QueryResponse {
   string Status = 1; // TODO: could this be an enum rather than a string?
   string ErrorType = 2; // TODO: could this be an enum rather than a string?
@@ -33,7 +31,7 @@ message QueryResponse {
 
 message VectorData {
   repeated string Symbols = 1;
-  repeated VectorSample Samples = 2;
+  repeated VectorSample Samples = 2 [(gogoproto.nullable) = false];
 }
 
 message VectorSample {
@@ -54,14 +52,14 @@ message ScalarData {
 
 message MatrixData {
   repeated string Symbols = 1;
-  repeated MatrixSeries Series = 2;
+  repeated MatrixSeries Series = 2 [(gogoproto.nullable) = false];
 }
 
 message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated uint64 MetricSymbols = 1;
 
-  repeated MatrixSample Samples = 2;
+  repeated MatrixSample Samples = 2 [(gogoproto.nullable) = false];
 }
 
 message MatrixSample {

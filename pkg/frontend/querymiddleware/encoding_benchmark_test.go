@@ -316,7 +316,7 @@ func encodeUninternedPrometheusScalar(data *PrometheusData) uninternedquerypb.Sc
 }
 
 func encodeUninternedPrometheusVector(data *PrometheusData) uninternedquerypb.VectorData {
-	samples := make([]*uninternedquerypb.VectorSample, len(data.Result))
+	samples := make([]uninternedquerypb.VectorSample, len(data.Result))
 
 	for sampleIdx, stream := range data.Result {
 		if len(stream.Samples) != 1 {
@@ -330,7 +330,7 @@ func encodeUninternedPrometheusVector(data *PrometheusData) uninternedquerypb.Ve
 			metric[2*labelIdx+1] = label.Value
 		}
 
-		samples[sampleIdx] = &uninternedquerypb.VectorSample{
+		samples[sampleIdx] = uninternedquerypb.VectorSample{
 			Metric:    metric,
 			Value:     stream.Samples[0].Value,
 			Timestamp: stream.Samples[0].TimestampMs,
@@ -343,7 +343,7 @@ func encodeUninternedPrometheusVector(data *PrometheusData) uninternedquerypb.Ve
 }
 
 func encodeUninternedPrometheusMatrix(data *PrometheusData) uninternedquerypb.MatrixData {
-	series := make([]*uninternedquerypb.MatrixSeries, len(data.Result))
+	series := make([]uninternedquerypb.MatrixSeries, len(data.Result))
 
 	for seriesIdx, stream := range data.Result {
 		metric := make([]string, len(stream.Labels)*2)
@@ -353,16 +353,16 @@ func encodeUninternedPrometheusMatrix(data *PrometheusData) uninternedquerypb.Ma
 			metric[2*labelIdx+1] = label.Value
 		}
 
-		samples := make([]*uninternedquerypb.MatrixSample, len(stream.Samples))
+		samples := make([]uninternedquerypb.MatrixSample, len(stream.Samples))
 
 		for sampleIdx, sample := range stream.Samples {
-			samples[sampleIdx] = &uninternedquerypb.MatrixSample{
+			samples[sampleIdx] = uninternedquerypb.MatrixSample{
 				Value:     sample.Value,
 				Timestamp: sample.TimestampMs,
 			}
 		}
 
-		series[seriesIdx] = &uninternedquerypb.MatrixSeries{
+		series[seriesIdx] = uninternedquerypb.MatrixSeries{
 			Metric:  metric,
 			Samples: samples,
 		}
@@ -527,7 +527,7 @@ func encodeInternedPrometheusScalar(data *PrometheusData) internedquerypb.Scalar
 }
 
 func encodeInternedPrometheusVector(data *PrometheusData) internedquerypb.VectorData {
-	samples := make([]*internedquerypb.VectorSample, len(data.Result))
+	samples := make([]internedquerypb.VectorSample, len(data.Result))
 	invertedSymbols := map[string]uint64{} // TODO: might be able to save resizing this by scanning through response once and allocating a map big enough to hold all symbols (ie. not just unique symbols)
 
 	for sampleIdx, stream := range data.Result {
@@ -550,7 +550,7 @@ func encodeInternedPrometheusVector(data *PrometheusData) internedquerypb.Vector
 			metricSymbols[2*labelIdx+1] = invertedSymbols[label.Value]
 		}
 
-		samples[sampleIdx] = &internedquerypb.VectorSample{
+		samples[sampleIdx] = internedquerypb.VectorSample{
 			MetricSymbols: metricSymbols,
 			Value:         stream.Samples[0].Value,
 			Timestamp:     stream.Samples[0].TimestampMs,
@@ -570,7 +570,7 @@ func encodeInternedPrometheusVector(data *PrometheusData) internedquerypb.Vector
 }
 
 func encodeInternedPrometheusMatrix(data *PrometheusData) internedquerypb.MatrixData {
-	series := make([]*internedquerypb.MatrixSeries, len(data.Result))
+	series := make([]internedquerypb.MatrixSeries, len(data.Result))
 	invertedSymbols := map[string]uint64{} // TODO: might be able to save resizing this by scanning through response once and allocating a map big enough to hold all symbols (ie. not just unique symbols)
 
 	for seriesIdx, stream := range data.Result {
@@ -589,16 +589,16 @@ func encodeInternedPrometheusMatrix(data *PrometheusData) internedquerypb.Matrix
 			metricSymbols[2*labelIdx+1] = invertedSymbols[label.Value]
 		}
 
-		samples := make([]*internedquerypb.MatrixSample, len(stream.Samples))
+		samples := make([]internedquerypb.MatrixSample, len(stream.Samples))
 
 		for sampleIdx, sample := range stream.Samples {
-			samples[sampleIdx] = &internedquerypb.MatrixSample{
+			samples[sampleIdx] = internedquerypb.MatrixSample{
 				Value:     sample.Value,
 				Timestamp: sample.TimestampMs,
 			}
 		}
 
-		series[seriesIdx] = &internedquerypb.MatrixSeries{
+		series[seriesIdx] = internedquerypb.MatrixSeries{
 			MetricSymbols: metricSymbols,
 			Samples:       samples,
 		}
