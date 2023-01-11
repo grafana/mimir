@@ -122,28 +122,6 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
-func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
-	// Hash the key.
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
-	hash := hasher.Sum32()
-
-	// Check whether this instance owns the token.
-	rs, err := r.Get(hash, instanceStateFilter, nil, nil, nil)
-	if err != nil {
-		return false, errors.Wrap(err, "failed to get instances from the ring")
-	}
-
-	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf(
-			"unexpected number of overrides-exporters in the shard (expected 1, got %d)",
-			len(rs.Instances),
-		)
-	}
-
-	return rs.Instances[0].Addr == instanceAddr, nil
-}
-
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
 	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
 	if err != nil {
@@ -173,4 +151,26 @@ func (c *RingConfig) toRingConfig() ring.Config {
 	rc.SubringCacheDisabled = true
 
 	return rc
+}
+
+func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
+	// Hash the key.
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(key))
+	hash := hasher.Sum32()
+
+	// Check whether this instance owns the token.
+	rs, err := r.Get(hash, instanceStateFilter, nil, nil, nil)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to get instances from the ring")
+	}
+
+	if len(rs.Instances) != 1 {
+		return false, fmt.Errorf(
+			"unexpected number of overrides-exporters in the shard (expected 1, got %d)",
+			len(rs.Instances),
+		)
+	}
+
+	return rs.Instances[0].Addr == instanceAddr, nil
 }
