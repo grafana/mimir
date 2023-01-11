@@ -1083,4 +1083,4 @@ GET /overrides-exporter/ring
 ```
 
 Displays a web page with the overrides-exporter hash ring status, including the state, healthy and last heartbeat time of each overrides-exporter.
-The query-scheduler ring is available only when `-overrides-exporter.ring.enabled` is set to `true`.
+The overrides-exporter ring is available only when `-overrides-exporter.ring.enabled` is set to `true`.
