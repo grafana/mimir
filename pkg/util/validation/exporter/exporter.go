@@ -75,16 +75,17 @@ func NewOverridesExporter(
 	}
 
 	if config.Ring.Enabled {
-		oeRing, err := newRing(config.Ring, log, registerer)
+                var err error
+                
+		exporter.ring, err = newRing(config.Ring, log, registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
 		}
-		exporter.ring = oeRing
-		manager, err := services.NewManager(oeRing.lifecycler, oeRing.client)
+
+		exporter.subserviceManager, err = services.NewManager(oeRing.lifecycler, oeRing.client)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create service manager")
 		}
-		exporter.subserviceManager = manager
 	}
 
 	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)

@@ -270,7 +270,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 		t.Registerer,
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to instantiate override exporter")
+		return nil, errors.Wrap(err, "failed to instantiate overrides-exporter")
 	}
 	if t.Registerer != nil {
 		t.Registerer.MustRegister(overridesExporter)

@@ -61,7 +61,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		_ = level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
-	f.BoolVar(&c.Enabled, "overrides-exporter.ring.enabled", false, "Enable the ring used by override-exporters to deduplicate metrics")
+	f.BoolVar(&c.Enabled, "overrides-exporter.ring.enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
 
 	// Ring flags
 	c.KVStore.Store = "memberlist" // Override default value.
@@ -112,7 +112,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 
 	ringClient, err := ring.New(config.toRingConfig(), ringName, ringKey, logger, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a ring")
+		return nil, errors.Wrap(err, "failed to create a overrides-exporter ring client")
 	}
 
 	return &overridesExporterRing{
