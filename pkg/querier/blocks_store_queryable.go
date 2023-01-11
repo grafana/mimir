@@ -743,6 +743,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					break
 				}
 				if err != nil {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return err
+					}
+
 					level.Warn(spanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
 					return nil
 				}
