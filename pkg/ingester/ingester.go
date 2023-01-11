@@ -148,6 +148,8 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	EphemeralSeriesRetentionPeriod time.Duration `yaml:"ephemeral_series_retention_period" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -167,6 +169,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+	f.DurationVar(&cfg.EphemeralSeriesRetentionPeriod, "ingester.ephemeral-series-retention-period", 10*time.Minute, "Retention of ephemeral series.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -678,7 +681,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 {
+	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -701,7 +704,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		stats pushStats
+		stats, ephemeralStats pushStats
 
 		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
 
@@ -714,16 +717,54 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
-	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
+	var persistentApp, ephemeralApp extendedAppender
 
-	var activeSeries *activeseries.ActiveSeries
-	if i.cfg.ActiveSeriesMetricsEnabled {
-		activeSeries = db.activeSeries
+	rollback := func() {
+		if persistentApp != nil {
+			if err := persistentApp.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", err)
+			}
+		}
+		if ephemeralApp != nil {
+			if err := ephemeralApp.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral on error", "user", userID, "err", err)
+			}
+		}
 	}
-	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
-	if err != nil {
-		return nil, err
+
+	if len(req.Timeseries) > 0 {
+		persistentApp = db.Appender(ctx).(extendedAppender)
+
+		level.Debug(spanlog).Log("event", "got appender", "series", len(req.Timeseries))
+
+		var activeSeries *activeseries.ActiveSeries
+		if i.cfg.ActiveSeriesMetricsEnabled {
+			activeSeries = db.activeSeries
+		}
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+	}
+
+	if len(req.EphemeralTimeseries) > 0 {
+		a, err := db.EphemeralAppender(ctx)
+		if err != nil {
+			// TODO: handle error caused by limit, and report it via firstPartialErr instead.
+			rollback()
+			return nil, err
+		}
+
+		ephemeralApp = a.(extendedAppender)
+
+		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
+
+		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -735,11 +776,31 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		"failedSamplesCount", stats.failedSamplesCount,
 		"succeededExemplarsCount", stats.succeededExemplarsCount,
 		"failedExemplarsCount", stats.failedExemplarsCount,
+
+		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
+		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
+		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return nil, wrapWithUser(err, userID)
+	if persistentApp != nil {
+		if err := persistentApp.Commit(); err != nil {
+			rollback()
+			return nil, wrapWithUser(err, userID)
+		}
+
+		// Don't do rollback after successful commit.
+		persistentApp = nil
+	}
+	if ephemeralApp != nil {
+		if err := ephemeralApp.Commit(); err != nil {
+			rollback()
+			return nil, wrapWithUser(err, userID)
+		}
+
+		// Don't do rollback after successful commit.
+		ephemeralApp = nil
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -747,7 +808,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if stats.succeededSamplesCount > 0 {
+	if stats.succeededSamplesCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
@@ -899,11 +960,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
 				})
 				continue
-			}
-
-			// The error looks an issue on our side, so we should rollback
-			if rollbackErr := app.Rollback(); rollbackErr != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
 			}
 
 			return wrapWithUser(err, userID)
@@ -1673,6 +1729,27 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+
+	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
+		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
+
+		headOptions := &tsdb.HeadOptions{
+			ChunkRange:                     i.cfg.EphemeralSeriesRetentionPeriod.Milliseconds(),
+			ChunkDirRoot:                   filepath.Join(udir, "ephemeral_chunks"),
+			ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+			ChunkEndTimeVariance:           0,
+			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+			StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+			SeriesCallback:                 nil, // TODO: handle limits.
+			EnableExemplarStorage:          false,
+			EnableMemorySnapshotOnShutdown: false,
+			IsolationDisabled:              true,
+		}
+		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax)) // We need to set this, despite OOO time window being 0.
+
+		return tsdb.NewHead(prometheus.WrapRegistererWithPrefix("ephemeral_", tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+	}
+
 	return userDB, nil
 }
 
@@ -2011,7 +2088,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		default:
 			reason = "regular"
-			err = userDB.Compact()
+			err = userDB.Compact(time.Now().Add(-i.cfg.EphemeralSeriesRetentionPeriod))
 		}
 
 		if err != nil {

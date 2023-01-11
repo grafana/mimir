@@ -4170,7 +4170,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4194,7 +4194,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -4222,7 +4222,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()

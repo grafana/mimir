@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,6 +61,12 @@ type userTSDB struct {
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 
+	// Function that creates ephemeral storage (*tsdb.Head) for the user.
+	ephemeralFactory func() (*tsdb.Head, error)
+
+	ephemeralMtx     sync.RWMutex
+	ephemeralStorage *tsdb.Head
+
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
 
@@ -95,6 +102,41 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }
 
+func (u *userTSDB) EphemeralAppender(ctx context.Context) (storage.Appender, error) {
+	es := u.getEphemeralStorage()
+	if es != nil {
+		return es.Appender(ctx), nil
+	}
+
+	es, err := u.createEphemeralStorage()
+	if err != nil {
+		return nil, err
+	}
+
+	return es.Appender(ctx), nil
+}
+
+func (u *userTSDB) createEphemeralStorage() (*tsdb.Head, error) {
+	u.ephemeralMtx.Lock()
+	defer u.ephemeralMtx.Unlock()
+
+	if u.ephemeralStorage != nil {
+		return u.ephemeralStorage, nil
+	}
+
+	es, err := u.ephemeralFactory()
+	u.ephemeralStorage = es
+	return es, err
+}
+
+// getEphemeralStorage returns ephemeral storage, if it exists, or nil otherwise.
+func (u *userTSDB) getEphemeralStorage() *tsdb.Head {
+	u.ephemeralMtx.RLock()
+	defer u.ephemeralMtx.RUnlock()
+
+	return u.ephemeralStorage
+}
+
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return u.db.Querier(ctx, mint, maxt)
@@ -121,11 +163,26 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
-	return u.db.Close()
+	var merr multierror.MultiError
+
+	eph := u.getEphemeralStorage()
+	if eph != nil {
+		merr.Add(errors.Wrap(eph.Close(), "ephemeral storage"))
+	}
+
+	merr.Add(errors.Wrap(u.db.Close(), "persistent storage"))
+	return merr.Err()
 }
 
-func (u *userTSDB) Compact() error {
-	return u.db.Compact()
+func (u *userTSDB) Compact(ephemeralSeriesCutoff time.Time) error {
+	var merr multierror.MultiError
+	eph := u.getEphemeralStorage()
+	if eph != nil {
+		merr.Add(errors.Wrap(eph.Truncate(ephemeralSeriesCutoff.UnixMilli()), "ephemeral storage"))
+	}
+
+	merr.Add(errors.Wrap(u.db.Compact(), "persistent storage"))
+	return merr.Err()
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
