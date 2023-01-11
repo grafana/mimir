@@ -268,9 +268,10 @@ func TestNewMockShardedqueryable(t *testing.T) {
 
 			require.Nil(t, set.Err())
 
+			var iter chunkenc.Iterator
 			for set.Next() {
 				seriesCt++
-				iter := set.At().Iterator()
+				iter = set.At().Iterator(iter)
 				samples := 0
 				for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
 					require.Equal(t, chunkenc.ValFloat, valType)

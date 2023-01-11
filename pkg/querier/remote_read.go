@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -184,10 +185,11 @@ func processReadStreamedQueryRequest(
 func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error) {
 	result := &client.QueryResponse{}
 
+	var it chunkenc.Iterator
 	for s.Next() {
 		series := s.At()
 		samples := []mimirpb.Sample{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			if valType != chunkenc.ValFloat {
 				return nil, fmt.Errorf("unsupported value type %v", valType)
@@ -234,9 +236,10 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 		lbls []mimirpb.LabelAdapter
 	)
 
+	var iter chunks.Iterator
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
 
 		frameBytesLeft := maxBytesInFrame

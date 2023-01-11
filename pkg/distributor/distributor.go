@@ -809,7 +809,11 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			ts := req.Timeseries[tsIdx]
 
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				l, keep := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				if !keep {
+					removeTsIndexes = append(removeTsIndexes, tsIdx)
+					continue
+				}
 				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
 			}
 

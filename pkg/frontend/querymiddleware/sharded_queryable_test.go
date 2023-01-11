@@ -448,10 +448,11 @@ func assertEqualSampleStream(t *testing.T, expected, actual []SampleStream) {
 func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 	var out []SampleStream
 
+	var it chunkenc.Iterator
 	for set.Next() {
 		stream := SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(set.At().Labels())}
 
-		it := set.At().Iterator()
+		it = set.At().Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			if valType != chunkenc.ValFloat {
 				return nil, fmt.Errorf("unsupported value type %v", valType)

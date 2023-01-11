@@ -172,6 +172,7 @@ func GatherIndexHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 	var (
 		lastLset labels.Labels
 		lset     labels.Labels
+		builder  labels.ScratchBuilder
 		chks     []chunks.Meta
 
 		seriesLifeDuration                          = newMinMaxSumInt64()
@@ -200,9 +201,10 @@ func GatherIndexHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 		id := p.At()
 		stats.TotalSeries++
 
-		if err := r.Series(id, &lset, &chks); err != nil {
+		if err := r.Series(id, &builder, &chks); err != nil {
 			return stats, errors.Wrap(err, "read series")
 		}
+		lset = builder.Labels()
 		if len(lset) == 0 {
 			return stats, errors.Errorf("empty label set detected for series %d", id)
 		}

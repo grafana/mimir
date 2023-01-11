@@ -81,7 +81,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 
 			sampleIx := 0
 
-			it := series.Iterator()
+			it := series.Iterator(nil)
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				assert.Equal(t, chunkenc.ValFloat, valType)
 				ts, val := it.At()
@@ -349,7 +349,7 @@ func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, 
 	require.Equal(t, labels, s.Labels())
 
 	var count uint32
-	it := s.Iterator()
+	it := s.Iterator(nil)
 	for _, r := range ranges {
 		for wantTs := r.minT.UnixNano() / 1000000; wantTs <= r.maxT.UnixNano()/1000000; wantTs += step.Milliseconds() {
 			require.Equal(t, chunkenc.ValFloat, advance(it, wantTs))
@@ -482,8 +482,9 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		set := blockQuerierSeriesSet{series: series}
 
+		var t chunkenc.Iterator
 		for set.Next() {
-			for t := set.At().Iterator(); t.Next() != chunkenc.ValNone; {
+			for t = set.At().Iterator(t); t.Next() != chunkenc.ValNone; {
 				t.At()
 			}
 		}
@@ -520,9 +521,10 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		set := blockQuerierSeriesSet{series: series}
 
+		var t chunkenc.Iterator
 		for set.Next() {
 			seekT := int64(0)
-			for t := set.At().Iterator(); t.Seek(seekT) != chunkenc.ValNone; seekT += samplesPerStep {
+			for t = set.At().Iterator(t); t.Seek(seekT) != chunkenc.ValNone; seekT += samplesPerStep {
 				t.At()
 			}
 		}
