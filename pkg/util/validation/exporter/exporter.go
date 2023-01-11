@@ -185,14 +185,13 @@ func (oe *OverridesExporter) starting(ctx context.Context) error {
 
 	oe.subserviceWatcher.WatchManager(oe.subserviceManager)
 	if err := services.StartManagerAndAwaitHealthy(ctx, oe.subserviceManager); err != nil {
-		return errors.Wrap(err, "unable to start overrides-exporter subserviceManager")
+		return errors.Wrap(err, "unable to start overrides-exporter subservice manager")
 	}
 
 	_ = level.Info(oe.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
 	if err := ring.WaitInstanceState(ctx, oe.ring.client, oe.ring.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
 	}
-
 	_ = level.Info(oe.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
 
 	return nil
@@ -216,6 +215,6 @@ func (oe *OverridesExporter) stopping(error) error {
 
 	return errors.Wrap(
 		services.StopManagerAndAwaitStopped(context.Background(), oe.subserviceManager),
-		"failed to stop overrides-exporter's subserviceManager",
+		"failed to stop overrides-exporter's subservice manager",
 	)
 }

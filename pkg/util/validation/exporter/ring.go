@@ -105,15 +105,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}
 
 	const ringName = "overrides-exporter"
-	lifecycler, err := ring.NewBasicLifecycler(
-		lifecyclerConfig,
-		ringName,
-		ringKey,
-		kvStore,
-		delegate,
-		logger,
-		reg,
-	)
+	lifecycler, err := ring.NewBasicLifecycler(lifecyclerConfig, ringName, ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize overrides-exporter's lifecycler")
 	}
