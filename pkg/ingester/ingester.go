@@ -716,142 +716,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	app := db.Appender(ctx).(extendedAppender)
 	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
-	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	for _, ts := range req.Timeseries {
-		// The labels must be sorted (in our case, it's guaranteed a write request
-		// has sorted labels once hit the ingester).
-
-		// Fast path in case we only have samples and they are all out of bound
-		// and out-of-order support is not enabled.
-		// TODO(jesus.vazquez) If we had too many old samples we might want to
-		// extend the fast path to fail early.
-		if oooTW <= 0 && minAppendTimeAvailable &&
-			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
-			stats.failedSamplesCount += len(ts.Samples)
-			stats.sampleOutOfBoundsCount += len(ts.Samples)
-
-			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
-			})
-			continue
-		}
-
-		// Look up a reference for this series.
-		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
-
-		// To find out if any sample was added to this series, we keep old value.
-		oldSucceededSamplesCount := stats.succeededSamplesCount
-
-		for _, s := range ts.Samples {
-			var err error
-
-			// If the cached reference exists, we try to use it.
-			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					stats.succeededSamplesCount++
-					continue
-				}
-			} else {
-				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
-
-				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					stats.succeededSamplesCount++
-					continue
-				}
-			}
-
-			stats.failedSamplesCount++
-
-			// Check if the error is a soft error we can proceed on. If so, we keep track
-			// of it, so that we can return it back to the distributor, which will return a
-			// 400 error to the client. The client (Prometheus) will not retry on 400, and
-			// we actually ingested all samples which haven't failed.
-			//nolint:errorlint // We don't expect the cause error to be wrapped.
-			switch cause := errors.Cause(err); cause {
-			case storage.ErrOutOfBounds:
-				stats.sampleOutOfBoundsCount++
-				updateFirstPartial(func() error { return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels) })
-				continue
-
-			case storage.ErrOutOfOrderSample:
-				stats.sampleOutOfOrderCount++
-				updateFirstPartial(func() error { return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels) })
-				continue
-
-			case storage.ErrTooOldSample:
-				stats.sampleTooOldCount++
-				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(s.TimestampMs), ts.Labels, oooTW)
-				})
-				continue
-
-			case storage.ErrDuplicateSampleForTimestamp:
-				stats.newValueForTimestampCount++
-				updateFirstPartial(func() error {
-					return newIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
-				})
-				continue
-
-			case errMaxSeriesPerUserLimitExceeded:
-				stats.perUserSeriesLimitCount++
-				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
-				continue
-
-			case errMaxSeriesPerMetricLimitExceeded:
-				stats.perMetricSeriesLimitCount++
-				updateFirstPartial(func() error {
-					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
-				})
-				continue
-			}
-
-			// The error looks an issue on our side, so we should rollback
-			if rollbackErr := app.Rollback(); rollbackErr != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
-			}
-
-			return nil, wrapWithUser(err, userID)
-		}
-
-		if i.cfg.ActiveSeriesMetricsEnabled && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
-				return copiedLabels
-			})
-		}
-
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
-			// app.AppendExemplar currently doesn't create the series, it must
-			// already exist.  If it does not then drop.
-			if ref == 0 {
-				updateFirstPartial(func() error {
-					return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
-				})
-				stats.failedExemplarsCount += len(ts.Exemplars)
-			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
-				for _, ex := range ts.Exemplars {
-					e := exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
-					}
-
-					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
-						stats.succeededExemplarsCount++
-						continue
-					}
-
-					// Error adding exemplar
-					updateFirstPartial(func() error {
-						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
-					})
-					stats.failedExemplarsCount++
-				}
-			}
-		}
+	var activeSeries *activeseries.ActiveSeries
+	if i.cfg.ActiveSeriesMetricsEnabled {
+		activeSeries = db.activeSeries
+	}
+	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		return nil, err
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -932,6 +803,151 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	return &mimirpb.WriteResponse{}, nil
+}
+
+// pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
+// but in case of unhandled errors, appender is rolled back and such error is returned.
+func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
+	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
+	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+	for _, ts := range timeseries {
+		// The labels must be sorted (in our case, it's guaranteed a write request
+		// has sorted labels once hit the ingester).
+
+		// Fast path in case we only have samples and they are all out of bound
+		// and out-of-order support is not enabled.
+		// TODO(jesus.vazquez) If we had too many old samples we might want to
+		// extend the fast path to fail early.
+		if outOfOrderWindow <= 0 && minAppendTimeAvailable &&
+			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
+			stats.failedSamplesCount += len(ts.Samples)
+			stats.sampleOutOfBoundsCount += len(ts.Samples)
+
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+			})
+			continue
+		}
+
+		// Look up a reference for this series.
+		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
+
+		// To find out if any sample was added to this series, we keep old value.
+		oldSucceededSamplesCount := stats.succeededSamplesCount
+
+		for _, s := range ts.Samples {
+			var err error
+
+			// If the cached reference exists, we try to use it.
+			if ref != 0 {
+				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			} else {
+				// Copy the label set because both TSDB and the active series tracker may retain it.
+				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+
+				// Retain the reference in case there are multiple samples for the series.
+				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			}
+
+			stats.failedSamplesCount++
+
+			// Check if the error is a soft error we can proceed on. If so, we keep track
+			// of it, so that we can return it back to the distributor, which will return a
+			// 400 error to the client. The client (Prometheus) will not retry on 400, and
+			// we actually ingested all samples which haven't failed.
+			//nolint:errorlint // We don't expect the cause error to be wrapped.
+			switch cause := errors.Cause(err); cause {
+			case storage.ErrOutOfBounds:
+				stats.sampleOutOfBoundsCount++
+				updateFirstPartial(func() error { return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels) })
+				continue
+
+			case storage.ErrOutOfOrderSample:
+				stats.sampleOutOfOrderCount++
+				updateFirstPartial(func() error { return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels) })
+				continue
+
+			case storage.ErrTooOldSample:
+				stats.sampleTooOldCount++
+				updateFirstPartial(func() error {
+					return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(s.TimestampMs), ts.Labels, outOfOrderWindow)
+				})
+				continue
+
+			case storage.ErrDuplicateSampleForTimestamp:
+				stats.newValueForTimestampCount++
+				updateFirstPartial(func() error {
+					return newIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
+				})
+				continue
+
+			case errMaxSeriesPerUserLimitExceeded:
+				stats.perUserSeriesLimitCount++
+				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
+				continue
+
+			case errMaxSeriesPerMetricLimitExceeded:
+				stats.perMetricSeriesLimitCount++
+				updateFirstPartial(func() error {
+					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
+				})
+				continue
+			}
+
+			// The error looks an issue on our side, so we should rollback
+			if rollbackErr := app.Rollback(); rollbackErr != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
+			}
+
+			return wrapWithUser(err, userID)
+		}
+
+		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
+			activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
+				// we must already have copied the labels if succeededSamplesCount has been incremented.
+				return copiedLabels
+			})
+		}
+
+		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+			// app.AppendExemplar currently doesn't create the series, it must
+			// already exist.  If it does not then drop.
+			if ref == 0 {
+				updateFirstPartial(func() error {
+					return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
+				})
+				stats.failedExemplarsCount += len(ts.Exemplars)
+			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
+				for _, ex := range ts.Exemplars {
+					e := exemplar.Exemplar{
+						Value:  ex.Value,
+						Ts:     ex.TimestampMs,
+						HasTs:  true,
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					}
+
+					var err error
+					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
+						stats.succeededExemplarsCount++
+						continue
+					}
+
+					// Error adding exemplar
+					updateFirstPartial(func() error {
+						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+					})
+					stats.failedExemplarsCount++
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
