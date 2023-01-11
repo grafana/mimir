@@ -105,7 +105,7 @@ const (
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
 
 	// Prefix used in Prometheus registry for ephemeral storage.
-	ephemeral_prometheus_metrics_prefix = "ephmemeral_"
+	ephemeralPrometheusMetricsPrefix = "ephemeral_"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -1758,7 +1758,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		// We need to set this, despite OOO time window being 0.
 		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax))
 
-		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeral_prometheus_metrics_prefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeralPrometheusMetricsPrefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
 		if err != nil {
 			return nil, err
 		}

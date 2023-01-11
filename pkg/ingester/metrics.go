@@ -722,11 +722,11 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerUser(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerUser(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
 
-	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeral_prometheus_metrics_prefix+"prometheus_tsdb_head_truncations_failed_total")
-	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeral_prometheus_metrics_prefix+"prometheus_tsdb_head_truncations_total")
-	data.SendSumOfCounters(out, sm.ephemeralHeadGcDuration, ephemeral_prometheus_metrics_prefix+"prometheus_tsdb_head_gc_duration_seconds")
-	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesCreatedTotal, ephemeral_prometheus_metrics_prefix+"prometheus_tsdb_head_series_created_total")
-	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesRemovedTotal, ephemeral_prometheus_metrics_prefix+"prometheus_tsdb_head_series_removed_total")
+	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_failed_total")
+	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_total")
+	data.SendSumOfCounters(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
+	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
+	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {
