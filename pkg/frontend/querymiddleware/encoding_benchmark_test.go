@@ -120,6 +120,33 @@ func BenchmarkDecode(b *testing.B) {
 	}
 }
 
+func BenchmarkEncode(b *testing.B) {
+	filePattern := "/Users/charleskorn/Desktop/queries/querier/original-format/*.json"
+	files, err := filepath.Glob(filePattern)
+	require.NoError(b, err)
+	require.NotEmpty(b, files)
+
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		require.NoError(b, err)
+
+		resp, err := originalDecode(body)
+		require.NoError(b, err)
+
+		fileName, _, _ := strings.Cut(filepath.Base(file), ".")
+
+		b.Run(fileName, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := originalEncode(resp)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
 // FIXME: this isn't a perfect comparison - real PrometheusResponse values also include the response headers from Prometheus
 func originalDecode(b []byte) (PrometheusResponse, error) {
 	var resp PrometheusResponse
@@ -129,6 +156,10 @@ func originalDecode(b []byte) (PrometheusResponse, error) {
 	}
 
 	return resp, nil
+}
+
+func originalEncode(resp PrometheusResponse) ([]byte, error) {
+	return json.Marshal(resp)
 }
 
 func uninternedProtoDecode(b []byte) (PrometheusResponse, error) {
