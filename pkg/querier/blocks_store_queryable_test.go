@@ -2016,10 +2016,9 @@ func (m *cancelerStoreGatewayClientMock) Series(ctx context.Context, in *storepb
 			cancel: m.cancel,
 		}
 		return series, nil
-	} else {
-		m.cancel()
-		return nil, ctx.Err()
 	}
+	m.cancel()
+	return nil, ctx.Err()
 }
 
 func (m *cancelerStoreGatewayClientMock) LabelNames(ctx context.Context, _ *storepb.LabelNamesRequest, _ ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
