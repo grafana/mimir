@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
 	"io"
 	"math"
 	"os"
@@ -43,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -1717,12 +1719,13 @@ func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]
 	return buf.Bytes(), nil
 }
 
-func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges) (*[]byte, error) {
+func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges, chunkSlabs *pool.SafeSlabPool[byte]) (*[]byte, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
 	// Get a reader for the required range.
+	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunkSlabs})
 	reader, err := b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 	if err != nil {
 		return nil, errors.Wrap(err, "get range reader")
@@ -1743,11 +1746,12 @@ func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length i
 	return chunkBuffer, nil
 }
 
-func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64) (io.ReadCloser, error) {
+func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64, chunkSlabs *pool.SafeSlabPool[byte]) (io.ReadCloser, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
+	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunkSlabs})
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
@@ -1871,4 +1875,17 @@ func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 		return sharding.ShardSelector{}
 	}
 	return *shard
+}
+
+type slabPoolAdapter struct {
+	pool *pool.SafeSlabPool[byte]
+}
+
+func (s *slabPoolAdapter) Get(sz int) *[]byte {
+	b := s.pool.Get(sz)
+	return &b
+}
+
+func (s *slabPoolAdapter) Put(_ *[]byte) {
+	// no-op
 }

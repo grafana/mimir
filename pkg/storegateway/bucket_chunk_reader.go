@@ -101,7 +101,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
-	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
+	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start), chunksPool)
 	if err != nil {
 		return errors.Wrap(err, "get range reader")
 	}
@@ -177,7 +177,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 
 		// Read entire chunk into new buffer.
 		// TODO: readChunkRange call could be avoided for any chunk but last in this particular part.
-		nb, err := r.block.readChunkRange(ctx, seq, int64(pIdx.offset), int64(chunkLen), []byteRange{{offset: 0, length: chunkLen}})
+		nb, err := r.block.readChunkRange(ctx, seq, int64(pIdx.offset), int64(chunkLen), []byteRange{{offset: 0, length: chunkLen}}, chunksPool)
 		if err != nil {
 			return errors.Wrapf(err, "preloaded chunk too small, expecting %d, and failed to fetch full chunk", chunkLen)
 		}

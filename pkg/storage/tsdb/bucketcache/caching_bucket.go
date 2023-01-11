@@ -26,12 +26,35 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type contextKey int
+
 const (
 	originCache  = "cache"
 	originBucket = "bucket"
+
+	allocatorContextKey contextKey = 0
 )
 
 var errObjNotFound = errors.Errorf("object not found")
+
+// WithAllocator returns a new context with a cache.Allocator to be used by
+// the underlying cache client in CachingBucket.Get or CachingBucket.GetRange calls.
+func WithAllocator(ctx context.Context, alloc cache.Allocator) context.Context {
+	if alloc == nil {
+		return ctx
+	}
+
+	return context.WithValue(ctx, allocatorContextKey, alloc)
+}
+
+func getAllocator(ctx context.Context) cache.Allocator {
+	alloc := ctx.Value(allocatorContextKey)
+	if alloc == nil {
+		return nil
+	}
+
+	return alloc.(cache.Allocator)
+}
 
 // CachingBucket implementation that provides some caching features, based on passed configuration.
 type CachingBucket struct {
@@ -221,7 +244,13 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	contentKey := cachingKeyContent(name)
 	existsKey := cachingKeyExists(name)
 
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey})
+	var opts []cache.Option
+	alloc := getAllocator(ctx)
+	if alloc != nil {
+		opts = append(opts, cache.WithAllocator(alloc))
+	}
+
+	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, opts...)
 	if hits[contentKey] != nil {
 		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 		return objstore.NopCloserWithSize(bytes.NewBuffer(hits[contentKey])), nil
@@ -273,7 +302,13 @@ func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length 
 		return cb.Bucket.GetRange(ctx, name, off, length)
 	}
 
-	return cb.cachedGetRange(ctx, name, off, length, cfgName, cfg)
+	var opts []cache.Option
+	alloc := getAllocator(ctx)
+	if alloc != nil {
+		opts = append(opts, cache.WithAllocator(alloc))
+	}
+
+	return cb.cachedGetRange(ctx, name, off, length, cfgName, cfg, opts...)
 }
 
 func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
@@ -316,7 +351,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	return attrs, nil
 }
 
-func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
+func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig, opts ...cache.Option) (io.ReadCloser, error) {
 	cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
 	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
 
@@ -365,7 +400,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 
 	// Try to get all subranges from the cache.
 	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys)
+	hits := cfg.cache.Fetch(ctx, keys, opts...)
 	for _, b := range hits {
 		totalCachedBytes += int64(len(b))
 	}
