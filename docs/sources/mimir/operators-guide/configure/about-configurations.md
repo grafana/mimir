@@ -62,7 +62,7 @@ The most common use case for CLI flags is to use the `-target` flag to run Grafa
 
 ## Validate a configuration
 
-To validate your configuration, run the command `mimir -modules true -config.file <path-to-config-file>`.
+To validate your configuration, run the command `mimir -modules -config.file <path-to-config-file>`.
 This is useful if you want to validate the configuration before deploying it. You can use the command locally or in a CI environment.
 
 - If the configuration file is valid, the command exits with a zero exit code and prints the available modules.
