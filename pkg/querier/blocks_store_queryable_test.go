@@ -892,16 +892,23 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 		})
 	}
+}
 
-	canceledRequestTests := map[string]struct {
-		produceSeries bool
-	}{
-		"canceled request on series stream": {
-			produceSeries: false,
-		},
-		"canceled request on receiving series stream": {
-			produceSeries: true,
-		},
+func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
+	const (
+		metricName = "test_metric"
+		minT       = int64(10)
+		maxT       = int64(20)
+	)
+
+	var (
+		block            = ulid.MustNew(1, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0)
+	)
+
+	canceledRequestTests := map[string]bool{
+		"canceled request on series stream":           false,
+		"canceled request on receiving series stream": true,
 	}
 
 	for testName, testData := range canceledRequestTests {
@@ -914,18 +921,18 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			storeGateway := &cancelerStoreGatewayClientMock{
 				remoteAddr:    "1.1.1.1",
-				produceSeries: testData.produceSeries,
+				produceSeries: testData,
 				cancel:        cancel,
 			}
 
 			stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{storeGateway: {block1}},
+				map[BlocksStoreClient][]ulid.ULID{storeGateway: {block}},
 				errors.New("no store-gateway remaining after exclude"),
 			}}
 
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
-				{ID: block1},
+				{ID: block},
 			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 			q := &blocksStoreQuerier{
