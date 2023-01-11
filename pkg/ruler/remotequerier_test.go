@@ -527,7 +527,7 @@ func uninternedVectorEncode(data *querymiddleware.PrometheusData) *uninternedque
 		}
 
 		for _, sample := range stream.Samples {
-			vector.Samples = append(vector.Samples, &uninternedquerypb.Sample{
+			vector.Samples = append(vector.Samples, &uninternedquerypb.VectorSample{
 				Metric:    metric,
 				Value:     sample.Value,
 				Timestamp: sample.TimestampMs,
@@ -603,7 +603,7 @@ func internedVectorEncode(data *querymiddleware.PrometheusData) *internedquerypb
 		sampleCount += len(stream.Samples)
 	}
 
-	samples := make([]*internedquerypb.Sample, 0, sampleCount)
+	samples := make([]*internedquerypb.VectorSample, 0, sampleCount)
 
 	for _, stream := range data.Result {
 		metricSymbols := make([]uint64, len(stream.Labels)*2)
@@ -614,7 +614,7 @@ func internedVectorEncode(data *querymiddleware.PrometheusData) *internedquerypb
 		}
 
 		for _, sample := range stream.Samples {
-			samples = append(samples, &internedquerypb.Sample{
+			samples = append(samples, &internedquerypb.VectorSample{
 				MetricSymbols: metricSymbols,
 				Value:         sample.Value,
 				Timestamp:     sample.TimestampMs,

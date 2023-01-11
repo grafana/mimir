@@ -15,6 +15,8 @@ option (gogoproto.unmarshaler_all) = true;
 // - forwards compatibility considerations if we ever need to add or change this
 // - any protobuf gotchas (I haven't used protobuf for a few years)
 
+// TODO: annotate fields with gogoproto.nullable = false where appropriate
+
 message QueryResponse {
   string Status = 1; // TODO: could this be an enum rather than a string?
   string ErrorType = 2; // TODO: could this be an enum rather than a string?
@@ -23,17 +25,18 @@ message QueryResponse {
   oneof Data {
     VectorData Vector = 4;
     ScalarData Scalar = 5;
+    MatrixData Matrix = 6;
 
-    // TODO: if we want to use this for all query types, we'd need to add support for matrix and string values
+    // TODO: if we want to use this for all query types, we'd need to add support for string values
   }
 }
 
 message VectorData {
   repeated string Symbols = 1;
-  repeated Sample Samples = 2;
+  repeated VectorSample Samples = 2;
 }
 
-message Sample {
+message VectorSample {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated uint64 MetricSymbols = 1;
   double Value = 2;
@@ -43,6 +46,25 @@ message Sample {
 }
 
 message ScalarData {
+  double Value = 1;
+
+  // TODO: is there a better type to use here?
+  int64 Timestamp = 2; // milliseconds
+}
+
+message MatrixData {
+  repeated string Symbols = 1;
+  repeated MatrixSeries Series = 2;
+}
+
+message MatrixSeries {
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated uint64 MetricSymbols = 1;
+
+  repeated MatrixSample Samples = 2;
+}
+
+message MatrixSample {
   double Value = 1;
 
   // TODO: is there a better type to use here?

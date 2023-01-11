@@ -36,12 +36,17 @@ func main() {
 
 func run(workingDir string) error {
 	originalFormatDir := path.Join(workingDir, "original-format")
-	originalFormatFiles, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
-
+	originalFormatFilesInRootDirectory, err := filepath.Glob(path.Join(originalFormatDir, "*.json"))
 	if err != nil {
 		return fmt.Errorf("listing original format files: %w", err)
 	}
 
+	originalFormatFilesInSubdirectories, err := filepath.Glob(path.Join(originalFormatDir, "**", "*.json"))
+	if err != nil {
+		return fmt.Errorf("listing original format files: %w", err)
+	}
+
+	originalFormatFiles := append(originalFormatFilesInRootDirectory, originalFormatFilesInSubdirectories...)
 	slices.Sort(originalFormatFiles)
 
 	uninternedProtobufDir := path.Join(workingDir, "uninterned-protobuf")
@@ -192,6 +197,22 @@ func convertToUninternedProtobufResponse(r originalFormatAPIResponse) (b []byte,
 
 		return b, nil
 
+	case model.ValMatrix:
+		data, err := convertToUninternedProtobufMatrix(r.Data)
+
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, err
+		}
+
+		return b, nil
+
 	default:
 		panic(fmt.Sprintf("unsupported data type: %v", r.Data.Type))
 	}
@@ -203,8 +224,7 @@ func convertToUninternedProtobufVector(original originalFormatData) (v *unintern
 		return nil, fmt.Errorf("could not decode vector result: %w", err)
 	}
 
-	invertedSymbols := map[string]uint64{}
-	samples := make([]*uninternedquerypb.Sample, len(originalVector))
+	samples := make([]*uninternedquerypb.VectorSample, len(originalVector))
 
 	for i, originalSample := range originalVector {
 		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
@@ -217,20 +237,15 @@ func convertToUninternedProtobufVector(original originalFormatData) (v *unintern
 		metric := make([]string, 0, len(originalSample.Metric)*2)
 
 		for _, l := range lb.Labels(nil) {
+			// FIXME: assign directly to indices of metric rather than using append
 			metric = append(metric, l.Name, l.Value)
 		}
 
-		samples[i] = &uninternedquerypb.Sample{
+		samples[i] = &uninternedquerypb.VectorSample{
 			Value:     float64(originalSample.Value),
 			Timestamp: int64(originalSample.Timestamp),
 			Metric:    metric,
 		}
-	}
-
-	symbols := make([]string, len(invertedSymbols))
-
-	for s, i := range invertedSymbols {
-		symbols[i] = s
 	}
 
 	return &uninternedquerypb.QueryResponse_Vector{
@@ -250,6 +265,53 @@ func convertToUninternedProtobufScalar(d originalFormatData) (*uninternedquerypb
 		Scalar: &uninternedquerypb.ScalarData{
 			Timestamp: int64(originalScalar.Timestamp),
 			Value:     float64(originalScalar.Value),
+		},
+	}, nil
+}
+
+func convertToUninternedProtobufMatrix(original originalFormatData) (v *uninternedquerypb.QueryResponse_Matrix, err error) {
+	var originalMatrix model.Matrix
+	if err := json.Unmarshal(original.Result, &originalMatrix); err != nil {
+		return nil, fmt.Errorf("could not decode matrix result: %w", err)
+	}
+
+	series := make([]*uninternedquerypb.MatrixSeries, 0, len(originalMatrix))
+
+	for _, originalStream := range originalMatrix {
+		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
+		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		for n, v := range originalStream.Metric {
+			lb.Set(string(n), string(v))
+		}
+
+		metric := make([]string, 0, len(originalStream.Metric)*2)
+
+		for _, l := range lb.Labels(nil) {
+			// FIXME: assign directly to indices of metric rather than using append
+			metric = append(metric, l.Name, l.Value)
+		}
+
+		samples := make([]*uninternedquerypb.MatrixSample, 0, len(originalStream.Values))
+
+		for _, s := range originalStream.Values {
+			// FIXME: assign directly to indices of sample rather than using append
+			samples = append(samples, &uninternedquerypb.MatrixSample{
+				Value:     float64(s.Value),
+				Timestamp: int64(s.Timestamp),
+			})
+		}
+
+		// FIXME: assign directly to indices of series rather than using append
+		series = append(series, &uninternedquerypb.MatrixSeries{
+			Metric:  metric,
+			Samples: samples,
+		})
+	}
+
+	return &uninternedquerypb.QueryResponse_Matrix{
+		Matrix: &uninternedquerypb.MatrixData{
+			Series: series,
 		},
 	}, nil
 }
@@ -294,6 +356,22 @@ func convertToInternedProtobufResponse(r originalFormatAPIResponse) (b []byte, o
 
 		return b, 0, 0, nil
 
+	case model.ValMatrix:
+		data, originalStringCount, uniqueStringCount, err := convertToInternedProtobufMatrix(r.Data)
+
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
+		resp.Data = data
+		b, err := resp.Marshal()
+
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
+		return b, originalStringCount, uniqueStringCount, nil
+
 	default:
 		panic(fmt.Sprintf("unsupported data type: %v", r.Data.Type))
 	}
@@ -306,7 +384,7 @@ func convertToInternedProtobufVector(original originalFormatData) (v *internedqu
 	}
 
 	invertedSymbols := map[string]uint64{}
-	samples := make([]*internedquerypb.Sample, len(originalVector))
+	samples := make([]*internedquerypb.VectorSample, len(originalVector))
 	originalStringCount = 0
 
 	for i, originalSample := range originalVector {
@@ -328,11 +406,12 @@ func convertToInternedProtobufVector(original originalFormatData) (v *internedqu
 				invertedSymbols[l.Value] = uint64(len(invertedSymbols))
 			}
 
+			// FIXME: assign directly to indices of metricSymbols rather than using append
 			metricSymbols = append(metricSymbols, invertedSymbols[l.Name], invertedSymbols[l.Value])
 			originalStringCount += 2
 		}
 
-		samples[i] = &internedquerypb.Sample{
+		samples[i] = &internedquerypb.VectorSample{
 			Value:         float64(originalSample.Value),
 			Timestamp:     int64(originalSample.Timestamp),
 			MetricSymbols: metricSymbols,
@@ -367,4 +446,69 @@ func convertToInternedProtobufScalar(d originalFormatData) (*internedquerypb.Que
 			Value:     float64(originalScalar.Value),
 		},
 	}, nil
+}
+
+func convertToInternedProtobufMatrix(original originalFormatData) (v *internedquerypb.QueryResponse_Matrix, originalStringCount int, uniqueStringCount int, err error) {
+	var originalMatrix model.Matrix
+	if err := json.Unmarshal(original.Result, &originalMatrix); err != nil {
+		return nil, 0, 0, fmt.Errorf("could not decode vector result: %w", err)
+	}
+
+	invertedSymbols := map[string]uint64{}
+	series := make([]*internedquerypb.MatrixSeries, len(originalMatrix))
+	originalStringCount = 0
+
+	for i, originalSeries := range originalMatrix {
+		// This is somewhat convoluted: we do this to ensure we emit the labels in a stable order.
+		// (labels.Builder.Labels() sorts the labels before returning the built label set.)
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		for n, v := range originalSeries.Metric {
+			lb.Set(string(n), string(v))
+		}
+
+		metricSymbols := make([]uint64, 0, len(originalSeries.Metric)*2)
+
+		for _, l := range lb.Labels(nil) {
+			if _, ok := invertedSymbols[l.Name]; !ok {
+				invertedSymbols[l.Name] = uint64(len(invertedSymbols))
+			}
+
+			if _, ok := invertedSymbols[l.Value]; !ok {
+				invertedSymbols[l.Value] = uint64(len(invertedSymbols))
+			}
+
+			// FIXME: assign directly to indices of metricSymbols rather than using append
+			metricSymbols = append(metricSymbols, invertedSymbols[l.Name], invertedSymbols[l.Value])
+			originalStringCount += 2
+		}
+
+		samples := make([]*internedquerypb.MatrixSample, 0, len(originalSeries.Values))
+
+		for _, s := range originalSeries.Values {
+			samples = append(samples, &internedquerypb.MatrixSample{
+				Value:     float64(s.Value),
+				Timestamp: int64(s.Timestamp),
+			})
+		}
+
+		series[i] = &internedquerypb.MatrixSeries{
+			MetricSymbols: metricSymbols,
+			Samples:       samples,
+		}
+	}
+
+	symbols := make([]string, len(invertedSymbols))
+
+	for s, i := range invertedSymbols {
+		symbols[i] = s
+	}
+
+	uniqueStringCount = len(symbols)
+
+	return &internedquerypb.QueryResponse_Matrix{
+		Matrix: &internedquerypb.MatrixData{
+			Symbols: symbols,
+			Series:  series,
+		},
+	}, originalStringCount, uniqueStringCount, nil
 }
