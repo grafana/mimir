@@ -111,15 +111,11 @@ func waitTenantSpecificMetricsAvailable(s1, s2 *e2emimir.MimirService, tenantNam
 }
 
 func getOverrideMetricForTenantFromService(tenantName string, limitName string, service *e2emimir.MimirService) (float64, error) {
-	metrics := []string{"cortex_limits_overrides"}
-	opts := []e2e.MetricsOption{
+	sums, err := service.SumMetrics(
+		[]string{"cortex_limits_overrides"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", tenantName)),
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "limit_name", limitName)),
 		e2e.SkipMissingMetrics,
-	}
-	sums, err := service.SumMetrics(
-		metrics,
-		opts...,
 	)
 	return sums[0], err
 }
