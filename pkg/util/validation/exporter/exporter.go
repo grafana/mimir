@@ -21,6 +21,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// ShardOwner determines whether a given identifier is owned by the instance it belongs to
+type ShardOwner interface {
+	Owns(identifier string) (bool, error)
+}
+
+// Option is the option type for this package
+type Option func(*OverridesExporter)
+
+// WithShard allows setting a ShardOwner that determines tenant ownership for the overrides-exporter
+func WithShard(shard ShardOwner) Option {
+	return func(exporter *OverridesExporter) {
+		exporter.shard = shard
+	}
+}
+
 type Config struct {
 	Ring RingConfig `yaml:"ring"`
 }
@@ -41,6 +56,7 @@ type OverridesExporter struct {
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
+	shard             ShardOwner
 	ring              *overridesExporterRing
 	subserviceManager *services.Manager
 	subserviceWatcher *services.FailureWatcher
@@ -54,6 +70,7 @@ func NewOverridesExporter(
 	tenantLimits validation.TenantLimits,
 	log log.Logger,
 	registerer prometheus.Registerer,
+	opts ...Option,
 ) (*OverridesExporter, error) {
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
@@ -86,6 +103,12 @@ func NewOverridesExporter(
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create service manager")
 		}
+
+		exporter.shard = exporter.ring
+	}
+
+	for _, opt := range opts {
+		opt(exporter)
 	}
 
 	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)
@@ -165,11 +188,11 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 }
 
 func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
-	if oe.ring == nil {
+	if oe.shard == nil {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := instanceOwnsTokenInRing(oe.ring.client, oe.ring.lifecycler.GetInstanceAddr(), tenantID)
+	owned, err := oe.shard.Owns(tenantID)
 	if err != nil {
 		_ = level.Warn(oe.logger).Log("msg", "determining tenant ownership failed", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe

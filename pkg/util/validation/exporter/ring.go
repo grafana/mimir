@@ -114,6 +114,10 @@ type overridesExporterRing struct {
 	lifecycler *ring.BasicLifecycler
 }
 
+func (o *overridesExporterRing) Owns(tenantID string) (bool, error) {
+	return instanceOwnsIdentifier(o.client, o.lifecycler.GetInstanceAddr(), tenantID)
+}
+
 func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*overridesExporterRing, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(
@@ -153,7 +157,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
-func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
+func instanceOwnsIdentifier(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Hash the key.
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(key))
