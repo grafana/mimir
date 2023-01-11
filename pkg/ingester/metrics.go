@@ -724,7 +724,7 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_failed_total")
 	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_total")
-	data.SendSumOfCounters(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
+	data.SendSumOfSummaries(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
 	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
 }
