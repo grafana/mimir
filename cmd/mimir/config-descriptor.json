@@ -11395,7 +11395,7 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Enable the ring used by override-exporters to deduplicate metrics",
+              "desc": "Enable the ring used by override-exporters to deduplicate exported limit metrics.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "overrides-exporter.ring.enabled",

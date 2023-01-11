@@ -241,7 +241,7 @@ usage_stats:
 overrides_exporter:
   ring:
     # (experimental) Enable the ring used by override-exporters to deduplicate
-    # metrics
+    # exported limit metrics.
     # CLI flag: -overrides-exporter.ring.enabled
     [enabled: <boolean> | default = false]
 

@@ -27,15 +27,15 @@ const (
 	ringKey = "overrides-exporter"
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the ring.
-	// Overrides-exporters use a ring for discovery only, so one token is enough.
-	ringNumTokens = 1
+	// Overrides-exporters use a ring for tenant sharding and don't need perfect balancing.
+	ringNumTokens = 64
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 4
 )
 
-var instanceStateFilter = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 type RingConfig struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
@@ -75,6 +75,37 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.InstanceAddr, "overrides-exporter.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&c.InstancePort, "overrides-exporter.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&c.InstanceID, "overrides-exporter.ring.instance-id", hostname, "Instance ID to register in the ring.")
+}
+
+func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
+	if err != nil {
+		return ring.BasicLifecyclerConfig{}, err
+	}
+
+	instancePort := ring.GetInstancePort(c.InstancePort, c.ListenPort)
+
+	return ring.BasicLifecyclerConfig{
+		ID:                              c.InstanceID,
+		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		HeartbeatPeriod:                 c.HeartbeatPeriod,
+		HeartbeatTimeout:                c.HeartbeatTimeout,
+		TokensObservePeriod:             0,
+		NumTokens:                       ringNumTokens,
+		KeepInstanceInTheRingOnShutdown: false,
+	}, nil
+}
+
+func (c *RingConfig) toRingConfig() ring.Config {
+	rc := ring.Config{}
+	flagext.DefaultValues(&rc)
+
+	rc.KVStore = c.KVStore
+	rc.HeartbeatTimeout = c.HeartbeatTimeout
+	rc.ReplicationFactor = 1
+	rc.SubringCacheDisabled = true
+
+	return rc
 }
 
 type overridesExporterRing struct {
@@ -122,37 +153,6 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
-func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
-	if err != nil {
-		return ring.BasicLifecyclerConfig{}, err
-	}
-
-	instancePort := ring.GetInstancePort(c.InstancePort, c.ListenPort)
-
-	return ring.BasicLifecyclerConfig{
-		ID:                              c.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:                 c.HeartbeatPeriod,
-		HeartbeatTimeout:                c.HeartbeatTimeout,
-		TokensObservePeriod:             0,
-		NumTokens:                       ringNumTokens,
-		KeepInstanceInTheRingOnShutdown: false,
-	}, nil
-}
-
-func (c *RingConfig) toRingConfig() ring.Config {
-	rc := ring.Config{}
-	flagext.DefaultValues(&rc)
-
-	rc.KVStore = c.KVStore
-	rc.HeartbeatTimeout = c.HeartbeatTimeout
-	rc.ReplicationFactor = 1
-	rc.SubringCacheDisabled = true
-
-	return rc
-}
-
 func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Hash the key.
 	hasher := fnv.New32a()
@@ -160,7 +160,7 @@ func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (
 	hash := hasher.Sum32()
 
 	// Check whether this instance owns the token.
-	rs, err := r.Get(hash, instanceStateFilter, nil, nil, nil)
+	rs, err := r.Get(hash, ringOp, nil, nil, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to get instances from the ring")
 	}

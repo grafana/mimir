@@ -25,6 +25,10 @@ type Config struct {
 	Ring RingConfig `yaml:"ring"`
 }
 
+func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.Ring.RegisterFlags(f, logger)
+}
+
 // OverridesExporter exposes per-tenant resource limit overrides as Prometheus metrics
 type OverridesExporter struct {
 	services.Service
@@ -40,10 +44,6 @@ type OverridesExporter struct {
 	ring              *overridesExporterRing
 	subserviceManager *services.Manager
 	subserviceWatcher *services.FailureWatcher
-}
-
-func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	c.Ring.RegisterFlags(f, logger)
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
@@ -75,14 +75,14 @@ func NewOverridesExporter(
 	}
 
 	if config.Ring.Enabled {
-                var err error
-                
+		var err error
+
 		exporter.ring, err = newRing(config.Ring, log, registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
 		}
 
-		exporter.subserviceManager, err = services.NewManager(oeRing.lifecycler, oeRing.client)
+		exporter.subserviceManager, err = services.NewManager(exporter.ring.lifecycler, exporter.ring.client)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create service manager")
 		}
@@ -199,13 +199,11 @@ func (oe *OverridesExporter) starting(ctx context.Context) error {
 }
 
 func (oe *OverridesExporter) running(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-oe.subserviceWatcher.Chan():
-			return errors.Wrap(err, "a subservice of overrides-exporter has failed")
-		}
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-oe.subserviceWatcher.Chan():
+		return errors.Wrap(err, "a subservice of overrides-exporter has failed")
 	}
 }
 
