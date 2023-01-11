@@ -313,6 +313,11 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		}, i.getMemorySeriesMetric)
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_ephemeral_series",
+			Help: "The current number of ephemeral series in memory.",
+		}, i.getEphemeralSeriesMetric)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
 		}, i.getOldestUnshippedBlockMetric)
@@ -1749,9 +1754,18 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			EnableMemorySnapshotOnShutdown: false,
 			IsolationDisabled:              true,
 		}
-		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax)) // We need to set this, despite OOO time window being 0.
 
-		return tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeral_prometheus_metrics_prefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+		// We need to set this, despite OOO time window being 0.
+		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax))
+
+		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeral_prometheus_metrics_prefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Don't allow ingestion of old samples into ephemeral storage.
+		h.SetMinValidTime(time.Now().Add(-i.cfg.EphemeralSeriesRetentionPeriod).UnixMilli())
+		return h, nil
 	}
 
 	return userDB, nil
@@ -1908,6 +1922,26 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 	count := uint64(0)
 	for _, db := range i.tsdbs {
 		count += db.Head().NumSeries()
+	}
+
+	return float64(count)
+}
+
+// getEphemeralSeriesMetric returns the total number of in-memory series in ephemeral storage across all tenants.
+func (i *Ingester) getEphemeralSeriesMetric() float64 {
+	if err := i.checkRunning(); err != nil {
+		return 0
+	}
+
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	count := uint64(0)
+	for _, db := range i.tsdbs {
+		eph := db.getEphemeralStorage()
+		if eph != nil {
+			count += eph.NumSeries()
+		}
 	}
 
 	return float64(count)
