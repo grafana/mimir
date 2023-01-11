@@ -409,3 +409,11 @@ func (u *userTSDB) acquireAppendLock() error {
 func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
+
+func (u *userTSDB) updatedRatesFromStats(succeededSamplesCount int, ruleSource bool) {
+	if ruleSource {
+		u.ingestedRuleSamples.Add(int64(succeededSamplesCount))
+	} else {
+		u.ingestedAPISamples.Add(int64(succeededSamplesCount))
+	}
+}

@@ -103,6 +103,9 @@ const (
 	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
+
+	// Prefix used in Prometheus registry for ephemeral storage.
+	ephemeral_prometheus_metrics_prefix = "ephmemeral_"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -727,7 +730,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 		if ephemeralApp != nil {
 			if err := ephemeralApp.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral on error", "user", userID, "err", err)
+				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral appender on error", "user", userID, "err", err)
 			}
 		}
 	}
@@ -741,7 +744,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		if i.cfg.ActiveSeriesMetricsEnabled {
 			activeSeries = db.activeSeries
 		}
-		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, true)
 		if err != nil {
 			rollback()
 			return nil, err
@@ -751,7 +754,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if len(req.EphemeralTimeseries) > 0 {
 		a, err := db.EphemeralAppender(ctx)
 		if err != nil {
-			// TODO: handle error caused by limit, and report it via firstPartialErr instead.
+			// TODO: handle error caused by limit (ephemeral storage disabled), and report it via firstPartialErr instead.
 			rollback()
 			return nil, err
 		}
@@ -760,7 +763,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
 
-		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime)
+		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
 		if err != nil {
 			rollback()
 			return nil, err
@@ -790,8 +793,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			return nil, wrapWithUser(err, userID)
 		}
 
-		// Don't do rollback after successful commit.
-		persistentApp = nil
+		persistentApp = nil // Disable rollback for this appender.
 	}
 	if ephemeralApp != nil {
 		if err := ephemeralApp.Commit(); err != nil {
@@ -799,8 +801,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			return nil, wrapWithUser(err, userID)
 		}
 
-		// Don't do rollback after successful commit.
-		ephemeralApp = nil
+		ephemeralApp = nil // Disable rollback for this appender.
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -822,8 +823,31 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
+	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
+	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
+	i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
+
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
+	i.updateMetricsFromPushStats(userID, group, &stats)
+	i.updateMetricsFromPushStats(userID, group, &ephemeralStats)
+
+	db.updatedRatesFromStats(stats.succeededSamplesCount, req.Source == mimirpb.RULE)
+	db.updatedRatesFromStats(ephemeralStats.succeededSamplesCount, req.Source == mimirpb.RULE)
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats) {
 	if stats.sampleOutOfBoundsCount > 0 {
 		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
 	}
@@ -844,34 +868,14 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
-
-		switch req.Source {
-		case mimirpb.RULE:
-			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
-		case mimirpb.API:
-			fallthrough
-		default:
-			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
-		}
 	}
-
-	if firstPartialErr != nil {
-		code := http.StatusBadRequest
-		var ve *validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
-		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
-	}
-
-	return &mimirpb.WriteResponse{}, nil
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, appendExemplars bool) error {
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -972,7 +976,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 		}
 
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+		if appendExemplars && len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
@@ -1747,7 +1751,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		}
 		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax)) // We need to set this, despite OOO time window being 0.
 
-		return tsdb.NewHead(prometheus.WrapRegistererWithPrefix("ephemeral_", tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+		return tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeral_prometheus_metrics_prefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
 	}
 
 	return userDB, nil
