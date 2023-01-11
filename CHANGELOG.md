@@ -73,6 +73,7 @@
 ### Mimirtool
 
 * [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+* [BUGFIX] Fix summary output from `mimirtool rules sync` to display correct number of groups created and updated. #3918
 
 ### Documentation
 
