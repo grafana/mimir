@@ -2794,6 +2794,17 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ephemeral_series_retention_period",
+          "required": false,
+          "desc": "Retention of ephemeral series.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "ingester.ephemeral-series-retention-period",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
