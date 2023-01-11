@@ -7,10 +7,16 @@ package exporter
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -107,6 +113,84 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 `
 	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
 	assert.NoError(t, err)
+}
+func TestOverridesExporterWithRing(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-a": {},
+	}
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	cfg := Config{RingConfig{Enabled: true}}
+	cfg.Ring.KVStore.Mock = ringStore
+	cfg.Ring.InstanceID = "overrides-exporter"
+	cfg.Ring.InstanceAddr = "1.2.3.4"
+	cfg.Ring.InstancePort = 1234
+
+	// Create an empty ring.
+	ctx := context.Background()
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ring.NewDesc(), true, nil
+	}))
+
+	exporter, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, exporter.subserviceManager))
+	t.Cleanup(func() { require.NoError(t, services.StopManagerAndAwaitStopped(ctx, exporter.subserviceManager)) })
+
+	// Register this instance in the ring
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester(
+			cfg.Ring.InstanceID,
+			fmt.Sprintf("%s:%d", cfg.Ring.InstanceAddr, cfg.Ring.InstancePort),
+			"",
+			[]uint32{1},
+			ring.ACTIVE,
+			time.Now(),
+		)
+		return desc, true, nil
+	}))
+	
+	time.Sleep(100 * time.Millisecond)
+
+	// This instance now owns the full ring, therefore overrides should be exported
+	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
+	assert.Equal(t, 10, count)
+
+	// Register a different instance.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester("other-instance", "2.3.4.5:6789", "", []uint32{2}, ring.ACTIVE, time.Now())
+		return desc, true, nil
+	}))
+
+	// Unregister the original instance.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.RemoveIngester("overrides-exporter")
+		return desc, true, nil
+	}))
+
+	time.Sleep(100 * time.Millisecond)
+
+	// This instance now doesn't own any token in the ring, no overrides should be exported.
+	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
+	require.Equal(t, 0, count)
+
+	// Unregister the last remaining instance.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.RemoveIngester("other-instance")
+		return desc, true, nil
+	}))
+
+	time.Sleep(100 * time.Millisecond)
+
+	// The ring is now empty, this instance should swallow the "empty ring" error and export overrides.
+	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
+	require.Equal(t, 10, count)
 }
 
 func TestOverridesExporter_Collect(t *testing.T) {
