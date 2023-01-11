@@ -152,7 +152,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		)
 		return desc, true, nil
 	}))
-	
+
 	time.Sleep(100 * time.Millisecond)
 
 	// This instance now owns the full ring, therefore overrides should be exported
