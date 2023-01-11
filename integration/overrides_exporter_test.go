@@ -30,66 +30,60 @@ overrides:
 `
 )
 
-func TestOverridesExporterTenantShardingEnabled(t *testing.T) {
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
-
+func TestOverridesExporterTenantSharding(t *testing.T) {
 	limit := 20
-	expectedMetricSum := limit
-	require.NoError(t, writeFileToSharedDir(
-		s,
-		overridesFileName,
-		[]byte(buildConfigFromTemplate(overridesFileContentTemplate, map[string]int{"MaxIngestionRate": limit})),
-	))
-
-	flags := map[string]string{
-		"-overrides-exporter.ring.enabled": "true",
-		"-runtime-config.file":             filepath.Join(e2e.ContainerSharedDir, overridesFileName),
+	tests := []struct {
+		name              string
+		flags             map[string]string
+		expectedMetricSum int
+	}{
+		{
+			name: "tenant sharding enabled",
+			flags: map[string]string{
+				"-overrides-exporter.ring.enabled": "true",
+			},
+			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
+			expectedMetricSum: limit,
+		},
+		{
+			name: "tenant sharding disabled",
+			flags: map[string]string{
+				"-overrides-exporter.ring.enabled": "false",
+			},
+			// the limit should be exported from both exporters, i.e. the expected sum is twice the limit value
+			expectedMetricSum: 2 * limit,
+		},
 	}
 
-	services, err := newOverridesExporterServices(flags, s)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
 
-	require.NoError(t, waitTenantSpecificMetricsAvailable(services.e1, services.e2, "tenant-a"))
+			require.NoError(t, writeFileToSharedDir(
+				s,
+				overridesFileName,
+				[]byte(buildConfigFromTemplate(overridesFileContentTemplate, map[string]int{"MaxIngestionRate": limit})),
+			))
 
-	value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
-	require.NoError(t, err)
-	value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
-	require.NoError(t, err)
+			flags := map[string]string{
+				"-runtime-config.file": filepath.Join(e2e.ContainerSharedDir, overridesFileName),
+			}
 
-	require.Equal(t, expectedMetricSum, int(value1+value2))
-}
+			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
+			require.NoError(t, err)
 
-func TestOverridesExporterTenantShardingDisabled(t *testing.T) {
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
+			require.NoError(t, waitTenantSpecificMetricsAvailable(services.e1, services.e2, "tenant-a"))
 
-	limit := 20
-	expectedMetricSum := 2 * limit
-	require.NoError(t, writeFileToSharedDir(
-		s,
-		overridesFileName,
-		[]byte(buildConfigFromTemplate(overridesFileContentTemplate, map[string]int{"MaxIngestionRate": limit})),
-	))
+			value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
+			require.NoError(t, err)
+			value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
+			require.NoError(t, err)
 
-	flags := map[string]string{
-		"-overrides-exporter.ring.enabled": "false",
-		"-runtime-config.file":             filepath.Join(e2e.ContainerSharedDir, overridesFileName),
+			require.Equal(t, tt.expectedMetricSum, int(value1+value2))
+		})
 	}
-
-	services, err := newOverridesExporterServices(flags, s)
-	require.NoError(t, err)
-
-	require.NoError(t, waitTenantSpecificMetricsAvailable(services.e1, services.e2, "tenant-a"))
-
-	value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
-	require.NoError(t, err)
-	value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
-	require.NoError(t, err)
-
-	require.Equal(t, expectedMetricSum, int(value1+value2))
 }
 
 func waitTenantSpecificMetricsAvailable(s1, s2 *e2emimir.MimirService, tenantName string) error {
