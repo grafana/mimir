@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strconv"
@@ -33,9 +34,26 @@ const (
 	maxRequestsPerSecond = float64(400)
 )
 
-var logger = log.NewLogfmtLogger(os.Stdout)
+var logger log.Logger
 
 func main() {
+	logsDest, err := os.OpenFile("/Users/dimitar/Documents/proba/goldman-sachs-queries/logs.txt", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		panic(errors.Wrap(err, "opening logs file"))
+	}
+	logger = log.NewLogfmtLogger(io.MultiWriter(os.Stdout, logsDest))
+	logger.Log(
+		"msg", "starting test",
+		"queriesPath", queriesPath,
+		"queryEndpoint1", queryEndpoint1,
+		"queryEndpoint2", queryEndpoint2,
+		"tenantID", tenantID,
+		"rateRampUpDuration", rateRampUpDuration,
+		"rateRampUpInterval", rateRampUpInterval,
+		"concurrency", concurrency,
+		"maxRequestsPerSecond", maxRequestsPerSecond,
+	)
+
 	reader, err := os.Open(queriesPath)
 	if err != nil {
 		panic(errors.Wrap(err, "open queries"))
