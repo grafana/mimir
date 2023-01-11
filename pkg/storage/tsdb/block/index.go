@@ -255,7 +255,6 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 		id := p.At()
 		stats.TotalSeries++
 
-		// Note that builder will be reset in r.Series, so no need to reset in this loop
 		if err := r.Series(id, &builder, &chks); err != nil {
 			return stats, errors.Wrap(err, "read series")
 		}
@@ -594,7 +593,6 @@ func rewrite(
 	for all.Next() {
 		id := all.At()
 
-		// Note that builder will be reset in r.Series, so no need to reset in this loop
 		if err := indexr.Series(id, &builder, &chks); err != nil {
 			return errors.Wrap(err, "series")
 		}
