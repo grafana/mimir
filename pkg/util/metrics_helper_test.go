@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -770,7 +771,7 @@ func TestUserRegistries_RemoveUserRegistry_HardRemoval(t *testing.T) {
 	mainRegistry := prometheus.NewPedanticRegistry()
 	mainRegistry.MustRegister(tm)
 
-	// Soft-remove single registry.
+	// Hard-remove single registry.
 	tm.regs.RemoveUserRegistry(strconv.Itoa(3), true)
 
 	require.NoError(t, testutil.GatherAndCompare(mainRegistry, bytes.NewBufferString(`
@@ -948,6 +949,29 @@ func TestUserRegistries_AddUserRegistry_ReplaceRegistry(t *testing.T) {
 			summary_user_sum{user="5"} 0
 			summary_user_count{user="5"} 0
 	`)))
+}
+
+func TestUserRegistries_GetRegistryForUser(t *testing.T) {
+	regs := NewUserRegistries()
+
+	assert.Nil(t, regs.GetRegistryForUser("test"))
+
+	r := prometheus.NewRegistry()
+	regs.AddUserRegistry("test", r)
+
+	// Not using assert.Equal, as it compares values that pointers point to.
+	assert.True(t, r == regs.GetRegistryForUser("test"))
+
+	regs.RemoveUserRegistry("test", false)
+	assert.Nil(t, regs.GetRegistryForUser("test"))
+
+	newReg := prometheus.NewRegistry()
+	regs.AddUserRegistry("test", newReg)
+	assert.True(t, newReg == regs.GetRegistryForUser("test"))
+	assert.False(t, r == regs.GetRegistryForUser("test"))
+
+	regs.RemoveUserRegistry("test", true)
+	assert.Nil(t, regs.GetRegistryForUser("test"))
 }
 
 func setupTestMetrics() *testMetrics {
