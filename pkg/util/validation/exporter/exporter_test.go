@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,7 +155,20 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	time.Sleep(100 * time.Millisecond)
+	instanceAddressesFromReplicationSet := func(set ring.ReplicationSet) []string {
+		res := make([]string, 0, len(set.Instances))
+		for _, instance := range set.Instances {
+			res = append(res, instance.Addr)
+		}
+		return res
+	}
+
+	// Wait until the ring client observes the ring update.
+	var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	test.Poll(t, time.Second, []string{exporter.ring.lifecycler.GetInstanceAddr()}, func() interface{} {
+		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
+		return instanceAddressesFromReplicationSet(rs)
+	})
 
 	// This instance now owns the full ring, therefore overrides should be exported.
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
@@ -174,7 +188,11 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait until the ring client observes the ring update.
+	test.Poll(t, time.Second, []string{"2.3.4.5:6789"}, func() interface{} {
+		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
+		return instanceAddressesFromReplicationSet(rs)
+	})
 
 	// This instance now doesn't own any token in the ring, no overrides should be exported.
 	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
@@ -187,9 +205,16 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait until the ring client observes the ring update.
+	test.Poll(t, time.Second, []string{}, func() interface{} {
+		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
+		return instanceAddressesFromReplicationSet(rs)
+	})
 
-	// The ring is now empty, this instance should swallow the "empty ring" error and export overrides.
+	// The ring is now empty, this instance should swallow the "empty ring" error and
+	// export overrides. Theoretically, the lifecycler could kick in and register the
+	// instance back into the ring, but since this test is using the default
+	// heartbeat period of 15 seconds, this should not be a concern in practice.
 	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	require.Equal(t, 10, count)
 }

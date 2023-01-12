@@ -5,14 +5,9 @@
 package integration
 
 import (
-	"context"
-	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
@@ -74,8 +69,6 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
 			require.NoError(t, err)
 
-			require.NoError(t, waitTenantSpecificMetricsAvailable(services.e1, services.e2, "tenant-a"))
-
 			value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
 			require.NoError(t, err)
 			value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
@@ -84,30 +77,6 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			require.Equal(t, tt.expectedMetricSum, int(value1+value2))
 		})
 	}
-}
-
-func waitTenantSpecificMetricsAvailable(s1, s2 *e2emimir.MimirService, tenantName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	b := backoff.New(ctx, backoff.Config{
-		MinBackoff: 1 * time.Second,
-		MaxBackoff: 5 * time.Second,
-	})
-	for b.Ongoing() {
-		m1, err := s1.Metrics()
-		if err != nil {
-			return err
-		}
-		m2, err := s2.Metrics()
-		if err != nil {
-			return err
-		}
-		if strings.Contains(m1+m2, tenantName) {
-			return nil
-		}
-		b.Wait()
-	}
-	return errors.New("tenant specific metrics did not become available within timeout")
 }
 
 func getOverrideMetricForTenantFromService(tenantName string, limitName string, service *e2emimir.MimirService) (float64, error) {
@@ -136,12 +105,8 @@ func newOverridesExporterServices(flags map[string]string, s *e2e.Scenario) (*ov
 	}
 
 	exporter1 := e2emimir.NewOverridesExporter("overrides-exporter-1", consul.NetworkHTTPEndpoint(), flags)
-	err = s.StartAndWaitReady(exporter1)
-	if err != nil {
-		return nil, err
-	}
 	exporter2 := e2emimir.NewOverridesExporter("overrides-exporter-2", consul.NetworkHTTPEndpoint(), flags)
-	err = s.StartAndWaitReady(exporter2)
+	err = s.StartAndWaitReady(exporter1, exporter2)
 	if err != nil {
 		return nil, err
 	}
