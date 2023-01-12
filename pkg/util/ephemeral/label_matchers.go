@@ -15,18 +15,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SeriesMatchers configures matchers based on which series get marked as ephemeral.
-type SeriesMatchers struct {
+// LabelMatchers configures matchers based on which series get marked as ephemeral.
+type LabelMatchers struct {
 	source []string
-	config []labelMatchers
+	config []matcherSet
 	string string
 }
 
-// labelMatchers is like alertmanager's labels.Matchers but for Prometheus' labels.Matcher slice
-type labelMatchers []*labels.Matcher
+// matcherSet is like alertmanager's labels.Matchers but for Prometheus' labels.Matcher slice
+type matcherSet []*labels.Matcher
 
 // matches checks whether all the matchers match the given label set.
-func (ms labelMatchers) matches(lset []mimirpb.LabelAdapter) bool {
+func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 	for _, m := range ms {
 		var lv string
 		for _, l := range lset {
@@ -44,15 +44,15 @@ func (ms labelMatchers) matches(lset []mimirpb.LabelAdapter) bool {
 	return true
 }
 
-func NewSeriesMatchers(m []string) (c SeriesMatchers, err error) {
+func NewLabelMatchers(m []string) (c LabelMatchers, err error) {
 	c.source = m
-	c.config = []labelMatchers{}
+	c.config = []matcherSet{}
 	for _, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
 			return c, fmt.Errorf("can't build ephemeral series matcher %q: %w", matcher, err)
 		}
-		matchers := make(labelMatchers, len(sm))
+		matchers := make(matcherSet, len(sm))
 		for i, m := range sm {
 			matchers[i] = amlabelMatcherToProm(m)
 		}
@@ -89,39 +89,39 @@ func ephemeralMatchersConfigString(matchers []string) string {
 
 // String is a canonical representation of the config, it is compatible with flag definition.
 // String is also needed to implement flag.Value.
-func (c SeriesMatchers) String() string {
+func (c LabelMatchers) String() string {
 	return c.string
 }
 
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
-func (c *SeriesMatchers) Set(s string) error {
+func (c *LabelMatchers) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
 
 	var err error
-	*c, err = NewSeriesMatchers(strings.Split(s, ";"))
+	*c, err = NewLabelMatchers(strings.Split(s, ";"))
 	return err
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 // EphemeralMatchers are marshaled in yaml as a []string.
-func (c *SeriesMatchers) UnmarshalYAML(value *yaml.Node) error {
+func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	stringSlice := []string{}
 	err := value.DecodeWithOptions(&stringSlice, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}
-	*c, err = NewSeriesMatchers(stringSlice)
+	*c, err = NewLabelMatchers(stringSlice)
 	return err
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (c SeriesMatchers) MarshalYAML() (interface{}, error) {
+func (c LabelMatchers) MarshalYAML() (interface{}, error) {
 	return c.source, nil
 }
 
-func (c SeriesMatchers) IsEphemeral(lset []mimirpb.LabelAdapter) bool {
+func (c LabelMatchers) IsEphemeral(lset []mimirpb.LabelAdapter) bool {
 	for _, m := range c.config {
 		if m.matches(lset) {
 			return true
