@@ -22,7 +22,7 @@ import (
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
 // that the keys in the group have a corresponding postings list in the index.
 // Logical result of the group is:
-// If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call prepare() to populate the keys.
+// If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call toPostingGroup() to populate the keys.
 // If isSubtract == true: special All postings minus postings for keys labels.
 // If isSubtract == false: merge of postings for keys labels.
 // This computation happens in toPostingGroups.
@@ -52,9 +52,9 @@ func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string)
 	}
 }
 
-// prepare returns a postingGroup which shares the underlying keys slice with g.
-// This means that after calling prepare g.keys will be modified.
-func (g rawPostingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
+// toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
+// This means that after calling toPostingGroup g.keys will be modified.
+func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
 	var keys []labels.Label
 	if g.isLazy {
 		vals, err := r.LabelValues(g.labelName, g.lazyMatcher)
@@ -79,7 +79,7 @@ func (g rawPostingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
 	}, nil
 }
 
-// filterKeys modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling prepare.
+// filterKeys modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
 func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
 	keys := g.keys
 	writeIdx := 0
@@ -106,11 +106,11 @@ func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error
 	return keys[:writeIdx], nil
 }
 
-// toPostingGroup returns a rawPostingGroup. toPostingGroup does not guarantee that
+// toRawPostingGroup returns a rawPostingGroup. toRawPostingGroup does not guarantee that
 // they keys of each rawPostingGroup exist in the index of the block. To verify this,
-// call rawPostingGroup.prepare() with an index reader.
+// call rawPostingGroup.toPostingGroup() with an index reader.
 // NOTE: Derived from tsdb.postingsForMatcher
-func toPostingGroup(m *labels.Matcher) rawPostingGroup {
+func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {

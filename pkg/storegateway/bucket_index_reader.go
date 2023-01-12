@@ -237,12 +237,13 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
-		rawPostingGroups = append(rawPostingGroups, toPostingGroup(m))
+		rawPostingGroups = append(rawPostingGroups, toRawPostingGroup(m))
 	}
 
 	// We can check whether their requested values exist
-	// in the index. We do these checks in a specific order so we minimize the reads from disk.
-	// which is more expensive, so we leave them for last. Within each group of
+	// in the index. We do these checks in a specific order, so we minimize the reads from disk
+	// and/or to minimize the number of label values we help in memory (assumption being that indexhdr.LabelValues
+	// is likely to return a lot of values).
 	sort.Slice(rawPostingGroups, func(i, j int) bool {
 		// First we check the non-lazy groups, since for those we only need to call PostingsOffset, which
 		// is less expensive than LabelValues for the lazy groups.
@@ -267,7 +268,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// the index header.
 	numKeys := 0
 	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.prepare(indexhdr)
+		pg, err := rawGroup.toPostingGroup(indexhdr)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filtering posting group")
 		}
