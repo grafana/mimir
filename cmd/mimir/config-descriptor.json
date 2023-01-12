@@ -1698,12 +1698,12 @@
         },
         {
           "kind": "field",
-          "name": "mark_ephemeral",
+          "name": "ephemeral_metrics_enabled",
           "required": false,
-          "desc": "Mark series as ephemeral based on the given matchers in the runtime config.",
+          "desc": "Enable marking series as ephemeral based on the given matchers in the runtime config.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "distributor.mark-ephemeral",
+          "fieldFlag": "distributor.ephemeral-metrics-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

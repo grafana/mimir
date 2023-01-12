@@ -186,7 +186,7 @@ type Config struct {
 	Forwarding forwarding.Config
 
 	// Enable the experimental feature to mark metrics as ephemeral.
-	MarkEphemeral bool `yaml:"mark_ephemeral" category:"experimental"`
+	EphemeralMetricsEnabled bool `yaml:"ephemeral_metrics_enabled" category:"experimental"`
 }
 
 type InstanceLimits struct {
@@ -207,7 +207,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.BoolVar(&cfg.MarkEphemeral, "distributor.mark-ephemeral", false, "Mark series as ephemeral based on the given matchers in the runtime config.")
+	f.BoolVar(&cfg.EphemeralMetricsEnabled, "distributor.ephemeral-metrics-enabled", false, "Enable marking series as ephemeral based on the given matchers in the runtime config.")
 }
 
 // Validate config and returns error on failure
@@ -442,11 +442,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
+	d.EphemeralSeriesProvider = d.limits
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
-	if d.cfg.MarkEphemeral {
-		d.EphemeralSeriesProvider = d.limits
-	}
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -1047,7 +1045,7 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 // If marking series as ephemeral is enabled, this middleware uses the ephemeral series
 // provider to determine whether a time series should be marked as ephemeral.
 func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
-	if !d.cfg.MarkEphemeral {
+	if !d.cfg.EphemeralMetricsEnabled {
 		return next
 	}
 

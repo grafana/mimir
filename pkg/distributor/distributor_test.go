@@ -3587,7 +3587,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		}
 
 		if cfg.markEphemeral {
-			distributorCfg.MarkEphemeral = true
+			distributorCfg.EphemeralMetricsEnabled = true
 		}
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
