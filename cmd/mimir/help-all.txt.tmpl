@@ -403,6 +403,16 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
     	Maximum number of concurrent tenants synching blocks. (default 10)
+  -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance float
+    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
+  -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes int
+    	[experimental] The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
+  -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size int
+    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
+  -blocks-storage.ephemeral-tsdb.retention-period duration
+    	[experimental] Retention of ephemeral series. (default 10m0s)
+  -blocks-storage.ephemeral-tsdb.stripe-size int
+    	[experimental] The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -1003,8 +1013,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ingester.ephemeral-series-retention-period duration
-    	Retention of ephemeral series. (default 10m0s)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int

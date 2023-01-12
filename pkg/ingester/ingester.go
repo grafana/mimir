@@ -151,8 +151,6 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
-
-	EphemeralSeriesRetentionPeriod time.Duration `yaml:"ephemeral_series_retention_period" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -172,7 +170,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-	f.DurationVar(&cfg.EphemeralSeriesRetentionPeriod, "ingester.ephemeral-series-retention-period", 10*time.Minute, "Retention of ephemeral series.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -1743,12 +1740,12 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
 
 		headOptions := &tsdb.HeadOptions{
-			ChunkRange:                     i.cfg.EphemeralSeriesRetentionPeriod.Milliseconds(),
+			ChunkRange:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention.Milliseconds(),
 			ChunkDirRoot:                   filepath.Join(udir, "ephemeral_chunks"),
-			ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-			ChunkEndTimeVariance:           0,
-			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-			StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+			ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteBufferSize,
+			ChunkEndTimeVariance:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksEndTimeVariance,
+			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteQueueSize,
+			StripeSize:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.StripeSize,
 			SeriesCallback:                 nil, // TODO: handle limits.
 			EnableExemplarStorage:          false,
 			EnableMemorySnapshotOnShutdown: false,
@@ -1764,7 +1761,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		}
 
 		// Don't allow ingestion of old samples into ephemeral storage.
-		h.SetMinValidTime(time.Now().Add(-i.cfg.EphemeralSeriesRetentionPeriod).UnixMilli())
+		h.SetMinValidTime(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli())
 		return h, nil
 	}
 
@@ -2126,7 +2123,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		default:
 			reason = "regular"
-			err = userDB.Compact(time.Now().Add(-i.cfg.EphemeralSeriesRetentionPeriod))
+			err = userDB.Compact(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention))
 		}
 
 		if err != nil {
