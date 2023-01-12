@@ -162,7 +162,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return rs.GetAddresses()
 	})
 
-	// This instance now owns the full ring, therefore overrides should be exported.
+	// This instance is now the only ring member (and therefore leader), metrics should be exported.
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	assert.Equal(t, 10, count)
 
@@ -186,7 +186,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return rs.GetAddresses()
 	})
 
-	// This instance now doesn't own any token in the ring, no overrides should be exported.
+	// This instance is now no longer the leader, no metrics should be exported.
 	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	require.Equal(t, 0, count)
 

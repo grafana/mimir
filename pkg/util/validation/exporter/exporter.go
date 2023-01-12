@@ -123,7 +123,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
-		if !oe.ownsTenant(tenant) {
+		if !oe.isLeader(tenant) {
 			continue
 		}
 
@@ -167,16 +167,16 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 	util.WriteHTMLResponse(w, ringDisabledPage)
 }
 
-// ownsTenant determines whether this overrides-exporter instance owns the given
-// tenant. If the ring is disabled, it assumes this instance has ownership of all
-// tenants. If the ring is enabled, it uses it to check ownership of the given
-// tenant.
-func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
+// isLeader determines whether this overrides-exporter instance is the leader
+// replica that exports all limit metrics. If the ring is disabled, leadership is
+// assumed. If the ring is enabled, it is used to determine which ring member is
+// the leader replica.
+func (oe *OverridesExporter) isLeader(tenantID string) bool {
 	if oe.ring == nil {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := oe.ring.Owns(tenantID)
+	owned, err := oe.ring.IsLeader()
 	if err != nil {
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine tenant ownership", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe

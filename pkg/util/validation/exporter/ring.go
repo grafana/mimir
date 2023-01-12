@@ -5,7 +5,6 @@ package exporter
 import (
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"time"
 
@@ -26,19 +25,23 @@ const (
 	// ringKey is the key under which we store the overrides-exporter's ring in the KVStore.
 	ringKey = "overrides-exporter"
 
-	// ringNumTokens is how many tokens each overrides-exporter should have in the ring.
-	// Overrides-exporters use a ring for tenant sharding and don't need perfect balancing.
-	ringNumTokens = 64
+	// ringNumTokens is how many tokens each overrides-exporter should have in the
+	// ring. Overrides-exporters use the ring for leader election, therefore one
+	// token is sufficient.
+	ringNumTokens = 1
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
+	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
+	// unhealthy instance in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 4
 )
 
-// ringOp is used as an instace state filter when obtaining instances from the ring
-var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+// ringOp is used as an instance state filter when obtaining instances from the
+// ring. Instances in the LEAVING state are included to minimise the number of
+// leader changes during rollout and scaling operations.
+// These instances will be forgotten after ringAutoForgetUnhealthyPeriods.
+var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
-// RingConfig holds the configuration for the overrides-exporter ring
+// RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
@@ -57,7 +60,7 @@ type RingConfig struct {
 	ListenPort int `yaml:"-"`
 }
 
-// RegisterFlags configures this RingConfig to the given flag set and sets defaults
+// RegisterFlags configures this RingConfig to the given flag set and sets defaults.
 func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -80,7 +83,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.InstanceID, "overrides-exporter.ring.instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-// toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler
+// toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
 	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
 	if err != nil {
@@ -96,7 +99,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 		HeartbeatTimeout:                c.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
-		KeepInstanceInTheRingOnShutdown: false,
+		KeepInstanceInTheRingOnShutdown: true,
 	}, nil
 }
 
@@ -114,16 +117,16 @@ func (c *RingConfig) toRingConfig() ring.Config {
 }
 
 // overridesExporterRing is a ring client that overrides-exporters can use to
-// assume ownership of a tenant shard
+// establish a leader replica that is the unique exporter of per-tenant limit metrics.
 type overridesExporterRing struct {
 	config     RingConfig
 	client     *ring.Ring
 	lifecycler *ring.BasicLifecycler
 }
 
-// Owns looks up whether this ring member owns the given tenant.
-func (o *overridesExporterRing) Owns(tenantID string) (bool, error) {
-	return instanceOwnsIdentifier(o.client, o.lifecycler.GetInstanceAddr(), tenantID)
+// IsLeader checks whether this instance is the leader replica that exports metrics for all tenants.
+func (o *overridesExporterRing) IsLeader() (bool, error) {
+	return instanceIsLeader(o.client, o.lifecycler.GetInstanceAddr())
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
@@ -166,16 +169,9 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
-// instanceOwnsIdentifier hashes the given key to a token, looks up the token
-// owner in the ring and checks whether this instance is the token owner
-func instanceOwnsIdentifier(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
-	// Hash the key.
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
-	hash := hasher.Sum32()
-
-	// Check whether this instance owns the token.
-	rs, err := r.Get(hash, ringOp, nil, nil, nil)
+// instanceIsLeader checks whether this instance is the ring leader (i.e., owns the `0` token).
+func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
+	rs, err := r.Get(0, ringOp, nil, nil, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to get instances from the ring")
 	}
