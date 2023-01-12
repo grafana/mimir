@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
