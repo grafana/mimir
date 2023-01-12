@@ -118,7 +118,7 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	EphemeralCheckerByUser ephemeral.EphemeralCheckerByUser
+	EphemeralCheckerByUser ephemeral.SeriesCheckerByUser
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector

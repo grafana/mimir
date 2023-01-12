@@ -3183,7 +3183,7 @@ func TestMarkEphemeralMiddleware(t *testing.T) {
 			ds, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				markEphemeral:   true,
-				getEphemeralSeriesProvider: func() ephemeralSeriesProvider {
+				getEphemeralSeriesProvider: func() ephemeral.SeriesCheckerByUser {
 					memp := &mockEphemeralSeriesProvider{t, tc.ephemeralMetrics}
 					return memp
 				},
@@ -3467,7 +3467,7 @@ type prepConfig struct {
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	forwarding                         bool
 	getForwarder                       func() forwarding.Forwarder
-	getEphemeralSeriesProvider         func() ephemeralSeriesProvider
+	getEphemeralSeriesProvider         func() ephemeral.SeriesCheckerByUser
 	markEphemeral                      bool
 
 	timeOut bool
@@ -4390,7 +4390,7 @@ type mockEphemeralSeriesProvider struct {
 	ephemeralMetrics []string
 }
 
-func (m mockEphemeralSeriesProvider) EphemeralSeriesChecker(user string) ephemeral.EphemeralChecker {
+func (m mockEphemeralSeriesProvider) EphemeralChecker(user string) ephemeral.SeriesChecker {
 	return &mockEphemeralSeriesChecker{m}
 }
 

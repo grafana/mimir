@@ -4,13 +4,13 @@ package ephemeral
 
 import "github.com/grafana/mimir/pkg/mimirpb"
 
-type EphemeralCheckerByUser interface {
-	// EphemeralChecker returns an object which checks a labelset and decides whether
+type SeriesCheckerByUser interface {
+	// EphemeralChecker returns an object which checks a series and decides whether
 	// this series should be ephemeral based on the given user's configuration.
-	EphemeralChecker(string) EphemeralChecker
+	EphemeralChecker(string) SeriesChecker
 }
 
-type EphemeralChecker interface {
+type SeriesChecker interface {
 	// IsEphemeral checks if a series with the given labelset should be marked as ephemeral.
 	IsEphemeral([]mimirpb.LabelAdapter) bool
 }
