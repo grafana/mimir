@@ -52,6 +52,8 @@ func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string)
 	}
 }
 
+// prepare returns a postingGroup which shares the underlying keys slice with g.
+// This means that after calling prepare g.keys will be modified.
 func (g rawPostingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
 	var keys []labels.Label
 	if g.isLazy {
@@ -77,37 +79,31 @@ func (g rawPostingGroup) prepare(r indexheader.Reader) (postingGroup, error) {
 	}, nil
 }
 
+// filterKeys modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling prepare.
 func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
 	keys := g.keys
-	existingKeys := 0
-	for i, l := range keys {
+	writeIdx := 0
+	for i := range keys {
+		l := keys[i]
 		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
-			// Set it to an empty value, so we can filter it out later.
-			keys[i] = labels.Label{}
 			// Try with the rest of the set matchers, maybe they can match some series.
+			// Continue so we overwrite it next time there's an existing value.
 			continue
 		} else if err != nil {
-
 			return nil, err
 		}
-		existingKeys++
+		if writeIdx < i {
+			keys[writeIdx], keys[i] = keys[i], keys[writeIdx]
+		}
+		writeIdx++
 	}
-	if existingKeys == len(keys) {
-		return keys, nil
-	}
-	if existingKeys == 0 {
+	if writeIdx == 0 {
+		// return a nil so the keys can be garbage collected
 		return nil, nil
 	}
 
-	filtered := make([]labels.Label, 0, existingKeys)
-	for _, k := range keys {
-		if k == (labels.Label{}) {
-			continue
-		}
-		filtered = append(filtered, k)
-	}
-	return filtered, nil
+	return keys[:writeIdx], nil
 }
 
 // toPostingGroup returns a rawPostingGroup. toPostingGroup does not guarantee that
