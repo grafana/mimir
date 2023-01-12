@@ -1,6 +1,6 @@
 # Releases
 
-## Pre-requisites:
+## Pre-requisites
 
 Either:
 
