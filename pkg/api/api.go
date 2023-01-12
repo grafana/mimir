@@ -404,14 +404,7 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 	a.indexPage.AddLinks(defaultWeight, "Overrides-exporter", []IndexPageLink{
 		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
 	})
-	a.RegisterRoute(
-		"/overrides-exporter/ring",
-		http.HandlerFunc(oe.RingHandler),
-		false,
-		true,
-		"GET",
-		"POST",
-	)
+	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler
