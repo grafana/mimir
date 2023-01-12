@@ -474,15 +474,10 @@
   },
 
   // Check configured deployment mode to ensure configuration is correct and consistent.
-  check_deployment_mode: if (
-    $._config.deployment_mode == 'microservices' ||
-    $._config.deployment_mode == 'read-write' ||
-    $._config.deployment_mode == 'migration'
-  ) then null else
-    error 'unsupported deployment mode "%s"' % $._config.deployment_mode,
-
-  check_deployment_mode_mutually_exclusive: if $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode) then null else
-    error 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
+  assert std.member(['microservices', 'read-write', 'migration'], $._config.deployment_mode)
+         : 'unsupported deployment mode "%s"' % $._config.deployment_mode,
+  assert $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode)
+         : 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
 
   local configMap = $.core.v1.configMap,
 
