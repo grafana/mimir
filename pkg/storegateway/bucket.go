@@ -844,13 +844,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders, chunkGroupReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 	}
 	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
+	}
+	for _, r := range chunkGroupReaders {
+		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunks range reader")
 	}
 
 	span.Finish()
@@ -872,9 +875,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkReaders, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
-		var readers *bucketChunkReaders
+		var readers *bucketChunkRangesReaders
 		if !req.SkipChunks {
-			readers = newChunkReaders(chunkReaders)
+			readers = newChunkRangeReaders(chunkGroupReaders)
 		}
 
 		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
@@ -1079,7 +1082,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders *bucketChunkReaders,
+	chunkReaders *bucketChunkRangesReaders,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
@@ -1159,7 +1162,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		// TODO dimitarvdimitrov use a different constructor when the new chunks loading is disabled
+		set = newSeriesSetWithChunks(ctx, s.logger, s.userID, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, s.chunksCache, req.MinTime, req.MaxTime, s.metrics)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
@@ -1169,17 +1173,19 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	stats := safeStats.export()
 	s.metrics.seriesDataTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("postings").Observe(float64(stats.postingsFetched))
+	s.metrics.seriesDataFetched.WithLabelValues("postings", "normal").Observe(float64(stats.postingsFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("postings").Observe(float64(stats.postingsFetchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "normal").Observe(float64(stats.postingsFetchedSizeSum))
 	s.metrics.seriesDataTouched.WithLabelValues("series").Observe(float64(stats.seriesTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("series").Observe(float64(stats.seriesFetched))
+	s.metrics.seriesDataFetched.WithLabelValues("series", "normal").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series").Observe(float64(stats.seriesTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("series").Observe(float64(stats.seriesFetchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "normal").Observe(float64(stats.seriesFetchedSizeSum))
 	s.metrics.seriesDataTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("chunks").Observe(float64(stats.chunksFetched))
+	s.metrics.seriesDataFetched.WithLabelValues("chunks", "normal").Observe(float64(stats.chunksFetched))
+	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks").Observe(float64(stats.chunksFetchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "normal").Observe(float64(stats.chunksFetchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetchedSizeSum))
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
@@ -1214,7 +1220,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	}
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader, map[ulid.ULID]chunkRangeReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
@@ -1226,7 +1232,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		indexReaders[b.meta.ULID] = b.indexReader()
 	}
 	if skipChunks {
-		return blocks, indexReaders, nil
+		return blocks, indexReaders, nil, nil
 	}
 
 	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
@@ -1234,7 +1240,12 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
-	return blocks, indexReaders, chunkReaders
+	chunksRangesReaders := make(map[ulid.ULID]chunkRangeReader, len(blocks))
+	for _, b := range blocks {
+		chunksRangesReaders[b.meta.ULID] = b.chunksRangeReader(ctx)
+	}
+
+	return blocks, indexReaders, chunkReaders, chunksRangesReaders
 }
 
 // LabelNames implements the storepb.StoreServer interface.
@@ -1801,6 +1812,11 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
 	b.pendingReaders.Add(1)
 	return newBucketChunkReader(ctx, b)
+}
+
+func (b *bucketBlock) chunksRangeReader(ctx context.Context) *bucketChunksRangesReader {
+	b.pendingReaders.Add(1)
+	return newBucketChunksRangesReader(ctx, b)
 }
 
 // matchLabels verifies whether the block matches the given matchers.

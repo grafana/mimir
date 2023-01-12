@@ -120,6 +120,8 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 	}
 
 	if chunksCache != nil {
+		// If the chunks cache is configured, we will use it for the attributes of chunk files instead of
+		// the metadata cache.
 		cachingConfigured = true
 		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
@@ -130,14 +132,13 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 			attributesCache = metadataCache
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
-			var err error
 			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
-
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		// TODO dimitarvdimitrov retain previous behaviour when the new chunks loading is disabled
+		cfg.CacheAttributes("chunks-attributes", attributesCache, isTSDBChunkFile, chunksConfig.AttributesTTL)
 	}
 
 	if !cachingConfigured {

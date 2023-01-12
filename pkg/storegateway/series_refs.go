@@ -829,7 +829,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			s.err = errors.Wrap(err, "read series")
 			return false
 		}
-		if lset.Len() == 0 {
+		if len(lset) == 0 {
 			// An empty label set means the series had no chunks in this block, so we skip it.
 			continue
 		}
@@ -870,26 +870,24 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 // If the length of that chunk is larger than the difference with the first chunk ref in metas
 // then the length is clamped at that difference.
 // clampLastChunkLength assumes that the chunks are sorted by their refs
-// (currently this is equivalent to also being sorted by their minTime) and that all series belong to the same block.
+// (currently this is equivalent to also being sorted by their minTime)
 // clampLastChunkLength is a noop if metas or series is empty.
-func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunks.Meta) {
-	if len(series) == 0 || len(nextSeriesChunkMetas) == 0 {
+func clampLastChunkLength(series []seriesChunkRefs, metas []chunks.Meta) {
+	if len(series) == 0 || len(metas) == 0 {
 		return
 	}
 	var (
 		lastSeriesRanges = series[len(series)-1].chunksRanges
 		lastRange        = lastSeriesRanges[len(lastSeriesRanges)-1]
 		lastSeriesChunk  = lastRange.refs[len(lastRange.refs)-1]
-		firstRef         = nextSeriesChunkMetas[0].Ref
+		firstRef         = metas[0].Ref
 	)
 
-	// We only compare the segment file of the series because they all come from the same block.
 	if lastRange.segmentFile != uint32(chunkSegmentFile(firstRef)) {
 		return
 	}
 	diffWithNextChunk := chunkOffset(firstRef) - lastSeriesChunk.segFileOffset
-	// The diff should always be positive, but if for some reason it isn't (a bug?), we don't want to set length to a negative value.
-	if diffWithNextChunk > 0 && lastSeriesChunk.length > diffWithNextChunk {
+	if lastSeriesChunk.length > diffWithNextChunk {
 		lastRange.refs[len(lastRange.refs)-1].length = diffWithNextChunk
 	}
 }

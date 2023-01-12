@@ -87,7 +87,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.seriesDataFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_fetched",
 		Help: "How many items of a data type in a block were fetched for a single series request.",
-	}, []string{"data_type"})
+	}, []string{"data_type", "reason"})
 
 	m.seriesDataSizeTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_touched_bytes",
@@ -96,7 +96,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.seriesDataSizeFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_fetched_bytes",
 		Help: "Size of all items of a data type in a block were fetched for a single series request.",
-	}, []string{"data_type"})
+	}, []string{"data_type", "reason"})
 
 	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
@@ -157,12 +157,12 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.seriesFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_cached_series_fetch_duration_seconds",
-		Help:    "Time it takes to fetch series to respond a request sent to store-gateway. It includes both the time to fetch it from cache and from storage in case of cache misses.",
+		Help:    "Time it takes to fetch series to respond a request sent to store-gateway. It includes both the time to fetch it from cache and/or from storage.",
 		Buckets: durationBuckets,
 	})
 	m.postingsFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_cached_postings_fetch_duration_seconds",
-		Help:    "Time it takes to fetch postings to respond a request sent to store-gateway. It includes both the time to fetch it from cache and from storage in case of cache misses.",
+		Help:    "Time it takes to fetch postings to respond a request sent to store-gateway. It includes both the time to fetch it from cache and/or from storage.",
 		Buckets: durationBuckets,
 	})
 

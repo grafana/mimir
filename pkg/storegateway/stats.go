@@ -41,11 +41,14 @@ type queryStats struct {
 	seriesHashCacheRequests int
 	seriesHashCacheHits     int
 
+	chunksRefetched        int
+	chunksRefetchedSizeSum int
 	chunksTouched          int
 	chunksTouchedSizeSum   int
 	chunksFetched          int
 	chunksFetchedSizeSum   int
 	chunksFetchCount       int
+	// Fetch duration records the time we spent fetching the chunks, regardless if it was from the cache, a regular fetch or a refetch
 	chunksFetchDurationSum time.Duration
 
 	mergedSeriesCount int
