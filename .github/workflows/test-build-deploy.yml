@@ -52,8 +52,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      - name: Run doc-validator tool
+      - name: Run doc-validator tool (mimir)
         run: doc-validator ./docs/sources/mimir
+      - name: Run doc-validator tool (helm-charts)
+        run: doc-validator ./docs/sources/helm-charts
 
   lint-jsonnet:
     runs-on: ubuntu-latest
