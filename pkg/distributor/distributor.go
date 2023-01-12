@@ -563,15 +563,15 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
-	d.dedupedHistograms.DeletePartialMatch(filter)
-
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
-	d.discardedHistogramsTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
+
+	d.dedupedHistograms.DeleteLabelValues(userID)
+	d.discardedHistogramsTooManyHaClusters.DeleteLabelValues(userID)
+	d.discardedHistogramsRateLimited.DeleteLabelValues(userID)
 
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
-	d.discardedHistogramsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
@@ -814,7 +814,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 			if errors.Is(err, tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.discardedHistogramsTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numHistograms))
+				d.discardedHistogramsTooManyHaClusters.WithLabelValues(userID).Add(float64(numHistograms))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
