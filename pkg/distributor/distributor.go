@@ -118,7 +118,7 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	EphemeralSeriesProvider ephemeralSeriesProvider
+	EphemeralCheckerByUser ephemeral.EphemeralCheckerByUser
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
@@ -150,10 +150,6 @@ type Distributor struct {
 	metadataValidationMetrics *validation.MetadataValidationMetrics
 
 	pushWithMiddlewares push.Func
-}
-
-type ephemeralSeriesProvider interface {
-	EphemeralSeriesChecker(string) ephemeral.SeriesChecker
 }
 
 // Config contains the configuration required to
@@ -442,7 +438,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
-	d.EphemeralSeriesProvider = d.limits
+	d.EphemeralCheckerByUser = d.limits
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -1067,15 +1063,15 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 
 		req.EphemeralTimeseries = nil
 
-		ephemeralSeriesChecker := d.EphemeralSeriesProvider.EphemeralSeriesChecker(userID)
-		if ephemeralSeriesChecker != nil {
+		ephemeralChecker := d.EphemeralCheckerByUser.EphemeralChecker(userID)
+		if ephemeralChecker != nil {
 			req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
 
 			var deleteTs []int
 			for ix := 0; ix < len(req.Timeseries); ix++ {
 				ts := req.Timeseries[ix]
 
-				if !ephemeralSeriesChecker.IsEphemeral(ts.Labels) {
+				if !ephemeralChecker.IsEphemeral(ts.Labels) {
 					continue
 				}
 

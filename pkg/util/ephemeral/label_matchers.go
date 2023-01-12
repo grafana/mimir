@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -72,22 +71,18 @@ func ephemeralMatchersConfigString(matchers []string) string {
 		return ""
 	}
 
-	// making String representation stable and comparable.
-	slices.Sort(matchers)
-
 	var sb strings.Builder
 	for i, matcher := range matchers {
 		if i > 0 {
 			sb.WriteByte(';')
 		}
 		sb.WriteString(matcher)
-		sb.WriteByte(':')
 	}
 
 	return sb.String()
 }
 
-// String is a canonical representation of the config, it is compatible with flag definition.
+// String is a canonical representation of the config, it is compatible with the flag definition.
 // String is needed to implement flag.Value.
 func (c LabelMatchers) String() string {
 	return c.string

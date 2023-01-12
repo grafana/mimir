@@ -768,7 +768,7 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
 }
 
-func (o *Overrides) EphemeralSeriesChecker(user string) ephemeral.SeriesChecker {
+func (o *Overrides) EphemeralChecker(user string) ephemeral.EphemeralChecker {
 	return o.getOverridesForUser(user).EphemeralSeriesMatchers
 }
 

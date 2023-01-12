@@ -3620,7 +3620,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		}
 
 		if cfg.markEphemeral && cfg.getEphemeralSeriesProvider != nil {
-			d.EphemeralSeriesProvider = cfg.getEphemeralSeriesProvider()
+			d.EphemeralCheckerByUser = cfg.getEphemeralSeriesProvider()
 		}
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
@@ -4390,7 +4390,7 @@ type mockEphemeralSeriesProvider struct {
 	ephemeralMetrics []string
 }
 
-func (m mockEphemeralSeriesProvider) EphemeralSeriesChecker(user string) ephemeral.SeriesChecker {
+func (m mockEphemeralSeriesProvider) EphemeralSeriesChecker(user string) ephemeral.EphemeralChecker {
 	return &mockEphemeralSeriesChecker{m}
 }
 
