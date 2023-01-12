@@ -49,6 +49,8 @@
   //
 
   ruler_query_frontend_args+::
+    // The ruler remote evaluation connects to ruler-query-frontend via gRPC.
+    $._config.grpcIngressConfig +
     $.query_frontend_args +
     $.queryFrontendUseQuerySchedulerArgs(rulerQuerySchedulerName) +
     queryFrontendDisableCacheArgs,

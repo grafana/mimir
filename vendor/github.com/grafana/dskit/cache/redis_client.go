@@ -23,6 +23,8 @@ import (
 var (
 	errRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
 	errRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+
+	_ RemoteCacheClient = (*redisClient)(nil)
 )
 
 // RedisClientConfig is the config accepted by RedisClient.
@@ -199,7 +201,7 @@ func (c *redisClient) SetAsync(ctx context.Context, key string, value []byte, tt
 }
 
 // GetMulti implement RemoteCacheClient.
-func (c *redisClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
+func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}

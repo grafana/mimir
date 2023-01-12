@@ -63,7 +63,7 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_SOURCES_PATH := docs/sources/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := $(DOC_SOURCES_PATH)/operators-guide/configure/reference-configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
 DOC_EMBED := $(DOC_SOURCES_PATH)/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
@@ -674,5 +674,4 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
-DOCS_DIR = $(DOC_SOURCES_PATH)
 docs: doc

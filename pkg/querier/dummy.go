@@ -13,6 +13,7 @@ import (
 )
 
 // DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.
+// and v1.ScrapePoolsRetriever
 type DummyTargetRetriever struct{}
 
 // TargetsActive implements targetRetriever.
@@ -24,6 +25,8 @@ func (DummyTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
 }
+
+func (DummyTargetRetriever) ScrapePools() []string { return nil }
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.
 type DummyAlertmanagerRetriever struct{}

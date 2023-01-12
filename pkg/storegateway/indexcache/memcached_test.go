@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -859,7 +860,7 @@ func newMockedMemcachedClient(mockedGetMultiErr error) *mockedMemcachedClient {
 	}
 }
 
-func (c *mockedMemcachedClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
+func (c *mockedMemcachedClient) GetMulti(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
 	if c.mockedGetMultiErr != nil {
 		return nil
 	}
@@ -875,7 +876,7 @@ func (c *mockedMemcachedClient) GetMulti(ctx context.Context, keys []string) map
 	return hits
 }
 
-func (c *mockedMemcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *mockedMemcachedClient) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
 	c.cache[key] = value
 
 	return nil

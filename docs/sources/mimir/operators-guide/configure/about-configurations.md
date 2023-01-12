@@ -20,7 +20,7 @@ To see the current configuration state of any component, use the [`/config`]({{<
 ## Common configurations
 
 Some configurations, such as object storage backend, are repeated for multiple components.
-To avoid repetition in the configuration file, use the [`common`]({{< relref "../configure/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
+To avoid repetition in the configuration file, use the [`common`]({{< relref "../../reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
 Common configurations are first applied to all of the specific configurations, which allows the common configurations to be overridden later by specific values.
 
 For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both the ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:
@@ -59,3 +59,11 @@ There is no harm in passing a configuration that is specific to one component (s
 If you need to, you can use advanced CLI flags to override specific values on a particular Grafana Mimir component or replica. This can be helpful if you want to change a parameter that is specific to a certain component, without having to do a full restart of all other components.
 
 The most common use case for CLI flags is to use the `-target` flag to run Grafana Mimir as microservices. By setting the `-target` CLI flag, all Grafana Mimir components share the same configuration file, but you can make them behave as a given component by specifying a `-target` command-line value, such as `-target=ingester` or `-target=querier`.
+
+## Validate a configuration
+
+To validate your configuration, run the command `mimir -modules -config.file <path-to-config-file>`.
+This is useful if you want to validate the configuration before deploying it. You can use the command locally or in a CI environment.
+
+- If the configuration file is valid, the command exits with a zero exit code and prints the available modules.
+- If the configuration file is invalid, the command exits with a non-zero exit code and prints the error message to standard output.

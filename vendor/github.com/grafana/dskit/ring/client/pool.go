@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/internal/slices"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/util/stringsutil"
 )
 
 // PoolClient is the interface that should be implemented by a
@@ -171,7 +171,7 @@ func (p *Pool) removeStaleClients() {
 	}
 
 	for _, addr := range p.RegisteredAddresses() {
-		if stringsutil.SliceContains(serviceAddrs, addr) {
+		if slices.Contains(serviceAddrs, addr) {
 			continue
 		}
 		level.Info(p.logger).Log("msg", "removing stale client", "addr", addr)

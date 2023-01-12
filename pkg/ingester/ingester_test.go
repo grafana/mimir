@@ -346,7 +346,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -398,7 +398,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -453,7 +453,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -501,7 +501,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="new-value-for-timestamp",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2950,7 +2950,7 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
-	ingester, err := New(ingesterCfg, overrides, registerer, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -3091,7 +3091,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -4088,7 +4088,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 

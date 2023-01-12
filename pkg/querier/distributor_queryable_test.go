@@ -340,7 +340,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []mimirpb.Sample) {
 	require.Equal(t, l, series.Labels())
 
-	it := series.Iterator()
+	it := series.Iterator(nil)
 	for _, s := range samples {
 		require.Equal(t, chunkenc.ValFloat, it.Next())
 		require.Nil(t, it.Err())

@@ -30,7 +30,7 @@
 
       // Use ruler's remote evaluation mode.
       'querier.frontend-address': null,
-      'ruler.query-frontend.address': 'dns:///mimir-read.%s.svc.cluster.local:9095' % $._config.namespace,
+      'ruler.query-frontend.address': 'dns:///mimir-read-headless.%s.svc.cluster.local:9095' % $._config.namespace,
 
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,
@@ -39,13 +39,6 @@
   mimir_backend_zone_a_args:: $.store_gateway_zone_a_args {},
   mimir_backend_zone_b_args:: $.store_gateway_zone_b_args {},
   mimir_backend_zone_c_args:: $.store_gateway_zone_c_args {},
-
-  local mimir_backend_data_pvc =
-    pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.mimir_backend_data_disk_size }) +
-    pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.mimir_backend_data_disk_class) +
-    pvc.mixin.metadata.withName('mimir-backend-data'),
 
   mimir_backend_ports::
     std.uniq(
@@ -56,10 +49,25 @@
       ), byContainerPort
     ),
 
-  newMimirBackendZoneContainer(zone, zone_args)::
+  mimir_backend_container::
     container.new('mimir-backend', $._images.mimir_backend) +
     container.withPorts($.mimir_backend_ports) +
-    container.withArgsMixin($.util.mapToFlags(
+    container.withVolumeMountsMixin([volumeMount.new('mimir-backend-data', '/data')]) +
+    $.util.resourcesRequests(1, '12Gi') +
+    $.util.resourcesLimits(null, '18Gi') +
+    $.util.readinessProbe +
+    $.jaeger_mixin,
+
+  local mimir_backend_data_pvc =
+    pvc.new() +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.mimir_backend_data_disk_size }) +
+    pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
+    pvc.mixin.spec.withStorageClassName($._config.mimir_backend_data_disk_class) +
+    pvc.mixin.metadata.withName('mimir-backend-data'),
+
+  newMimirBackendZoneContainer(zone, zone_args)::
+    $.mimir_backend_container +
+    container.withArgs($.util.mapToFlags(
       // This first block contains flags that can be overridden.
       {
         // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
@@ -71,12 +79,7 @@
         // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
       }
-    )) +
-    container.withVolumeMountsMixin([volumeMount.new('mimir-backend-data', '/data')]) +
-    $.util.resourcesRequests(1, '12Gi') +
-    $.util.resourcesLimits(null, '18Gi') +
-    $.util.readinessProbe +
-    $.jaeger_mixin,
+    )),
 
   newMimirBackendZoneStatefulset(zone, container)::
     local name = 'mimir-backend-zone-%s' % zone;

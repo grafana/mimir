@@ -57,7 +57,7 @@
 
     // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
     // as a CLI flag. Please note that there are alternative ways of configuring GCS authentication:
-    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/#gcs_storage_backend
+    // See https://grafana.com/docs/mimir/latest/reference-configuration-parameters/#gcs_storage_backend
     // See https://cloud.google.com/storage/docs/authentication#libauth
     storage_gcs_service_account: null,
 
@@ -124,6 +124,17 @@
     grpcConfig:: {
       'server.grpc.keepalive.min-time-between-pings': '10s',
       'server.grpc.keepalive.ping-without-stream-allowed': true,
+    },
+
+    // gRPC server configuration to apply to ingress services used by clients doing
+    // client-side load balancing in front of it. Since gRPC clients re-resolve the configured
+    // address when a connection fails or is closed, we do force the clients to reconnect
+    // periodically in order to have them re-resolve the configured address and eventually
+    // discover new replicas (e.g. after a scale up event).
+    grpcIngressConfig:: {
+      'server.grpc.keepalive.max-connection-age': '2m',
+      'server.grpc.keepalive.max-connection-age-grace': '5m',
+      'server.grpc.keepalive.max-connection-idle': '1m',
     },
 
     storageConfig: {

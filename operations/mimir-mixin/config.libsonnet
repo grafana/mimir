@@ -134,6 +134,7 @@
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
     },
+    all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
     container_names: {
       // Microservices deployment mode. The following matchers MUST match only
@@ -208,6 +209,279 @@
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
     instance_data_mountpoint: '/',
+    // Resource consumption threshold to accomodate node loss
+    // used for baremetal deployment only
+    resource_threshold: 0.66,
+    alertmanager_alerts: {
+      kubernetes: {
+        memory_allocation: |||
+          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(allocationpercent)s
+          and
+          (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+        |||,
+      },
+      baremetal: {
+        memory_allocation: |||
+          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(instanceLabel)s) node_memory_MemTotal_bytes{}) > %(allocationpercent)s
+        |||,
+      },
+    },
+    ingester_alerts: {
+      kubernetes: {
+        memory_allocation: |||
+          (
+            # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
+            # See: https://github.com/grafana/mimir/issues/2466
+            container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+              /
+            ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
+          ) > %(allocationpercent)s
+        |||,
+      },
+      baremetal: {
+        memory_allocation: |||
+          (
+            process_resident_memory_bytes{job=~".*/(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+              /
+            on(%(instanceLabel)s) node_memory_MemTotal_bytes{}
+          ) > %(allocationpercent)s
+        |||,
+      },
+    },
+    mimir_scaling_rules: {
+      kubernetes: {
+        actual_replicas_count:
+          |||
+            # Convenience rule to get the number of replicas for both a deployment and a statefulset.
+            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                kube_deployment_spec_replicas,
+                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                # always matches everything and the (optional) zone is not removed.
+                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+              )
+            )
+            or
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+            )
+          |||,
+        cpu_usage_seconds_total:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                label_replace(
+                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
+                  "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                ),
+                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                # always matches everything and the (optional) zone is not removed.
+                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+              )
+            )
+          |||,
+        resource_requests_cpu_cores:
+          |||
+            # Convenience rule to get the CPU request for both a deployment and a statefulset.
+            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
+            # that remove resource metrics, ref:
+            # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
+            # - https://github.com/kubernetes/kube-state-metrics/pull/1004
+            #
+            # This is the old expression, compatible with kube-state-metrics < v2.0.0,
+            # where kube_pod_container_resource_requests_cpu_cores was removed:
+            (
+              sum by (%(alert_aggregation_labels)s, deployment) (
+                label_replace(
+                  label_replace(
+                    kube_pod_container_resource_requests_cpu_cores,
+                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
+            )
+            or
+            # This expression is compatible with kube-state-metrics >= v1.4.0,
+            # where kube_pod_container_resource_requests was introduced.
+            (
+              sum by (%(alert_aggregation_labels)s, deployment) (
+                label_replace(
+                  label_replace(
+                    kube_pod_container_resource_requests{resource="cpu"},
+                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
+            )
+          |||,
+        cpu_required_replicas_count:
+          |||
+            # Jobs should be sized to their CPU usage.
+            # We do this by comparing 99th percentile usage over the last 24hrs to
+            # their current provisioned #replicas and resource requests.
+            ceil(
+              %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
+                *
+              quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
+                /
+              %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum
+            )
+          |||,
+        memory_usage:
+          |||
+            # Convenience rule to get the Memory utilization for both a deployment and a statefulset.
+            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                label_replace(
+                  container_memory_usage_bytes{image!=""},
+                  "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                ),
+                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                # always matches everything and the (optional) zone is not removed.
+                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+              )
+            )
+          |||,
+        memory_requests:
+          |||
+            # Convenience rule to get the Memory request for both a deployment and a statefulset.
+            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
+            # that remove resource metrics, ref:
+            # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
+            # - https://github.com/kubernetes/kube-state-metrics/pull/1004
+            #
+            # This is the old expression, compatible with kube-state-metrics < v2.0.0,
+            # where kube_pod_container_resource_requests_memory_bytes was removed:
+            (
+              sum by (%(alert_aggregation_labels)s, deployment) (
+                label_replace(
+                  label_replace(
+                    kube_pod_container_resource_requests_memory_bytes,
+                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
+            )
+            or
+            # This expression is compatible with kube-state-metrics >= v1.4.0,
+            # where kube_pod_container_resource_requests was introduced.
+            (
+              sum by (%(alert_aggregation_labels)s, deployment) (
+                label_replace(
+                  label_replace(
+                    kube_pod_container_resource_requests{resource="memory"},
+                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
+            )
+          |||,
+        memory_required_replicas_count:
+          |||
+            # Jobs should be sized to their Memory usage.
+            # We do this by comparing 99th percentile usage over the last 24hrs to
+            # their current provisioned #replicas and resource requests.
+            ceil(
+              %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
+                *
+              quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum[24h])
+                /
+              %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum
+            )
+          |||,
+      },
+      baremetal: {
+        actual_replicas_count:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                cortex_build_info{namespace="baremetal"},
+                "deployment", "$1", "job", "baremetal/(.*)"
+              )
+            )
+          |||,
+        cpu_usage_seconds_total:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              irate(
+                label_replace(
+                  process_cpu_seconds_total{namespace="baremetal"},
+                  "deployment", "$1", "job", "baremetal/(.*)"
+                )[5m:]
+              )
+            )
+          |||,
+        resource_requests_cpu_cores:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              count without(cpu, mode) (
+                label_replace(
+                  node_cpu_seconds_total{mode="idle"},
+                  "deployment", "$1", "instance", ".*(%(all_instances)s).*"
+                )
+              )
+            )
+          |||,
+        cpu_required_replicas_count:
+          |||
+            ceil(
+              %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
+                *
+              quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
+                /
+              %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum
+                /
+              %(resource_threshold)s
+            )
+          |||,
+        memory_usage:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                process_resident_memory_bytes{namespace="baremetal"},
+                "deployment", "$1", "job", "baremetal/(.*)"
+              )
+            )
+          |||,
+        memory_requests:
+          |||
+            sum by (%(alert_aggregation_labels)s, deployment) (
+              label_replace(
+                node_memory_MemTotal_bytes,
+                "deployment", "$1", "instance", ".*(%(all_instances)s).*"
+              )
+            )
+          |||,
+        memory_required_replicas_count:
+          |||
+            ceil(
+              %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
+                *
+              quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum[24h])
+                /
+              %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum
+                /
+              %(resource_threshold)s
+            )
+          |||,
+      },
+    },
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',

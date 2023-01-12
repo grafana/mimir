@@ -8,6 +8,7 @@
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779 #3839
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
+* [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
@@ -24,6 +25,9 @@
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
 * [ENHANCEMENT] Ingester: Improved series selection performance when some of the matchers do not match any series. #3827
 * [ENHANCEMENT] Alertmanager: Add new additional template function `tenantID` returning id of the tenant owning the alert. #3758
+* [ENHANCEMENT] Alertmanager: Add additional template function `grafanaExploreURL` returning URL to grafana explore with range query. #3849
+* [ENHANCEMENT] Reduce overhead of debug logging when filtered out. #3875
+* [ENHANCEMENT] Update Docker base images from `alpine:3.16.2` to `alpine:3.17.1`. #3898
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
@@ -34,6 +38,7 @@
 * [BUGFIX] Update `github.com/thanos-io/objstore` to address issue with Multipart PUT on s3-compatible Object Storage. #3802 #3821
 * [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 * [BUGFIX] Querier: canceled requests are no longer reported as "consistency check" failures. #3837
+* [BUGFIX] Distributor: don't panic when `metric_relabel_configs` in overrides contains null element. #3868
 
 ### Mixin
 
@@ -41,6 +46,7 @@
 * [ENHANCEMENT] Alerts: Extended `MimirAllocatingTooMuchMemory` to check read-write deployment containers. #3710
 * [ENHANCEMENT] Alerts: Added `MimirAlertmanagerInstanceHasNoTenants` alert that fires when an alertmanager instance ows no tenants. #3826
 * [ENHANCEMENT] Alerts: Added `MimirRulerInstanceHasNoRuleGroups` alert that fires when a ruler replica is not assigned any rule group to evaluate. #3723
+* [ENHANCEMENT] Support for baremetal deployment for alerts and scaling recording rules. #3719
 * [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
@@ -53,15 +59,21 @@
 
 * [CHANGE] Replaced the deprecated `policy/v1beta1` with `policy/v1` when configuring a PodDisruptionBudget for read-write deployment mode. #3811
 * [CHANGE] Removed `-server.http-write-timeout` default option value from querier and query-frontend, as it defaults to a higher value in the code now, and cannot be lower than `-querier.timeout`. #3836
+* [CHANGE] Replaced `-store.max-query-length` with `-query-frontend.max-total-query-length` in the query-frontend config. #3879
+* [CHANGE] Changed default `mimir_backend_data_disk_size` from `100Gi` to `250Gi`. #3894
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
+* [ENHANCEMENT] Update memcached image from `memcached:1.6.16-alpine` to `memcached:1.6.17-alpine`. #3914
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
 * [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
-* [BUGFIX] Fixed `mimir-write` Kubernetes service to correctly balance route requests among mimir-write pods. #3855
+* [BUGFIX] Fixed `mimir-write` and `mimir-read` Kubernetes service to correctly balance requests among pods. #3855 #3864 #3906
+* [BUGFIX] Fixed `ruler-query-frontend` and `mimir-read` gRPC server configuration to force clients to periodically re-resolve the backend addresses. #3862
+* [BUGFIX] Fixed `mimir-read` CLI flags to ensure query-frontend configuration takes precedence over querier configuration. #3877
 
 ### Mimirtool
 
 * [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+* [BUGFIX] Fix summary output from `mimirtool rules sync` to display correct number of groups created and updated. #3918
 
 ### Documentation
 

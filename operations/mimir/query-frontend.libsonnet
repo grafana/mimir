@@ -20,8 +20,8 @@
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'query-frontend.max-cache-freshness': '10m',
 
-      // Limit queries to 500 days, allow this to be override per-user.
-      'store.max-query-length': '12000h',  // 500 Days
+      // Limit queries to 500 days; allow this to be overridden on a per-user basis.
+      'query-frontend.max-total-query-length': '12000h',  // 500 days
     } + $.mimirRuntimeConfigFile,
 
   query_frontend_ports:: $.util.defaultPorts,

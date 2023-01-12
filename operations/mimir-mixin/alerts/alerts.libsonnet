@@ -571,15 +571,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: |||
-            (
-              # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
-              # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
-                /
-              ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
-            ) > 0.65
-          ||| % {
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
+            allocationpercent: '0.65',
+            instanceLabel: $._config.per_instance_label,
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,
@@ -596,15 +590,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: |||
-            (
-              # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
-              # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
-                /
-              ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
-            ) > 0.8
-          ||| % {
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
+            allocationpercent: '0.8',
+            instanceLabel: $._config.per_instance_label,
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,

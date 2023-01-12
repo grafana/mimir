@@ -28,11 +28,19 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Configured `max_total_query_length: 12000h` limit to match Mimir jsonnet-based deployment. #3879
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
 * [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
+* [ENHANCEMENT] Update memcached image to `memcached:1.6.17-alpine`. #3914
 * [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
 * [BUGFIX] Fixed gateway's checksum/config when using nginx #3780
 * [BUGFIX] Disable gateway's serviceMonitor when using nginx #3781
+* [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851
+* [BUGFIX] Use alertmanager headless service in `gateway` NGINX configuration. #3851
+
+## 4.0.1
+
+* [ENHANCEMENT] Bump Grafana Enterprise Metrics image version to 2.5.1 #3902
 
 ## 4.0.0
 
@@ -99,8 +107,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
-* [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+* [BUGFIX] Fix invalid ingress NGINX configuration due to newline in prometheusHttpPrefix Helm named templates. #3087
 * [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
+
+## 3.3.0
+
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.4.0. #3445
 
 ## 3.2.0
 

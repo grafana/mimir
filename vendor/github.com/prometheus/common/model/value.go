@@ -30,7 +30,9 @@ var (
 	ZeroSample = Sample{Timestamp: Earliest}
 )
 
-// Sample is a sample pair associated with a metric.
+// Sample is a sample pair associated with a metric. A single sample must either
+// define Value or Histogram but not both. Histogram == nil implies the Value
+// field is used, otherwise it should be ignored.
 type Sample struct {
 	Metric    Metric           `json:"metric"`
 	Value     SampleValue      `json:"value"`
@@ -116,6 +118,7 @@ func (s *sampleHistogramPairPtr) UnmarshalJSON(buf []byte) error {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
+// TODO: simplify and remove the need for both sampleHistogramPairPtr and SampleHistogramPair
 func (s *Sample) UnmarshalJSON(b []byte) error {
 	v := struct {
 		Metric    Metric                 `json:"metric"`

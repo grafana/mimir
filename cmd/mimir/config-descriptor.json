@@ -47,6 +47,17 @@
       "fieldCategory": "experimental"
     },
     {
+      "kind": "field",
+      "name": "max_separate_metrics_groups_per_user",
+      "required": false,
+      "desc": "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1000,
+      "fieldFlag": "max-separate-metrics-groups-per-user",
+      "fieldType": "int",
+      "fieldCategory": "experimental"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,
@@ -3076,6 +3087,17 @@
         },
         {
           "kind": "field",
+          "name": "separate_metrics_group_label",
+          "required": false,
+          "desc": "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.separate-metrics-group-label",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_chunks_per_query",
           "required": false,
           "desc": "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",
@@ -3204,8 +3226,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",

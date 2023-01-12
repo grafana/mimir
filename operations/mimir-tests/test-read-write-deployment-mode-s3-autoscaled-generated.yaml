@@ -294,6 +294,28 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: mimir-read
+  name: mimir-read-headless
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: mimir-read-gossip-ring
+    port: 7946
+    targetPort: 7946
+  - name: mimir-read-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: mimir-read-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: mimir-read
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: mimir-write
   name: mimir-write
   namespace: default
@@ -427,6 +449,7 @@ spec:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-total-query-length=12000h
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.timeout=500ms
@@ -435,6 +458,9 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -559,7 +585,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -612,7 +638,7 @@ spec:
         - -I 5m
         - -c 1024
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -665,7 +691,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -718,7 +744,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -848,7 +874,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -912,7 +938,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1
@@ -1021,7 +1047,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1085,7 +1111,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1
@@ -1194,7 +1220,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read.default.svc.cluster.local:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1258,7 +1284,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 250Gi
       storageClassName: fast-dont-retain
 ---
 apiVersion: apps/v1

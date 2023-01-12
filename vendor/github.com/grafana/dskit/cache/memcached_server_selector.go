@@ -4,9 +4,9 @@ import (
 	"net"
 	"sync"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/cespare/xxhash"
 	"github.com/facette/natsort"
+	"github.com/grafana/gomemcache/memcache"
 )
 
 var (

@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
-	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -320,12 +319,4 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 		assert.Equal(t, op.expectedCount, count, "wrong count, op %d", ix)
 		assert.Equal(t, op.expectedTotalSize, totalSize, "wrong total size, op %d", ix)
 	}
-}
-
-func Test_withTenantIDFunc(t *testing.T) {
-	tmpl, err := template.FromGlobs([]string{}, withTenantIDFunc("test"))
-	assert.NoError(t, err)
-	res, err := tmpl.ExecuteTextString("{{ tenantID }}", template.Data{})
-	assert.NoError(t, err)
-	assert.Equal(t, "test", res)
 }
