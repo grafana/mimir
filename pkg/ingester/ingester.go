@@ -310,7 +310,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		}, i.getMemorySeriesMetric)
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_ephemeral_series",
+			Name: "cortex_ingester_memory_ephemeral_series",
 			Help: "The current number of ephemeral series in memory.",
 		}, i.getEphemeralSeriesMetric)
 
@@ -709,9 +709,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		stats, ephemeralStats pushStats
-
-		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
+		persistentStats, ephemeralStats pushStats
 
 		firstPartialErr    error
 		updateFirstPartial = func(errFn func() error) {
@@ -727,7 +725,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	rollback := func() {
 		if persistentApp != nil {
 			if err := persistentApp.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", err)
+				level.Warn(i.logger).Log("msg", "failed to rollback persistent appender on error", "user", userID, "err", err)
 			}
 		}
 		if ephemeralApp != nil {
@@ -740,13 +738,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if len(req.Timeseries) > 0 {
 		persistentApp = db.Appender(ctx).(extendedAppender)
 
-		level.Debug(spanlog).Log("event", "got appender", "series", len(req.Timeseries))
+		level.Debug(spanlog).Log("event", "got appender for persistent series", "series", len(req.Timeseries))
 
 		var activeSeries *activeseries.ActiveSeries
 		if i.cfg.ActiveSeriesMetricsEnabled {
 			activeSeries = db.activeSeries
 		}
-		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, true)
+
+		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
+
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &persistentStats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, true)
 		if err != nil {
 			rollback()
 			return nil, err
@@ -765,6 +766,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
 
+		minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+
 		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
 		if err != nil {
 			rollback()
@@ -777,10 +780,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
+		"succeededSamplesCount", persistentStats.succeededSamplesCount,
+		"failedSamplesCount", persistentStats.failedSamplesCount,
+		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
+		"failedExemplarsCount", persistentStats.failedExemplarsCount,
 
 		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
 		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
@@ -790,20 +793,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	startCommit := time.Now()
 	if persistentApp != nil {
-		if err := persistentApp.Commit(); err != nil {
+		app := persistentApp
+		persistentApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
+
+		if err := app.Commit(); err != nil {
 			rollback()
 			return nil, wrapWithUser(err, userID)
 		}
-
-		persistentApp = nil // Disable rollback for this appender.
 	}
 	if ephemeralApp != nil {
-		if err := ephemeralApp.Commit(); err != nil {
+		app := ephemeralApp
+		ephemeralApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
+
+		if err := app.Commit(); err != nil {
 			rollback()
 			return nil, wrapWithUser(err, userID)
 		}
-
-		ephemeralApp = nil // Disable rollback for this appender.
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -811,19 +816,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if stats.succeededSamplesCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
+	if persistentStats.succeededSamplesCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
 
 	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
 	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
@@ -831,11 +836,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &stats)
-	i.updateMetricsFromPushStats(userID, group, &ephemeralStats)
-
-	db.updatedRatesFromStats(stats.succeededSamplesCount, req.Source)
-	db.updatedRatesFromStats(ephemeralStats.succeededSamplesCount, req.Source)
+	i.updateMetricsFromPushStats(userID, group, &persistentStats, req.Source, db)
+	i.updateMetricsFromPushStats(userID, group, &ephemeralStats, req.Source, db)
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
@@ -849,7 +851,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	return &mimirpb.WriteResponse{}, nil
 }
 
-func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats) {
+func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB) {
 	if stats.sampleOutOfBoundsCount > 0 {
 		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
 	}
@@ -870,6 +872,12 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
+	}
+
+	if samplesSource == mimirpb.RULE {
+		db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
+	} else {
+		db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 	}
 }
 
@@ -1665,7 +1673,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
-	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
+	const storageKey = "storage"
+	db, err := tsdb.Open(udir, log.With(userLogger, storageKey, "persistent"), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                  blockRanges[0],
 		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
@@ -1736,12 +1745,14 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
 
+	userDB.ephemeralSeriesRetentionPeriod = i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention
 	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
 		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
 
 		headOptions := &tsdb.HeadOptions{
 			ChunkRange:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention.Milliseconds(),
 			ChunkDirRoot:                   filepath.Join(udir, "ephemeral_chunks"),
+			ChunkPool:                      nil,
 			ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteBufferSize,
 			ChunkEndTimeVariance:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksEndTimeVariance,
 			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteQueueSize,
@@ -1750,12 +1761,17 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			EnableExemplarStorage:          false,
 			EnableMemorySnapshotOnShutdown: false,
 			IsolationDisabled:              true,
+			PostingsForMatchersCacheTTL:    i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheTTL,
+			PostingsForMatchersCacheSize:   i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheSize,
+			PostingsForMatchersCacheForce:  i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheForce,
 		}
 
-		// We need to set this, despite OOO time window being 0.
-		headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax))
+		headOptions.MaxExemplars.Store(0)
+		headOptions.OutOfOrderTimeWindow.Store(0)
+		headOptions.OutOfOrderCapMax.Store(int64(tsdb.DefaultOutOfOrderCapMax)) // We need to set this, despite OOO time window being 0.
+		headOptions.EnableNativeHistograms.Store(false)
 
-		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeralPrometheusMetricsPrefix, tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeralPrometheusMetricsPrefix, tsdbPromReg), log.With(userLogger, storageKey, "ephemeral"), nil, nil, headOptions, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -2123,7 +2139,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		default:
 			reason = "regular"
-			err = userDB.Compact(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention))
+			err = userDB.Compact(time.Now())
 		}
 
 		if err != nil {

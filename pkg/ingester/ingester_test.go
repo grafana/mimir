@@ -5928,7 +5928,7 @@ func TestIngester_PushEphemeral(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_ingested_ephemeral_samples_total",
 		"cortex_ingester_ingested_ephemeral_samples_failures_total",
-		"cortex_ingester_ephemeral_series",
+		"cortex_ingester_memory_ephemeral_series",
 		"cortex_ingester_memory_series",
 		"cortex_ingester_memory_users",
 		"cortex_ingester_ephemeral_series_created_total",
@@ -5979,9 +5979,9 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_ephemeral_series_removed_total counter
 					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
 
-					# HELP cortex_ingester_ephemeral_series The current number of ephemeral series in memory.
-        	        # TYPE cortex_ingester_ephemeral_series gauge
-        	        cortex_ingester_ephemeral_series 1
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
 
 					# HELP cortex_ingester_memory_series The current number of series in memory.
         	        # TYPE cortex_ingester_memory_series gauge
@@ -6020,9 +6020,9 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_ephemeral_series_removed_total counter
 					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
 
-					# HELP cortex_ingester_ephemeral_series The current number of ephemeral series in memory.
-        	        # TYPE cortex_ingester_ephemeral_series gauge
-        	        cortex_ingester_ephemeral_series 0
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
 
 					# HELP cortex_ingester_memory_series The current number of series in memory.
         	        # TYPE cortex_ingester_memory_series gauge
@@ -6073,9 +6073,9 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_ephemeral_series_removed_total counter
 					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
 
-					# HELP cortex_ingester_ephemeral_series The current number of ephemeral series in memory.
-        	        # TYPE cortex_ingester_ephemeral_series gauge
-        	        cortex_ingester_ephemeral_series 1
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
 
 					# HELP cortex_ingester_memory_series The current number of series in memory.
         	        # TYPE cortex_ingester_memory_series gauge
@@ -6197,9 +6197,9 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_ephemeral_series_removed_total counter
 					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
 
-					# HELP cortex_ingester_ephemeral_series The current number of ephemeral series in memory.
-        	        # TYPE cortex_ingester_ephemeral_series gauge
-        	        cortex_ingester_ephemeral_series 2
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 2
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter

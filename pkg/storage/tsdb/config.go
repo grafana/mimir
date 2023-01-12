@@ -66,10 +66,13 @@ const (
 	// partitioner aggregates together two bucket GET object requests.
 	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
 
-	headChunkWriterBufferSizeHelp = "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations."
-	headChunksEndTimeVarianceHelp = "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance."
-	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
-	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
+	headChunkWriterBufferSizeHelp        = "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations."
+	headChunksEndTimeVarianceHelp        = "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance."
+	headStripeSizeHelp                   = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
+	headChunksWriteQueueSizeHelp         = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
+	headPostingsForMatchersCacheTTLHelp  = "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls."
+	headPostingsForMatchersCacheSizeHelp = "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0."
+	headPostingsForMatchersCacheForce    = "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call."
 )
 
 // Validation errors
@@ -223,9 +226,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
-	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
-	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", 100, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0.")
-	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.")
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, headPostingsForMatchersCacheTTLHelp)
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", 100, headPostingsForMatchersCacheSizeHelp)
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", false, headPostingsForMatchersCacheForce)
 }
 
 // Validate the config.
@@ -382,11 +385,14 @@ func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 
 // EphemeralTSDBConfig holds the config for Ephemeral Storage opened in the ingesters.
 type EphemeralTSDBConfig struct {
-	Retention                 time.Duration `yaml:"retention_period" category:"experimental"`
-	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes" category:"experimental"`
-	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                int           `yaml:"stripe_size" category:"experimental"`
-	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
+	Retention                         time.Duration `yaml:"retention_period" category:"experimental"`
+	HeadChunksWriteBufferSize         int           `yaml:"head_chunks_write_buffer_size_bytes" category:"experimental"`
+	HeadChunksEndTimeVariance         float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
+	StripeSize                        int           `yaml:"stripe_size" category:"experimental"`
+	HeadChunksWriteQueueSize          int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
+	HeadPostingsForMatchersCacheTTL   time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
+	HeadPostingsForMatchersCacheSize  int           `yaml:"head_postings_for_matchers_cache_size" category:"experimental"`
+	HeadPostingsForMatchersCacheForce bool          `yaml:"head_postings_for_matchers_cache_force" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -396,6 +402,9 @@ func (cfg *EphemeralTSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance", 0, headChunksEndTimeVarianceHelp)
 	f.IntVar(&cfg.StripeSize, "blocks-storage.ephemeral-tsdb.stripe-size", 16384, headStripeSizeHelp)
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, headPostingsForMatchersCacheTTLHelp)
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size", 100, headPostingsForMatchersCacheSizeHelp)
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force", false, headPostingsForMatchersCacheForce)
 }
 
 // Validate the config.

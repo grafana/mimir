@@ -19,7 +19,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -63,7 +62,8 @@ type userTSDB struct {
 	limiter        *Limiter
 
 	// Function that creates ephemeral storage (*tsdb.Head) for the user.
-	ephemeralFactory func() (*tsdb.Head, error)
+	ephemeralFactory               func() (*tsdb.Head, error)
+	ephemeralSeriesRetentionPeriod time.Duration
 
 	ephemeralMtx     sync.RWMutex
 	ephemeralStorage *tsdb.Head
@@ -175,11 +175,11 @@ func (u *userTSDB) Close() error {
 	return merr.Err()
 }
 
-func (u *userTSDB) Compact(ephemeralSeriesCutoff time.Time) error {
+func (u *userTSDB) Compact(now time.Time) error {
 	var merr multierror.MultiError
 	eph := u.getEphemeralStorage()
 	if eph != nil {
-		merr.Add(errors.Wrap(eph.Truncate(ephemeralSeriesCutoff.UnixMilli()), "ephemeral storage"))
+		merr.Add(errors.Wrap(eph.Truncate(now.Add(-u.ephemeralSeriesRetentionPeriod).UnixMilli()), "ephemeral storage"))
 	}
 
 	merr.Add(errors.Wrap(u.db.Compact(), "persistent storage"))
@@ -409,12 +409,4 @@ func (u *userTSDB) acquireAppendLock() error {
 
 func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
-}
-
-func (u *userTSDB) updatedRatesFromStats(succeededSamplesCount int, samplesSource mimirpb.WriteRequest_SourceEnum) {
-	if samplesSource == mimirpb.RULE {
-		u.ingestedRuleSamples.Add(int64(succeededSamplesCount))
-	} else {
-		u.ingestedAPISamples.Add(int64(succeededSamplesCount))
-	}
 }
