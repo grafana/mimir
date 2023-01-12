@@ -127,14 +127,14 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
 	}
-	require.True(t, iter.Scan() == chunkenc.ValNone)
+	require.Equal(t, chunkenc.ValNone, iter.Scan())
 	require.NoError(t, iter.Err())
 
 	// Check seek works after unmarshal
 	iter = chunk.NewIterator(iter)
 	for i := 0; i < samples; i += samples / 10 {
 		val := iter.FindAtOrAfter(model.Time(i * step))
-		require.True(t, val != chunkenc.ValNone)
+		require.NotEqual(t, chunkenc.ValNone, val)
 	}
 
 	// Check the byte representation after another Marshall is the same.
