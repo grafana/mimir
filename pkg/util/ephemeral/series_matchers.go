@@ -87,16 +87,6 @@ func ephemeralMatchersConfigString(matchers []string) string {
 	return sb.String()
 }
 
-// ExampleDoc provides an example doc for this config, especially valuable since it's custom-unmarshaled.
-func (c SeriesMatchers) ExampleDoc() (comment string, yaml interface{}) {
-	return `The following configuration will mark series which match {namespace=~"dev-.*"} as ephemeral.`,
-		[]string{"{namespace=~\"dev-.*\"}"}
-}
-
-func (c SeriesMatchers) Empty() bool {
-	return c.string == ""
-}
-
 // String is a canonical representation of the config, it is compatible with flag definition.
 // String is also needed to implement flag.Value.
 func (c SeriesMatchers) String() string {
