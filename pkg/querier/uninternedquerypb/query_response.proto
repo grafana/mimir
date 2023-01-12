@@ -34,7 +34,7 @@ message VectorData {
 }
 
 message VectorSample {
-  // Why not use a map<...> here? We want to preserve the order of the labels.
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
   repeated string Metric = 1;
   double Value = 2;
 
