@@ -86,6 +86,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] Adapt tsdb-print-chunk for native histograms. #3950
+
 ## 2.5.0
 
 ### Grafana Mimir
