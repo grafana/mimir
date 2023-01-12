@@ -22,6 +22,7 @@ var dashboardMetrics = []string{
 	"cluster_quantile:apiserver_request_duration_seconds:histogram_quantile",
 	"code_resource:apiserver_request_total:rate5m",
 	"go_goroutines",
+	"kube_pod_info",
 	"process_cpu_seconds_total",
 	"process_resident_memory_bytes",
 	"workqueue_adds_total",
