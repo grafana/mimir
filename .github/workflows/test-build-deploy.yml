@@ -51,7 +51,10 @@ jobs:
       image: grafana/doc-validator:v1.6.0
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        # This workflow intentionally uses v1 of checkout because
+        # the doc-validator image does not contain the expected shared
+        # libraries for the NodeJS packages injected by later versions.
+        uses: actions/checkout@v1
       - name: Run doc-validator tool (mimir)
         run: doc-validator ./docs/sources/mimir
       - name: Run doc-validator tool (helm-charts)
