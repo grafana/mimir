@@ -71,6 +71,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/validation/exporter"
 )
 
 var errInvalidBucketConfig = errors.New("invalid bucket config")
@@ -87,7 +88,7 @@ var errInvalidBucketConfig = errors.New("invalid bucket config")
 //   nesting of components within components.
 // - Limit as much is possible sharing of configuration between config types.
 //   Where necessary, use a pointer for this - avoid repetition.
-// - Where a nesting of components its not obvious, it's fine to pass
+// - Where a nesting of components is not obvious, it's fine to pass
 //   references to other components constructors to compose them.
 // - First argument for a components constructor should be its matching config
 //   object.
@@ -126,6 +127,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
 }
@@ -174,6 +176,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f, logger)
 }

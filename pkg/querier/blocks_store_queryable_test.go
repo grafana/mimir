@@ -892,51 +892,72 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 		})
 	}
+}
 
-	t.Run("canceled request", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
+	const (
+		metricName = "test_metric"
+		minT       = int64(10)
+		maxT       = int64(20)
+	)
 
-		ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
-		reg := prometheus.NewPedanticRegistry()
+	var (
+		block            = ulid.MustNew(1, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0)
+	)
 
-		storeGateway := &cancelerStoreGatewayClientMock{
-			remoteAddr: "1.1.1.1",
-			cancel:     cancel,
-		}
+	canceledRequestTests := map[string]bool{
+		"canceled request on series stream":           false,
+		"canceled request on receiving series stream": true,
+	}
 
-		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{storeGateway: {block1}},
-			errors.New("no store-gateway remaining after exclude"),
-		}}
+	for testName, testData := range canceledRequestTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-		finder := &blocksFinderMock{}
-		finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
-			{ID: block1},
-		}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
+			reg := prometheus.NewPedanticRegistry()
 
-		q := &blocksStoreQuerier{
-			ctx:         ctx,
-			minT:        minT,
-			maxT:        maxT,
-			userID:      "user-1",
-			finder:      finder,
-			stores:      stores,
-			consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-			logger:      log.NewNopLogger(),
-			metrics:     newBlocksStoreQueryableMetrics(reg),
-			limits:      &blocksStoreLimitsMock{},
-		}
+			storeGateway := &cancelerStoreGatewayClientMock{
+				remoteAddr:    "1.1.1.1",
+				produceSeries: testData,
+				cancel:        cancel,
+			}
 
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
-		}
+			stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{storeGateway: {block}},
+				errors.New("no store-gateway remaining after exclude"),
+			}}
 
-		sp := &storage.SelectHints{Start: minT, End: maxT}
-		set := q.Select(true, sp, matchers...)
-		require.Error(t, set.Err())
-		require.ErrorIs(t, set.Err(), context.Canceled)
-	})
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+				{ID: block},
+			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+
+			q := &blocksStoreQuerier{
+				ctx:         ctx,
+				minT:        minT,
+				maxT:        maxT,
+				userID:      "user-1",
+				finder:      finder,
+				stores:      stores,
+				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				logger:      log.NewNopLogger(),
+				metrics:     newBlocksStoreQueryableMetrics(reg),
+				limits:      &blocksStoreLimitsMock{},
+			}
+
+			matchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+			}
+
+			sp := &storage.SelectHints{Start: minT, End: maxT}
+			set := q.Select(true, sp, matchers...)
+			require.Error(t, set.Err())
+			require.ErrorIs(t, set.Err(), context.Canceled)
+		})
+	}
 }
 
 func TestBlocksStoreQuerier_Labels(t *testing.T) {
@@ -1978,12 +1999,31 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 	return res, nil
 }
 
+type cancelerStoreGatewaySeriesClientMock struct {
+	storeGatewaySeriesClientMock
+	ctx    context.Context
+	cancel func()
+}
+
+func (m *cancelerStoreGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
+	m.cancel()
+	return nil, m.ctx.Err()
+}
+
 type cancelerStoreGatewayClientMock struct {
-	remoteAddr string
-	cancel     func()
+	remoteAddr    string
+	produceSeries bool
+	cancel        func()
 }
 
 func (m *cancelerStoreGatewayClientMock) Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+	if m.produceSeries {
+		series := &cancelerStoreGatewaySeriesClientMock{
+			ctx:    ctx,
+			cancel: m.cancel,
+		}
+		return series, nil
+	}
 	m.cancel()
 	return nil, ctx.Err()
 }

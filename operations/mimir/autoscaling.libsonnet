@@ -15,10 +15,8 @@
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
   },
 
-  ensure_query_scheduler_is_enabled:: if $._config.autoscaling_querier_enabled && !$._config.query_scheduler_enabled then
-    error 'you must enable query-scheduler in order to use querier autoscaling'
-  else
-    null,
+  assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
+         : 'you must enable query-scheduler in order to use querier autoscaling',
 
   // The ScaledObject resource is watched by the KEDA operator. When this resource is created, KEDA
   // creates the related HPA resource in the namespace. Likewise, then ScaledObject is deleted, KEDA

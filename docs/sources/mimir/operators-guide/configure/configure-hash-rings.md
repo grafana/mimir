@@ -22,6 +22,7 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Query-schedulers: `-query-scheduler.ring.*`
 - (Optional) Rulers: `-ruler.ring.*`
 - (Optional) Alertmanagers: `-alertmanager.sharding-ring.*`
+- (Optional) Overrides-exporters: `-overrides-exporter.ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
 You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../../reference-configuration-parameters/index.md" >}}).

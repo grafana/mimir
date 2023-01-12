@@ -83,37 +83,52 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	})
 }
 
+func getQueryFromTemplating(name string, q interface{}) (string, error) {
+	if query, ok := q.(string); ok {
+		return query, nil
+	}
+	// Fix for variables created within the grafana UI, they come in as JSON objects
+	// with a refId field, i.e. { "query": "label_values(my_metric, cluster)", "refId": "AutomatedName"}
+	if queryObj, ok := q.(map[string]interface{}); ok {
+		if query, ok := queryObj["query"].(string); ok {
+			return query, nil
+		}
+	}
+	return "", fmt.Errorf("templating type error: name=%v", name)
+}
+
 func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {
 	parseErrors := []error{}
 	for _, templateVar := range templating.List {
 		if templateVar.Type != "query" {
 			continue
 		}
-		if query, ok := templateVar.Query.(string); ok {
-			// label_values
-			if strings.Contains(query, "label_values") {
-				re := regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
-				sm := re.FindStringSubmatch(query)
-				// In case of really gross queries, like - https://github.com/grafana/jsonnet-libs/blob/e97ab17f67ab40d5fe3af7e59151dd43be03f631/hass-mixin/dashboard.libsonnet#L93
-				if len(sm) > 0 {
-					query = sm[1]
-				}
-			}
-			// query_result
-			if strings.Contains(query, "query_result") {
-				re := regexp.MustCompile(`query_result\((.+)\)`)
-				query = re.FindStringSubmatch(query)[1]
-			}
-			err := parseQuery(query, metrics)
-			if err != nil {
-				parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
-				log.Debugln("msg", "promql parse error", "err", err, "query", query)
-				continue
-			}
-		} else {
-			err := fmt.Errorf("templating type error: name=%v", templateVar.Name)
+
+		query, err := getQueryFromTemplating(templateVar.Name, templateVar.Query)
+		if err != nil {
 			parseErrors = append(parseErrors, err)
 			log.Debugln("msg", "templating parse error", "err", err)
+			continue
+		}
+
+		// label_values
+		if strings.Contains(query, "label_values") {
+			re := regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
+			sm := re.FindStringSubmatch(query)
+			// In case of really gross queries, like - https://github.com/grafana/jsonnet-libs/blob/e97ab17f67ab40d5fe3af7e59151dd43be03f631/hass-mixin/dashboard.libsonnet#L93
+			if len(sm) > 0 {
+				query = sm[1]
+			}
+		}
+		// query_result
+		if strings.Contains(query, "query_result") {
+			re := regexp.MustCompile(`query_result\((.+)\)`)
+			query = re.FindStringSubmatch(query)[1]
+		}
+		err = parseQuery(query, metrics)
+		if err != nil {
+			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
+			log.Debugln("msg", "promql parse error", "err", err, "query", query)
 			continue
 		}
 	}
