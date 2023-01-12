@@ -178,7 +178,7 @@ func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
 	}
 	owned, err := oe.ring.Owns(tenantID)
 	if err != nil {
-		_ = level.Warn(oe.logger).Log("msg", "determining tenant ownership failed", "err", err.Error())
+		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine tenant ownership", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe
 		// side and assume this instance owns the tenant
 		return true
