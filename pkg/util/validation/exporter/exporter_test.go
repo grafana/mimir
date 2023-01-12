@@ -113,6 +113,7 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
 	assert.NoError(t, err)
 }
+
 func TestOverridesExporterWithRing(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {},
