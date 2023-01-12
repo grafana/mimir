@@ -149,6 +149,15 @@ func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.
 	i.ing.ShutdownHandler(w, r)
 }
 
+func (i *ActivityTrackerWrapper) UserRegistryHandler(writer http.ResponseWriter, request *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(request.Context(), "Ingester/UserRegistryHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.UserRegistryHandler(writer, request)
+}
+
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)

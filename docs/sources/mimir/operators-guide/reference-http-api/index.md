@@ -353,6 +353,18 @@ This endpoint unregisters the ingester from the ring even if you disable `-inges
 
 This API endpoint is usually used by scale down automations.
 
+### TSDB Metrics
+
+```
+GET /ingester/tsdb_metrics
+```
+
+This endpoint returns low-level metrics exposed by per-tenant TSDB. This can be useful for troubleshooting.
+Difference from `/metrics` is that metrics returned in `/metrics` are aggregated across all open TSDBs, while this
+endpoint returns TSDB metrics only for specific tenant.
+
+Requires [authentication](#authentication), authenticated tenant is one whose TSDB metrics are returned.
+
 ### Ingesters ring status
 
 ```

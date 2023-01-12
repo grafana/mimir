@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -2484,4 +2485,24 @@ func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
 		}
 	}
 	return true
+}
+
+func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
+	userID, err := tenant.TenantID(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	reg := i.tsdbMetrics.regs.GetRegistryForUser(userID)
+	if reg == nil {
+		http.Error(w, "user registry not found", http.StatusNotFound)
+		return
+	}
+
+	promhttp.HandlerFor(reg, promhttp.HandlerOpts{
+		DisableCompression: true,
+		ErrorHandling:      promhttp.HTTPErrorOnError,
+		Timeout:            10 * time.Second,
+	}).ServeHTTP(w, r)
 }
