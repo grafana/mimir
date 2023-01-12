@@ -567,8 +567,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
-
 	d.discardedHistogramsTooManyHaClusters.DeleteLabelValues(userID)
+	d.discardedHistogramsRateLimited.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
