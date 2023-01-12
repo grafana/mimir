@@ -2498,7 +2498,8 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	promhttp.HandlerFor(reg, promhttp.HandlerOpts{
-		ErrorHandling: promhttp.HTTPErrorOnError,
-		Timeout:       10 * time.Second,
+		DisableCompression: true,
+		ErrorHandling:      promhttp.HTTPErrorOnError,
+		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
 }
