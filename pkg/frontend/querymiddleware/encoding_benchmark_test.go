@@ -120,6 +120,30 @@ func BenchmarkDecode(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeAll(b *testing.B) {
+	filePattern := "/Users/charleskorn/Desktop/queries/querier/original-format/*.json"
+	files, err := filepath.Glob(filePattern)
+	require.NoError(b, err)
+	require.NotEmpty(b, files)
+	bodies := make([][]byte, 0, len(files))
+
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		require.NoError(b, err)
+		bodies = append(bodies, body)
+	}
+
+	for i := 0; i < b.N; i++ {
+		for _, body := range bodies {
+			_, err := originalDecode(body)
+
+			if err != nil {
+				require.NoError(b, err)
+			}
+		}
+	}
+}
+
 func BenchmarkEncode(b *testing.B) {
 	filePattern := "/Users/charleskorn/Desktop/queries/querier/original-format/*.json"
 	files, err := filepath.Glob(filePattern)
@@ -144,6 +168,34 @@ func BenchmarkEncode(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func BenchmarkEncodeAll(b *testing.B) {
+	filePattern := "/Users/charleskorn/Desktop/queries/querier/original-format/*.json"
+	files, err := filepath.Glob(filePattern)
+	require.NoError(b, err)
+	require.NotEmpty(b, files)
+	responses := make([]PrometheusResponse, 0, len(files))
+
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		require.NoError(b, err)
+
+		resp, err := originalDecode(body)
+		require.NoError(b, err)
+
+		responses = append(responses, resp)
+	}
+
+	for i := 0; i < b.N; i++ {
+		for _, resp := range responses {
+			_, err := originalEncode(resp)
+
+			if err != nil {
+				require.NoError(b, err)
+			}
+		}
 	}
 }
 
