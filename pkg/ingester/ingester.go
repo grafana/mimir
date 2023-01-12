@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
@@ -733,8 +734,105 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	app := db.Appender(ctx).(extendedAppender)
 	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
-	oooTW := i.limits.OutOfOrderTimeWindow(userID)
+	var activeSeries *activeseries.ActiveSeries
+	if i.cfg.ActiveSeriesMetricsEnabled {
+		activeSeries = db.activeSeries
+	}
+	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		return nil, err
+	}
 
+	// At this point all samples have been added to the appender, so we can track the time it took.
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", stats.succeededSamplesCount,
+		"failedSamplesCount", stats.failedSamplesCount,
+		"succeededExemplarsCount", stats.succeededExemplarsCount,
+		"failedExemplarsCount", stats.failedExemplarsCount,
+		"succeededHistogramsCount", stats.succeededHistogramsCount,
+		"failedHistogramsCount", stats.failedHistogramsCount,
+	)
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
+
+	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
+	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
+		db.setLastUpdate(time.Now())
+	}
+
+	// Increment metrics only if the samples have been successfully committed.
+	// If the code didn't reach this point, it means that we returned an error
+	// which will be converted into an HTTP 5xx and the client should/will retry.
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
+	i.metrics.ingestedHistograms.WithLabelValues(userID).Add(float64(stats.succeededHistogramsCount))
+	i.metrics.ingestedHistogramsFail.WithLabelValues(userID).Add(float64(stats.failedHistogramsCount))
+	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	i.appendedHistogramsStats.Inc(int64(stats.succeededHistogramsCount))
+
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
+
+	if stats.sampleOutOfBoundsCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
+	}
+	if stats.sampleOutOfOrderCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
+	}
+	if stats.sampleTooOldCount > 0 {
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
+	}
+	if stats.newValueForTimestampCount > 0 {
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+	}
+	if stats.perUserSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
+	}
+	if stats.perMetricSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
+	}
+	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
+		i.ingestionRate.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+
+		switch req.Source {
+		case mimirpb.RULE:
+			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+		case mimirpb.API:
+			fallthrough
+		default:
+			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+		}
+	}
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+// pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
+// but in case of unhandled errors, appender is rolled back and such error is returned.
+func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
+	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
+	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
@@ -755,7 +853,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, oooTW)
+				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
 			})
 			return true
 
@@ -787,7 +885,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return false
 	}
 
-	for _, ts := range req.Timeseries {
+	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -795,7 +893,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if oooTW <= 0 && minAppendTimeAvailable &&
+		if outOfOrderWindow <= 0 && minAppendTimeAvailable &&
 			len(ts.Samples) > 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
 			stats.failedSamplesCount += len(ts.Samples)
 			stats.sampleOutOfBoundsCount += len(ts.Samples)
@@ -841,20 +939,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			}
 
 			// Otherwise, return a 500.
-			return nil, wrapWithUser(err, userID)
+			return wrapWithUser(err, userID)
 		}
 
 		for _, h := range ts.Histograms {
 			var err error
 
 			if ref != 0 {
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)); err == nil {
+				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
 					stats.succeededHistogramsCount++
 					continue
 				}
 			} else {
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)); err == nil {
+				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
 					stats.succeededHistogramsCount++
 					continue
 				}
@@ -866,13 +964,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 				continue
 			}
 
-			return nil, wrapWithUser(err, userID)
+			return wrapWithUser(err, userID)
 		}
 
-		if i.cfg.ActiveSeriesMetricsEnabled && stats.succeededSamplesCount+stats.succeededHistogramsCount > oldSucceededSamplesCount {
-			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount or
-				// succeededHistogramsCount has been incremented.
+		if activeSeries != nil && stats.succeededSamplesCount+stats.succeededHistogramsCount > oldSucceededSamplesCount {
+			activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
+				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
 			})
 		}
@@ -894,6 +991,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
 					}
 
+					var err error
 					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
 						stats.succeededExemplarsCount++
 						continue
@@ -908,90 +1006,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			}
 		}
 	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	level.Debug(spanlog).Log(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-		"succeededHistogramsCount", stats.succeededHistogramsCount,
-		"failedHistogramsCount", stats.failedHistogramsCount,
-	)
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return nil, wrapWithUser(err, userID)
-	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
-
-	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
-		db.setLastUpdate(time.Now())
-	}
-
-	// Increment metrics only if the samples have been successfully committed.
-	// If the code didn't reach this point, it means that we returned an error
-	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
-	i.metrics.ingestedHistograms.WithLabelValues(userID).Add(float64(stats.succeededHistogramsCount))
-	i.metrics.ingestedHistogramsFail.WithLabelValues(userID).Add(float64(stats.failedHistogramsCount))
-	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
-	i.appendedHistogramsStats.Inc(int64(stats.succeededHistogramsCount))
-
-	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), time.Now())
-
-	if stats.sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
-	}
-	if stats.sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
-	}
-	if stats.sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
-	}
-	if stats.newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
-	}
-	if stats.perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
-	}
-	if stats.perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
-	}
-	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
-		i.ingestionRate.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
-
-		switch req.Source {
-		case mimirpb.RULE:
-			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
-		case mimirpb.API:
-			fallthrough
-		default:
-			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
-		}
-	}
-
-	if firstPartialErr != nil {
-		code := http.StatusBadRequest
-		var ve *validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
-		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
-	}
-
-	return &mimirpb.WriteResponse{}, nil
+	return nil
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
@@ -1398,6 +1413,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
 	batchSizeBytes := 0
+	var it chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
 
@@ -1406,7 +1422,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		}
 
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			if valType == chunkenc.ValFloat {
 				t, v := it.At()
@@ -1495,6 +1511,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 
 	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
 	batchSizeBytes := 0
+	var it chunks.Iterator
 	for ss.Next() {
 		series := ss.At()
 
@@ -1503,7 +1520,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		}
 
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for it.Next() {
 			// Chunks are ordered by min time.
 			meta := it.At()

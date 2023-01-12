@@ -69,19 +69,22 @@ func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64
 	}
 
 	// Cleanup inactive groups
-	deletedGroups := make([]string, 0, len(inactiveGroups))
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 
-	for _, inactiveGroup := range inactiveGroups {
+	for i := 0; i < len(inactiveGroups); {
+		inactiveGroup := inactiveGroups[i]
 		groupTs := ag.timestampsPerUser[userID][inactiveGroup]
 		if groupTs != nil && groupTs.Load() <= deadline {
 			delete(ag.timestampsPerUser[userID], inactiveGroup)
-			deletedGroups = append(deletedGroups, inactiveGroup)
+			i++
+		} else {
+			inactiveGroups[i] = inactiveGroups[len(inactiveGroups)-1]
+			inactiveGroups = inactiveGroups[:len(inactiveGroups)-1]
 		}
 	}
 
-	return deletedGroups
+	return inactiveGroups
 }
 
 func (ag *ActiveGroups) PurgeInactiveGroups(inactiveTimeout time.Duration, cleanupFuncs ...func(string, string)) {

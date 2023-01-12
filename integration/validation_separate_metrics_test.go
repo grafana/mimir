@@ -67,13 +67,9 @@ func TestValidateSeparateMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 400, res.StatusCode)
 
-	metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "test-group")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(1), metricNumSeries[0])
+	))
 
 	// Push series with no group label
 	series, _, _ = generateSeries("TestMetric", now, prompb.Label{
@@ -85,22 +81,14 @@ func TestValidateSeparateMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 400, res.StatusCode)
 
-	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(1), metricNumSeries[0])
+	))
 
 	// Ensure previous series didn't disappear
-	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "test-group")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(1), metricNumSeries[0])
+	))
 
 	// Push two series, group label only present in second series
 	series1, _, _ := generateSeries("TestMetric", now, prompb.Label{
@@ -124,21 +112,13 @@ func TestValidateSeparateMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 400, res.StatusCode)
 
-	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "")),
-		e2e.WaitMissingMetrics)
+	))
 
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(2), metricNumSeries[0])
-
-	metricNumSeries, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "second-series")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(1), metricNumSeries[0])
+	))
 }
 
 func TestPushMultipleInvalidLabels(t *testing.T) {
@@ -189,21 +169,15 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 		require.Equal(t, 400, res.StatusCode)
 	}
 
-	metricNumSeriesOdd, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	// Odd group values
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "1")),
-		e2e.WaitMissingMetrics)
+	))
 
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeriesOdd))
-	require.Equal(t, float64(4), metricNumSeriesOdd[0])
-
-	metricNumSeriesEven, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	// Even group values
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(5), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "0")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeriesEven))
-	require.Equal(t, float64(5), metricNumSeriesEven[0])
+	))
 }
 
 func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
@@ -270,21 +244,12 @@ func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 	require.Equal(t, 400, res.StatusCode)
 
 	for i := 0; i < 10; i++ {
-		metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", strconv.Itoa(i))),
-			e2e.WaitMissingMetrics)
-
-		require.NoError(t, err)
-		require.Equal(t, 1, len(metricNumSeries))
-		require.Equal(t, float64(1), metricNumSeries[0])
-
+		))
 	}
 
-	metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_discarded_samples_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", "other")),
-		e2e.WaitMissingMetrics)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, len(metricNumSeries))
-	require.Equal(t, float64(1), metricNumSeries[0])
+	))
 }

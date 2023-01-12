@@ -37,6 +37,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Disable gateway's serviceMonitor when using nginx #3781
 * [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851
 * [BUGFIX] Use alertmanager headless service in `gateway` NGINX configuration. #3851
+* [BUGFIX] Use `50Gi` persistent volume for ingesters in `capped-small.yaml`. #3919
+
+## 4.0.1
+
+* [ENHANCEMENT] Bump Grafana Enterprise Metrics image version to 2.5.1 #3902
 
 ## 4.0.0
 

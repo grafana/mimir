@@ -134,14 +134,15 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 
 	shards := len(uniqueSymbolsPerShard)
 
+	var builder labels.ScratchBuilder
 	uniqueSymbolsPerBlock := map[string]struct{}{}
 	for p.Next() {
-		lbls := labels.Labels(nil)
-		err := idx.Series(p.At(), &lbls, nil)
+		err := idx.Series(p.At(), &builder, nil)
 		if err != nil {
 			return fmt.Errorf("error getting series seriesID=%d: %v", p.At(), err)
 		}
 
+		lbls := builder.Labels()
 		shardID := uint64(0)
 		if shards > 0 {
 			shardID = lbls.Hash() % uint64(shards)
