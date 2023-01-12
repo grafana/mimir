@@ -69,6 +69,7 @@ The following features are currently experimental:
     - `-alertmanager.sharding-ring.heartbeat-timeout=0`
     - `-compactor.ring.heartbeat-timeout=0`
     - `-store-gateway.sharding-ring.heartbeat-timeout=0`
+    - `-overrides-exporter.ring.heartbeat-timeout=0`
   - Disabling ring heartbeats
     - `-distributor.ring.heartbeat-period=0`
     - `-ingester.ring.heartbeat-period=0`
@@ -76,6 +77,7 @@ The following features are currently experimental:
     - `-alertmanager.sharding-ring.heartbeat-period=0`
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
+    - `-overrides-exporter.ring.heartbeat-period=0`
   - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
@@ -110,3 +112,5 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
+- Overrides-exporter
+  - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)

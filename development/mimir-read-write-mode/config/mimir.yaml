@@ -57,5 +57,9 @@ alertmanager_storage:
   s3:
     bucket_name: mimir-alertmanager
 
+overrides_exporter:
+  ring:
+    enabled: true
+
 runtime_config:
   file: ./config/runtime.yaml

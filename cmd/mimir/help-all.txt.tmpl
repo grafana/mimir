@@ -1201,6 +1201,72 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
+  -overrides-exporter.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -overrides-exporter.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -overrides-exporter.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -overrides-exporter.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -overrides-exporter.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -overrides-exporter.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -overrides-exporter.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -overrides-exporter.ring.enabled
+    	[experimental] Enable the ring used by override-exporters to deduplicate exported limit metrics.
+  -overrides-exporter.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -overrides-exporter.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -overrides-exporter.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -overrides-exporter.ring.etcd.password string
+    	Etcd password.
+  -overrides-exporter.ring.etcd.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -overrides-exporter.ring.etcd.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -overrides-exporter.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -overrides-exporter.ring.etcd.tls-enabled
+    	Enable TLS.
+  -overrides-exporter.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -overrides-exporter.ring.etcd.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -overrides-exporter.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -overrides-exporter.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -overrides-exporter.ring.etcd.username string
+    	Etcd username.
+  -overrides-exporter.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+  -overrides-exporter.ring.heartbeat-timeout duration
+    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. (default 1m0s)
+  -overrides-exporter.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -overrides-exporter.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -overrides-exporter.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -overrides-exporter.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -overrides-exporter.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -overrides-exporter.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -overrides-exporter.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -overrides-exporter.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -overrides-exporter.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -overrides-exporter.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -print.config
     	Print the config and exit.
   -querier.batch-iterators

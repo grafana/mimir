@@ -371,6 +371,18 @@ Usage of ./cmd/mimir/mimir:
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -modules
     	List available values that can be used as target.
+  -overrides-exporter.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -overrides-exporter.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -overrides-exporter.ring.etcd.password string
+    	Etcd password.
+  -overrides-exporter.ring.etcd.username string
+    	Etcd username.
+  -overrides-exporter.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -overrides-exporter.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -print.config
     	Print the config and exit.
   -querier.cardinality-analysis-enabled

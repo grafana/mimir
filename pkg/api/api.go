@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/validation/exporter"
 )
 
 // DistributorPushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -397,6 +398,13 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 
 	schedulerpb.RegisterSchedulerForFrontendServer(a.server.GRPC, f)
 	schedulerpb.RegisterSchedulerForQuerierServer(a.server.GRPC, f)
+}
+
+func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
+	a.indexPage.AddLinks(defaultWeight, "Overrides-exporter", []IndexPageLink{
+		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
+	})
+	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler
