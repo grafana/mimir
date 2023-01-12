@@ -1,5 +1,3 @@
-{{- if .Values.enterprise.enabled }}
-{{- if and (index .Values "memcached-admin-cache" "enabled") (eq (index .Values "memcached-admin-cache" "cacheType") "memcached" ) }}
-{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "memcached-admin-cache") }}
-{{- end -}}
+{{- if and .Values.enterprise.enabled .Values.admin-cache.enabled }}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "admin-cache") }}
 {{- end -}}
