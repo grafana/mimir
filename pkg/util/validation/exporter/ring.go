@@ -35,8 +35,10 @@ const (
 	ringAutoForgetUnhealthyPeriods = 4
 )
 
+// ringOp is used as an instace state filter when obtaining instances from the ring
 var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
+// RingConfig holds the configuration for the overrides-exporter ring
 type RingConfig struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
@@ -55,6 +57,7 @@ type RingConfig struct {
 	ListenPort int `yaml:"-"`
 }
 
+// RegisterFlags configures this RingConfig to the given flag set and sets defaults
 func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -77,6 +80,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.InstanceID, "overrides-exporter.ring.instance-id", hostname, "Instance ID to register in the ring.")
 }
 
+// toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
 	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
 	if err != nil {
@@ -96,6 +100,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 	}, nil
 }
 
+// toRingConfig transforms a RingConfig into a configuration that can be used to create a ring client
 func (c *RingConfig) toRingConfig() ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
@@ -108,16 +113,20 @@ func (c *RingConfig) toRingConfig() ring.Config {
 	return rc
 }
 
+// overridesExporterRing is a ring client that overrides-exporters can use to
+// assume ownership of a tenant shard
 type overridesExporterRing struct {
 	config     RingConfig
 	client     *ring.Ring
 	lifecycler *ring.BasicLifecycler
 }
 
+// Owns looks up whether this ring member owns the given tenant.
 func (o *overridesExporterRing) Owns(tenantID string) (bool, error) {
 	return instanceOwnsIdentifier(o.client, o.lifecycler.GetInstanceAddr(), tenantID)
 }
 
+// newRing creates a new overridesExporterRing from the given configuration.
 func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*overridesExporterRing, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(
@@ -157,6 +166,8 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
+// instanceOwnsIdentifier hashes the given key to a token, looks up the token
+// owner in the ring and checks whether this instance is the token owner
 func instanceOwnsIdentifier(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Hash the key.
 	hasher := fnv.New32a()

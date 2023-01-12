@@ -8,7 +8,6 @@ package exporter
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -191,56 +190,4 @@ func TestOverridesExporterWithRing(t *testing.T) {
 	// The ring is now empty, this instance should swallow the "empty ring" error and export overrides.
 	count = testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	require.Equal(t, 10, count)
-}
-
-func TestOverridesExporter_Collect(t *testing.T) {
-	tests := []struct {
-		name             string
-		owner            ShardOwner
-		wantLimitMetrics bool
-	}{
-		{name: "tenant not owned", owner: &mockShardOwner{owned: false, wantError: false}, wantLimitMetrics: false},
-		{name: "tenant owned", owner: &mockShardOwner{owned: true, wantError: false}, wantLimitMetrics: true},
-		{name: "error establishing tenant ownership", owner: &mockShardOwner{owned: false, wantError: true}, wantLimitMetrics: true},
-	}
-
-	tenantLimits := map[string]*validation.Limits{
-		"tenant-a": {
-			MaxGlobalSeriesPerUser: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			exporter, err := NewOverridesExporter(
-				Config{},
-				&validation.Limits{},
-				validation.NewMockTenantLimits(tenantLimits),
-				log.NewNopLogger(),
-				nil,
-				WithShard(tt.owner),
-			)
-			require.NoError(t, err)
-
-			count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
-
-			if tt.wantLimitMetrics {
-				assert.Greater(t, count, 0)
-			} else {
-				assert.Equal(t, 0, count)
-			}
-		})
-	}
-}
-
-type mockShardOwner struct {
-	owned     bool
-	wantError bool
-}
-
-func (m mockShardOwner) Owns(string) (bool, error) {
-	if m.wantError {
-		return false, errors.New("irrelevant")
-	}
-	return m.owned, nil
 }

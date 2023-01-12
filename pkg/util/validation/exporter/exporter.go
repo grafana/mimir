@@ -21,25 +21,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// ShardOwner determines whether a given identifier is owned by the instance it belongs to
-type ShardOwner interface {
-	Owns(identifier string) (bool, error)
-}
-
-// Option is the option type for this package
-type Option func(*OverridesExporter)
-
-// WithShard allows setting a ShardOwner that determines tenant ownership for the overrides-exporter
-func WithShard(shard ShardOwner) Option {
-	return func(exporter *OverridesExporter) {
-		exporter.shard = shard
-	}
-}
-
+// Config holds the configuration for an overrides-exporter
 type Config struct {
 	Ring RingConfig `yaml:"ring"`
 }
 
+// RegisterFlags configs this instance to the given FlagSet
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ring.RegisterFlags(f, logger)
 }
@@ -56,7 +43,6 @@ type OverridesExporter struct {
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
-	shard             ShardOwner
 	ring              *overridesExporterRing
 	subserviceManager *services.Manager
 	subserviceWatcher *services.FailureWatcher
@@ -70,7 +56,6 @@ func NewOverridesExporter(
 	tenantLimits validation.TenantLimits,
 	log log.Logger,
 	registerer prometheus.Registerer,
-	opts ...Option,
 ) (*OverridesExporter, error) {
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
@@ -103,12 +88,6 @@ func NewOverridesExporter(
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create service manager")
 		}
-
-		exporter.shard = exporter.ring
-	}
-
-	for _, opt := range opts {
-		opt(exporter)
 	}
 
 	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)
@@ -166,6 +145,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
+// RingHandler is an http.Handler that serves requests for the overrides-exporter ring status page
 func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Request) {
 	if oe.ring != nil {
 		oe.ring.lifecycler.ServeHTTP(w, req)
@@ -187,12 +167,16 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 	util.WriteHTMLResponse(w, ringDisabledPage)
 }
 
+// ownsTenant determines whether this overrides-exporter instance owns the given
+// tenant. If the ring is disabled, it assumes this instance has ownership of all
+// tenants. If the ring is enabled, it uses it to check ownership of the given
+// tenant.
 func (oe *OverridesExporter) ownsTenant(tenantID string) bool {
-	if oe.shard == nil {
+	if oe.ring == nil {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := oe.shard.Owns(tenantID)
+	owned, err := oe.ring.Owns(tenantID)
 	if err != nil {
 		_ = level.Warn(oe.logger).Log("msg", "determining tenant ownership failed", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe
