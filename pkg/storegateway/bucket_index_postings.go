@@ -20,7 +20,7 @@ import (
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
-// that the keys in the gorup have a corresponding postings list in the index.
+// that the keys in the group have a corresponding postings list in the index.
 // Logical result of the group is:
 // If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call prepare() to populate the keys.
 // If isSubtract == true: special All postings minus postings for keys labels.
