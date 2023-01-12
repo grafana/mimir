@@ -837,8 +837,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.updateMetricsFromPushStats(userID, group, &stats)
 	i.updateMetricsFromPushStats(userID, group, &ephemeralStats)
 
-	db.updatedRatesFromStats(stats.succeededSamplesCount, req.Source == mimirpb.RULE)
-	db.updatedRatesFromStats(ephemeralStats.succeededSamplesCount, req.Source == mimirpb.RULE)
+	db.updatedRatesFromStats(stats.succeededSamplesCount, req.Source)
+	db.updatedRatesFromStats(ephemeralStats.succeededSamplesCount, req.Source)
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest

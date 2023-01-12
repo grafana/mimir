@@ -19,6 +19,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -410,8 +411,8 @@ func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
 
-func (u *userTSDB) updatedRatesFromStats(succeededSamplesCount int, ruleSource bool) {
-	if ruleSource {
+func (u *userTSDB) updatedRatesFromStats(succeededSamplesCount int, samplesSource mimirpb.WriteRequest_SourceEnum) {
+	if samplesSource == mimirpb.RULE {
 		u.ingestedRuleSamples.Add(int64(succeededSamplesCount))
 	} else {
 		u.ingestedAPISamples.Add(int64(succeededSamplesCount))
