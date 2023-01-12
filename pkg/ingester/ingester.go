@@ -781,6 +781,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.metrics.ingestedHistogramsFail.WithLabelValues(userID).Add(float64(stats.failedHistogramsCount))
 	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	i.appendedHistogramsStats.Inc(int64(stats.succeededHistogramsCount))
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
@@ -832,7 +833,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
-
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
@@ -938,6 +938,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				continue
 			}
 
+			// Otherwise, return a 500.
 			return wrapWithUser(err, userID)
 		}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -138,24 +139,27 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Results[0].Timeseries[0].Samples[0].Timestamp)
 		require.Equal(t, float64(expectedVectors[0].Value), resp.Results[0].Timeseries[0].Samples[0].Value)
 	} else if isSeriesHistogram {
-		histogram := resp.Results[0].Timeseries[0].Histograms[0]
-		require.Equal(t, int64(expectedVectors[0].Timestamp), histogram.Timestamp)
-		require.Equal(t, uint64(expectedVectors[0].Histogram.Count), histogram.GetCountInt())
-		require.Equal(t, float64(expectedVectors[0].Histogram.Sum), histogram.Sum)
-		idx := 0
-		it := remote.HistogramProtoToHistogram(histogram).ToFloat().AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Lower), bucket.Lower)
-			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Upper), bucket.Upper)
-			require.Equal(t, float64(expectedVectors[0].Histogram.Buckets[idx].Count), bucket.Count)
-			idx++
-		}
-		require.Equal(t, len(expectedVectors[0].Histogram.Buckets), idx)
+		isEqualSampleAndHistogram(t, expectedVectors[0], resp.Results[0].Timeseries[0].Histograms[0])
 	}
+}
+
+func isEqualSampleAndHistogram(t *testing.T, expectedVector *model.Sample, histogram prompb.Histogram) {
+	require.Equal(t, int64(expectedVector.Timestamp), histogram.Timestamp)
+	require.Equal(t, uint64(expectedVector.Histogram.Count), histogram.GetCountInt())
+	require.Equal(t, float64(expectedVector.Histogram.Sum), histogram.Sum)
+	idx := 0
+	it := remote.HistogramProtoToHistogram(histogram).ToFloat().AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue
+		}
+		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Lower), bucket.Lower)
+		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Upper), bucket.Upper)
+		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Count), bucket.Count)
+		idx++
+	}
+	require.Equal(t, len(expectedVector.Histogram.Buckets), idx)
 }
 
 func TestQuerierStreamingRemoteRead(t *testing.T) {

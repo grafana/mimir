@@ -464,9 +464,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 
-		# HELP cortex_distributor_deduped_histograms_total The total number of deduplicated histograms.
-		# TYPE cortex_distributor_deduped_histograms_total counter
-
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 
@@ -486,6 +483,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userB"} 10
+
+		# HELP cortex_distributor_deduped_histograms_total The total number of deduplicated histograms.
+		# TYPE cortex_distributor_deduped_histograms_total counter
+		cortex_distributor_deduped_histograms_total{cluster="cluster1",user="userA"} 1
 
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter

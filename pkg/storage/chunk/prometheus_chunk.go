@@ -96,7 +96,6 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 }
 
 // Wrapper around a Prometheus histogram chunk.
-// TODO add unit tests as in chunk_test.go https://github.com/grafana/mimir/issues/3767
 type prometheusHistogramChunk struct {
 	prometheusChunk
 }
@@ -109,9 +108,9 @@ func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, e
 	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
 }
 
-// AddHistogram adds another histogram to the chunk. While Add works, it is only implemented
-// to make tests work, and should not be used in production. In particular, it appends
-// all histograms to single chunk, and uses new Appender for each Add.
+// AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
+// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
+// Appender for each invocation.
 func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
 	if p.chunk == nil {
 		p.chunk = chunkenc.NewHistogramChunk()

@@ -571,7 +571,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedHistogramsTooManyHaClusters.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
-	d.discardedHistogramsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)

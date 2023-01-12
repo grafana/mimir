@@ -266,7 +266,7 @@ func getBucketBoundaries(bucket histogram.Bucket[float64]) int {
 	return boundaries
 }
 
-// FromHistogramToPromCommonHistogram converts histogram.FloatHistogram to SampleHistogram.
+// FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
 func FromFloatHistogramToSampleHistogramProto(h histogram.FloatHistogram) SampleHistogram {
 	buckets := make([]*HistogramBucket, 0)
 	it := h.AllBucketIterator()

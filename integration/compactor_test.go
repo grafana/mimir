@@ -147,7 +147,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 			var samples []sample
 
-			// require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
+			// require.NoError(t, ixReader.Series(p.At(), &lbls, &chks)) // TODO: put back when fixed
 
 			for _, c := range chks {
 				c.Chunk, err = chkReader.Chunk(c)
