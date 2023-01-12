@@ -86,6 +86,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #3948
+
 ## 2.5.0
 
 ### Grafana Mimir
