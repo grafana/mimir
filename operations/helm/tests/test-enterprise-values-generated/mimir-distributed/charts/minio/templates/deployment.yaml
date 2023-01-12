@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.0
+    chart: minio-5.0.4
     release: test-enterprise-values
     heritage: Helm
 spec:
@@ -28,8 +28,8 @@ spec:
         app: minio
         release: test-enterprise-values
       annotations:
-        checksum/secrets: 50367549b220623a9c15795f86f1ddb97ce2ef4d6e32b1d697196defc89e83a3
-        checksum/config: 9b0356a033dfd8ad91b8cb6124e472a8b3fd1563620ae44988bb666612f81621
+        checksum/secrets: 4e8232921e337f229c05db22f59c2a6f21c62e37b7ae563bbc7dcc817f12dfe2
+        checksum/config: 8ad3f6554700f2e18c0512897f0ba53fd65b6190939fcff822659873887b35e6
     spec:
       securityContext:
         runAsUser: 1000
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2022-10-24T18-35-07Z"
+          image: "quay.io/minio/minio:RELEASE.2022-12-12T19-27-27Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
