@@ -126,16 +126,16 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489
 
-			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB head (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB headfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_gc_duration_seconds summary
 			cortex_ingester_ephemeral_head_gc_duration_seconds_sum 5.154812e+06
         	cortex_ingester_ephemeral_head_gc_duration_seconds_count 3
 
-			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failed (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failedfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_truncations_failed_total counter
 			cortex_ingester_ephemeral_head_truncations_failed_total 4.95655e+06
 
-			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attempted (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attemptedfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_truncations_total counter
 			cortex_ingester_ephemeral_head_truncations_total 5.055681e+06
 
@@ -506,16 +506,16 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
 
-			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB head (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB headfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_gc_duration_seconds summary
 			cortex_ingester_ephemeral_head_gc_duration_seconds_sum 5.154812e+06
         	cortex_ingester_ephemeral_head_gc_duration_seconds_count 3
 
-			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failed (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failedfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_truncations_failed_total counter
 			cortex_ingester_ephemeral_head_truncations_failed_total 4.95655e+06
 
-			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attempted (for ephemeral storage).
+			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attemptedfor ephemeral storage.
 			# TYPE cortex_ingester_ephemeral_head_truncations_total counter
 			cortex_ingester_ephemeral_head_truncations_total 5.055681e+06
 

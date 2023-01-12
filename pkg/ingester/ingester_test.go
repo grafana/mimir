@@ -5947,14 +5947,14 @@ func TestIngester_PushEphemeral(t *testing.T) {
 	}{
 		"should succeed on pushing valid series to ephemeral storage": {
 			reqs: []*mimirpb.WriteRequest{
-				mimirpb.ToWriteRequestEphemeral(
+				ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
 					nil,
 					nil,
 					mimirpb.API),
 
-				mimirpb.ToWriteRequestEphemeral(
+				ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
 					nil,
@@ -5995,7 +5995,7 @@ func TestIngester_PushEphemeral(t *testing.T) {
 
 		"old ephemeral samples are discarded": {
 			reqs: []*mimirpb.WriteRequest{
-				mimirpb.ToWriteRequestEphemeral(
+				ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 100}},
 					nil,
@@ -6039,7 +6039,7 @@ func TestIngester_PushEphemeral(t *testing.T) {
 		},
 		"should fail on out-of-order samples": {
 			reqs: []*mimirpb.WriteRequest{
-				mimirpb.ToWriteRequestEphemeral(
+				ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
 					nil,
@@ -6047,7 +6047,7 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					mimirpb.API,
 				),
 
-				mimirpb.ToWriteRequestEphemeral(
+				ToWriteRequestEphemeral(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
 					nil,
@@ -6253,4 +6253,11 @@ func TestIngester_PushEphemeral(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func ToWriteRequestEphemeral(lbls []labels.Labels, samples []mimirpb.Sample, exemplars []*mimirpb.Exemplar, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) *mimirpb.WriteRequest {
+	req := mimirpb.ToWriteRequest(lbls, samples, exemplars, metadata, source)
+	req.EphemeralTimeseries = req.Timeseries
+	req.Timeseries = nil
+	return req
 }

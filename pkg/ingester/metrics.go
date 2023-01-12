@@ -588,15 +588,15 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 
 		ephemeralHeadTruncateFail: prometheus.NewDesc(
 			"cortex_ingester_ephemeral_head_truncations_failed_total",
-			"Total number of TSDB head truncations that failed (for ephemeral storage).",
+			"Total number of TSDB head truncations that failed for ephemeral storage.",
 			nil, nil),
 		ephemeralHeadTruncateTotal: prometheus.NewDesc(
 			"cortex_ingester_ephemeral_head_truncations_total",
-			"Total number of TSDB head truncations attempted (for ephemeral storage).",
+			"Total number of TSDB head truncations attempted for ephemeral storage.",
 			nil, nil),
 		ephemeralHeadGcDuration: prometheus.NewDesc(
 			"cortex_ingester_ephemeral_head_gc_duration_seconds",
-			"Runtime of garbage collection in the TSDB head (for ephemeral storage).",
+			"Runtime of garbage collection in the TSDB head for ephemeral storage.",
 			nil, nil),
 
 		ephemeralSeriesCreatedTotal: prometheus.NewDesc(
