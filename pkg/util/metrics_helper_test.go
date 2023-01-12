@@ -956,22 +956,33 @@ func TestUserRegistries_GetRegistryForUser(t *testing.T) {
 
 	assert.Nil(t, regs.GetRegistryForUser("test"))
 
-	r := prometheus.NewRegistry()
-	regs.AddUserRegistry("test", r)
+	reg1 := prometheus.NewRegistry()
+	regs.AddUserRegistry("test", reg1)
 
 	// Not using assert.Equal, as it compares values that pointers point to.
-	assert.True(t, r == regs.GetRegistryForUser("test"))
+	assert.True(t, reg1 == regs.GetRegistryForUser("test"))
 
 	regs.RemoveUserRegistry("test", false)
 	assert.Nil(t, regs.GetRegistryForUser("test"))
 
-	newReg := prometheus.NewRegistry()
-	regs.AddUserRegistry("test", newReg)
-	assert.True(t, newReg == regs.GetRegistryForUser("test"))
-	assert.False(t, r == regs.GetRegistryForUser("test"))
+	reg2 := prometheus.NewRegistry()
+	regs.AddUserRegistry("test", reg2)
+	assert.True(t, reg2 == regs.GetRegistryForUser("test"))
+	assert.False(t, reg1 == regs.GetRegistryForUser("test"))
 
 	regs.RemoveUserRegistry("test", true)
 	assert.Nil(t, regs.GetRegistryForUser("test"))
+
+	reg3 := prometheus.NewRegistry()
+	promauto.With(reg3).NewCounter(prometheus.CounterOpts{Name: "test", Help: "test"}).Add(100)
+	regs.AddUserRegistry("test", reg3)
+
+	reg4 := prometheus.NewRegistry()
+	regs.AddUserRegistry("test", reg4) // replaces reg3, which is soft-deleted.
+	assert.True(t, reg4 == regs.GetRegistryForUser("test"))
+	assert.False(t, reg3 == regs.GetRegistryForUser("test"))
+	assert.False(t, reg2 == regs.GetRegistryForUser("test"))
+	assert.False(t, reg1 == regs.GetRegistryForUser("test"))
 }
 
 func setupTestMetrics() *testMetrics {

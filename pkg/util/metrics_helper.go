@@ -685,10 +685,6 @@ func (r *UserRegistries) GetRegistryForUser(user string) *prometheus.Registry {
 			continue
 		}
 
-		if r.regs[idx].reg == nil {
-			continue
-		}
-
 		return r.regs[idx].reg
 	}
 	return nil
