@@ -211,7 +211,7 @@ func TestOverridesExporter_withRing(t *testing.T) {
 
 // TestOverridesExporterRollout tests that metric duplicates are not exported on
 // rollout or scale-down of replicas running the overrides-exporter component.
-func TestOverridesExporter_rollout(t *testing.T) {
+func TestOverridesExporter_scaleDown(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {},
 	}
@@ -223,15 +223,6 @@ func TestOverridesExporter_rollout(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		return ring.NewDesc(), true, nil
-	}))
-
-	// Register some instances. Instance-1 was the leader but has left the ring.
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-1", "127.0.0.1", "", []uint32{1}, ring.LEAVING, time.Now())
-		desc.AddIngester("instance-2", "127.0.0.2", "", []uint32{2}, ring.ACTIVE, time.Now())
-		desc.AddIngester("instance-3", "127.0.0.3", "", []uint32{3}, ring.ACTIVE, time.Now())
-		return desc, true, nil
 	}))
 
 	cfg := Config{RingConfig{Enabled: true}}
@@ -248,15 +239,17 @@ func TestOverridesExporter_rollout(t *testing.T) {
 	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, exporter.subserviceManager))
 	t.Cleanup(func() { require.NoError(t, services.StopManagerAndAwaitStopped(ctx, exporter.subserviceManager)) })
 
-	// Register the new instance to the ring.
+	// Register some stable instances that have been in the ring for some time.
+	// instance-1 was the leader but is about to leave the ring.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester(l.GetInstanceID(), l.GetInstanceAddr(), "", []uint32{4}, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-1", "127.0.0.1", "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now().Add(-1*time.Hour))
+		desc.AddIngester(l.GetInstanceID(), l.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now().Add(-1*time.Hour))
 		return desc, true, nil
 	}))
 
 	// Wait until it has received the ring update.
-	test.Poll(t, time.Second, 4, func() interface{} {
+	test.Poll(t, time.Second, 2, func() interface{} {
 		rs, _ := r.GetAllHealthy(ringOp)
 		return len(rs.Instances)
 	})
@@ -264,22 +257,19 @@ func TestOverridesExporter_rollout(t *testing.T) {
 	// No metrics should be exported because the old leader is still present in the ring.
 	require.False(t, hasOverrideMetrics(exporter))
 
-	// Expire previous leader replica
+	// Remove previous leader replica
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		instance := desc.Ingesters["instance-1"]
-		instance.Timestamp = time.Now().Add(-5 * cfg.Ring.HeartbeatTimeout).Unix()
-		desc.Ingesters["instance-1"] = instance
-		return desc, true, nil
+		desc.RemoveIngester("instance-1")
+		return desc, false, nil
 	}))
 
-	// Wait until the expired replica has been auto-forgotten.
-	test.Poll(t, 1*time.Second, 3, func() interface{} {
+	// Wait until update has been received by the ring client.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		rs, _ := r.GetAllHealthy(ringOp)
 		return len(rs.Instances)
 	})
 
-	// Metrics should now be exported because this instance has become the new leader.
 	require.True(t, hasOverrideMetrics(exporter))
 }
 
@@ -300,7 +290,7 @@ func TestOverridesExporter_scaleUp(t *testing.T) {
 	// Register an instance that is currently the leader.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-1", "127.0.0.1", "", []uint32{2}, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-1", "127.0.0.1", "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now())
 		return desc, true, nil
 	}))
 
@@ -318,10 +308,10 @@ func TestOverridesExporter_scaleUp(t *testing.T) {
 	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, exporter.subserviceManager))
 	t.Cleanup(func() { require.NoError(t, services.StopManagerAndAwaitStopped(ctx, exporter.subserviceManager)) })
 
-	// Register the new instance to the ring and set the heartbeat of the previous instance to just before.
+	// Register a new replica to the ring with a token that would make it the leader.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester(l.GetInstanceID(), l.GetInstanceAddr(), "", []uint32{1}, ring.ACTIVE, time.Now())
+		desc.AddIngester(l.GetInstanceID(), l.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now())
 		return desc, true, nil
 	}))
 
@@ -331,12 +321,13 @@ func TestOverridesExporter_scaleUp(t *testing.T) {
 		return len(rs.Instances)
 	})
 
-	// The new replica owns the `0` token and is about to become leader, but it
-	// should back off for now to give the previous leader time to discover that a
-	// new leader is present in the ring.
+	// The new replica owns the `leaderToken` token and is about to become leader,
+	// but it should back off for now to give the previous leader time to discover
+	// that a new leader is present in the ring.
 	require.False(t, hasOverrideMetrics(exporter))
 
-	// Set the registered timestamp to the past to pretend the instance has been around for longer.
+	// Set the registered timestamp of the new instance to the past to pretend the
+	// instance has been around for longer.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		instance := desc.Ingesters[l.GetInstanceID()]

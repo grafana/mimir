@@ -103,7 +103,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 		HeartbeatTimeout:                c.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
-		KeepInstanceInTheRingOnShutdown: true,
+		KeepInstanceInTheRingOnShutdown: false,
 	}, nil
 }
 
@@ -203,17 +203,17 @@ func waitTimeExpired(r ring.ReadRing, instanceAddr string, heartbeatTimeout time
 			thisInstanceRegisteredAt = time.Unix(instance.RegisteredTimestamp, 0)
 		}
 	}
-	waitTimeExpired := time.Now().After(thisInstanceRegisteredAt.Add(4 * heartbeatTimeout))
-	return waitTimeExpired, nil
+	expired := time.Now().After(thisInstanceRegisteredAt.Add(4 * heartbeatTimeout))
+	return expired, nil
 }
 
 func ownsLeaderToken(r ring.ReadRing, instanceAddr string) (bool, error) {
 	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
-	if len(rs.Instances) != 1 {
-		return false, nil
+	if numInstances := len(rs.Instances); numInstances != 1 {
+		return false, fmt.Errorf("%d instances returned as leader token owners, expected 1", numInstances)
 	}
 	return rs.Instances[0].Addr == instanceAddr, nil
 }
