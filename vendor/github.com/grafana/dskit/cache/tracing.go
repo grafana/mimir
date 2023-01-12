@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/dskit/spanlogger"
 )
 
+var _ Cache = (*SpanlessTracingCache)(nil)
+
 // SpanlessTracingCache wraps a Cache and logs Fetch operation in the parent spans.
 type SpanlessTracingCache struct {
 	c        Cache
@@ -25,12 +27,12 @@ func (t SpanlessTracingCache) Store(ctx context.Context, data map[string][]byte,
 	t.c.Store(ctx, data, ttl)
 }
 
-func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
+func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	var (
 		bytes  int
 		logger = spanlogger.FromContext(ctx, t.logger, t.resolver)
 	)
-	result = t.c.Fetch(ctx, keys)
+	result = t.c.Fetch(ctx, keys, opts...)
 
 	for _, v := range result {
 		bytes += len(v)

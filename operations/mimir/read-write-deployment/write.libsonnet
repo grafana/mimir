@@ -36,6 +36,17 @@
       ), byContainerPort
     ),
 
+  mimir_write_container::
+    container.new('mimir-write', $._images.mimir_write) +
+    container.withPorts($.mimir_write_ports) +
+    $.util.resourcesRequests('4', '15Gi') +
+    $.util.resourcesLimits(null, '25Gi') +
+    $.util.readinessProbe +
+    $.core.v1.container.withVolumeMountsMixin([
+      volumeMount.new('mimir-write-data', '/data'),
+    ]) +
+    $.jaeger_mixin,
+
   local mimir_write_data_pvc =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.mimir_write_data_disk_size }) +
@@ -44,21 +55,13 @@
     pvc.mixin.metadata.withName('mimir-write-data'),
 
   newMimirWriteZoneContainer(zone, zone_args)::
-    container.new('mimir-write', $._images.mimir_write) +
-    container.withPorts($.mimir_write_ports) +
-    container.withArgsMixin($.util.mapToFlags(
+    $.mimir_write_container +
+    container.withArgs($.util.mapToFlags(
       $.mimir_write_args + zone_args + {
         'ingester.ring.zone-awareness-enabled': 'true',
         'ingester.ring.instance-availability-zone': 'zone-%s' % zone,
       },
-    )) +
-    $.util.resourcesRequests('4', '15Gi') +
-    $.util.resourcesLimits(null, '25Gi') +
-    $.util.readinessProbe +
-    $.core.v1.container.withVolumeMountsMixin([
-      volumeMount.new('mimir-write-data', '/data'),
-    ]) +
-    $.jaeger_mixin,
+    )),
 
   newMimirWriteZoneStatefulset(zone, container)::
     local name = 'mimir-write-zone-%s' % zone;

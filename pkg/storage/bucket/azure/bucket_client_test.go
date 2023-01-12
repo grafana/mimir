@@ -21,7 +21,7 @@ func TestNewBucketClient(t *testing.T) {
 			ContainerName:      "test",
 			MaxRetries:         3,
 		}
-		bkt, err := NewBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
+		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
 	})
@@ -34,7 +34,7 @@ func TestNewBucketClient(t *testing.T) {
 			MaxRetries:         3,
 			Endpoint:           "test-endpoint",
 		}
-		bkt, err := NewBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
+		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
 	})

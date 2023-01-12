@@ -12,7 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 
-	"github.com/grafana/dskit/util/stringsutil"
+	"github.com/grafana/dskit/internal/slices"
 )
 
 const (
@@ -23,6 +23,8 @@ const (
 var (
 	supportedCompressions     = []string{CompressionSnappy}
 	errUnsupportedCompression = errors.New("unsupported compression")
+
+	_ Cache = (*snappyCache)(nil)
 )
 
 type CompressionConfig struct {
@@ -35,9 +37,10 @@ func (cfg *CompressionConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 func (cfg *CompressionConfig) Validate() error {
-	if cfg.Compression != "" && !stringsutil.SliceContains(supportedCompressions, cfg.Compression) {
+	if cfg.Compression != "" && !slices.Contains(supportedCompressions, cfg.Compression) {
 		return errUnsupportedCompression
 	}
+
 	return nil
 }
 
@@ -75,8 +78,8 @@ func (s *snappyCache) Store(ctx context.Context, data map[string][]byte, ttl tim
 }
 
 // Fetch implements Cache.
-func (s *snappyCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
-	found := s.next.Fetch(ctx, keys)
+func (s *snappyCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	found := s.next.Fetch(ctx, keys, opts...)
 	decoded := make(map[string][]byte, len(found))
 
 	for key, encodedValue := range found {

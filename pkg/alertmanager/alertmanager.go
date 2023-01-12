@@ -10,14 +10,12 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
-	tmplhtml "html/template"
 	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
-	tmpltext "text/template"
 	"time"
 
 	"github.com/go-kit/log"
@@ -303,16 +301,6 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 	}
 }
 
-// withTenantIDFunc returns template.Option which adds to the templates additional function tenantID
-// returning the userID of the alertmanager tenant.
-func withTenantIDFunc(userID string) template.Option {
-	funcs := tmpltext.FuncMap{"tenantID": func() string { return userID }}
-	return func(text *tmpltext.Template, html *tmplhtml.Template) {
-		text.Funcs(funcs)
-		html.Funcs(funcs)
-	}
-}
-
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
@@ -325,7 +313,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles, withTenantIDFunc(userID))
+	tmpl, err := template.FromGlobs(templateFiles, withCustomFunctions(userID))
 	if err != nil {
 		return err
 	}

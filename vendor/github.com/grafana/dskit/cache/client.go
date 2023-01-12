@@ -3,14 +3,13 @@ package cache
 import (
 	"context"
 	"net"
+	"sync"
 	"time"
-
-	"github.com/bradfitz/gomemcache/memcache"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -146,6 +145,23 @@ func (c *baseClient) setAsync(ctx context.Context, key string, value []byte, ttl
 		return nil
 	}
 	return err
+}
+
+// wait submits an async task and blocks until it completes. This can be used during
+// tests to ensure that async "sets" have completed before attempting to read them.
+func (c *baseClient) wait() error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	err := c.asyncQueue.submit(func() {
+		wg.Done()
+	})
+	if err != nil {
+		return err
+	}
+
+	wg.Wait()
+	return nil
 }
 
 func (c *baseClient) delete(ctx context.Context, key string, f func(ctx context.Context, key string) error) error {

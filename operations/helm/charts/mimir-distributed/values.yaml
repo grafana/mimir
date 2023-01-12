@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r219-df89144
+  tag: r220-e59db84
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -76,7 +76,7 @@ serviceAccount:
 useExternalConfig: false
 
 # -- Defines what kind of object stores the configuration, a ConfigMap or a Secret.
-# In order to move sensitive information (such as credentials) from the ConfigMap/Secret to a more secure location (e.g. vault), it is possible to use [environment variables in the configuration](https://grafana.com/docs/mimir/latest/operators-guide/configuring/reference-configuration-parameters/#use-environment-variables-in-the-configuration).
+# In order to move sensitive information (such as credentials) from the ConfigMap/Secret to a more secure location (e.g. vault), it is possible to use [environment variables in the configuration](https://grafana.com/docs/mimir/latest/reference-configuration-parameters/#use-environment-variables-in-the-configuration).
 # Such environment variables can be then stored in a separate Secret and injected via the global.extraEnvFrom value. For details about environment injection from a Secret please see [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#use-case-as-container-environment-variables).
 configStorageType: ConfigMap
 
@@ -277,6 +277,8 @@ mimir:
     {{- end }}
 
     limits:
+      # Limit queries to 500 days. You can override this on a per-tenant basis.
+      max_total_query_length: 12000h
       # Adjust max query parallelism to 16x sharding, without sharding we can run 15d queries fully in parallel.
       # With sharding we can further shard each day another 16 times. 15 days * 16 shards = 240 subqueries.
       max_query_parallelism: 240
@@ -1553,7 +1555,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.16-alpine
+    tag: 1.6.17-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2493,16 +2495,19 @@ gateway:
             location = /api/v1/push {
               proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
+            location /otlp/v1/metrics {
+              proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            }
 
             # Alertmanager endpoints
             location {{ template "mimir.alertmanagerHttpPrefix" . }} {
-              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location = /multitenant_alertmanager/status {
-              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location = /api/v1/alerts {
-              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+              proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
 
             # Ruler endpoints
@@ -2776,7 +2781,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r219-b93820da
+    tag: r220-27d51f51
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3255,7 +3260,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r219-df89144
+    tag: r220-e59db84
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3275,7 +3280,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r219-df89144
+    tag: r220-e59db84
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

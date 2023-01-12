@@ -110,7 +110,8 @@ type Distributor struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	activeUsers *util.ActiveUsersCleanupService
+	activeUsers  *util.ActiveUsersCleanupService
+	activeGroups *util.ActiveGroupsCleanupService
 
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -226,7 +227,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -451,8 +452,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
+	d.activeGroups = activeGroupsCleanupService
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
+	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits, d.activeGroups)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
@@ -559,12 +561,14 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.nonHAHistograms.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
-	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
-	d.dedupedHistograms.DeletePartialMatch(prometheus.Labels{"user": userID})
+	filter := prometheus.Labels{"user": userID}
+	d.dedupedSamples.DeletePartialMatch(filter)
+	d.dedupedHistograms.DeletePartialMatch(filter)
 
-	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
-	d.discardedHistogramsTooManyHaClusters.DeleteLabelValues(userID)
-	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
+	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
+	d.discardedHistogramsTooManyHaClusters.DeletePartialMatch(filter)
+	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
+
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedHistogramsRateLimited.DeleteLabelValues(userID)
@@ -580,13 +584,20 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	}
 }
 
+func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
+	d.dedupedSamples.DeleteLabelValues(userID, group)
+	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
+	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
+	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
+}
+
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) (uint32, error) {
-	return shardByAllLabels(userID, labels), nil
+func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+	return shardByAllLabels(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
@@ -667,8 +678,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -681,7 +692,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -786,6 +797,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		numSamples := 0
 		numHistograms := 0
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
 			numHistograms += len(ts.Histograms)
@@ -801,8 +813,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID).Add(float64(numSamples))
-				d.discardedHistogramsTooManyHaClusters.WithLabelValues(userID).Add(float64(numHistograms))
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+				d.discardedHistogramsTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numHistograms))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -911,6 +923,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
 		validatedSamples := 0
@@ -954,7 +968,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, ts, userID, group, skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1004,7 +1018,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedHistograms + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
+			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedHistogramsRateLimited.WithLabelValues(userID).Add(float64(validatedHistograms))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
@@ -1199,7 +1213,10 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
-	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
+	pushReq.AddCleanup(func() {
+		mimirpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.EphemeralTimeseries)
+	})
 
 	return d.pushWithMiddlewares(ctx, pushReq)
 }
@@ -1234,7 +1251,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	d.updateReceivedMetrics(req, userID)
 
-	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 && len(req.Metadata) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -1243,20 +1260,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		span.SetTag("organization", userID)
 	}
 
+	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
+	ephemeralSeriesKeys := d.getTokensForSeries(userID, req.EphemeralTimeseries)
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
-	seriesKeys := make([]uint32, 0, len(req.Timeseries))
-
-	// For each timeseries, compute a hash to distribute across ingesters
-	for _, ts := range req.Timeseries {
-		// Generate the sharding token based on the series labels without the HA replica
-		// label and dropped labels (if any)
-		key, err := d.tokenForLabels(userID, ts.Labels)
-		if err != nil {
-			return nil, err
-		}
-
-		seriesKeys = append(seriesKeys, key)
-	}
 
 	for _, m := range req.Metadata {
 		metadataKeys = append(metadataKeys, d.tokenForMetadata(userID, m.MetricFamilyName))
@@ -1275,26 +1281,45 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
-	keys := append(seriesKeys, metadataKeys...)
+	// All tokens, stored in order: series, metadata, ephemeral series.
+	keys := make([]uint32, len(seriesKeys)+len(metadataKeys)+len(ephemeralSeriesKeys))
 	initialMetadataIndex := len(seriesKeys)
+	initialEphemeralIndex := initialMetadataIndex + len(metadataKeys)
+	copy(keys, seriesKeys)
+	copy(keys[initialMetadataIndex:], metadataKeys)
+	copy(keys[initialEphemeralIndex:], ephemeralSeriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
-		var metadata []*mimirpb.MetricMetadata
+		var timeseriesCount, ephemeralCount, metadataCount int
+		for _, i := range indexes {
+			if i >= initialEphemeralIndex {
+				ephemeralCount++
+			} else if i >= initialMetadataIndex {
+				metadataCount++
+			} else {
+				timeseriesCount++
+			}
+		}
+
+		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
+		ephemeral := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](ephemeralCount)
+		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
 		for _, i := range indexes {
-			if i >= initialMetadataIndex {
+			if i >= initialEphemeralIndex {
+				ephemeral = append(ephemeral, req.EphemeralTimeseries[i-initialEphemeralIndex])
+			} else if i >= initialMetadataIndex {
 				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
 			} else {
 				timeseries = append(timeseries, req.Timeseries[i])
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, ephemeral, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1305,6 +1330,25 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, nil
+}
+
+func preallocSliceIfNeeded[T any](size int) []T {
+	if size > 0 {
+		return make([]T, 0, size)
+	}
+	return nil
+}
+
+func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+	if len(series) == 0 {
+		return nil
+	}
+
+	result := make([]uint32, 0, len(series))
+	for _, ts := range series {
+		result = append(result, d.tokenForLabels(userID, ts.Labels))
+	}
+	return result
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
@@ -1348,7 +1392,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	})
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries, ephemeral []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1356,9 +1400,10 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	c := h.(ingester_client.IngesterClient)
 
 	req := mimirpb.WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     source,
+		Timeseries:          timeseries,
+		Metadata:            metadata,
+		Source:              source,
+		EphemeralTimeseries: ephemeral,
 	}
 	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {

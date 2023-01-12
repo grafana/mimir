@@ -654,6 +654,7 @@ spec:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-total-query-length=12000h
         - -query-frontend.parallelize-shardable-queries=true
         - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.results-cache.backend=memcached
@@ -1179,7 +1180,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1232,7 +1233,7 @@ spec:
         - -I 5m
         - -c 1024
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1285,7 +1286,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1338,7 +1339,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.16-alpine
+        image: memcached:1.6.17-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:

@@ -68,7 +68,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6',
+      image: 'memcached:1.6.17-alpine',
     },
   },
 

@@ -13,7 +13,11 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-func NewBucketClient(cfg Config, name string, logger log.Logger, factory func(log.Logger, []byte, string) (*azure.Bucket, error)) (objstore.Bucket, error) {
+func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
+	return newBucketClient(cfg, name, logger, azure.NewBucket)
+}
+
+func newBucketClient(cfg Config, name string, logger log.Logger, factory func(log.Logger, []byte, string) (*azure.Bucket, error)) (objstore.Bucket, error) {
 	// Start with default config to make sure that all parameters are set to sensible values, especially
 	// HTTP Config field.
 	bucketConfig := azure.DefaultConfig

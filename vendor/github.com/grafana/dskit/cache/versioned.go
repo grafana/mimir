@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var _ Cache = (*Versioned)(nil)
+
 // Versioned cache adds a version prefix to the keys.
 // This allows cache keys to be changed in a newer version of the code (after a bugfix or a cached data format change).
 type Versioned struct {
@@ -30,12 +32,12 @@ func (c Versioned) Store(ctx context.Context, data map[string][]byte, ttl time.D
 	c.cache.Store(ctx, versioned, ttl)
 }
 
-func (c Versioned) Fetch(ctx context.Context, keys []string) map[string][]byte {
+func (c Versioned) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	versionedKeys := make([]string, len(keys))
 	for i, k := range keys {
 		versionedKeys[i] = c.addVersion(k)
 	}
-	versionedRes := c.cache.Fetch(ctx, versionedKeys)
+	versionedRes := c.cache.Fetch(ctx, versionedKeys, opts...)
 	res := make(map[string][]byte, len(versionedRes))
 	for k, v := range versionedRes {
 		res[c.removeVersion(k)] = v

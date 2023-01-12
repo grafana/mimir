@@ -115,23 +115,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         name: 'mimir_scaling_rules',
         rules: [
           {
-            // Convenience rule to get the number of replicas for both a deployment and a statefulset.
-            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
-            expr: |||
-              sum by (%(alert_aggregation_labels)s, deployment) (
-                label_replace(
-                  kube_deployment_spec_replicas,
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                )
-              )
-              or
-              sum by (%(alert_aggregation_labels)s, deployment) (
-                label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].actual_replicas_count % _config,
           },
           {
             // Distributors should be able to deal with 240k samples/s.
@@ -253,162 +238,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % _config,
           },
           {
-            // Convenience rule to get the CPU utilization for both a deployment and a statefulset.
-            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate' % _config,
-            expr: |||
-              sum by (%(alert_aggregation_labels)s, deployment) (
-                label_replace(
-                  label_replace(
-                    node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
-                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                  ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                )
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].cpu_usage_seconds_total % _config,
           },
           {
-            // Convenience rule to get the CPU request for both a deployment and a statefulset.
-            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum' % _config,
-            expr: |||
-              # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
-              # that remove resource metrics, ref:
-              # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
-              # - https://github.com/kubernetes/kube-state-metrics/pull/1004
-              #
-              # This is the old expression, compatible with kube-state-metrics < v2.0.0,
-              # where kube_pod_container_resource_requests_cpu_cores was removed:
-              (
-                sum by (%(alert_aggregation_labels)s, deployment) (
-                  label_replace(
-                    label_replace(
-                      kube_pod_container_resource_requests_cpu_cores,
-                      "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    ),
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                  )
-                )
-              )
-              or
-              # This expression is compatible with kube-state-metrics >= v1.4.0,
-              # where kube_pod_container_resource_requests was introduced.
-              (
-                sum by (%(alert_aggregation_labels)s, deployment) (
-                  label_replace(
-                    label_replace(
-                      kube_pod_container_resource_requests{resource="cpu"},
-                      "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    ),
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                  )
-                )
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].resource_requests_cpu_cores % _config,
           },
           {
-            // Jobs should be sized to their CPU usage.
-            // We do this by comparing 99th percentile usage over the last 24hrs to
-            // their current provisioned #replicas and resource requests.
             record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               reason: 'cpu_usage',
             },
-            expr: |||
-              ceil(
-                %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
-                  *
-                quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
-                  /
-                %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_cpu_cores:sum
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].cpu_required_replicas_count % _config,
           },
           {
-            // Convenience rule to get the Memory utilization for both a deployment and a statefulset.
-            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum' % _config,
-            expr: |||
-              sum by (%(alert_aggregation_labels)s, deployment) (
-                label_replace(
-                  label_replace(
-                    container_memory_usage_bytes{image!=""},
-                    "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                  ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                )
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].memory_usage % _config,
           },
           {
-            // Convenience rule to get the Memory request for both a deployment and a statefulset.
-            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: '%(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum' % _config,
-            expr: |||
-              # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
-              # that remove resource metrics, ref:
-              # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
-              # - https://github.com/kubernetes/kube-state-metrics/pull/1004
-              #
-              # This is the old expression, compatible with kube-state-metrics < v2.0.0,
-              # where kube_pod_container_resource_requests_memory_bytes was removed:
-              (
-                sum by (%(alert_aggregation_labels)s, deployment) (
-                  label_replace(
-                    label_replace(
-                      kube_pod_container_resource_requests_memory_bytes,
-                      "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    ),
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                  )
-                )
-              )
-              or
-              # This expression is compatible with kube-state-metrics >= v1.4.0,
-              # where kube_pod_container_resource_requests was introduced.
-              (
-                sum by (%(alert_aggregation_labels)s, deployment) (
-                  label_replace(
-                    label_replace(
-                      kube_pod_container_resource_requests{resource="memory"},
-                      "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    ),
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                  )
-                )
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].memory_requests % _config,
           },
           {
-            // Jobs should be sized to their Memory usage.
-            // We do this by comparing 99th percentile usage over the last 24hrs to
-            // their current provisioned #replicas and resource requests.
             record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {
               reason: 'memory_usage',
             },
-            expr: |||
-              ceil(
-                %(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count
-                  *
-                quantile_over_time(0.99, %(alert_aggregation_rule_prefix)s_deployment:container_memory_usage_bytes:sum[24h])
-                  /
-                %(alert_aggregation_rule_prefix)s_deployment:kube_pod_container_resource_requests_memory_bytes:sum
-              )
-            ||| % _config,
+            expr: _config.mimir_scaling_rules[_config.deployment_type].memory_required_replicas_count % _config,
           },
         ],
       },

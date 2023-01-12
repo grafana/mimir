@@ -66,7 +66,7 @@ Specify a fallback configuration using the `-alertmanager.configs.fallback` comm
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configure/reference-configuration-parameters/index.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../reference-configuration-parameters/index.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
@@ -97,9 +97,10 @@ When using a reverse proxy, use the following settings when you configure the HT
 
 The Mimir Alertmanager adds some custom template functions to the default ones of the Prometheus Alertmanager.
 
-| Function   | Params | Description                                    |
-| ---------- | ------ | ---------------------------------------------- |
-| `tenantID` | -      | Returns ID of the tenant the alert belongs to. |
+| Function            | Params                                        | Description                                                                                                                                                                  |
+| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tenantID`          | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                                               |
+| `grafanaExploreURL` | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" "up{foo=\"bar\"}" }}` |
 
 ## Sharding and replication
 

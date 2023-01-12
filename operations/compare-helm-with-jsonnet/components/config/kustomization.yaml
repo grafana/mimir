@@ -111,9 +111,11 @@ patches:
       kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-scheduler|ruler|store-gateway'
     patch: |-
-      # This limit applies only to query frontend
+      # These limits apply only to query-frontend
       - op: remove
         path: /config/limits/max_query_parallelism
+      - op: remove
+        path: /config/limits/max_total_query_length
 
   - target:
       kind: MimirConfig

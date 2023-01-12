@@ -110,6 +110,7 @@ func handler(maxRecvMsgSize int,
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
+				mimirpb.ReuseSlice(req.EphemeralTimeseries)
 				bufferPool.Put(bufHolder)
 			}
 			return &req.WriteRequest, cleanup, nil

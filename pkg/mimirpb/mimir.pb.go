@@ -116,10 +116,13 @@ func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
 }
 
 type WriteRequest struct {
-	Timeseries              []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
-	Source                  WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
-	Metadata                []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
-	SkipLabelNameValidation bool                    `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
+	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
+	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	// Skip validation of label names.
+	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+	// Timeseries that are stored to ephemeral storage only.
+	EphemeralTimeseries []PreallocTimeseries `protobuf:"bytes,1001,rep,name=ephemeral_timeseries,json=ephemeralTimeseries,proto3,customtype=PreallocTimeseries" json:"ephemeral_timeseries"`
 }
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
@@ -1132,6 +1135,14 @@ func (this *WriteRequest) Equal(that interface{}) bool {
 	if this.SkipLabelNameValidation != that1.SkipLabelNameValidation {
 		return false
 	}
+	if len(this.EphemeralTimeseries) != len(that1.EphemeralTimeseries) {
+		return false
+	}
+	for i := range this.EphemeralTimeseries {
+		if !this.EphemeralTimeseries[i].Equal(that1.EphemeralTimeseries[i]) {
+			return false
+		}
+	}
 	return true
 }
 func (this *WriteResponse) Equal(that interface{}) bool {
@@ -1683,7 +1694,7 @@ func (this *WriteRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 9)
 	s = append(s, "&mimirpb.WriteRequest{")
 	s = append(s, "Timeseries: "+fmt.Sprintf("%#v", this.Timeseries)+",\n")
 	s = append(s, "Source: "+fmt.Sprintf("%#v", this.Source)+",\n")
@@ -1691,6 +1702,7 @@ func (this *WriteRequest) GoString() string {
 		s = append(s, "Metadata: "+fmt.Sprintf("%#v", this.Metadata)+",\n")
 	}
 	s = append(s, "SkipLabelNameValidation: "+fmt.Sprintf("%#v", this.SkipLabelNameValidation)+",\n")
+	s = append(s, "EphemeralTimeseries: "+fmt.Sprintf("%#v", this.EphemeralTimeseries)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1932,6 +1944,22 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.EphemeralTimeseries) > 0 {
+		for iNdEx := len(m.EphemeralTimeseries) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size := m.EphemeralTimeseries[iNdEx].Size()
+				i -= size
+				if _, err := m.EphemeralTimeseries[iNdEx].MarshalTo(dAtA[i:]); err != nil {
+					return 0, err
+				}
+				i = encodeVarintMimir(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x3e
+			i--
+			dAtA[i] = 0xca
+		}
+	}
 	if m.SkipLabelNameValidation {
 		i--
 		if m.SkipLabelNameValidation {
@@ -2690,6 +2718,12 @@ func (m *WriteRequest) Size() (n int) {
 	if m.SkipLabelNameValidation {
 		n += 3
 	}
+	if len(m.EphemeralTimeseries) > 0 {
+		for _, e := range m.EphemeralTimeseries {
+			l = e.Size()
+			n += 2 + l + sovMimir(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -3018,6 +3052,7 @@ func (this *WriteRequest) String() string {
 		`Source:` + fmt.Sprintf("%v", this.Source) + `,`,
 		`Metadata:` + repeatedStringForMetadata + `,`,
 		`SkipLabelNameValidation:` + fmt.Sprintf("%v", this.SkipLabelNameValidation) + `,`,
+		`EphemeralTimeseries:` + fmt.Sprintf("%v", this.EphemeralTimeseries) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3384,6 +3419,40 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.SkipLabelNameValidation = bool(v != 0)
+		case 1001:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EphemeralTimeseries", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EphemeralTimeseries = append(m.EphemeralTimeseries, PreallocTimeseries{})
+			if err := m.EphemeralTimeseries[len(m.EphemeralTimeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMimir(dAtA[iNdEx:])

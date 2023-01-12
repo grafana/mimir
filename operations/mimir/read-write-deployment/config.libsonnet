@@ -9,7 +9,7 @@
     mimir_read_topology_spread_max_skew: 1,
     mimir_backend_replicas: 3,
     mimir_backend_max_unavailable: 10,
-    mimir_backend_data_disk_size: '100Gi',
+    mimir_backend_data_disk_size: '250Gi',
     mimir_backend_data_disk_class: 'fast-dont-retain',
     mimir_backend_allow_multiple_replicas_on_same_node: false,
 

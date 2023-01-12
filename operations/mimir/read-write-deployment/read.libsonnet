@@ -1,6 +1,7 @@
 {
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
+  local service = $.core.v1.service,
 
   // Utils.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -11,8 +12,12 @@
   //
 
   mimir_read_args::
-    $.query_frontend_args +
-    $.querier_args + {
+    // The ruler remote evaluation (running in mimir-backend) connects to mimir-read via gRPC.
+    $._config.grpcIngressConfig +
+    $.querier_args +
+    // Query-frontend configuration takes precedence over querier configuration (e.g. HTTP / gRPC settings) because
+    // the query-frontend is the ingress service.
+    $.query_frontend_args {
       target: 'read',
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,
@@ -50,4 +55,12 @@
 
   mimir_read_service: if !$._config.is_read_write_deployment_mode then null else
     $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels),
+
+  mimir_read_headless_service: if !$._config.is_read_write_deployment_mode then null else
+    $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels) +
+    service.mixin.metadata.withName('mimir-read-headless') +
+
+    // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
+    // correctly balances requests across all mimir-read pods.
+    service.mixin.spec.withClusterIp('None'),
 }

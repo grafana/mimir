@@ -11,7 +11,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 4.1.0-weekly.219](https://img.shields.io/badge/Version-4.1.0--weekly.219-informational?style=flat-square) ![AppVersion: r219](https://img.shields.io/badge/AppVersion-r219-informational?style=flat-square)
+![Version: 4.1.0-weekly.220](https://img.shields.io/badge/Version-4.1.0--weekly.220-informational?style=flat-square) ![AppVersion: r220](https://img.shields.io/badge/AppVersion-r220-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -67,7 +67,7 @@ As part of this chart many different pods and services are installed which all
 have varying resource requirements. Please make sure that you have sufficient
 resources (CPU/memory) available in your cluster before installing Grafana Mimir Helm Chart.
 
-For details about setting up Grafana Mimir, refer to [Get started with Grafana Mimir using the Helm chart](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/get-started-helm-charts/).
+For details about setting up Grafana Mimir, refer to [Get started with Grafana Mimir using the Helm chart](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/getting-started-helm-charts/).
 
 ### Migrate from Cortex to Grafana Mimir
 

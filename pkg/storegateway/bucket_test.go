@@ -50,6 +50,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -692,6 +693,43 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.Error(t, err)
 	})
+
+	t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// With a regular EqualsMatcher we can look up the value of the label in the postings
+			// offset table and see if it has any matches. If it matches no series, then
+			// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
+			labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
+		}
+		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+	})
+
+	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// Since prometheus regular expressions are anchored at each end, some regular expressions have a
+			// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
+		}
+		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+	})
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
@@ -873,6 +911,7 @@ func benchmarkExpandedPostings(
 ) {
 	ctx := context.Background()
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
+	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+labelLongSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
@@ -884,7 +923,11 @@ func benchmarkExpandedPostings(
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
+	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
+	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
+	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	iRegexAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
+	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
 	iRegexAlternateSuffix := labels.MustNewMatcher(labels.MatchRegexp, "i", "(0|1|2)"+labelLongSuffix)
 	iRegexClass := labels.MustNewMatcher(labels.MatchRegexp, "i", "[0-2]"+labelLongSuffix)
 	iRegexNotSetMatches := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(0|1|2)"+labelLongSuffix)
@@ -900,22 +943,34 @@ func benchmarkExpandedPostings(
 
 		expectedLen int
 	}{
+		{`n="X"`, []*labels.Matcher{nX}, 0},
+		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}, 0},
+		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}, 0},
+		{`j=~"XXX|YYY"`, []*labels.Matcher{jXXXYYY}, 0},
+		{`j=~"X.+"`, []*labels.Matcher{jXplus}, 0},
+		{`i=~"X|Y|Z"`, []*labels.Matcher{iXYZ}, 0},
 		{`n="1"`, []*labels.Matcher{n1}, int(float64(series) * 0.2)},
 		{`n="1",j="foo"`, []*labels.Matcher{n1, jFoo}, int(float64(series) * 0.1)},
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}, int(float64(series) * 0.1)},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}, int(float64(series) * 0.1)},
 		{`i=~".*"`, []*labels.Matcher{iStar}, 5 * series},
 		{`i=~".+"`, []*labels.Matcher{iPlus}, 5 * series},
+		{`i=~"^.+$",j=~"X.+"`, []*labels.Matcher{iPlus, jXplus}, 0},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}, 0},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}, 5 * series},
 		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}, int(float64(series) * 0.1)},
+		{`n="X",i=~"^.+$",j="foo"`, []*labels.Matcher{nX, iStar, jFoo}, 0},
 		{`n="1",i=~".*",i!="2",j="foo"`, []*labels.Matcher{n1, iStar, iNot2, jFoo}, int(float64(series) * 0.1)},
 		{`n="1",i!=""`, []*labels.Matcher{n1, iNotEmpty}, int(float64(series) * 0.2)},
 		{`n="1",i!="",j="foo"`, []*labels.Matcher{n1, iNotEmpty, jFoo}, int(float64(series) * 0.1)},
+		{`n="1",i!="",j=~"X.+"`, []*labels.Matcher{n1, iNotEmpty, jXplus}, 0},
+		{`n="1",i!="",j=~"XXX|YYY"`, []*labels.Matcher{n1, iNotEmpty, jXXXYYY}, 0},
+		{`n="1",i=~"X|Y|Z",j="foo"`, []*labels.Matcher{n1, iXYZ, jFoo}, 0},
 		{`n="1",i=~".+",j="foo"`, []*labels.Matcher{n1, iPlus, jFoo}, int(float64(series) * 0.1)},
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}, int(float64(series) * 0.011111)},
 		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}, int(float64(series) * 0.1)},
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}, int(1 + float64(series)*0.088888)},
+		{`n="X",i=~"^.+$",i!~"^.*2.*$",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}, 0},
 		{`i=~"0xxx|1xxx|2xxx"`, []*labels.Matcher{iRegexAlternate}, 150},                        // 50 series for "1", 50 for "2" and 50 for "3".
 		{`i=~"(0|1|2)xxx"`, []*labels.Matcher{iRegexAlternateSuffix}, 150},                      // 50 series for "1", 50 for "2" and 50 for "3".
 		{`i=~"[0-2]xxx"`, []*labels.Matcher{iRegexClass}, 150},                                  // 50 series for "1", 50 for "2" and 50 for "3".
