@@ -88,12 +88,13 @@ func ephemeralMatchersConfigString(matchers []string) string {
 }
 
 // String is a canonical representation of the config, it is compatible with flag definition.
-// String is also needed to implement flag.Value.
+// String is needed to implement flag.Value.
 func (c LabelMatchers) String() string {
 	return c.string
 }
 
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
+// Set is needed to implement flag.Value.
 func (c *LabelMatchers) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
