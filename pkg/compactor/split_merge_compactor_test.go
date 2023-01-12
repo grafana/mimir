@@ -618,7 +618,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
 						app := db.Appender(context.Background())
-						_, err := app.AppendHistogram(0, lbls, ts, e2e.GenerateTestHistogram(seriesID))
+						_, err := app.AppendHistogram(0, lbls, ts, e2e.GenerateTestHistogram(seriesID), nil)
 						require.NoError(t, err)
 
 						err = app.Commit()
