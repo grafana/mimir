@@ -155,19 +155,11 @@ func TestOverridesExporterWithRing(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	instanceAddressesFromReplicationSet := func(set ring.ReplicationSet) []string {
-		res := make([]string, 0, len(set.Instances))
-		for _, instance := range set.Instances {
-			res = append(res, instance.Addr)
-		}
-		return res
-	}
-
 	// Wait until the ring client observes the ring update.
 	var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 	test.Poll(t, time.Second, []string{exporter.ring.lifecycler.GetInstanceAddr()}, func() interface{} {
 		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
-		return instanceAddressesFromReplicationSet(rs)
+		return rs.GetAddresses()
 	})
 
 	// This instance now owns the full ring, therefore overrides should be exported.
@@ -191,7 +183,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 	// Wait until the ring client observes the ring update.
 	test.Poll(t, time.Second, []string{"2.3.4.5:6789"}, func() interface{} {
 		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
-		return instanceAddressesFromReplicationSet(rs)
+		return rs.GetAddresses()
 	})
 
 	// This instance now doesn't own any token in the ring, no overrides should be exported.
@@ -208,7 +200,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 	// Wait until the ring client observes the ring update.
 	test.Poll(t, time.Second, []string{}, func() interface{} {
 		rs, _ := exporter.ring.client.GetAllHealthy(ringOp)
-		return instanceAddressesFromReplicationSet(rs)
+		return rs.GetAddresses()
 	})
 
 	// The ring is now empty, this instance should swallow the "empty ring" error and
