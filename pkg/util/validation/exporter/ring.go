@@ -33,6 +33,10 @@ const (
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
 	// unhealthy instance in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 4
+
+	// leaderToken is the special token that an instance must own to be considered
+	// the leader in the ring.
+	leaderToken = 0
 )
 
 // ringOp is used as an instance state filter when obtaining instances from the
@@ -126,7 +130,7 @@ type overridesExporterRing struct {
 
 // IsLeader checks whether this instance is the leader replica that exports metrics for all tenants.
 func (o *overridesExporterRing) IsLeader() (bool, error) {
-	return instanceIsLeader(o.client, o.lifecycler.GetInstanceAddr())
+	return instanceIsLeader(o.client, o.lifecycler.GetInstanceAddr(), o.config.HeartbeatTimeout)
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
@@ -169,19 +173,47 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}, nil
 }
 
-// instanceIsLeader checks whether this instance is the ring leader (i.e., owns the `0` token).
-func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
-	rs, err := r.Get(0, ringOp, nil, nil, nil)
+// instanceIsLeader checks whether the instance at `instanceAddr` is the leader.
+// A replica is considered the leader if it owns the leaderToken and has joined
+// the ring at least 4 * RingConfig.HeartbeatTimeout ago. This is to give
+// potential previous leader replicas time to discover that they have been
+// superseded and stop exporting metrics.
+func instanceIsLeader(r ring.ReadRing, instanceAddr string, heartbeatTimeout time.Duration) (bool, error) {
+	c1, err := ownsLeaderToken(r, instanceAddr)
 	if err != nil {
-		return false, errors.Wrap(err, "failed to get instances from the ring")
+		return false, err
 	}
 
+	c2, err := waitTimeExpired(r, instanceAddr, heartbeatTimeout)
+	if err != nil {
+		return false, err
+	}
+
+	return c1 && c2, nil
+}
+
+func waitTimeExpired(r ring.ReadRing, instanceAddr string, heartbeatTimeout time.Duration) (bool, error) {
+	allHealthy, err := r.GetAllHealthy(ringOp)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to get all healthy instances from the ring")
+	}
+	var thisInstanceRegisteredAt time.Time
+	for _, instance := range allHealthy.Instances {
+		if instance.GetAddr() == instanceAddr {
+			thisInstanceRegisteredAt = time.Unix(instance.RegisteredTimestamp, 0)
+		}
+	}
+	waitTimeExpired := time.Now().After(thisInstanceRegisteredAt.Add(4 * heartbeatTimeout))
+	return waitTimeExpired, nil
+}
+
+func ownsLeaderToken(r ring.ReadRing, instanceAddr string) (bool, error) {
+	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
+	if err != nil {
+		return false, nil
+	}
 	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf(
-			"unexpected number of overrides-exporters in the shard (expected 1, got %d)",
-			len(rs.Instances),
-		)
+		return false, nil
 	}
-
 	return rs.Instances[0].Addr == instanceAddr, nil
 }

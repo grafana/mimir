@@ -116,7 +116,7 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 	assert.NoError(t, err)
 }
 
-func TestOverridesExporterWithRing(t *testing.T) {
+func TestOverridesExporter_withRing(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {},
 	}
@@ -211,7 +211,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 
 // TestOverridesExporterRollout tests that metric duplicates are not exported on
 // rollout or scale-down of replicas running the overrides-exporter component.
-func TestOverridesExporterRollout(t *testing.T) {
+func TestOverridesExporter_rollout(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {},
 	}
@@ -280,6 +280,79 @@ func TestOverridesExporterRollout(t *testing.T) {
 	})
 
 	// Metrics should now be exported because this instance has become the new leader.
+	require.True(t, hasOverrideMetrics(exporter))
+}
+
+func TestOverridesExporter_scaleUp(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-a": {},
+	}
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	// Create an empty ring.
+	ctx := context.Background()
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ring.NewDesc(), true, nil
+	}))
+
+	// Register an instance that is currently the leader.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester("instance-1", "127.0.0.1", "", []uint32{2}, ring.ACTIVE, time.Now())
+		return desc, true, nil
+	}))
+
+	cfg := Config{RingConfig{Enabled: true}}
+	cfg.Ring.KVStore.Mock = ringStore
+	cfg.Ring.InstanceID = "new-leader"
+	cfg.Ring.InstanceAddr = "1.2.3.4"
+	cfg.Ring.InstancePort = 1234
+	cfg.Ring.HeartbeatTimeout = 15 * time.Second
+
+	exporter, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	l := exporter.ring.lifecycler
+	r := exporter.ring.client
+	require.NoError(t, err)
+	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, exporter.subserviceManager))
+	t.Cleanup(func() { require.NoError(t, services.StopManagerAndAwaitStopped(ctx, exporter.subserviceManager)) })
+
+	// Register the new instance to the ring and set the heartbeat of the previous instance to just before.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester(l.GetInstanceID(), l.GetInstanceAddr(), "", []uint32{1}, ring.ACTIVE, time.Now())
+		return desc, true, nil
+	}))
+
+	// Wait until the new instance has received the ring update.
+	test.Poll(t, time.Second, 2, func() interface{} {
+		rs, _ := r.GetAllHealthy(ringOp)
+		return len(rs.Instances)
+	})
+
+	// The new replica owns the `0` token and is about to become leader, but it
+	// should back off for now to give the previous leader time to discover that a
+	// new leader is present in the ring.
+	require.False(t, hasOverrideMetrics(exporter))
+
+	// Set the registered timestamp to the past to pretend the instance has been around for longer.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		instance := desc.Ingesters[l.GetInstanceID()]
+		instance.RegisteredTimestamp = time.Now().Add(-5 * cfg.Ring.HeartbeatTimeout).Unix()
+		desc.Ingesters[l.GetInstanceID()] = instance
+		// used only to have an easy target to poll against
+		desc.AddIngester("poll-me", "", "", nil, ring.ACTIVE, time.Now())
+		return desc, true, nil
+	}))
+
+	// Wait until the new instance has received the ring update.
+	test.Poll(t, time.Second, true, func() interface{} {
+		return r.HasInstance("poll-me")
+	})
+
+	// After the wait time has passed, the new leader should become active and export metrics.
 	require.True(t, hasOverrideMetrics(exporter))
 }
 
