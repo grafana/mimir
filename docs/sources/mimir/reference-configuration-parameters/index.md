@@ -749,10 +749,10 @@ forwarding:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
 
-# (experimental) Mark series as ephemeral based on the given matchers in the
-# runtime config.
-# CLI flag: -distributor.mark-ephemeral
-[mark_ephemeral: <boolean> | default = false]
+# (experimental) Enable marking series as ephemeral based on the given matchers
+# in the runtime config.
+# CLI flag: -distributor.ephemeral-metrics-enabled
+[ephemeral_metrics_enabled: <boolean> | default = false]
 ```
 
 ### ingester
