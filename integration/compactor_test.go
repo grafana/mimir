@@ -142,12 +142,12 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		require.NoError(t, err)
 
 		for p := ixReader.SortedPostings(all); p.Next(); {
-			var lbls labels.Labels
+			var lbls labels.ScratchBuilder
 			var chks []chunks.Meta
 
 			var samples []sample
 
-			// require.NoError(t, ixReader.Series(p.At(), &lbls, &chks)) // TODO: put back when fixed
+			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
 			for _, c := range chks {
 				c.Chunk, err = chkReader.Chunk(c)
@@ -172,7 +172,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			}
 
 			compactedSeries = append(compactedSeries, series{
-				lbls:    lbls,
+				lbls:    lbls.Labels(),
 				samples: samples,
 			})
 		}
