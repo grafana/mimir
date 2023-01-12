@@ -16,10 +16,11 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestLen(t *testing.T) {
