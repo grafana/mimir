@@ -65,7 +65,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		},
 	}
 
-	exporter, _ := NewOverridesExporter(Config{}, &validation.Limits{
+	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
 		IngestionRate:                22,
 		IngestionBurstSize:           23,
 		MaxGlobalSeriesPerUser:       24,
@@ -76,7 +76,8 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		MaxFetchedChunkBytesPerQuery: 29,
 		RulerMaxRulesPerRuleGroup:    31,
 		RulerMaxRuleGroupsPerTenant:  32,
-	}, validation.NewMockTenantLimits(tenantLimits), nil, nil)
+	}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
 	limitsMetrics := `
 # HELP cortex_limits_overrides Resource limit overrides applied to tenants
 # TYPE cortex_limits_overrides gauge
@@ -93,7 +94,7 @@ cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tena
 `
 
 	// Make sure each override matches the values from the supplied `Limit`
-	err := testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_overrides")
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_overrides")
 	assert.NoError(t, err)
 
 	limitsMetrics = `
@@ -139,7 +140,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 	require.NoError(t, services.StartManagerAndAwaitHealthy(ctx, exporter.subserviceManager))
 	t.Cleanup(func() { require.NoError(t, services.StopManagerAndAwaitStopped(ctx, exporter.subserviceManager)) })
 
-	// Register this instance in the ring
+	// Register this instance in the ring.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		desc.AddIngester(
@@ -155,7 +156,7 @@ func TestOverridesExporterWithRing(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// This instance now owns the full ring, therefore overrides should be exported
+	// This instance now owns the full ring, therefore overrides should be exported.
 	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	assert.Equal(t, 10, count)
 
