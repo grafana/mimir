@@ -116,10 +116,11 @@ mimir:
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
       {{- if (index .Values "memcached-admin-cache" "enabled") }}
-        backend_cache: memcached
-        memcached:
-          addresses: {{ include "mimir.memcachedAdminCacheAddress" . }}
-          max_item_size: {{ mul (index .Values "memcached-admin-cache").maxItemMemory 1024 1024 }}
+        admin_store:
+          backend: memcached
+          memcached:
+            addresses: {{ include "mimir.memcachedAdminCacheAddress" . }}
+            max_item_size: {{ mul (index .Values "memcached-admin-cache").maxItemMemory 1024 1024 }}
       {{- end }}
     {{- end }}
 
