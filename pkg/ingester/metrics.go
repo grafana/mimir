@@ -32,6 +32,7 @@ type ingesterMetrics struct {
 	queriedSeries           prometheus.Histogram
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
+	memEphemeralUsers       prometheus.Gauge
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
@@ -165,6 +166,10 @@ func newIngesterMetrics(
 		memUsers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_users",
 			Help: "The current number of users in memory.",
+		}),
+		memEphemeralUsers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_memory_ephemeral_users",
+			Help: "The current number of users with ephemeral storage in memory.",
 		}),
 		memMetadataCreatedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_memory_metadata_created_total",

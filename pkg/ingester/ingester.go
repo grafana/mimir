@@ -1776,6 +1776,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			return nil, err
 		}
 
+		i.metrics.memEphemeralUsers.Inc()
+
 		// Don't allow ingestion of old samples into ephemeral storage.
 		h.SetMinValidTime(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli())
 		return h, nil
@@ -1797,6 +1799,8 @@ func (i *Ingester) closeAllTSDB() {
 		go func(db *userTSDB) {
 			defer wg.Done()
 
+			ephemeral := db.getEphemeralStorage() != nil
+
 			if err := db.Close(); err != nil {
 				level.Warn(i.logger).Log("msg", "unable to close TSDB", "err", err, "user", userID)
 				return
@@ -1812,6 +1816,9 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.CurrentMatcherNames())
+			if ephemeral {
+				i.metrics.memEphemeralUsers.Dec()
+			}
 		}(userDB)
 	}
 
@@ -2205,6 +2212,8 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	dir := userDB.db.Dir()
 
+	ephemeral := userDB.getEphemeralStorage() != nil
+
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)
 		return tsdbCloseFailed
@@ -2227,6 +2236,9 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
+	if ephemeral {
+		i.metrics.memEphemeralUsers.Dec()
+	}
 	i.tsdbMetrics.removeRegistryForUser(userID)
 
 	i.deleteUserMetadata(userID)

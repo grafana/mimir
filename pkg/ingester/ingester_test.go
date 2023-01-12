@@ -5934,6 +5934,7 @@ func TestIngester_PushEphemeral(t *testing.T) {
 		"cortex_ingester_ephemeral_series_created_total",
 		"cortex_ingester_ephemeral_series_removed_total",
 		"cortex_discarded_samples_total",
+		"cortex_ingester_memory_ephemeral_users",
 	}
 	userID := "test"
 
@@ -5990,6 +5991,10 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# HELP cortex_ingester_memory_users The current number of users in memory.
 					# TYPE cortex_ingester_memory_users gauge
 					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
 			`,
 		},
 
@@ -6035,6 +6040,10 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
         	        # TYPE cortex_discarded_samples_total counter
         	        cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
 			`,
 		},
 		"should fail on out-of-order samples": {
@@ -6088,6 +6097,10 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
 					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
 			`,
 		},
 		"request with mix of ephemeral and persistent series, with some good and some bad samples plus some metadata": {
@@ -6206,6 +6219,10 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
 					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
 					cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
 			`,
 		},
 	}
