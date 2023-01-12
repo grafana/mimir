@@ -56,8 +56,14 @@ func main() {
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
 			case chunkenc.ValFloat:
-				ts, val := it.At()
-				fmt.Printf("%g\t%d (%s)\n", val, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+				ts, v := it.At()
+				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValHistogram:
+				ts, hist := it.AtHistogram()
+				fmt.Printf("%s\t%d (%s)\n", hist.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValFloatHistogram:
+				ts, hist := it.AtFloatHistogram()
+				fmt.Printf("%s\t%d (%s)\n", hist.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			default:
 				fmt.Printf("skipping unsupported value type %v\n", valType)
 			}
