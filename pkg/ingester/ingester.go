@@ -830,12 +830,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
 
-	if ephemeralStats.succeededSamplesCount > 0 {
+	if ephemeralStats.succeededSamplesCount > 0 || ephemeralStats.failedSamplesCount > 0 {
 		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
-		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
-	}
-	if ephemeralStats.failedSamplesCount > 0 {
 		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
+
+		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
 	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
