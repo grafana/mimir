@@ -1596,9 +1596,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-
 		instanceLimitsFn:    i.getInstanceLimits,
 		instanceSeriesCount: &i.seriesCount,
+		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))

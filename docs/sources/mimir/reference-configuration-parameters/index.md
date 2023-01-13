@@ -3135,8 +3135,10 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # TSDB blocks retention in the ingester before a block is removed, relative to
-  # the newest block written for the tenant. This should be larger than the
+  # TSDB blocks retention in the ingester before a block is removed. If shipping
+  # is enabled, the retention will be relative to the time when the block was
+  # uploaded to storage. If shipping is disabled then its relative to the
+  # creation time of the block. This should be larger than the
   # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
   # large enough to give store-gateways and queriers enough time to discover
   # newly uploaded blocks.

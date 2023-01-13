@@ -84,9 +84,12 @@ type userTSDB struct {
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
 
+	// Block min retention
+	blockMinRetention time.Duration
+
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
-	shippedBlocks    map[ulid.ULID]struct{}
+	shippedBlocks    map[ulid.ULID]time.Time
 }
 
 // Explicitly wrapping the tsdb.DB functions that we use.
@@ -237,19 +240,31 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	if u.db == nil {
 		return nil
 	}
+
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
-	if u.shipper == nil {
-		return deletable
+	result := map[ulid.ULID]struct{}{}
+	deadline := time.Now().Add(-u.blockMinRetention)
+
+	// The shipper enabled case goes first because its common in the way we run the ingesters
+	if u.shipper != nil {
+		shippedBlocks := u.getCachedShippedBlocks()
+
+		for blockID := range deletable {
+			shippedBlockTime, ok := shippedBlocks[blockID]
+			if ok && shippedBlockTime.Before(deadline) {
+				result[blockID] = struct{}{}
+			}
+		}
+		return result
 	}
 
-	shippedBlocks := u.getCachedShippedBlocks()
-
-	result := map[ulid.ULID]struct{}{}
-	for shippedID := range shippedBlocks {
-		if _, ok := deletable[shippedID]; ok {
-			result[shippedID] = struct{}{}
+	for blockID := range deletable {
+		blockCreationTime := time.UnixMilli(int64(blockID.Time()))
+		if blockCreationTime.Before(deadline) {
+			result[blockID] = struct{}{}
 		}
 	}
+
 	return result
 }
 
@@ -269,7 +284,7 @@ func (u *userTSDB) updateCachedShippedBlocks() error {
 }
 
 // getCachedShippedBlocks returns the cached shipped blocks.
-func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]struct{} {
+func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]time.Time {
 	u.shippedBlocksMtx.Lock()
 	defer u.shippedBlocksMtx.Unlock()
 

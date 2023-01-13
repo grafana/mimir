@@ -3263,7 +3263,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), &shipperMeta{
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), shipperMeta{
 		Version: shipperMetaVersion1,
 	}))
 
@@ -4182,9 +4182,9 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
-		Version:  shipperMetaVersion1,
-		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID},
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
 
@@ -4210,9 +4210,13 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
-		Version:  shipperMetaVersion1,
-		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID, newBlocks[0].Meta().ULID, newBlocks[1].Meta().ULID},
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{
+			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+			newBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+			newBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+		},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
 
@@ -4239,6 +4243,152 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
 		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
 	`, newBlocks2[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+}
+
+func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
+	chunkRange := 2 * time.Hour
+	chunkRangeMilliSec := chunkRange.Milliseconds()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
+	cfg.BlocksStorageConfig.TSDB.Retention = 1 * time.Hour // This means only blocks that are shipped for more than an hour can be deleted
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds 0
+	`), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+
+	// Push some data to create 3 blocks.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	for j := int64(0); j < 5; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Nil(t, db.Compact())
+
+	oldBlocks := db.Blocks()
+	require.Equal(t, 3, len(oldBlocks))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
+	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+
+	// Lets say that the first block was shipped 2 hours ago and the second block only 30 minutes ago.
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{
+			oldBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-2 * time.Hour).UnixNano()),
+			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-30 * time.Minute).UnixNano()),
+		},
+	}))
+	require.NoError(t, db.updateCachedShippedBlocks())
+
+	// Add more samples that could trigger another compaction and hence reload of blocks.
+	for j := int64(5); j < 6; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+	require.Nil(t, db.Compact())
+
+	// Only the last two old blocks plus the one containing the newly added samples should remain.
+	newBlocks := db.Blocks()
+	require.Equal(t, 3, len(newBlocks))
+	require.Equal(t, oldBlocks[1].Meta().ULID, newBlocks[0].Meta().ULID) // Second block becomes first block.
+	require.Equal(t, oldBlocks[2].Meta().ULID, newBlocks[1].Meta().ULID) // Third block becomes second block.
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
+	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+}
+
+func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *testing.T) {
+	chunkRange := 2 * time.Hour
+	chunkRangeMilliSec := chunkRange.Milliseconds()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
+	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0            // Disabled shipping
+	cfg.BlocksStorageConfig.TSDB.Retention = 1 * time.Second // With shipping disabled this means will only expire 1 hour after the block creation time.
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
+		# TYPE cortex_ingester_tsdb_compactions_total counter
+		cortex_ingester_tsdb_compactions_total 0
+	`), "cortex_ingester_tsdb_compactions_total"))
+
+	// Push some data to create 3 blocks.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	for j := int64(0); j < 5; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Nil(t, db.Compact())
+
+	oldBlocks := db.Blocks()
+	require.Equal(t, 3, len(oldBlocks))
+
+	// Yes, we're sleeping in this test to let the retention of the newly compacted blocks expire
+	time.Sleep(1 * time.Second)
+
+	// Add more samples that could trigger another compaction and hence reload of blocks.
+	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+	require.Nil(t, db.Compact())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
+		# TYPE cortex_ingester_tsdb_compactions_total counter
+		cortex_ingester_tsdb_compactions_total 4
+	`), "cortex_ingester_tsdb_compactions_total"))
+
+	// Only last compacted block should remain.
+	newBlocks := db.Blocks()
+	require.Equal(t, 1, len(newBlocks))
+	require.NotContains(t, []ulid.ULID{oldBlocks[0].Meta().ULID, oldBlocks[1].Meta().ULID, oldBlocks[2].Meta().ULID}, newBlocks[0].Meta().ULID)
+
 }
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
