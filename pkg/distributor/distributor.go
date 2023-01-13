@@ -1080,7 +1080,9 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 				deleteTs = append(deleteTs, ix)
 			}
 
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, deleteTs)
+			if len(deleteTs) > 0 {
+				req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, deleteTs)
+			}
 		}
 
 		return next(ctx, pushReq)
