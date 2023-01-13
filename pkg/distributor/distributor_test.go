@@ -4398,7 +4398,7 @@ type mockEphemeralSeriesChecker struct {
 	mockEphemeralSeriesProvider
 }
 
-func (m mockEphemeralSeriesChecker) IsEphemeral(lset []mimirpb.LabelAdapter) bool {
+func (m mockEphemeralSeriesChecker) IsEphemeral(source mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
 	metricName, err := extract.UnsafeMetricNameFromLabelAdapters(lset)
 	require.NoError(m.t, err)
 

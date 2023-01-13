@@ -4,20 +4,57 @@ package ephemeral
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/pkg/errors"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
+
+type source uint8
+
+const (
+	invalid = iota
+	any
+	api
+	rule
+)
+
+func (s *source) String() string {
+	switch *s {
+	case any:
+		return "any"
+	case api:
+		return "api"
+	case rule:
+		return "rule"
+	default:
+		return "unknown"
+	}
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (s *source) MarshalYAML() (interface{}, error) {
+	return s.String(), nil
+}
+
+func (s *source) UnmarshalYAML(value *yaml.Node) error {
+	source, err := convertStringToSource(value.Value)
+	if err != nil {
+		return errors.Wrapf(err, "can't unmarshal source %q", value.Value)
+	}
+	*s = source
+	return nil
+}
 
 // LabelMatchers configures matchers based on which series get marked as ephemeral.
 type LabelMatchers struct {
-	source []string
-	config []matcherSet
+	raw    map[source][]string
+	config map[source][]matcherSet
 	string string
 }
 
@@ -43,45 +80,6 @@ func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 	return true
 }
 
-func NewLabelMatchers(m []string) (c LabelMatchers, err error) {
-	c.source = m
-	c.config = []matcherSet{}
-	for _, matcher := range m {
-		sm, err := amlabels.ParseMatchers(matcher)
-		if err != nil {
-			return c, fmt.Errorf("can't build ephemeral series matcher %q: %w", matcher, err)
-		}
-		matchers := make(matcherSet, len(sm))
-		for i, m := range sm {
-			matchers[i] = amlabelMatcherToProm(m)
-		}
-		c.config = append(c.config, matchers)
-	}
-	c.string = ephemeralMatchersConfigString(c.source)
-	return c, nil
-}
-
-func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
-	// labels.MatchType(m.Type) is a risky conversion because it depends on the iota order, but we have a test for it
-	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
-}
-
-func ephemeralMatchersConfigString(matchers []string) string {
-	if len(matchers) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	for i, matcher := range matchers {
-		if i > 0 {
-			sb.WriteByte(';')
-		}
-		sb.WriteString(matcher)
-	}
-
-	return sb.String()
-}
-
 // String is a canonical representation of the config, it is compatible with the flag definition.
 // String is needed to implement flag.Value.
 func (c LabelMatchers) String() string {
@@ -95,34 +93,135 @@ func (c *LabelMatchers) Set(s string) error {
 		return nil
 	}
 
+	rawMatchers := map[source][]string{}
+	for _, matcherSet := range strings.Split(s, ";") {
+		splits := strings.SplitN(matcherSet, ":", 2)
+		if len(splits) < 2 {
+			return fmt.Errorf("invalid matcher %q", matcherSet)
+		}
+
+		source, err := convertStringToSource(splits[0])
+		if err != nil {
+			return errors.Wrapf(err, "can't set matcher source %q", splits[0])
+		}
+
+		rawMatchers[source] = append(rawMatchers[source], splits[1])
+	}
+
 	var err error
-	*c, err = NewLabelMatchers(strings.Split(s, ";"))
+	*c, err = parseLabelMatchers(rawMatchers)
 	return err
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-// EphemeralMatchers are marshaled in yaml as a []string.
 func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
-	stringSlice := []string{}
-	err := value.DecodeWithOptions(&stringSlice, yaml.DecodeOptions{KnownFields: true})
+	rawMatchers := map[source][]string{}
+	err := value.DecodeWithOptions(&rawMatchers, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}
-	*c, err = NewLabelMatchers(stringSlice)
+	*c, err = parseLabelMatchers(rawMatchers)
 	return err
+}
+
+func parseLabelMatchers(configIn map[source][]string) (c LabelMatchers, err error) {
+	c.raw = configIn
+	c.config = map[source][]matcherSet{}
+
+	for source, matcherSetsRaw := range configIn {
+		for _, matcherSetRaw := range matcherSetsRaw {
+			amMatchers, err := amlabels.ParseMatchers(matcherSetRaw)
+			if err != nil {
+				return c, fmt.Errorf("can't build ephemeral series matcher %q: %w", matcherSetRaw, err)
+			}
+
+			promMatchers := make(matcherSet, len(amMatchers))
+			for i, m := range amMatchers {
+				promMatchers[i] = amlabelMatcherToProm(m)
+			}
+
+			c.config[source] = append(c.config[source], promMatchers)
+		}
+	}
+
+	c.string = matchersConfigString(c.raw)
+
+	return c, nil
+}
+
+func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
+	// labels.MatchType(m.Type) is a risky conversion because it depends on the iota order, but we have a test for it
+	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
+}
+
+func matchersConfigString(matchers map[source][]string) string {
+	if len(matchers) == 0 {
+		return ""
+	}
+
+	// Sort sources to have a deterministic output.
+	sources := make([]source, 0, len(matchers))
+	for source := range matchers {
+		sources = append(sources, source)
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		return sources[i] < sources[j]
+	})
+
+	var sb strings.Builder
+	for _, source := range sources {
+		matcherSetsRaw := matchers[source]
+		for _, matcherSetRaw := range matcherSetsRaw {
+			if sb.Len() > 0 {
+				sb.WriteByte(';')
+			}
+			sb.WriteString(source.String())
+			sb.WriteByte(':')
+			sb.WriteString(matcherSetRaw)
+		}
+	}
+
+	return sb.String()
 }
 
 // MarshalYAML implements yaml.Marshaler.
 func (c LabelMatchers) MarshalYAML() (interface{}, error) {
-	return c.source, nil
+	return c.raw, nil
 }
 
-func (c LabelMatchers) IsEphemeral(lset []mimirpb.LabelAdapter) bool {
-	for _, m := range c.config {
-		if m.matches(lset) {
-			return true
+func (c LabelMatchers) IsEphemeral(mimirPbSampleSource mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
+	sampleSource := convertMimirpbSource(mimirPbSampleSource)
+
+	for _, matcherSource := range []source{sampleSource, any} {
+		for _, m := range c.config[matcherSource] {
+			if m.matches(lset) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func convertStringToSource(source string) (source, error) {
+	switch strings.ToLower(source) {
+	case "any":
+		return any, nil
+	case "api":
+		return api, nil
+	case "rule":
+		return rule, nil
+	}
+	return invalid, fmt.Errorf("invalid source %q", source)
+}
+
+func convertMimirpbSource(source mimirpb.WriteRequest_SourceEnum) source {
+	switch source {
+	case mimirpb.API:
+		return api
+	case mimirpb.RULE:
+		return rule
+	default:
+		return invalid
+	}
 }

@@ -1056,11 +1056,6 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
-		// No ephemeral series from ruler.
-		if req.Source == mimirpb.RULE {
-			return next(ctx, pushReq)
-		}
-
 		req.EphemeralTimeseries = nil
 
 		ephemeralChecker := d.EphemeralCheckerByUser.EphemeralChecker(userID)
@@ -1071,7 +1066,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			for ix := 0; ix < len(req.Timeseries); ix++ {
 				ts := req.Timeseries[ix]
 
-				if !ephemeralChecker.IsEphemeral(ts.Labels) {
+				if !ephemeralChecker.IsEphemeral(req.Source, ts.Labels) {
 					continue
 				}
 

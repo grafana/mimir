@@ -259,8 +259,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 
-	f.Var(&l.EphemeralSeriesMatchers, "distributor.ephemeral-series-matchers", "Lists of series matchers, if an incoming sample matches at least one of them it gets marked as ephemeral. The format of the value looks like: {namespace=\"dev\"};{host=\"server1\",namespace=\"prod\"}")
-
+	f.Var(&l.EphemeralSeriesMatchers, "distributor.ephemeral-series-matchers", "Lists of series matchers prefixed by the source. The source must be one of \"api\", \"rule\", \"any\". If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace=\"dev\"};rule:{host=\"server1\",namespace=\"prod\"}")
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

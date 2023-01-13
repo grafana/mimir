@@ -12,5 +12,5 @@ type SeriesCheckerByUser interface {
 
 type SeriesChecker interface {
 	// IsEphemeral checks if a series with the given labelset should be marked as ephemeral.
-	IsEphemeral([]mimirpb.LabelAdapter) bool
+	IsEphemeral(mimirpb.WriteRequest_SourceEnum, []mimirpb.LabelAdapter) bool
 }
