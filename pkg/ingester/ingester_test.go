@@ -6307,3 +6307,49 @@ func ToWriteRequestEphemeral(lbls []labels.Labels, samples []mimirpb.Sample, exe
 	req.Timeseries = nil
 	return req
 }
+
+func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.EphemeralTSDB.Retention = 10 * time.Minute
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	metricLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+
+	now := time.Now()
+
+	// Push ephemeral series with good timestamps (in last 10 minutes)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := ToWriteRequestEphemeral(
+		[]labels.Labels{mimirpb.FromLabelAdaptersToLabels(metricLabels)},
+		[]mimirpb.Sample{{Value: float64(100), TimestampMs: now.Add(-9 * time.Minute).UnixMilli()}},
+		nil,
+		nil,
+		mimirpb.API,
+	)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Advance time for ephemeral storage
+	require.Nil(t, db.Compact(now.Add(5*time.Minute)))
+
+	// Pushing the same request should now fail, because min valid time for ephemeral storage has moved on to (now + 5 minutes - ephemeral series retention = now - 5 minutes)
+	_, err = i.Push(ctx, req)
+	require.Equal(t, err, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), metricLabels), userID).Error()))
+}
