@@ -188,10 +188,8 @@ func (oe *OverridesExporter) starting(ctx context.Context) error {
 
 func (oe *OverridesExporter) running(ctx context.Context) error {
 	if oe.ring == nil {
-		select {
-		case <-ctx.Done():
-			return nil
-		}
+		<-ctx.Done()
+		return nil
 	} else {
 		return oe.ring.running(ctx)
 	}
