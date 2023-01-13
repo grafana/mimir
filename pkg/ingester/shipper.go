@@ -106,7 +106,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an new list of shipped blocks.
-		// The meta file will be overriden later. Note that the meta file is only
+		// The meta file will be overridden later. Note that the meta file is only
 		// used to avoid unnecessary bucket.Exists call, which are properly handled
 		// by the system if their occur anyway.
 		level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
