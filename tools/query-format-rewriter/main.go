@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
-	"github.com/grafana/mimir/pkg/querier/internedquerypb"
-	"github.com/grafana/mimir/pkg/querier/uninternedquerypb"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/internedquerypb"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/uninternedquerypb"
 )
 
 func main() {
