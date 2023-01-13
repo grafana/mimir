@@ -9,6 +9,7 @@ codecs=(
   "original JSON"
   "uninterned protobuf"
   "interned protobuf"
+  "gzipped uninterned protobuf"
 )
 
 mkdir -p "$OUTPUT_DIR"
