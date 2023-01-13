@@ -830,9 +830,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
 
-	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
-	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
-	i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
+	if ephemeralStats.succeededSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
+		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
+	}
+	if ephemeralStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
+	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
@@ -872,12 +876,12 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
-	}
 
-	if samplesSource == mimirpb.RULE {
-		db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
-	} else {
-		db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
+		if samplesSource == mimirpb.RULE {
+			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
+		} else {
+			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
+		}
 	}
 }
 

@@ -6225,6 +6225,35 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					cortex_ingester_memory_ephemeral_users 1
 			`,
 		},
+
+		"only persistent series -- does not initialize ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedMetrics: `
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
