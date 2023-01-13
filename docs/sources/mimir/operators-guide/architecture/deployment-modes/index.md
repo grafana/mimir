@@ -43,3 +43,18 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_53"
 
 ![Mimir's microservices mode](microservices-mode.svg)
+
+## Read-Write mode
+
+> **Warning:**
+> Read-Write deployment mode is currently considered experimental and not ready for production use.
+
+The read-write mode provides a middle ground as an alternative to monolithic and microservices.
+
+In read-write mode, components are grouped into just three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths.
+
+[//]: # "Diagram source at https://docs.google.com/drawings/d/18Qfl-H9On9zi2IRVX-rLawbpQPRcMcI0xh5uwyUjlak"
+
+![Mimir's read-write deployment mode](read-write-mode.svg)
+
+Read-Write mode is currently only available in [jsonnet]({{< relref "../../deploy-grafana-mimir/jsonnet/deploy.md" >}}).
