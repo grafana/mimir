@@ -1260,9 +1260,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.username string
     	Etcd username.
   -overrides-exporter.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 10s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. (default 1m0s)
+    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. (default 21s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-id string

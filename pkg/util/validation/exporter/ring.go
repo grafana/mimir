@@ -7,19 +7,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
-
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -30,12 +29,15 @@ const (
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the
 	// ring. Overrides-exporter uses timestamps to establish a ring leader, therefore
-	// no tokens are needed.
-	ringNumTokens = 0
+	// only one token is needed.
+	ringNumTokens = 1
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
 	// unhealthy instance in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 4
+	ringAutoForgetUnhealthyPeriods = 2
+
+	// leaderToken is the special token that makes the owner the ring leader.
+	leaderToken = 0
 )
 
 // ringOp is used as an instance state filter when obtaining instances from the
@@ -76,8 +78,8 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring flags
 	c.KVStore.Store = "memberlist" // Override default value.
 	c.KVStore.RegisterFlagsWithPrefix("overrides-exporter.ring.", "collectors/", f)
-	f.DurationVar(&c.HeartbeatPeriod, "overrides-exporter.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&c.HeartbeatTimeout, "overrides-exporter.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
+	f.DurationVar(&c.HeartbeatPeriod, "overrides-exporter.ring.heartbeat-period", 10*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&c.HeartbeatTimeout, "overrides-exporter.ring.heartbeat-timeout", 21*time.Second, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
 
 	// Instance flags
 	c.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
@@ -142,6 +144,11 @@ func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
 		return false, nil
 	}
 
+	rl, err := ringLeader(r.client)
+	if err != nil {
+		return false, err
+	}
+
 	// If the instance was registered less than ringAutoForgetUnhealthyPeriods ago,
 	// don't consider it. This serves to give other instances time to discover the
 	// new instance. It also means that there's a delay of this amount for metrics to
@@ -149,7 +156,8 @@ func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
 	if r.lifecycler.GetRegisteredAt().Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
 		return false, nil
 	}
-	return instanceIsLeader(r.client, r.lifecycler.GetInstanceAddr())
+
+	return rl.Addr == r.lifecycler.GetInstanceAddr(), nil
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
@@ -202,35 +210,20 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	return r, nil
 }
 
-// instanceIsLeader checks whether the instance at `instanceAddr` is the leader.
-// A replica is considered the leader if it is the oldest replica within the
-// batch of most recent replicas (batch window 5 minutes, hardcoded for now).
-// This is done to increase stability of the leader during rollouts/scaling.
-func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
-	rs, err := r.GetAllHealthy(ringOp)
+// ringLeader returns the ring member that owns the special token.
+func ringLeader(r ring.ReadRing) (*ring.InstanceDesc, error) {
+	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
 	if err != nil {
-		return false, err
-	}
-	if len(rs.Instances) == 1 {
-		return true, nil
-	}
-	// Sort instances by registered timestamp (descending order).
-	slices.SortStableFunc(rs.Instances, func(a ring.InstanceDesc, b ring.InstanceDesc) bool {
-		return a.RegisteredTimestamp > b.RegisteredTimestamp
-	})
-
-	leader := rs.Instances[0]
-	// Find the oldest of the new instances within the given lookback time window.
-	lookback := 5 * time.Minute // TODO: this is just a random magic value for now, make this something that covers typical rollout/scaling periods.
-	for _, instance := range rs.Instances[1:] {
-		if time.Unix(rs.Instances[0].RegisteredTimestamp, 0).Add(-lookback).Before(time.Unix(instance.RegisteredTimestamp, 0)) {
-			leader = instance
-		} else {
-			break
+		if strings.Contains(err.Error(), "at least 1 live replicas required") {
+			return &ring.InstanceDesc{}, nil
 		}
+		return nil, err
+	}
+	if len(rs.Instances) != 1 {
+		return nil, fmt.Errorf("got %d instances for token 0 (but expected 1)", len(rs.Instances))
 	}
 
-	return leader.Addr == instanceAddr, nil
+	return &rs.Instances[0], nil
 }
 
 func (r *overridesExporterRing) starting(ctx context.Context) error {

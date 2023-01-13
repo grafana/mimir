@@ -190,9 +190,8 @@ func (oe *OverridesExporter) running(ctx context.Context) error {
 	if oe.ring == nil {
 		<-ctx.Done()
 		return nil
-	} else {
-		return oe.ring.running(ctx)
 	}
+	return oe.ring.running(ctx)
 }
 
 func (oe *OverridesExporter) stopping(err error) error {

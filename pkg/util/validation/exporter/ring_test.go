@@ -76,8 +76,8 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	// Register instances in the ring (manually, to be able to set a registered timestamp).
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", nil, ring.ACTIVE, time.Now().Add(-time.Hour))
-		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", nil, ring.ACTIVE, time.Now().Add(-59*time.Minute))
+		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now().Add(-time.Hour))
+		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{leaderToken + 3}, ring.ACTIVE, time.Now().Add(-59*time.Minute))
 		return desc, true, nil
 	}))
 
@@ -118,24 +118,15 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	// Since the previous leader is still in the ring but in state ring.LEAVING, there should be no leader now.
 	require.True(t, !i1IsLeader && !i2IsLeader)
 
-	// Set the last heartbeat of the previous leader to a point in the past to allow
-	// the instance-2 lifecycler to remove it from the ring.
+	// Remove instance-1 from the ring.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		instance := desc.Ingesters[l1.GetInstanceID()]
-		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * cfg.HeartbeatTimeout).Unix()
-		desc.Ingesters[l1.GetInstanceID()] = instance
+		desc.RemoveIngester(i1.lifecycler.GetInstanceID())
 		return desc, true, nil
 	}))
 
-	// Start the instance-2 lifecycler to have it remove the previous leader from the ring.
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i2.lifecycler))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i2.lifecycler)) })
-
-	// Wait until instance-1 has been auto-forgotten.
-	test.Poll(t, time.Second, 1, func() interface{} {
-		rs, _ := i2.client.GetAllHealthy(ringOp)
-		return len(rs.Instances)
+	test.Poll(t, time.Second, false, func() interface{} {
+		return i2.client.HasInstance(i1.lifecycler.GetInstanceID())
 	})
 
 	i1IsLeader, err = i1.isLeader(time.Now())
@@ -153,6 +144,12 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	i3, err := newRing(cfg, log.NewNopLogger(), nil)
 	l3 := i3.lifecycler
 	require.NoError(t, err)
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester(l3.GetInstanceID(), l3.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now())
+		return desc, true, nil
+	}))
+
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i3))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i3)) })
 
@@ -168,9 +165,8 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	i3IsLeader, err := i3.isLeader(time.Now())
 	require.NoError(t, err)
 
-	// instance-3 is registered with a timestamp that will make it the new leader,
-	// but until the wait time for transition of leadership has passed, there should be no
-	// leader.
+	// instance-3 is registered with a token that makes it the new leader, but
+	// because of the wait time it won't be the leader immediately.
 	require.True(t, !i2IsLeader && !i3IsLeader)
 
 	// However, instance-3 should become the leader once the wait time has passed and
