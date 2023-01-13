@@ -107,6 +107,10 @@ const (
 
 	// Prefix used in Prometheus registry for ephemeral storage.
 	ephemeralPrometheusMetricsPrefix = "ephemeral_"
+
+	StorageLabelName            = "__storage__"
+	EphemeralStorageLabelValue  = "ephemeral"
+	PersistentStorageLabelValue = "persistent"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -1099,7 +1103,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs)
+	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1135,7 +1139,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1174,7 +1178,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1363,7 +1367,26 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	i.metrics.queries.Inc()
+	storageValue, matchers, err := removeStorageMatcher(matchers)
+	if err != nil {
+		return err
+	}
+
+	ephemeral := false
+	if storageValue == "" || storageValue == PersistentStorageLabelValue {
+		// storageValue is logged later, so set it to proper value.
+		storageValue = PersistentStorageLabelValue
+	} else if storageValue == EphemeralStorageLabelValue {
+		ephemeral = true
+	} else {
+		return fmt.Errorf("invalid value of %s label: %s", StorageLabelName, storageValue)
+	}
+
+	if ephemeral {
+		i.metrics.ephemeralQueries.Inc()
+	} else {
+		i.metrics.queries.Inc()
+	}
 
 	db := i.getTSDB(userID)
 	if db == nil {
@@ -1392,23 +1415,28 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral)
 	}
 	if err != nil {
 		return err
 	}
 
-	i.metrics.queriedSeries.Observe(float64(numSeries))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
-	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples)
+	if ephemeral {
+		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
+		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
+	} else {
+		i.metrics.queriedSeries.Observe(float64(numSeries))
+		i.metrics.queriedSamples.Observe(float64(numSamples))
+	}
+	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "storage", storageValue)
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(ctx, from, through)
+func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
+	q, err := db.Querier(ctx, from, through, ephemeral)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1485,13 +1513,13 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 }
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+		q, err = db.UnorderedChunkQuerier(ctx, from, through, ephemeral)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
+		q, err = db.ChunkQuerier(ctx, from, through, ephemeral)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -2648,4 +2676,35 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// findStorageLabelMatcher returns value of storage label matcher and its index, if it exists.
+func findStorageLabelMatcher(matchers []*labels.Matcher) (string, int, error) {
+	for idx, matcher := range matchers {
+		if matcher.Name == StorageLabelName {
+			if matcher.Type == labels.MatchEqual {
+				return matcher.Value, idx, nil
+			}
+			return "", idx, fmt.Errorf("invalid matchers used together with %s label, only equality check supported", StorageLabelName)
+		}
+	}
+	return "", -1, nil
+}
+
+// removeStorageMatcher returns the value of storage label (or empty string, if not found), and input matchers without the storage label matcher.
+func removeStorageMatcher(matchers []*labels.Matcher) (val string, filtered []*labels.Matcher, _ error) {
+	val, idx, err := findStorageLabelMatcher(matchers)
+	if err != nil {
+		return "", matchers, err
+	}
+	if idx < 0 {
+		return "", matchers, nil
+	}
+
+	// Create a new slice with the shard matcher removed.
+	filtered = make([]*labels.Matcher, 0, len(matchers)-1)
+	filtered = append(filtered, matchers[:idx]...)
+	filtered = append(filtered, matchers[idx+1:]...)
+
+	return val, filtered, nil
 }
