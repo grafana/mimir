@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -167,7 +168,7 @@ func (oe *OverridesExporter) isLeader() bool {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := oe.ring.isLeader()
+	owned, err := oe.ring.isLeader(time.Now())
 	if err != nil {
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe
@@ -191,12 +192,7 @@ func (oe *OverridesExporter) running(ctx context.Context) error {
 			return nil
 		}
 	} else {
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-oe.ring.subserviceWatcher.Chan():
-			return errors.Wrap(err, "a subservice of overrides-exporter has failed")
-		}
+		return oe.ring.running(ctx)
 	}
 }
 

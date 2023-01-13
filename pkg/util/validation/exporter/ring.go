@@ -139,7 +139,7 @@ type overridesExporterRing struct {
 }
 
 // isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
-func (r *overridesExporterRing) isLeader() (bool, error) {
+func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
 	// if this instance registered less than ringAutoForgetUnhealthyPeriods *
 	// HeartbeatTimeout ago, it is not eligible for ring leadership on the grounds
 	// that not all instances might have become aware of it yet.
@@ -151,7 +151,7 @@ func (r *overridesExporterRing) isLeader() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if t.Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(time.Now()) {
+	if t.Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
 		return false, nil
 	}
 	return instanceIsLeader(r.client, r.lifecycler.GetInstanceAddr())
@@ -267,7 +267,6 @@ func (r *overridesExporterRing) starting(ctx context.Context) error {
 }
 
 func (r *overridesExporterRing) running(ctx context.Context) error {
-	fmt.Println("running called")
 	select {
 	case <-ctx.Done():
 		return nil
@@ -277,7 +276,6 @@ func (r *overridesExporterRing) running(ctx context.Context) error {
 }
 
 func (r *overridesExporterRing) stopping(_ error) error {
-	fmt.Println("stopping called")
 	return errors.Wrap(
 		services.StopManagerAndAwaitStopped(context.Background(), r.subserviceManager),
 		"failed to stop overrides-exporter's ring subservice manager",
