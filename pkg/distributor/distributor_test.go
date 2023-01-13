@@ -1836,7 +1836,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -3611,16 +3611,17 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		overrides, err := validation.NewOverrides(*cfg.limits, nil)
 		require.NoError(t, err)
 
+		var ephemeralChecker ephemeral.SeriesCheckerByUser
+		if cfg.markEphemeral && cfg.getEphemeralSeriesProvider != nil {
+			ephemeralChecker = cfg.getEphemeralSeriesProvider()
+		}
+
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, ephemeralChecker, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 
 		if cfg.forwarding && cfg.getForwarder != nil {
 			d.forwarder = cfg.getForwarder()
-		}
-
-		if cfg.markEphemeral && cfg.getEphemeralSeriesProvider != nil {
-			d.EphemeralCheckerByUser = cfg.getEphemeralSeriesProvider()
 		}
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
