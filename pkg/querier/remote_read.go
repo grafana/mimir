@@ -190,21 +190,22 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 		samples := []mimirpb.Sample{}
 		histograms := []mimirpb.Histogram{}
 		it = series.Iterator(it)
-		for {
-			typ := it.Next()
-			if typ == chunkenc.ValFloat {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType == chunkenc.ValFloat {
 				t, v := it.At()
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: t,
 					Value:       v,
 				})
-			} else if typ == chunkenc.ValHistogram {
+			} else if valType == chunkenc.ValHistogram {
 				t, h := it.AtHistogram()
 				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
-			} else {
+			} else if valType == chunkenc.ValFloatHistogram {
+				// What should be the correct behavior here?
 				break
 			}
 		}
+
 		if err := it.Err(); err != nil {
 			return nil, err
 		}

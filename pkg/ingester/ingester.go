@@ -766,7 +766,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
-	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
+	// If only invalid samples and histograms are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
@@ -909,8 +909,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
 		ref, copiedLabels := app.GetRef(lbls, lbls.Hash())
 
-		// To find out if any sample was added to this series, we keep old value.
-		oldSucceededSamplesCount := stats.succeededSamplesCount + stats.succeededHistogramsCount
+		// To find out if any sample or histogram was added to this series, we keep old value.
+		oldSucceededCount := stats.succeededSamplesCount + stats.succeededHistogramsCount
 
 		for _, s := range ts.Samples {
 			var err error
@@ -968,9 +968,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		if activeSeries != nil && stats.succeededSamplesCount+stats.succeededHistogramsCount > oldSucceededSamplesCount {
+		if activeSeries != nil && (stats.succeededSamplesCount+stats.succeededHistogramsCount) > oldSucceededCount {
 			activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
+				// we must already have copied the labels if succeededSamplesCount or
+				// succeededHistogramsCount has been incremented.
 				return copiedLabels
 			})
 		}
