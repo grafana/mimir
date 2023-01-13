@@ -768,7 +768,7 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 }
 
 func (o *Overrides) EphemeralChecker(user string) ephemeral.SeriesChecker {
-	return o.getOverridesForUser(user).EphemeralSeriesMatchers
+	return &(o.getOverridesForUser(user).EphemeralSeriesMatchers)
 }
 
 func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {

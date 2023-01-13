@@ -82,7 +82,7 @@ func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 
 // String is a canonical representation of the config, it is compatible with the flag definition.
 // String is needed to implement flag.Value.
-func (c LabelMatchers) String() string {
+func (c *LabelMatchers) String() string {
 	return c.string
 }
 
@@ -185,11 +185,11 @@ func matchersConfigString(matchers map[source][]string) string {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (c LabelMatchers) MarshalYAML() (interface{}, error) {
+func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
 	return c.raw, nil
 }
 
-func (c LabelMatchers) IsEphemeral(mimirPbSampleSource mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
+func (c *LabelMatchers) ShouldMarkEphemeral(mimirPbSampleSource mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
 	sampleSource := convertMimirpbSource(mimirPbSampleSource)
 
 	for _, matcherSource := range []source{sampleSource, any} {

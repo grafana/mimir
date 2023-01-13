@@ -1066,7 +1066,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			for ix := 0; ix < len(req.Timeseries); ix++ {
 				ts := req.Timeseries[ix]
 
-				if !ephemeralChecker.IsEphemeral(req.Source, ts.Labels) {
+				if !ephemeralChecker.ShouldMarkEphemeral(req.Source, ts.Labels) {
 					continue
 				}
 
