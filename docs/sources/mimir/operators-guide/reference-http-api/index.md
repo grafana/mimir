@@ -85,6 +85,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload)                                             | Compactor                      | `GET /api/v1/upload/block/{block}/check`                                  |
 | [Tenant delete request](#tenant-delete-request)                                       | Compactor                      | `POST /compactor/delete_tenant`                                           |
 | [Tenant delete status](#tenant-delete-status)                                         | Compactor                      | `GET /compactor/delete_tenant_status`                                     |
+| [Overrides-exporter ring status](#overrides-exporter-ring-status)                     | Overrides-exporter             | `GET /overrides-exporter/ring`                                            |
 
 ### Path prefixes
 
@@ -351,6 +352,18 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### TSDB Metrics
+
+```
+GET /ingester/tsdb_metrics
+```
+
+This endpoint returns low-level metrics exposed by per-tenant TSDB. This can be useful for troubleshooting.
+Difference from `/metrics` is that metrics returned in `/metrics` are aggregated across all open TSDBs, while this
+endpoint returns TSDB metrics only for specific tenant.
+
+Requires [authentication](#authentication), authenticated tenant is one whose TSDB metrics are returned.
 
 ### Ingesters ring status
 
@@ -1072,3 +1085,14 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+## Overrides-exporter
+
+### Overrides-exporter ring status
+
+```
+GET /overrides-exporter/ring
+```
+
+Displays a web page with the overrides-exporter hash ring status, including the state, healthy and last heartbeat time of each overrides-exporter.
+The overrides-exporter ring is available only when `-overrides-exporter.ring.enabled` is set to `true`.

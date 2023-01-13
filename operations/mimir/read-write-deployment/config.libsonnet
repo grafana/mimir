@@ -21,24 +21,24 @@
   },
 
   // Mimir read-write deployment mode makes some strong assumptions about what must enabled enabled and disabled.
-  check_compactor_max_concurrency: if !$._config.is_read_write_deployment_mode || $._config.compactor_max_concurrency == 1 then null else
-    error 'please set compactor_max_concurrency to 1 when using Mimir read-write deployment mode',
+  assert !$._config.is_read_write_deployment_mode || $._config.compactor_max_concurrency == 1
+         : 'please set compactor_max_concurrency to 1 when using Mimir read-write deployment mode',
 
-  check_ingester_multi_zone: if !$._config.is_read_write_deployment_mode || $._config.multi_zone_ingester_enabled then null else
-    error 'please set multi_zone_ingester_enabled to true when using Mimir read-write deployment mode',
+  assert !$._config.is_read_write_deployment_mode || $._config.multi_zone_ingester_enabled
+         : 'please set multi_zone_ingester_enabled to true when using Mimir read-write deployment mode',
 
-  check_store_gateway_multi_zone: if !$._config.is_read_write_deployment_mode || $._config.multi_zone_store_gateway_enabled then null else
-    error 'please set multi_zone_store_gateway_enabled to true when using Mimir read-write deployment mode',
+  assert !$._config.is_read_write_deployment_mode || $._config.multi_zone_store_gateway_enabled
+         : 'please set multi_zone_store_gateway_enabled to true when using Mimir read-write deployment mode',
 
-  check_querier_autoscaling: if $._config.is_microservices_deployment_mode || !$._config.autoscaling_querier_enabled then null else
-    error 'please set autoscaling_querier_enabled to false when using Mimir read-write deployment mode',
+  assert $._config.is_microservices_deployment_mode || !$._config.autoscaling_querier_enabled
+         : 'please set autoscaling_querier_enabled to false when using Mimir read-write deployment mode',
 
-  check_ruler_remote_evaluation_enabled: if $._config.is_microservices_deployment_mode || !$._config.ruler_remote_evaluation_enabled then null else
-    error 'please set ruler_remote_evaluation_enabled to false when using Mimir read-write deployment mode',
+  assert $._config.is_microservices_deployment_mode || !$._config.ruler_remote_evaluation_enabled
+         : 'please set ruler_remote_evaluation_enabled to false when using Mimir read-write deployment mode',
 
-  check_overrides_exporter_enabled: if $._config.is_microservices_deployment_mode || !$._config.overrides_exporter_enabled then null else
-    error 'please set overrides_exporter_enabled to false when using Mimir read-write deployment mode',
+  assert $._config.is_microservices_deployment_mode || !$._config.overrides_exporter_enabled
+         : 'please set overrides_exporter_enabled to false when using Mimir read-write deployment mode',
 
-  check_memberlist_ring: if !$._config.is_read_write_deployment_mode || $._config.memberlist_ring_enabled then null else
-    error 'please set memberlist_ring_enabled to true when using Mimir read-write deployment mode',
+  assert !$._config.is_read_write_deployment_mode || $._config.memberlist_ring_enabled
+         : 'please set memberlist_ring_enabled to true when using Mimir read-write deployment mode',
 }

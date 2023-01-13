@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
@@ -261,14 +262,23 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
-	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
+	overridesExporter, err := exporter.NewOverridesExporter(
+		t.Cfg.OverridesExporter,
+		&t.Cfg.LimitsConfig,
+		t.TenantLimits,
+		util_log.Logger,
+		t.Registerer,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to instantiate overrides-exporter")
+	}
 	if t.Registerer != nil {
-		t.Registerer.MustRegister(exporter)
+		t.Registerer.MustRegister(overridesExporter)
 	}
 
-	// the overrides exporter has no state and reads overrides for runtime configuration each time it
-	// is collected so there is no need to return any service
-	return nil, nil
+	t.API.RegisterOverridesExporter(overridesExporter)
+
+	return overridesExporter, nil
 }
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
@@ -757,6 +767,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Alertmanager.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.OverridesExporter.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -843,7 +854,7 @@ func (t *Mimir) setupModuleManager() error {
 		RuntimeConfig:            {API},
 		Ring:                     {API, RuntimeConfig, MemberlistKV},
 		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides},
+		OverridesExporter:        {Overrides, MemberlistKV},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
 		DistributorService:       {Ring, Overrides},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
