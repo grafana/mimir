@@ -29,6 +29,7 @@
 * [ENHANCEMENT] Alertmanager: Add additional template function `grafanaExploreURL` returning URL to grafana explore with range query. #3849
 * [ENHANCEMENT] Reduce overhead of debug logging when filtered out. #3875
 * [ENHANCEMENT] Update Docker base images from `alpine:3.16.2` to `alpine:3.17.1`. #3898
+* [ENHANCEMENT] Ingester: Add new `/ingester/tsdb_metrics` endpoint to return tenant-specific TSDB metrics. #3923
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675

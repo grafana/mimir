@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/e2e"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -127,14 +128,14 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
 	}
-	require.True(t, iter.Scan() == chunkenc.ValNone)
+	require.Equal(t, chunkenc.ValNone, iter.Scan())
 	require.NoError(t, iter.Err())
 
 	// Check seek works after unmarshal
 	iter = chunk.NewIterator(iter)
 	for i := 0; i < samples; i += samples / 10 {
 		val := iter.FindAtOrAfter(model.Time(i * step))
-		require.True(t, val != chunkenc.ValNone)
+		require.NotEqual(t, chunkenc.ValNone, val)
 	}
 
 	// Check the byte representation after another Marshall is the same.
@@ -253,21 +254,27 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 	// Check all the samples are in there.
 	iter := chunk.NewIterator(nil)
 	for i := 0; i < samples; {
-		require.NotEqual(t, chunkenc.ValNone, iter.Scan())
+		chunkType := iter.Scan()
 		var batch Batch
 		switch encoding {
 		case PrometheusXorChunk:
+			require.Equal(t, chunkenc.ValFloat, chunkType)
 			batch = iter.Batch(BatchSize, chunkenc.ValFloat)
+			require.Equal(t, chunkenc.ValFloat, batch.ValueType, "Batch contains floats")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, float64(i+j), batch.SampleValues[j])
+				require.EqualValues(t, float64(i+j), batch.Values[j])
 			}
 		case PrometheusHistogramChunk:
+			require.Equal(t, chunkenc.ValHistogram, chunkType)
 			batch = iter.Batch(BatchSize, chunkenc.ValHistogram)
+			require.Equal(t, chunkenc.ValHistogram, batch.ValueType, "Batch contains histograms")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, e2e.GenerateTestHistogram(i+j), batch.HistogramValues[j])
+				require.EqualValues(t, e2e.GenerateTestHistogram(i+j), (*histogram.Histogram)(batch.PointerValues[j]))
 			}
+		default:
+			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
 		i += batch.Length
 	}

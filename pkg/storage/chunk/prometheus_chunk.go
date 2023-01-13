@@ -8,6 +8,7 @@ package chunk
 import (
 	"fmt"
 	"io"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 
@@ -177,31 +178,26 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
 	var batch Batch
+	batch.ValueType = valueType
 	var populate func(j int)
 	switch valueType {
 	case chunkenc.ValFloat:
-		batch.ValueTypes = chunkenc.ValFloat
-		batch.SampleValues = &[BatchSize]float64{}
 		populate = func(j int) {
 			t, v := p.it.At()
 			batch.Timestamps[j] = t
-			batch.SampleValues[j] = v
+			batch.Values[j] = v
 		}
 	case chunkenc.ValHistogram:
-		batch.ValueTypes = chunkenc.ValHistogram
-		batch.HistogramValues = &[BatchSize]*histogram.Histogram{}
 		populate = func(j int) {
 			t, h := p.it.AtHistogram()
 			batch.Timestamps[j] = t
-			batch.HistogramValues[j] = h
+			batch.PointerValues[j] = unsafe.Pointer(h)
 		}
 	case chunkenc.ValFloatHistogram:
-		batch.ValueTypes = chunkenc.ValFloatHistogram
-		batch.FloatHistogramValues = &[BatchSize]*histogram.FloatHistogram{}
 		populate = func(j int) {
 			t, fh := p.it.AtFloatHistogram()
 			batch.Timestamps[j] = t
-			batch.FloatHistogramValues[j] = fh
+			batch.PointerValues[j] = unsafe.Pointer(fh)
 		}
 	default:
 		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))
@@ -211,8 +207,14 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 	for j < size {
 		populate(j)
 		j++
-		if j < size && p.it.Next() == chunkenc.ValNone {
-			break
+		if j < size {
+			vt := p.it.Next()
+			if vt == chunkenc.ValNone {
+				break
+			}
+			if vt != valueType {
+				panic(fmt.Sprintf("chunk encoding expected to be consistent in chunk start %v now %v", valueType, vt))
+			}
 		}
 	}
 	batch.Index = 0

@@ -134,8 +134,8 @@ func (i *mockIterator) Timestamp() int64 {
 
 func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
 	batch := chunk.Batch{
-		Length:     chunk.BatchSize,
-		ValueTypes: chunkenc.ValFloat,
+		Length:    chunk.BatchSize,
+		ValueType: chunkenc.ValFloat,
 	}
 	for i := 0; i < chunk.BatchSize; i++ {
 		batch.Timestamps[i] = int64(i)

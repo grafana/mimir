@@ -675,6 +675,21 @@ func (r *UserRegistries) Registries() []UserRegistry {
 	return out
 }
 
+// GetRegistryForUser returns currently active registry for given user, or nil, if there is no such registry.
+func (r *UserRegistries) GetRegistryForUser(user string) *prometheus.Registry {
+	r.regsMu.Lock()
+	defer r.regsMu.Unlock()
+
+	for idx := 0; idx < len(r.regs); idx++ {
+		if user != r.regs[idx].user {
+			continue
+		}
+
+		return r.regs[idx].reg
+	}
+	return nil
+}
+
 func (r *UserRegistries) BuildMetricFamiliesPerUser() MetricFamiliesPerUser {
 	data := MetricFamiliesPerUser{}
 	for _, entry := range r.Registries() {
