@@ -247,7 +247,7 @@ func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 }
 
 // readThanosShippedBlocks reads the legacy thanos.shipper.json file.
-// TODO Remove in Mimir 2.7.0
+// TODO Remove in Mimir 2.8.0
 func readThanosShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	meta, err := readThanosShipperMetaFile(dir)
 	if errors.Is(err, os.ErrNotExist) {
