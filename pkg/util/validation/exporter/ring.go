@@ -36,10 +36,6 @@ const (
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
 	// unhealthy instance in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 4
-
-	// leaderToken is the special token that an instance must own to be considered
-	// the leader in the ring.
-	leaderToken = 0
 )
 
 // ringOp is used as an instance state filter when obtaining instances from the
