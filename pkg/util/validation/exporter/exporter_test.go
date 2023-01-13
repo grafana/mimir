@@ -7,11 +7,19 @@ package exporter
 
 import (
 	"bytes"
+	"context"
+	"testing"
+	"time"
+
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -106,4 +114,62 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 `
 	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
 	assert.NoError(t, err)
+}
+
+func TestOverridesExporter_withRing(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-a": {},
+	}
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	cfg := Config{RingConfig{Enabled: true}}
+	cfg.Ring.KVStore.Mock = ringStore
+	cfg.Ring.InstancePort = 1234
+
+	// Create an empty ring.
+	ctx := context.Background()
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ring.NewDesc(), true, nil
+	}))
+
+	// Create an overrides-exporter.
+	cfg.Ring.InstanceID = "overrides-exporter-1"
+	cfg.Ring.InstanceAddr = "1.2.3.1"
+	e1, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, e1))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e1)) })
+
+	// Wait until it has registered itself into the ring.
+	test.Poll(t, time.Second, true, func() interface{} {
+		rs, _ := e1.ring.client.GetAllHealthy(ringOp)
+		return rs.Includes(e1.ring.lifecycler.GetInstanceAddr())
+	})
+
+	// This instance is now the only ring member and should export metrics.
+	require.True(t, hasOverrideMetrics(e1))
+
+	// Register a second instance.
+	cfg.Ring.InstanceID = "overrides-exporter-2"
+	cfg.Ring.InstanceAddr = "1.2.3.2"
+	e2, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, e2))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e2)) })
+
+	// Wait until it has registered itself to the ring.
+	test.Poll(t, time.Second, true, func() interface{} {
+		rs, _ := e2.ring.client.GetAllHealthy(ringOp)
+		return rs.Includes(e2.ring.lifecycler.GetInstanceAddr())
+	})
+
+	// Only one of the two instances should be exporting metrics.
+	require.True(t, hasOverrideMetrics(e1))
+	require.False(t, hasOverrideMetrics(e2))
+}
+
+func hasOverrideMetrics(e1 prometheus.Collector) bool {
+	return testutil.CollectAndCount(e1, "cortex_limits_overrides") > 0
 }

@@ -165,17 +165,17 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 // the leader replica.
 func (oe *OverridesExporter) isLeader() bool {
 	if oe.ring == nil {
-		// If sharding is not enabled, every instance exports metrics for every tenant
+		// If the ring is not enabled, export all metrics
 		return true
 	}
-	owned, err := oe.ring.isLeader(time.Now())
+	isLeaderNow, err := oe.ring.isLeader(time.Now())
 	if err != nil {
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
-		// if there was an error establishing ownership using the ring, err on the safe
-		// side and assume this instance owns the tenant
+		// if there was an error establishing ownership using the ring, assume leadership
+		// and accept the risk that duplicate metrics might be exported.
 		return true
 	}
-	return owned
+	return isLeaderNow
 }
 
 func (oe *OverridesExporter) starting(ctx context.Context) error {
