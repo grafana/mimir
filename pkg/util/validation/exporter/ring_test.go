@@ -16,6 +16,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEmptyRing(t *testing.T) {
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	// Create an empty ring.
+	ctx := context.Background()
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ring.NewDesc(), true, nil
+	}))
+
+	cfg := RingConfig{Enabled: true}
+	cfg.KVStore.Mock = ringStore
+	cfg.HeartbeatTimeout = 15 * time.Second
+
+	cfg.InstanceID = "instance-1"
+	cfg.InstanceAddr = "127.0.0.1"
+	i1, err := newRing(cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, i1.client))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i1.client)) })
+
+	_, err = i1.isLeader(time.Now())
+	require.ErrorIs(t, err, ring.ErrEmptyRing)
+}
+
 // TestOverridesExporterRing_scaleDownAndUp tests that a maximum of one leader
 // replica exists at any point in time while the number of replicas is scaled.
 func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
