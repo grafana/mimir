@@ -1074,6 +1074,9 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 
 	// Removed in 2.4
 	"ingester.lifecycler.join_after", // -ingester.join-after
+
+	// Removed in 2.5
+	"blocks_storage.tsdb.block_ranges_period", // -blocks-storage.tsdb.block-ranges-period
 }...)
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
