@@ -35,9 +35,17 @@ type rawPostingGroup struct {
 	lazyMatcher func(string) bool
 }
 
-func newRawPostingGroup(isSubtract bool, labelName string, labelValues []string) rawPostingGroup {
+func newRawIntersectingPostingGroup(labelName string, labelValues []string) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract:  isSubtract,
+		isSubtract:  false,
+		labelName:   labelName,
+		labelValues: labelValues,
+	}
+}
+
+func newRawSubtractingPostingGroup(labelName string, labelValues []string) rawPostingGroup {
+	return rawPostingGroup{
+		isSubtract:  true,
 		labelName:   labelName,
 		labelValues: labelValues,
 	}
@@ -117,16 +125,16 @@ func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error
 func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		if m.Type == labels.MatchNotRegexp {
-			return newRawPostingGroup(true, m.Name, setMatches)
+			return newRawSubtractingPostingGroup(m.Name, setMatches)
 		}
-		return newRawPostingGroup(false, m.Name, setMatches)
+		return newRawIntersectingPostingGroup(m.Name, setMatches)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newRawPostingGroup(false, m.Name, []string{m.Value})
+			return newRawIntersectingPostingGroup(m.Name, []string{m.Value})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -134,7 +142,7 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newRawPostingGroup(true, m.Name, []string{m.Value})
+			return newRawSubtractingPostingGroup(m.Name, []string{m.Value})
 		}
 	}
 
