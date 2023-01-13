@@ -116,7 +116,7 @@ mimir:
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
       {{- if (index .Values "admin-cache" "enabled") }}
-        admin_store:
+        cache:
           backend: memcached
           memcached:
             addresses: {{ include "mimir.adminCacheAddress" . }}
