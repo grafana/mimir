@@ -225,8 +225,8 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 }
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
-// each postingGroup's keys exist in the index. The order of the returned labels
-// is the same as iterating through the posting groups and for each group adding all keys.
+// each postingGroup's labelValues exist in the index. The order of the returned labels
+// is the same as iterating through the posting groups and for each group adding all labelValues.
 func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, []labels.Label, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
@@ -252,10 +252,10 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 			return !ri.isLazy
 		}
 
-		// Within the lazy/non-lazy groups we sort by the number of keys they have.
-		// The idea is that groups with fewer keys are more likely to match no actual series.
-		if len(ri.keys) != len(rj.keys) {
-			return len(ri.keys) < len(rj.keys)
+		// Within the lazy/non-lazy groups we sort by the number of labelValues they have.
+		// The idea is that groups with fewer labelValues are more likely to match no actual series.
+		if len(ri.labelValues) != len(rj.labelValues) {
+			return len(ri.labelValues) < len(rj.labelValues)
 		}
 
 		// Sort by label name to make this a deterministic sort.
@@ -274,7 +274,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		}
 		filteredPostingGroups = append(filteredPostingGroups, pg)
 
-		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
+		// If this group has no labelValues to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
 		// E.g. `label="non-existent-value"` returns empty group.
 		if !pg.isSubtract && len(pg.keys) == 0 {

@@ -19,27 +19,27 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
-// rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
-// that the keys in the group have a corresponding postings list in the index.
+// rawPostingGroup keeps posting labelValues for single matcher. It is raw because there is no guarantee
+// that the labelValues in the group have a corresponding postings list in the index.
 // Logical result of the group is:
-// If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call toPostingGroup() to populate the keys.
-// If isSubtract == true: special All postings minus postings for keys labels.
-// If isSubtract == false: merge of postings for keys labels.
+// If isLazy == true: labelValues will be empty and lazyMatcher will be non-nil. Call toPostingGroup() to populate the labelValues.
+// If isSubtract == true: special All postings minus postings for labelValues labels.
+// If isSubtract == false: merge of postings for labelValues labels.
 // This computation happens in toPostingGroups.
 type rawPostingGroup struct {
-	isSubtract bool
-	labelName  string
-	keys       []labels.Label
+	isSubtract  bool
+	labelName   string
+	labelValues []string
 
 	isLazy      bool
 	lazyMatcher func(string) bool
 }
 
-func newRawPostingGroup(isSubtract bool, labelName string, keys []labels.Label) rawPostingGroup {
+func newRawPostingGroup(isSubtract bool, labelName string, labelValues []string) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract: isSubtract,
-		labelName:  labelName,
-		keys:       keys,
+		isSubtract:  isSubtract,
+		labelName:   labelName,
+		labelValues: labelValues,
 	}
 }
 
@@ -52,8 +52,8 @@ func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string)
 	}
 }
 
-// toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
-// This means that after calling toPostingGroup g.keys will be modified.
+// toPostingGroup returns a postingGroup which shares the underlying labelValues slice with g.
+// This means that after calling toPostingGroup g.labelValues will be modified.
 func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
 	var keys []labels.Label
 	if g.isLazy {
@@ -69,7 +69,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		var err error
 		keys, err = g.filterKeys(r)
 		if err != nil {
-			return postingGroup{}, errors.Wrap(err, "filter posting keys")
+			return postingGroup{}, errors.Wrap(err, "filter posting labelValues")
 		}
 	}
 
@@ -79,54 +79,54 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 	}, nil
 }
 
-// filterKeys modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
+// filterKeys modifies the underlying labelValues slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
 func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
-	keys := g.keys
-	writeIdx := 0
-	for i := range keys {
-		l := keys[i]
-		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+	vals := g.labelValues
+	existingKeys := 0
+	for i := range vals {
+		v := vals[i]
+		if _, err := r.PostingsOffset(g.labelName, v); errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
+			// Set it to an empty string, so we can skip it when constructing the slice of keys.
+			vals[i] = ""
 			// Try with the rest of the set matchers, maybe they can match some series.
-			// Continue so we overwrite it next time there's an existing value.
 			continue
 		} else if err != nil {
 			return nil, err
 		}
-		if writeIdx < i {
-			keys[writeIdx], keys[i] = keys[i], keys[writeIdx]
-		}
-		writeIdx++
+		existingKeys++
 	}
-	if writeIdx == 0 {
-		// return a nil so the keys can be garbage collected
+	if existingKeys == 0 {
 		return nil, nil
 	}
 
-	return keys[:writeIdx], nil
+	filtered := make([]labels.Label, 0, existingKeys)
+	for _, k := range vals {
+		if k == "" {
+			continue
+		}
+		filtered = append(filtered, labels.Label{Name: g.labelName, Value: k})
+	}
+	return filtered, nil
 }
 
 // toRawPostingGroup returns a rawPostingGroup. toRawPostingGroup does not guarantee that
-// they keys of each rawPostingGroup exist in the index of the block. To verify this,
+// they labelValues of each rawPostingGroup exist in the index of the block. To verify this,
 // call rawPostingGroup.toPostingGroup() with an index reader.
 // NOTE: Derived from tsdb.postingsForMatcher
 func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
-		keys := make([]labels.Label, 0, len(setMatches))
-		for _, val := range setMatches {
-			keys = append(keys, labels.Label{Name: m.Name, Value: val})
-		}
 		if m.Type == labels.MatchNotRegexp {
-			return newRawPostingGroup(true, m.Name, keys)
+			return newRawPostingGroup(true, m.Name, setMatches)
 		}
-		return newRawPostingGroup(false, m.Name, keys)
+		return newRawPostingGroup(false, m.Name, setMatches)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newRawPostingGroup(false, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawPostingGroup(false, m.Name, []string{m.Value})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -134,7 +134,7 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newRawPostingGroup(true, m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawPostingGroup(true, m.Name, []string{m.Value})
 		}
 	}
 
