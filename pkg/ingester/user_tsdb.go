@@ -126,8 +126,10 @@ func (u *userTSDB) createEphemeralStorage() (*tsdb.Head, error) {
 	}
 
 	es, err := u.ephemeralFactory()
-	u.ephemeralStorage = es
-	return es, err
+	if err == nil {
+		u.ephemeralStorage = es
+	}
+	return u.ephemeralStorage, err
 }
 
 // getEphemeralStorage returns ephemeral storage, if it exists, or nil otherwise.
@@ -136,6 +138,13 @@ func (u *userTSDB) getEphemeralStorage() *tsdb.Head {
 	defer u.ephemeralMtx.RUnlock()
 
 	return u.ephemeralStorage
+}
+
+func (u *userTSDB) hasEphemeralStorage() bool {
+	u.ephemeralMtx.RLock()
+	defer u.ephemeralMtx.RUnlock()
+
+	return u.ephemeralStorage != nil
 }
 
 // Querier returns a new querier over the data partition for the given time range.

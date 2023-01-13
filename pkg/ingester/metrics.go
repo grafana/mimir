@@ -131,11 +131,11 @@ func newIngesterMetrics(
 		}),
 		ephemeralIngestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_total",
-			Help: "The total number of samples ingested per user (for ephemeral series).",
+			Help: "The total number of samples ingested per user for ephemeral series.",
 		}, []string{"user"}),
 		ephemeralIngestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_failures_total",
-			Help: "The total number of samples that errored on ingestion per user (for ephemeral series).",
+			Help: "The total number of samples that errored on ingestion per user for ephemeral series.",
 		}, []string{"user"}),
 		queries: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_queries_total",

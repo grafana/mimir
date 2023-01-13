@@ -1803,7 +1803,7 @@ func (i *Ingester) closeAllTSDB() {
 		go func(db *userTSDB) {
 			defer wg.Done()
 
-			ephemeral := db.getEphemeralStorage() != nil
+			ephemeral := db.hasEphemeralStorage()
 
 			if err := db.Close(); err != nil {
 				level.Warn(i.logger).Log("msg", "unable to close TSDB", "err", err, "user", userID)
@@ -2216,7 +2216,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	dir := userDB.db.Dir()
 
-	ephemeral := userDB.getEphemeralStorage() != nil
+	ephemeral := userDB.hasEphemeralStorage()
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)

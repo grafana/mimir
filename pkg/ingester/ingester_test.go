@@ -5964,11 +5964,11 @@ func TestIngester_PushEphemeral(t *testing.T) {
 			},
 			expectedErr: nil,
 			expectedMetrics: `
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
 					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 2
 
-					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
 					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 0
 
@@ -6009,11 +6009,11 @@ func TestIngester_PushEphemeral(t *testing.T) {
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedMetrics: `
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
 					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
 
-					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
 					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
 
@@ -6066,11 +6066,11 @@ func TestIngester_PushEphemeral(t *testing.T) {
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(now.UnixMilli()-10), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedMetrics: `
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
 					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 1
 
-					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
 					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
 
@@ -6194,11 +6194,11 @@ func TestIngester_PushEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_ingested_metadata_total counter
 					cortex_ingester_ingested_metadata_total 1
 
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
 					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 5
 
-					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user (for ephemeral series).
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
 					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
 
