@@ -260,7 +260,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
    | Name  | Mimir                              |
    | URL   | http://\<ingress-host\>/prometheus |
 
-   To add a data source, see [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+   To add a data source, see [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
 
 1. Verify success:
 
@@ -325,5 +325,5 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
 
 1. Verify success:
 
-   You should be able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/),
+   You should be able to query metrics in [Grafana Explore](/docs/grafana/latest/explore/),
    as well as create dashboard panels by using your newly configured `Mimir` data source.
