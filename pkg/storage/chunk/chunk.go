@@ -7,6 +7,7 @@ package chunk
 
 import (
 	"io"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -78,18 +79,16 @@ type Iterator interface {
 // 1 to 128.
 const BatchSize = 12
 
-// Batch is a sorted set of (timestamp, value) pairs.  They are intended to be
-// small, and passed by value.
+// Batches are sorted sets of (timestamp, value) pairs, where all values are of the same type (i.e. floats/histograms).
+//
+//	They are intended to be small, and passed by value!
 type Batch struct {
-	Timestamps [BatchSize]int64
-
-	ValueTypes           chunkenc.ValueType
-	SampleValues         *[BatchSize]float64
-	HistogramValues      *[BatchSize]*histogram.Histogram
-	FloatHistogramValues *[BatchSize]*histogram.FloatHistogram
-
-	Index  int
-	Length int
+	Timestamps    [BatchSize]int64
+	Values        [BatchSize]float64
+	PointerValues [BatchSize]unsafe.Pointer
+	ValueType     chunkenc.ValueType
+	Index         int
+	Length        int
 }
 
 // Chunk contains encoded timeseries data
