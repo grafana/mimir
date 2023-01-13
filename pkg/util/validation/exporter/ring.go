@@ -137,34 +137,19 @@ type overridesExporterRing struct {
 
 // isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
 func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
-	// if this instance registered less than ringAutoForgetUnhealthyPeriods *
-	// HeartbeatTimeout ago, it is not eligible for ring leadership on the grounds
-	// that not all instances might have become aware of it yet.
+	// Instances in state ring.LEAVING are not eligible to be the leader.
 	if r.lifecycler.GetState() == ring.LEAVING {
 		return false, nil
 	}
 
-	t, err := r.registeredAt()
-	if err != nil {
-		return false, err
-	}
-	if t.Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
+	// If the instance was registered less than ringAutoForgetUnhealthyPeriods ago,
+	// don't consider it. This serves to give other instances time to discover the
+	// new instance. It also means that there's a delay of this amount for metrics to
+	// be available on first deploy.
+	if r.lifecycler.GetRegisteredAt().Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
 		return false, nil
 	}
 	return instanceIsLeader(r.client, r.lifecycler.GetInstanceAddr())
-}
-
-func (r *overridesExporterRing) registeredAt() (time.Time, error) {
-	rs, err := r.client.GetAllHealthy(ringOp)
-	if err != nil {
-		return time.Time{}, err
-	}
-	for _, instance := range rs.Instances {
-		if instance.Addr == r.lifecycler.GetInstanceAddr() {
-			return instance.GetRegisteredAt(), nil
-		}
-	}
-	return time.Time{}, errors.New("instance not found in ring")
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
