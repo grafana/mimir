@@ -6,14 +6,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/grafana/dskit/services"
-	"golang.org/x/exp/slices"
 	"os"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -43,9 +43,10 @@ const (
 )
 
 // ringOp is used as an instance state filter when obtaining instances from the
-// ring. Instances in the LEAVING state are included to minimise the number of
-// leader changes during rollout and scaling operations.
-// These instances will be forgotten after ringAutoForgetUnhealthyPeriods.
+// ring. Instances in the LEAVING state are included to help minimise the number
+// of leader changes during rollout and scaling operations. These instances will
+// be forgotten after ringAutoForgetUnhealthyPeriods (see
+// `KeepInstanceInTheRingOnShutdown`).
 var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
 // RingConfig holds the configuration for the overrides-exporter ring.
@@ -222,8 +223,8 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 
 // instanceIsLeader checks whether the instance at `instanceAddr` is the leader.
 // A replica is considered the leader if it is the oldest replica within the
-// batch of most recent replicas (batch window 5 minutes). This is done to
-// increase stability of the leader
+// batch of most recent replicas (batch window 5 minutes, hardcoded for now).
+// This is done to increase stability of the leader during rollouts/scaling.
 func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
 	rs, err := r.GetAllHealthy(ringOp)
 	if err != nil {
@@ -232,13 +233,14 @@ func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
 	if len(rs.Instances) == 1 {
 		return true, nil
 	}
+	// Sort instances by registered timestamp (descending order).
 	slices.SortStableFunc(rs.Instances, func(a ring.InstanceDesc, b ring.InstanceDesc) bool {
 		return a.RegisteredTimestamp > b.RegisteredTimestamp
 	})
 
 	leader := rs.Instances[0]
-	// find the oldest instance within the given time window
-	lookback := 5 * time.Minute
+	// Find the oldest of the new instances within the given lookback time window.
+	lookback := 5 * time.Minute // TODO: this is just a random magic value for now, make this something that covers typical rollout/scaling periods.
 	for _, instance := range rs.Instances[1:] {
 		if time.Unix(rs.Instances[0].RegisteredTimestamp, 0).Add(-lookback).Before(time.Unix(instance.RegisteredTimestamp, 0)) {
 			leader = instance
@@ -251,7 +253,6 @@ func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
 }
 
 func (r *overridesExporterRing) starting(ctx context.Context) error {
-	fmt.Println("starting called")
 	r.subserviceWatcher.WatchManager(r.subserviceManager)
 	if err := services.StartManagerAndAwaitHealthy(ctx, r.subserviceManager); err != nil {
 		return errors.Wrap(err, "unable to start overrides-exporter ring subservice manager")

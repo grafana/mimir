@@ -93,6 +93,7 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	if !oe.isLeader() {
+		// If another replica is the leader, don't expose any metrics from this one.
 		return
 	}
 
@@ -171,7 +172,7 @@ func (oe *OverridesExporter) isLeader() bool {
 	isLeaderNow, err := oe.ring.isLeader(time.Now())
 	if err != nil {
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
-		// if there was an error establishing ownership using the ring, assume leadership
+		// If there was an error establishing ownership using the ring, assume leadership
 		// and accept the risk that duplicate metrics might be exported.
 		return true
 	}

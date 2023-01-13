@@ -4,6 +4,9 @@ package exporter
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -11,8 +14,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 // TestOverridesExporterRing_scaleDownAndUp tests that a maximum of one leader
@@ -120,6 +121,8 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	require.True(t, !i1IsLeader && i2IsLeader)
 
 	// --- Scale up ---
+
+	// Create and start a new instance.
 	cfg.InstanceID = "instance-3"
 	cfg.InstanceAddr = "127.0.0.3"
 	i3, err := newRing(cfg, log.NewNopLogger(), nil)
