@@ -107,17 +107,18 @@ func BenchmarkDecodeAll(b *testing.B) {
 		samples = append(samples, encodedBytes)
 	}
 
-	b.ResetTimer()
+	// Reuse setup above - see https://gopheradvent.com/calendar/2022/faster-go-benchmarks-by-reusing-setup/ for explanation.
+	b.Run("benchmark", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for _, sample := range samples {
+				_, err := codec.Decode(sample)
 
-	for i := 0; i < b.N; i++ {
-		for _, sample := range samples {
-			_, err := codec.Decode(sample)
-
-			if err != nil {
-				require.NoError(b, err)
+				if err != nil {
+					require.NoError(b, err)
+				}
 			}
 		}
-	}
+	})
 }
 
 func BenchmarkEncodeAll(b *testing.B) {
@@ -139,17 +140,18 @@ func BenchmarkEncodeAll(b *testing.B) {
 		samples = append(samples, resp)
 	}
 
-	b.ResetTimer()
+	// Reuse setup above - see https://gopheradvent.com/calendar/2022/faster-go-benchmarks-by-reusing-setup/ for explanation.
+	b.Run("benchmark", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for _, resp := range samples {
+				_, err := codec.Encode(resp)
 
-	for i := 0; i < b.N; i++ {
-		for _, resp := range samples {
-			_, err := codec.Encode(resp)
-
-			if err != nil {
-				require.NoError(b, err)
+				if err != nil {
+					require.NoError(b, err)
+				}
 			}
 		}
-	}
+	})
 }
 
 func getCodec(b require.TestingT) Codec {
