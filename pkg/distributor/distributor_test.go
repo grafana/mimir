@@ -3663,10 +3663,7 @@ func markEphemeral(req *mimirpb.WriteRequest, indexes ...int) *mimirpb.WriteRequ
 }
 
 func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exemplars bool, metrics ...string) *mimirpb.WriteRequest {
-	request := &mimirpb.WriteRequest{
-		Timeseries:          []mimirpb.PreallocTimeseries{},
-		EphemeralTimeseries: []mimirpb.PreallocTimeseries{},
-	}
+	request := &mimirpb.WriteRequest{}
 
 	if len(metrics) == 0 {
 		metrics = []string{"foo"}

@@ -1060,8 +1060,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 
 		ephemeralChecker := d.EphemeralCheckerByUser.EphemeralChecker(userID)
 		if ephemeralChecker != nil {
-			req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
-
+			first := true
 			var deleteTs []int
 			for ix := 0; ix < len(req.Timeseries); ix++ {
 				ts := req.Timeseries[ix]
@@ -1070,8 +1069,10 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 					continue
 				}
 
-				if cap(deleteTs) == 0 {
+				if first {
+					req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
 					deleteTs = make([]int, 0, len(req.Timeseries)-ix)
+					first = false
 				}
 
 				// Move this series from persistent to ephemeral storage. We don't ingest exemplars for ephemeral series.
