@@ -477,11 +477,11 @@ mimirtool analyze grafana --address=<url>
 
 ##### Configuration
 
-| Environment variable | Flag        | Description                                                                                                                                        |
-| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GRAFANA_ADDRESS`    | `--address` | Sets the address of the Grafana instance.                                                                                                          |
-| `GRAFANA_API_KEY`    | `--key`     | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](https://grafana.com/docs/grafana/latest/http_api/auth/). |
-| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                                          |
+| Environment variable | Flag        | Description                                                                                                                     |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GRAFANA_ADDRESS`    | `--address` | Sets the address of the Grafana instance.                                                                                       |
+| `GRAFANA_API_KEY`    | `--key`     | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](/docs/grafana/latest/http_api/auth/). |
+| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                       |
 
 ##### Example output file
 

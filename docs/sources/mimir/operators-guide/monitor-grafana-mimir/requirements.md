@@ -13,7 +13,7 @@ weight: 10
 Grafana Mimir dashboards and alerts require certain labels to exist on metrics scraped from Grafana Mimir.
 
 The `mimir-distributed` Helm chart provides metamonitoring support, which takes care of these labels.
-For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
+For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
 If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
 If you are not, then continue reading.

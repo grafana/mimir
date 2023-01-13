@@ -48,12 +48,17 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v1.0.0
+      image: grafana/doc-validator:v1.5.0
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Run doc-validator tool
+        # This workflow intentionally uses v1 of checkout because
+        # the doc-validator image does not contain the expected shared
+        # libraries for the NodeJS packages injected by later versions.
+        uses: actions/checkout@v1
+      - name: Run doc-validator tool (mimir)
         run: doc-validator ./docs/sources/mimir
+      - name: Run doc-validator tool (helm-charts)
+        run: doc-validator ./docs/sources/helm-charts
 
   lint-jsonnet:
     runs-on: ubuntu-latest
