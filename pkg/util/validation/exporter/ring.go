@@ -3,8 +3,11 @@
 package exporter
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"github.com/grafana/dskit/services"
+	"golang.org/x/exp/slices"
 	"os"
 	"time"
 
@@ -26,9 +29,9 @@ const (
 	ringKey = "overrides-exporter"
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the
-	// ring. Overrides-exporters use the ring for leader election, therefore one
-	// token is sufficient.
-	ringNumTokens = 1
+	// ring. Overrides-exporter uses timestamps to establish a ring leader, therefore
+	// no tokens are needed.
+	ringNumTokens = 0
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
 	// unhealthy instance in the ring will be automatically removed after.
@@ -103,7 +106,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 		HeartbeatTimeout:                c.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
-		KeepInstanceInTheRingOnShutdown: false,
+		KeepInstanceInTheRingOnShutdown: true,
 	}, nil
 }
 
@@ -123,14 +126,48 @@ func (c *RingConfig) toRingConfig() ring.Config {
 // overridesExporterRing is a ring client that overrides-exporters can use to
 // establish a leader replica that is the unique exporter of per-tenant limit metrics.
 type overridesExporterRing struct {
-	config     RingConfig
+	services.Service
+
+	config RingConfig
+
 	client     *ring.Ring
 	lifecycler *ring.BasicLifecycler
+
+	subserviceManager *services.Manager
+	subserviceWatcher *services.FailureWatcher
+	logger            log.Logger
 }
 
-// IsLeader checks whether this instance is the leader replica that exports metrics for all tenants.
-func (o *overridesExporterRing) IsLeader() (bool, error) {
-	return instanceIsLeader(o.client, o.lifecycler.GetInstanceAddr(), o.config.HeartbeatTimeout)
+// isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
+func (r *overridesExporterRing) isLeader() (bool, error) {
+	// if this instance registered less than ringAutoForgetUnhealthyPeriods *
+	// HeartbeatTimeout ago, it is not eligible for ring leadership on the grounds
+	// that not all instances might have become aware of it yet.
+	if r.lifecycler.GetState() == ring.LEAVING {
+		return false, nil
+	}
+
+	t, err := r.registeredAt()
+	if err != nil {
+		return false, err
+	}
+	if t.Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(time.Now()) {
+		return false, nil
+	}
+	return instanceIsLeader(r.client, r.lifecycler.GetInstanceAddr())
+}
+
+func (r *overridesExporterRing) registeredAt() (time.Time, error) {
+	rs, err := r.client.GetAllHealthy(ringOp)
+	if err != nil {
+		return time.Time{}, err
+	}
+	for _, instance := range rs.Instances {
+		if instance.Addr == r.lifecycler.GetInstanceAddr() {
+			return instance.GetRegisteredAt(), nil
+		}
+	}
+	return time.Time{}, errors.New("instance not found in ring")
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
@@ -166,54 +203,83 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 		return nil, errors.Wrap(err, "failed to create a overrides-exporter ring client")
 	}
 
-	return &overridesExporterRing{
-		config:     config,
-		client:     ringClient,
-		lifecycler: lifecycler,
-	}, nil
+	manager, err := services.NewManager(lifecycler, ringClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create service manager")
+	}
+
+	r := &overridesExporterRing{
+		config:            config,
+		client:            ringClient,
+		lifecycler:        lifecycler,
+		subserviceManager: manager,
+		subserviceWatcher: services.NewFailureWatcher(),
+		logger:            logger,
+	}
+	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
+	return r, nil
 }
 
 // instanceIsLeader checks whether the instance at `instanceAddr` is the leader.
-// A replica is considered the leader if it owns the leaderToken and has joined
-// the ring at least 4 * RingConfig.HeartbeatTimeout ago. This is to give
-// potential previous leader replicas time to discover that they have been
-// superseded and stop exporting metrics.
-func instanceIsLeader(r ring.ReadRing, instanceAddr string, heartbeatTimeout time.Duration) (bool, error) {
-	c1, err := ownsLeaderToken(r, instanceAddr)
+// A replica is considered the leader if it is the oldest replica within the
+// batch of most recent replicas (batch window 5 minutes). This is done to
+// increase stability of the leader
+func instanceIsLeader(r ring.ReadRing, instanceAddr string) (bool, error) {
+	rs, err := r.GetAllHealthy(ringOp)
 	if err != nil {
 		return false, err
 	}
-
-	c2, err := waitTimeExpired(r, instanceAddr, heartbeatTimeout)
-	if err != nil {
-		return false, err
+	if len(rs.Instances) == 1 {
+		return true, nil
 	}
+	slices.SortStableFunc(rs.Instances, func(a ring.InstanceDesc, b ring.InstanceDesc) bool {
+		return a.RegisteredTimestamp > b.RegisteredTimestamp
+	})
 
-	return c1 && c2, nil
-}
-
-func waitTimeExpired(r ring.ReadRing, instanceAddr string, heartbeatTimeout time.Duration) (bool, error) {
-	allHealthy, err := r.GetAllHealthy(ringOp)
-	if err != nil {
-		return false, errors.Wrap(err, "failed to get all healthy instances from the ring")
-	}
-	var thisInstanceRegisteredAt time.Time
-	for _, instance := range allHealthy.Instances {
-		if instance.GetAddr() == instanceAddr {
-			thisInstanceRegisteredAt = time.Unix(instance.RegisteredTimestamp, 0)
+	leader := rs.Instances[0]
+	// find the oldest instance within the given time window
+	lookback := 5 * time.Minute
+	for _, instance := range rs.Instances[1:] {
+		if time.Unix(rs.Instances[0].RegisteredTimestamp, 0).Add(-lookback).Before(time.Unix(instance.RegisteredTimestamp, 0)) {
+			leader = instance
+		} else {
+			break
 		}
 	}
-	expired := time.Now().After(thisInstanceRegisteredAt.Add(4 * heartbeatTimeout))
-	return expired, nil
+
+	return leader.Addr == instanceAddr, nil
 }
 
-func ownsLeaderToken(r ring.ReadRing, instanceAddr string) (bool, error) {
-	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
-	if err != nil {
-		return false, err
+func (r *overridesExporterRing) starting(ctx context.Context) error {
+	fmt.Println("starting called")
+	r.subserviceWatcher.WatchManager(r.subserviceManager)
+	if err := services.StartManagerAndAwaitHealthy(ctx, r.subserviceManager); err != nil {
+		return errors.Wrap(err, "unable to start overrides-exporter ring subservice manager")
 	}
-	if numInstances := len(rs.Instances); numInstances != 1 {
-		return false, fmt.Errorf("%d instances returned as leader token owners, expected 1", numInstances)
+
+	_ = level.Info(r.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, r.client, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
 	}
-	return rs.Instances[0].Addr == instanceAddr, nil
+	_ = level.Info(r.logger).Log("msg", "overrides-exporter is ACTIVE in the r")
+
+	return nil
+}
+
+func (r *overridesExporterRing) running(ctx context.Context) error {
+	fmt.Println("running called")
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-r.subserviceWatcher.Chan():
+		return errors.Wrap(err, "a subservice of overrides-exporter ring has failed")
+	}
+}
+
+func (r *overridesExporterRing) stopping(_ error) error {
+	fmt.Println("stopping called")
+	return errors.Wrap(
+		services.StopManagerAndAwaitStopped(context.Background(), r.subserviceManager),
+		"failed to stop overrides-exporter's ring subservice manager",
+	)
 }

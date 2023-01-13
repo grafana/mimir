@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,9 +42,7 @@ type OverridesExporter struct {
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
-	ring              *overridesExporterRing
-	subserviceManager *services.Manager
-	subserviceWatcher *services.FailureWatcher
+	ring *overridesExporterRing
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
@@ -72,8 +69,7 @@ func NewOverridesExporter(
 			[]string{"limit_name"},
 			nil,
 		),
-		logger:            log,
-		subserviceWatcher: services.NewFailureWatcher(),
+		logger: log,
 	}
 
 	if config.Ring.Enabled {
@@ -82,11 +78,6 @@ func NewOverridesExporter(
 		exporter.ring, err = newRing(config.Ring, log, registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
-		}
-
-		exporter.subserviceManager, err = services.NewManager(exporter.ring.lifecycler, exporter.ring.client)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create service manager")
 		}
 	}
 
@@ -100,6 +91,10 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
+	if !oe.isLeader() {
+		return
+	}
+
 	// Write path limits
 	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.IngestionRate, "ingestion_rate")
 	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.IngestionBurstSize), "ingestion_burst_size")
@@ -123,10 +118,6 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
-		if !oe.isLeader(tenant) {
-			continue
-		}
-
 		// Write path limits
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.IngestionBurstSize), "ingestion_burst_size", tenant)
@@ -171,14 +162,14 @@ func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Reques
 // replica that exports all limit metrics. If the ring is disabled, leadership is
 // assumed. If the ring is enabled, it is used to determine which ring member is
 // the leader replica.
-func (oe *OverridesExporter) isLeader(tenantID string) bool {
+func (oe *OverridesExporter) isLeader() bool {
 	if oe.ring == nil {
 		// If sharding is not enabled, every instance exports metrics for every tenant
 		return true
 	}
-	owned, err := oe.ring.IsLeader()
+	owned, err := oe.ring.isLeader()
 	if err != nil {
-		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine tenant ownership", "err", err.Error())
+		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
 		// if there was an error establishing ownership using the ring, err on the safe
 		// side and assume this instance owns the tenant
 		return true
@@ -187,40 +178,31 @@ func (oe *OverridesExporter) isLeader(tenantID string) bool {
 }
 
 func (oe *OverridesExporter) starting(ctx context.Context) error {
-	if oe.subserviceManager == nil {
+	if oe.ring == nil {
 		return nil
 	}
-
-	oe.subserviceWatcher.WatchManager(oe.subserviceManager)
-	if err := services.StartManagerAndAwaitHealthy(ctx, oe.subserviceManager); err != nil {
-		return errors.Wrap(err, "unable to start overrides-exporter subservice manager")
-	}
-
-	_ = level.Info(oe.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
-	if err := ring.WaitInstanceState(ctx, oe.ring.client, oe.ring.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
-	}
-	_ = level.Info(oe.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
-
-	return nil
+	return oe.ring.starting(ctx)
 }
 
 func (oe *OverridesExporter) running(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-oe.subserviceWatcher.Chan():
-		return errors.Wrap(err, "a subservice of overrides-exporter has failed")
+	if oe.ring == nil {
+		select {
+		case <-ctx.Done():
+			return nil
+		}
+	} else {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-oe.ring.subserviceWatcher.Chan():
+			return errors.Wrap(err, "a subservice of overrides-exporter has failed")
+		}
 	}
 }
 
-func (oe *OverridesExporter) stopping(error) error {
-	if oe.subserviceManager == nil {
+func (oe *OverridesExporter) stopping(err error) error {
+	if oe.ring == nil {
 		return nil
 	}
-
-	return errors.Wrap(
-		services.StopManagerAndAwaitStopped(context.Background(), oe.subserviceManager),
-		"failed to stop overrides-exporter's subservice manager",
-	)
+	return oe.ring.stopping(err)
 }
