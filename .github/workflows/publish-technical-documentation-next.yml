@@ -1,4 +1,4 @@
-name: "publish-technical-documentation-next-helm-charts"
+name: "publish-technical-documentation-next"
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     - "main"
     paths:
     - "docs/sources/helm-charts/**"
+    - "docs/sources/mimir/**"
   workflow_dispatch:
 jobs:
   test:
@@ -35,7 +36,20 @@ jobs:
       # It must be updated in the grafanabot GitHub account.
       run: "git clone --single-branch --no-tags --depth 1 -b master https://grafanabot:${{ secrets.WEBSITE_SYNC_MIMIR }}@github.com/grafana/website-sync ./.github/actions/website-sync"
 
-    - name: "Publish to website repository (next)"
+    - name: "Publish to website repository mimir (next)"
+      uses: "./.github/actions/website-sync"
+      id: "publish-next"
+      with:
+        repository: "grafana/website"
+        branch: "master"
+        host: "github.com"
+        # PUBLISH_TO_WEBSITE_MIMIR is a fine-grained GitHub Personal Access Token that expires.
+        # It must be updated in the grafanabot GitHub account.
+        github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
+        source_folder: "docs/sources/mimir"
+        target_folder: "content/docs/mimir/next"
+
+    - name: "Publish to website repository helm-charts/mimir-distributed (next)"
       uses: "./.github/actions/website-sync"
       id: "publish-next"
       with:
