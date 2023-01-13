@@ -2941,7 +2941,7 @@ admin_api:
 # You can use Redis too for cache and set the configuration via structuredConfig.
 # See GEM documentation for Redis configuration option.
 admin-cache:
-  # -- Specifies whether admin-cache should be enabled
+  # -- Specifies whether admin-cache using memcached should be enabled
   enabled: false
 
   # -- Total number of admin-cache replicas
