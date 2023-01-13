@@ -6,6 +6,8 @@
 package batch
 
 import (
+	"fmt"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -93,14 +95,14 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
-			return a.curr.ValueTypes
+			return a.curr.ValueType
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
 			}
-			return a.curr.ValueTypes
+			return a.curr.ValueType
 		}
 	}
 
@@ -127,33 +129,39 @@ func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	}
 
 	if a.curr.Index < a.curr.Length {
-		return a.curr.ValueTypes
+		return a.curr.ValueType
 	}
 	return chunkenc.ValNone
 }
 
 // At implements chunkenc.Iterator.
 func (a *iteratorAdapter) At() (int64, float64) {
-	return a.curr.Timestamps[a.curr.Index], a.curr.SampleValues[a.curr.Index]
+	if a.curr.ValueType != chunkenc.ValFloat {
+		panic(fmt.Sprintf("Cannot read float from batch %v", a.curr.ValueType))
+	}
+	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
 }
 
 // AtHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
-	return a.curr.Timestamps[a.curr.Index], a.curr.HistogramValues[a.curr.Index]
+	if a.curr.ValueType != chunkenc.ValHistogram {
+		panic(fmt.Sprintf("Cannot read histogram from batch %v", a.curr.ValueType))
+	}
+	return a.curr.Timestamps[a.curr.Index], (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
 	// and will call AtFloatHistogram on a Histogram
-	var h *histogram.FloatHistogram
-	if a.curr.FloatHistogramValues != nil {
-		h = a.curr.FloatHistogramValues[a.curr.Index]
+	if a.curr.ValueType == chunkenc.ValFloatHistogram {
+		return a.curr.Timestamps[a.curr.Index], (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
 	}
-	if h == nil {
-		h = a.curr.HistogramValues[a.curr.Index].ToFloat()
+	if a.curr.ValueType == chunkenc.ValHistogram {
+		var h *histogram.Histogram = (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+		return a.curr.Timestamps[a.curr.Index], h.ToFloat()
 	}
-	return a.curr.Timestamps[a.curr.Index], h
+	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))
 }
 
 // AtT implements chunkenc.Iterator.

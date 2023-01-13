@@ -6,8 +6,10 @@
 package batch
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -86,7 +88,11 @@ func TestStream(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			result := make(batchStream, len(tc.input1)+len(tc.input2))
 			result = mergeStreams(tc.input1, tc.input2, result, chunk.BatchSize)
-			require.Equal(t, batchStream(tc.output), result, tc.testcase)
+			require.Equal(t, len(tc.output), len(result))
+			for i, batch := range tc.output {
+				other := result[i]
+				RequireBatchEqual(t, batch, other)
+			}
 		})
 	}
 }
@@ -100,20 +106,20 @@ func mkHistogramBatch(from int64) chunk.Batch {
 }
 
 func mkGenericFloatBatch(from int64, size int) chunk.Batch {
-	result := createBatch(chunkenc.ValFloat)
+	batch := chunk.Batch{ValueType: chunkenc.ValFloat}
 	for i := 0; i < size; i++ {
-		result.Timestamps[i] = from + int64(i)
-		result.SampleValues[i] = float64(from + int64(i))
+		batch.Timestamps[i] = from + int64(i)
+		batch.Values[i] = float64(from + int64(i))
 	}
-	result.Length = size
-	return result
+	batch.Length = size
+	return batch
 }
 
 func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
-	result := createBatch(chunkenc.ValHistogram)
+	batch := chunk.Batch{ValueType: chunkenc.ValHistogram}
 	for i := 0; i < size; i++ {
-		result.Timestamps[i] = from + int64(i)
-		result.HistogramValues[i] = &histogram.Histogram{ // yes, this doesn't make much sense with the calculated Count
+		batch.Timestamps[i] = from + int64(i)
+		batch.PointerValues[i] = unsafe.Pointer(&histogram.Histogram{ // yes, this doesn't make much sense with the calculated Count
 			Schema:        3,
 			Count:         uint64(from + int64(i)),
 			Sum:           2.7,
@@ -124,8 +130,27 @@ func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
 				{Offset: 10, Length: 3},
 			},
 			PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		})
+	}
+	batch.Length = size
+	return batch
+}
+
+func RequireBatchEqual(t *testing.T, b, o chunk.Batch) {
+	require.Equal(t, b.ValueType, o.ValueType)
+	require.Equal(t, b.Length, o.Length)
+	for i := 0; i < b.Length; i++ {
+		switch b.ValueType {
+		case chunkenc.ValFloat:
+			require.Equal(t, b.Values[i], o.Values[i], fmt.Sprintf("at idx %v", i))
+		case chunkenc.ValHistogram:
+			bh := (*histogram.Histogram)(b.PointerValues[i])
+			oh := (*histogram.Histogram)(o.PointerValues[i])
+			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
+		case chunkenc.ValFloatHistogram:
+			bh := (*histogram.FloatHistogram)(b.PointerValues[i])
+			oh := (*histogram.FloatHistogram)(o.PointerValues[i])
+			require.Equal(t, *bh, *oh, fmt.Sprintf("at idx %v", i))
 		}
 	}
-	result.Length = size
-	return result
 }
