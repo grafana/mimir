@@ -26,8 +26,9 @@ var (
 	// Expose some utilities from the framework so that we don't have to prefix them
 	// with the package name in tests.
 	mergeFlags              = e2e.MergeFlags
-	generateSeries          = e2e.GenerateSeries
-	generateNSeries         = e2e.GenerateNSeries
+	generateSeries          = e2e.GenerateSeries // to be deprecated and replaced with either only generateFloatSeries or both that and generateHistogramSeries, depending on the nature of the test
+	generateFloatSeries     = e2e.GenerateSeries
+	generateNFloatSeries    = e2e.GenerateNSeries
 	generateHistogramSeries = e2e.GenerateHistogramSeries
 	// generateNHistogramSeries = e2e.GenerateNHistogramSeries
 

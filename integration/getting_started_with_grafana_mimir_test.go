@@ -31,7 +31,7 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	mimir := e2emimir.NewSingleBinary("mimir", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
-	runTestPushSeriesAndQueryBack(t, mimir, "series_1", generateSeries)
+	runTestPushSeriesAndQueryBack(t, mimir, "series_1", generateFloatSeries)
 	runTestPushSeriesAndQueryBack(t, mimir, "hseries_1", generateHistogramSeries)
 }
 
@@ -71,7 +71,7 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 	}
 
-	runTestPushSeriesAndQueryBack(t, mimir1, "series_1", generateSeries)
+	runTestPushSeriesAndQueryBack(t, mimir1, "series_1", generateFloatSeries)
 	runTestPushSeriesAndQueryBack(t, mimir2, "hseries_1", generateHistogramSeries)
 }
 

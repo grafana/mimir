@@ -77,7 +77,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", user)
 	require.NoError(t, err)
 
-	runTestPushSeriesAndUnalignedQuery(t, c, queryFrontendAligned, queryFrontendUnaligned, user, "series_1", generateSeries, generateExpectedFloats)
+	runTestPushSeriesAndUnalignedQuery(t, c, queryFrontendAligned, queryFrontendUnaligned, user, "series_1", generateFloatSeries, generateExpectedFloats)
 	runTestPushSeriesAndUnalignedQuery(t, c, queryFrontendAligned, queryFrontendUnaligned, user, "hseries_1", generateHistogramSeries, generateExpectedHistograms)
 }
 

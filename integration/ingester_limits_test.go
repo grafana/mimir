@@ -205,7 +205,7 @@ overrides:
 
 			// Try to push as many series with the same metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _ := generateNSeries(10, 1, func() string { return "test_limit_per_metric" }, now, func() []prompb.Label {
+				series, _ := generateNFloatSeries(10, 1, func() string { return "test_limit_per_metric" }, now, func() []prompb.Label {
 					return []prompb.Label{{
 						Name:  "cardinality",
 						Value: strconv.Itoa(rand.Int()),
@@ -225,7 +225,7 @@ overrides:
 
 			// Try to push as many series with the different metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _ := generateNSeries(10, 1, func() string { return fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()) }, now, nil)
+				series, _ := generateNFloatSeries(10, 1, func() string { return fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()) }, now, nil)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 
