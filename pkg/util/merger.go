@@ -7,49 +7,6 @@
 
 package util
 
-import (
-	"github.com/prometheus/common/model"
-)
-
-// MergeSampleSets merges and dedupes two sets of already sorted sample pairs.
-func MergeSampleSets[S model.GenericSamplePair](a, b []S) []S {
-	result := make([]S, 0, len(a)+len(b))
-	i, j := 0, 0
-	for i < len(a) && j < len(b) {
-		if a[i].GetTimestamp() < b[j].GetTimestamp() {
-			result = append(result, a[i])
-			i++
-		} else if a[i].GetTimestamp() > b[j].GetTimestamp() {
-			result = append(result, b[j])
-			j++
-		} else {
-			result = append(result, a[i])
-			i++
-			j++
-		}
-	}
-	// Add the rest of a or b. One of them is empty now.
-	result = append(result, a[i:]...)
-	result = append(result, b[j:]...)
-	return result
-}
-
-// MergeNSampleSets merges and dedupes n sets of already sorted sample pairs.
-func MergeNSampleSets[S model.GenericSamplePair](sampleSets ...[]S) []S {
-	l := len(sampleSets)
-	switch l {
-	case 0:
-		return []S{}
-	case 1:
-		return sampleSets[0]
-	}
-
-	n := l / 2
-	left := MergeNSampleSets(sampleSets[:n]...)
-	right := MergeNSampleSets(sampleSets[n:]...)
-	return MergeSampleSets(left, right)
-}
-
 // MergeSlices merges a set of sorted string slices into a single ones
 // while removing all duplicates.
 func MergeSlices(a ...[]string) []string {

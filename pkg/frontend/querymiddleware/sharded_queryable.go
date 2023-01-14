@@ -249,8 +249,8 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 			}
 
 			// same logic as samples above
-			histograms := make([]model.SampleHistogramPair, 0, len(stream.Histograms)+10)
-
+			histograms := make([]mimirpb.Histogram, 0) //, len(stream.Histograms)+10)
+			/* // for now we will disable query sharding for tenants who enable native histograms, as the changes to support query sharding with native histograms is non-trivial
 			for idx, histogram := range stream.Histograms {
 				if step > 0 && idx > 0 && histogram.Timestamp > stream.Histograms[idx-1].Timestamp+step {
 					histograms = append(histograms, model.SampleHistogramPair{
@@ -274,7 +274,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 						Sum: model.FloatString(math.Float64frombits(value.StaleNaN)),
 					},
 				})
-			}
+			}*/
 
 			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}

@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/modelutil"
 )
 
 // StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
@@ -52,14 +52,14 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 		}
 
 		samples := []model.SamplePair{}
-		histograms := []model.SampleHistogramPair{}
+		histograms := []mimirpb.Histogram{}
 		for _, chunk := range chunks {
 			sf, sh, err := chunk.Samples(from, through)
 			if err != nil {
 				return nil, err
 			}
-			samples = util.MergeSampleSets(samples, sf)
-			histograms = util.MergeSampleSets(histograms, sh)
+			samples = modelutil.MergeSampleSets(samples, sf)
+			histograms = modelutil.MergeHistogramSets(histograms, sh)
 		}
 
 		stream := &model.SampleStream{
@@ -69,7 +69,14 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 			stream.Values = samples
 		}
 		if len(histograms) > 0 {
-			stream.Histograms = histograms
+			histogramsDecoded := make([]model.SampleHistogramPair, 0, len(histograms))
+			for i, h := range histograms {
+				histogramsDecoded[i] = model.SampleHistogramPair{
+					Timestamp: model.Time(h.Timestamp),
+					Histogram: mimirpb.FromHistogramToPromCommonHistogram(*mimirpb.FromHistogramProtoToHistogram(h).ToFloat()),
+				}
+			}
+			stream.Histograms = histogramsDecoded
 		}
 		result = append(result, stream)
 	}
@@ -95,6 +102,8 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 				Timestamp: model.Time(sam.TimestampMs),
 				Value:     model.SampleValue(sam.Value),
 			})
+
+			// TODO(zenador): add histograms, but this only seems to be used in tests
 		}
 
 		result = append(result, &model.SampleStream{

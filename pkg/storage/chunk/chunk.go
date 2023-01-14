@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -65,7 +67,7 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
-	Histogram() model.SampleHistogramPair
+	Histogram() mimirpb.Histogram
 	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
@@ -109,17 +111,17 @@ func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Ch
 	}
 }
 
-// Samples returns all SamplePairs and SampleHistogramPairs for the chunk.
-func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []model.SampleHistogramPair, error) {
+// Samples returns all SamplePairs and Histograms for the chunk.
+func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
 	it := c.Data.NewIterator(nil)
 	return rangeValues(it, from, through)
 }
 
 // rangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []model.SampleHistogramPair, error) {
+func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
 	resultFloat := []model.SamplePair{}
-	resultHist := []model.SampleHistogramPair{}
+	resultHist := []mimirpb.Histogram{}
 	currValType := it.FindAtOrAfter(oldestInclusive)
 	if currValType == chunkenc.ValNone {
 		return resultFloat, resultHist, it.Err()

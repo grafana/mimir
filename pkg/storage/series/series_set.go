@@ -6,7 +6,6 @@
 package series
 
 import (
-	"errors"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -14,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ConcreteSeriesSet implements storage.SeriesSet.
@@ -57,11 +58,11 @@ func (c *ConcreteSeriesSet) Warnings() storage.Warnings {
 type ConcreteSeries struct {
 	labels     labels.Labels
 	samples    []model.SamplePair
-	histograms []model.SampleHistogramPair
+	histograms []mimirpb.Histogram
 }
 
 // NewConcreteSeries instantiates an in memory series from a list of samples & histograms & labels
-func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair, histograms []model.SampleHistogramPair) *ConcreteSeries {
+func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair, histograms []mimirpb.Histogram) *ConcreteSeries {
 	return &ConcreteSeries{
 		labels:     ls,
 		samples:    samples,
@@ -117,11 +118,13 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 }
 
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+	h := c.series.histograms[c.cur]
+	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(h)
 }
 
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+	h := c.series.histograms[c.cur]
+	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(h).ToFloat()
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
@@ -177,9 +180,9 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(m))
 	for _, ss := range m {
 		series = append(series, &ConcreteSeries{
-			labels:     metricToLabels(ss.Metric),
-			samples:    ss.Values,
-			histograms: ss.Histograms,
+			labels:  metricToLabels(ss.Metric),
+			samples: ss.Values,
+			// histograms: ss.Histograms, // cannot convert the decoded matrix form to the expected encoded format. this method is only used in tests so ignoring histogram support for now
 		})
 	}
 	return NewConcreteSeriesSet(series)
