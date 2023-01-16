@@ -39,10 +39,18 @@ func TestOverridesExporterRing(t *testing.T) {
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled":          "true",
 				"-overrides-exporter.ring.heartbeat-period": "1s",
-				// Overrides-exporter replicas start exposing limit metrics only after a period
-				// of 4 * heartbeat timeout has passed. Set this to a low value to speed up the
-				// test.
-				"-overrides-exporter.ring.heartbeat-timeout": "2s",
+			},
+			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
+			expectedMetricSum: limit,
+		},
+		{
+			name: "ring enabled with stability",
+			flags: map[string]string{
+				"-overrides-exporter.ring.enabled":                     "true",
+				"-overrides-exporter.ring.heartbeat-period":            "1s",
+				"-overrides-exporter.ring.heartbeat-timeout":           "2s",
+				"-overrides-exporter.ring.wait-stability-min-duration": "2s",
+				"-overrides-exporter.ring.wait-stability-max-duration": "4s",
 			},
 			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
 			expectedMetricSum: limit,

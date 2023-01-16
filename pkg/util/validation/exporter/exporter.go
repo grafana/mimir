@@ -31,6 +31,11 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ring.RegisterFlags(f, logger)
 }
 
+// Validate validates the configuration for an overrides-exporter.
+func (c *Config) Validate() error {
+	return c.Ring.Validate()
+}
+
 // OverridesExporter exposes per-tenant resource limit overrides as Prometheus metrics
 type OverridesExporter struct {
 	services.Service
@@ -168,6 +173,10 @@ func (oe *OverridesExporter) isLeader() bool {
 	if oe.ring == nil {
 		// If the ring is not enabled, export all metrics
 		return true
+	}
+	if oe.Service.State() != services.Running {
+		// We haven't finished startup yet, likely waiting for ring stability.
+		return false
 	}
 	isLeaderNow, err := oe.ring.isLeader(time.Now())
 	if err != nil {

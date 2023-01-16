@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEmptyRing(t *testing.T) {
+func TestOverridesExporter_emptyRing(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -28,7 +28,6 @@ func TestEmptyRing(t *testing.T) {
 
 	cfg := RingConfig{Enabled: true}
 	cfg.KVStore.Mock = ringStore
-	cfg.HeartbeatTimeout = 15 * time.Second
 
 	cfg.InstanceID = "instance-1"
 	cfg.InstanceAddr = "127.0.0.1"
@@ -43,15 +42,9 @@ func TestEmptyRing(t *testing.T) {
 
 // TestOverridesExporterRing_scaleDownAndUp tests that a maximum of one leader
 // replica exists at any point in time while the number of replicas is scaled.
-func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
+func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	// Create an empty ring.
-	ctx := context.Background()
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		return ring.NewDesc(), true, nil
-	}))
 
 	cfg := RingConfig{Enabled: true}
 	cfg.KVStore.Mock = ringStore
@@ -60,26 +53,27 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	cfg.InstanceID = "instance-1"
 	cfg.InstanceAddr = "127.0.0.1"
 	i1, err := newRing(cfg, log.NewNopLogger(), nil)
-	l1 := i1.lifecycler
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i1.client))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i1.client)) })
+	l1 := i1.lifecycler
 
 	cfg.InstanceID = "instance-2"
 	cfg.InstanceAddr = "127.0.0.2"
 	i2, err := newRing(cfg, log.NewNopLogger(), nil)
-	l2 := i2.lifecycler
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i2.client))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i2.client)) })
+	l2 := i2.lifecycler
 
 	// Register instances in the ring (manually, to be able to assign registered timestamps and tokens).
+	ctx := context.Background()
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := in.(*ring.Desc)
-		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now().Add(-time.Hour))
-		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{leaderToken + 3}, ring.ACTIVE, time.Now().Add(-59*time.Minute))
+		desc := ring.NewDesc()
+		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now())
+		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now())
 		return desc, true, nil
 	}))
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, i1))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, i2))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i2)) })
 
 	// Wait until the clients have received the ring update.
 	test.Poll(t, time.Second, []int{2, 2}, func() interface{} {
@@ -93,13 +87,14 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	require.NoError(t, err)
 	i2IsLeader, err := i2.isLeader(time.Now())
 	require.NoError(t, err)
-	require.True(t, i1IsLeader && !i2IsLeader)
+
+	require.True(t, i1IsLeader)
+	require.False(t, i2IsLeader)
 
 	// --- Scale down ---
 
-	// Start and immediately stop the leader's lifecycler to make it unregister itself from the ring.
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i1.lifecycler))
-	require.NoError(t, services.StopAndAwaitTerminated(ctx, i1.lifecycler))
+	// Stop instance-1.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, i1))
 
 	// Wait for the leader to have advertised its leaving state to the ring
 	test.Poll(t, time.Second, ring.LEAVING, func() interface{} {
@@ -112,67 +107,31 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 		return nil
 	})
 
-	i1IsLeader, err = i1.isLeader(time.Now())
-	require.NoError(t, err)
 	i2IsLeader, err = i2.isLeader(time.Now())
 	require.NoError(t, err)
-	// Since the previous leader is still in the ring but in state ring.LEAVING, there should be no leader now.
-	require.True(t, !i1IsLeader && !i2IsLeader)
+	// Since the previous leader is still in the ring but in state ring.LEAVING,
+	// no other instance should be the leader now.
+	require.False(t, i2IsLeader)
 
-	// Remove instance-1 from the ring.
+	// After a certain period of time (ringAutoForgetUnhealthyPeriods *
+	// cfg.HeartbeatTimeout) the instance's heartbeat will expire. If the instance
+	// becomes healthy again during this period (e.g. during rollout), it will rejoin
+	// the ring and resume its function as the leader. Otherwise, it will be
+	// auto-forgotten from the ring and a different replica will become the leader.
+	// This is done manually in the unit test.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		desc.RemoveIngester(i1.lifecycler.GetInstanceID())
 		return desc, true, nil
 	}))
 
+	// Wait for ring update to be observed by the client.
 	test.Poll(t, time.Second, false, func() interface{} {
-		return i2.client.HasInstance(i1.lifecycler.GetInstanceID())
+		return i2.client.HasInstance(l1.GetInstanceID())
 	})
 
-	i1IsLeader, err = i1.isLeader(time.Now())
-	require.NoError(t, err)
 	i2IsLeader, err = i2.isLeader(time.Now())
 	require.NoError(t, err)
 	// instance-2 should now be the new leader.
-	require.True(t, !i1IsLeader && i2IsLeader)
-
-	// --- Scale up ---
-
-	// Create and start a new instance.
-	cfg.InstanceID = "instance-3"
-	cfg.InstanceAddr = "127.0.0.3"
-	i3, err := newRing(cfg, log.NewNopLogger(), nil)
-	l3 := i3.lifecycler
-	require.NoError(t, err)
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := in.(*ring.Desc)
-		desc.AddIngester(l3.GetInstanceID(), l3.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now())
-		return desc, true, nil
-	}))
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i3))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i3)) })
-
-	// Wait until the new instance is observed in the ring.
-	test.Poll(t, time.Second, true, func() interface{} {
-		rs2, _ := i2.client.GetAllHealthy(ringOp)
-		rs3, _ := i3.client.GetAllHealthy(ringOp)
-		return rs2.Includes(l3.GetInstanceAddr()) && rs3.Includes(l3.GetInstanceAddr())
-	})
-
-	i2IsLeader, err = i2.isLeader(time.Now())
-	require.NoError(t, err)
-	i3IsLeader, err := i3.isLeader(time.Now())
-	require.NoError(t, err)
-
-	// instance-3 is registered with a token that makes it the new leader, but
-	// because of the wait time it won't be the leader immediately.
-	require.True(t, !i2IsLeader && !i3IsLeader)
-
-	// However, instance-3 should become the leader once the wait time has passed and
-	// instance-2 has had time to become aware of the new ring leader.
-	i3WillBeLeader, err := i3.isLeader(time.Now().Add((ringAutoForgetUnhealthyPeriods) * cfg.HeartbeatTimeout))
-	require.NoError(t, err)
-	require.True(t, i3WillBeLeader)
+	require.True(t, i2IsLeader)
 }
