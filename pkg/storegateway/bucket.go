@@ -915,9 +915,34 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 
 	// Merge the sub-results from each selected block.
-	mergeStats := &queryStats{}
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
-		begin := time.Now()
+		var (
+			mergeStats = &queryStats{}
+			begin      = time.Now()
+		)
+
+		// Once the iteration is done we will merge the stats and track metrics.
+		defer func() {
+			stats.merge(mergeStats)
+
+			if err == nil {
+				if s.maxSeriesPerBatch <= 0 {
+					// When streaming is disabled, the time spent iterating over the series set is the
+					// actual time spent merging series and sending response to the client.
+					s.metrics.seriesMergeDuration.Observe(time.Since(begin).Seconds())
+				} else {
+					// When streaming is enabled, the time spent iterating over the series set is the
+					// actual time spent fetching series and chunks, and sending them to the client.
+					// We split the two timings to have a better view over how time is spent.
+					finalStats := stats.export()
+					fetchDuration := finalStats.streamingSeriesWaitBatchLoadedDuration.Seconds()
+					sendDuration := math.Max(0, time.Since(begin).Seconds()-fetchDuration)
+
+					s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(fetchDuration)
+					s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(sendDuration)
+				}
+			}
+		}()
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
 		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
@@ -948,19 +973,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return
 		}
 
-		if s.maxSeriesPerBatch <= 0 {
-			// When streaming is disabled, the time spent iterating over the series set is the
-			// actual time spent merging series and sending response to the client.
-			s.metrics.seriesMergeDuration.Observe(time.Since(begin).Seconds())
-		} else {
-			// When streaming is enabled, the time spent iterating over the series set is the
-			// actual time spent fetching series and chunks, and sending them to the client.
-			s.metrics.seriesRequestByStageDuration.WithLabelValues("fetch_series_and_chunks").Observe(time.Since(begin).Seconds())
-		}
-
 		err = nil
 	})
-	stats.merge(mergeStats)
 
 	if err != nil {
 		return
@@ -1152,15 +1166,15 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
 	})
-	s.metrics.seriesRequestByStageDuration.WithLabelValues("expand_postings").Observe(time.Since(begin).Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(time.Since(begin).Seconds())
 	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats, s.metrics.iteratorLoadDurations)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats)
 	} else {
-		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
+		set = newSeriesSetWithoutChunks(ctx, mergedBatches, stats)
 	}
 	return set, resHints, nil
 }
@@ -1191,6 +1205,18 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 	s.metrics.expandPostingsDuration.Observe(stats.expandedPostingsDuration.Seconds())
+
+	// Track the streaming store-gateway preloading effectiveness metrics only if the request had
+	// more than 1 batch. If the request only had 1 batch, then preloading is not triggered at all.
+	if stats.streamingSeriesBatchCount > 1 {
+		s.metrics.streamingSeriesBatchPreloadingLoadDuration.Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
+		s.metrics.streamingSeriesBatchPreloadingWaitDuration.Observe(stats.streamingSeriesWaitBatchLoadedDuration.Seconds())
+	}
+
+	// Track the streaming store-gateway specific metrics only if they're actually measured (which means it's enabled).
+	if stats.streamingSeriesFetchRefsDuration > 0 {
+		s.metrics.streamingSeriesRefsFetchDuration.Observe(stats.streamingSeriesFetchRefsDuration.Seconds())
+	}
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {

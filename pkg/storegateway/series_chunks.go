@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -169,15 +168,10 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
-	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
-	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
-	// But realistically it will not be. Along with the duration of the chunks_load iterator,
-	// we can determine where is the bottleneck in the streaming pipeline.
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
+	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
 
@@ -286,6 +280,28 @@ func (p *preloadingSetIterator[Set]) Err() error {
 	return p.err
 }
 
+func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, iterator genericIterator[Set], stats *safeQueryStats) genericIterator[Set] {
+	// Track the time spent loading batches (including preloading).
+	iterator = newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration) {
+		stats.update(func(stats *queryStats) {
+			stats.streamingSeriesBatchLoadDuration += duration
+
+			// This function is called for each Next() invocation, so we can use it to measure
+			// into how many batches the request has been split.
+			stats.streamingSeriesBatchCount++
+		})
+	})
+
+	iterator = newPreloadingSetIterator[Set](ctx, preloadedSetsCount, iterator)
+
+	// Track the time step waiting until the next batch is loaded once the "reader" is ready to get it.
+	return newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration) {
+		stats.update(func(stats *queryStats) {
+			stats.streamingSeriesWaitBatchLoadedDuration += duration
+		})
+	})
+}
+
 type loadingSeriesChunksSetIterator struct {
 	chunkReaders  bucketChunkReaders
 	from          seriesChunkRefsSetIterator
@@ -375,29 +391,29 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
-type durationMeasuringIterator[Set any] struct {
+type nextDurationMeasuringIterator[Set any] struct {
 	from             genericIterator[Set]
-	durationObserver prometheus.Observer
+	durationObserver func(time.Duration)
 }
 
-func newDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver prometheus.Observer) genericIterator[Set] {
-	return &durationMeasuringIterator[Set]{
+func newNextDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver func(time.Duration)) genericIterator[Set] {
+	return &nextDurationMeasuringIterator[Set]{
 		from:             from,
 		durationObserver: durationObserver,
 	}
 }
 
-func (m *durationMeasuringIterator[Set]) Next() bool {
+func (m *nextDurationMeasuringIterator[Set]) Next() bool {
 	start := time.Now()
 	next := m.from.Next()
-	m.durationObserver.Observe(time.Since(start).Seconds())
+	m.durationObserver(time.Since(start))
 	return next
 }
 
-func (m *durationMeasuringIterator[Set]) At() Set {
+func (m *nextDurationMeasuringIterator[Set]) At() Set {
 	return m.from.At()
 }
 
-func (m *durationMeasuringIterator[Set]) Err() error {
+func (m *nextDurationMeasuringIterator[Set]) Err() error {
 	return m.from.Err()
 }

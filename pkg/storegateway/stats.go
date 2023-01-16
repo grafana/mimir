@@ -52,6 +52,19 @@ type queryStats struct {
 	mergedChunksCount int
 
 	expandedPostingsDuration time.Duration
+
+	// The total time spent fetching series and chunk refs.
+	streamingSeriesFetchRefsDuration time.Duration
+
+	// The number of batches the Series() request has been split into.
+	streamingSeriesBatchCount int
+
+	// The total time spent loading batches.
+	streamingSeriesBatchLoadDuration time.Duration
+
+	// The total time spent waiting until the next batch is loaded, once the store-gateway was
+	// ready to send it to the client.
+	streamingSeriesWaitBatchLoadedDuration time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -95,6 +108,11 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergedChunksCount += o.mergedChunksCount
 
 	s.expandedPostingsDuration += o.expandedPostingsDuration
+
+	s.streamingSeriesFetchRefsDuration += o.streamingSeriesFetchRefsDuration
+	s.streamingSeriesBatchCount += o.streamingSeriesBatchCount
+	s.streamingSeriesBatchLoadDuration += o.streamingSeriesBatchLoadDuration
+	s.streamingSeriesWaitBatchLoadedDuration += o.streamingSeriesWaitBatchLoadedDuration
 
 	return &s
 }

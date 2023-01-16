@@ -309,7 +309,28 @@ local filename = 'mimir-queries.json';
         $.stack +
         { yaxes: $.yaxes('s') },
       )
-      // TODO preloading efficiency
+      .addPanel(
+        $.panel('Series batch preloading efficiency (streaming enabled)') +
+        $.queryPanel(
+          |||
+            (1 - (
+                sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%s}[$__rate_interval]))
+                /
+                sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%s}[$__rate_interval]))
+            ))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          '% of time reduced by preloading'
+        ) +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Series batch preloading efficiency',
+          |||
+            This panel shows the % of time reduced by preloading, for Series() requests which have been
+            split to 2+ batches. If a Series() request is served within a single batch, then preloading
+            is not triggered, and thus not counted in this measurement.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('')
