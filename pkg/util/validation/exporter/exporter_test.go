@@ -161,9 +161,9 @@ func TestOverridesExporter_withRing(t *testing.T) {
 
 	// Wait until it has registered itself to the ring.
 	test.Poll(t, time.Second, true, func() interface{} {
-		rs1, _ := e2.ring.client.GetAllHealthy(ringOp)
+		rs1, _ := e1.ring.client.GetAllHealthy(ringOp)
 		rs2, _ := e2.ring.client.GetAllHealthy(ringOp)
-		return rs1.Includes(e2.ring.lifecycler.GetInstanceAddr()) && rs2.Includes(e2.ring.lifecycler.GetInstanceAddr())
+		return rs1.Includes(e2.ring.lifecycler.GetInstanceAddr()) && rs2.Includes(e1.ring.lifecycler.GetInstanceAddr())
 	})
 
 	// Only one of the two instances should be exporting metrics.
