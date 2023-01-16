@@ -109,7 +109,7 @@ const (
 	ephemeralPrometheusMetricsPrefix = "ephemeral_"
 
 	// Label name used to select queried storage type.
-	StorageLabelName            = "__storage__"
+	StorageLabelName            = "__mimir_storage__"
 	EphemeralStorageLabelValue  = "ephemeral"
 	PersistentStorageLabelValue = "persistent"
 

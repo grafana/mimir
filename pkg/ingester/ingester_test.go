@@ -6768,7 +6768,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 	require.Equal(t, err, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), metricLabels), userID).Error()))
 }
 
-func TestIngesterQueryingWithStorageLabel(t *testing.T) {
+func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 
 	// Create ingester
