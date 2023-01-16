@@ -17,10 +17,11 @@ import (
 )
 
 var knownCodecs = map[string]Codec{
-	"original JSON":               OriginalJsonCodec{},
-	"uninterned protobuf":         UninternedProtobufCodec{},
-	"interned protobuf":           InternedProtobufCodec{},
-	"gzipped uninterned protobuf": GzipWrapperCodec{UninternedProtobufCodec{}},
+	"original JSON":                         OriginalJsonCodec{},
+	"uninterned protobuf":                   UninternedProtobufCodec{},
+	"interned protobuf":                     InternedProtobufCodec{},
+	"gzipped uninterned protobuf":           GzipWrapperCodec{UninternedProtobufCodec{}},
+	"snappy compressed uninterned protobuf": SnappyWrapperCodec{UninternedProtobufCodec{}},
 }
 
 // This directory contains a selection of query results from an internal operational cluster

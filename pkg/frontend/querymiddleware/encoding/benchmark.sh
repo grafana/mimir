@@ -10,6 +10,7 @@ codecs=(
   "uninterned protobuf"
   "interned protobuf"
   "gzipped uninterned protobuf"
+  "snappy compressed uninterned protobuf"
 )
 
 mkdir -p "$OUTPUT_DIR"
