@@ -9,7 +9,7 @@ weight: 10
 
 As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
 The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnent]({{< relref "#migrate-to-grafana-mimir-using-jsonnet" >}}).
-To migrate a Helm deployment of Cortex refer to [Migrate from Cortex]({{< relref "/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex" >}}).
+To migrate a Helm deployment of Cortex refer to [Migrate from Cortex](/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex).
 > **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 
 Grafana Mimir includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
