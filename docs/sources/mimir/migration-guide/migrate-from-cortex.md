@@ -104,7 +104,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Generate the configuration for Grafana Mimir
 
-[`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) provides a command for converting Cortex configuration to Mimir configuration that you can use to update both flags and configuration files.
+The [`mimirtool config convert`]({{< relref "../operators-guide/tools/mimirtool.md#config" >}}) command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
 
 ### Install mimirtool
 
