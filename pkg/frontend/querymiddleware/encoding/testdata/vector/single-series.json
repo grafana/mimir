@@ -1,0 +1,1 @@
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"cluster":"my-test-cluster","namespace":"my-test-namespace"},"value":[1672790400,"0"]}]}}

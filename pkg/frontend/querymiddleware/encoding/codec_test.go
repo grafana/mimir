@@ -3,10 +3,12 @@
 package encoding
 
 import (
+	"io/fs"
 	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +30,7 @@ var knownCodecs = map[string]Codec{
 const sourceDir = "/Users/charleskorn/Desktop/queries/all"
 
 func TestEncodingRoundtrip(t *testing.T) {
-	originalFileNames, err := filepath.Glob(path.Join(sourceDir, "**", "*.json"))
+	originalFileNames, err := recursivelyFindFilesWithSuffix(sourceDir, ".json")
 	require.NoError(t, err)
 	require.NotEmpty(t, originalFileNames)
 
@@ -99,7 +101,7 @@ func BenchmarkDecodeAll(b *testing.B) {
 			continue
 		}
 
-		files, err := filepath.Glob(path.Join(sourceDir, directory.Name(), "**", "*.json"))
+		files, err := recursivelyFindFilesWithSuffix(path.Join(sourceDir, directory.Name()), ".json")
 		require.NoError(b, err)
 		require.NotEmpty(b, files)
 
@@ -132,6 +134,36 @@ func BenchmarkDecodeAll(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeExamples(b *testing.B) {
+	files, err := recursivelyFindFilesWithSuffix("testdata", ".json")
+	require.NoError(b, err)
+	require.NotEmpty(b, files)
+
+	originalJsonCodec := OriginalJsonCodec{}
+	codec := getCodec(b)
+
+	for _, file := range files {
+		jsonBytes, err := os.ReadFile(file)
+		require.NoError(b, err)
+
+		resp, err := originalJsonCodec.Decode(jsonBytes)
+		require.NoError(b, err)
+
+		encodedBytes, err := codec.Encode(resp)
+		require.NoError(b, err)
+
+		b.Run(file, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := codec.Decode(encodedBytes)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkEncodeAll(b *testing.B) {
 	directories, err := os.ReadDir(sourceDir)
 	require.NoError(b, err)
@@ -144,7 +176,7 @@ func BenchmarkEncodeAll(b *testing.B) {
 			continue
 		}
 
-		files, err := filepath.Glob(path.Join(sourceDir, directory.Name(), "**", "*.json"))
+		files, err := recursivelyFindFilesWithSuffix(path.Join(sourceDir, directory.Name()), ".json")
 		require.NoError(b, err)
 		require.NotEmpty(b, files)
 
@@ -172,6 +204,57 @@ func BenchmarkEncodeAll(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkEncodeExamples(b *testing.B) {
+	files, err := recursivelyFindFilesWithSuffix("testdata", ".json")
+	require.NoError(b, err)
+	require.NotEmpty(b, files)
+
+	originalJsonCodec := OriginalJsonCodec{}
+	codec := getCodec(b)
+
+	for _, file := range files {
+		jsonBytes, err := os.ReadFile(file)
+		require.NoError(b, err)
+
+		resp, err := originalJsonCodec.Decode(jsonBytes)
+		require.NoError(b, err)
+
+		b.Run(file, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := codec.Encode(resp)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
+func recursivelyFindFilesWithSuffix(dir string, suffix string) ([]string, error) {
+	files := make([]string, 0)
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() || !strings.HasSuffix(path, suffix) {
+			return nil
+		}
+
+		files = append(files, path)
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
 }
 
 func getCodec(b require.TestingT) Codec {
