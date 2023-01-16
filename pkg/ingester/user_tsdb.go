@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -156,7 +155,7 @@ func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral bool
 	if ephemeral {
 		eph := u.getEphemeralStorage()
 		if eph == nil {
-			return nil, fmt.Errorf("ephemeral storage not available")
+			return storage.NoopQuerier(), nil
 		}
 
 		return tsdb.NewBlockQuerier(eph, mint, maxt)
@@ -169,7 +168,7 @@ func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral
 	if ephemeral {
 		eph := u.getEphemeralStorage()
 		if eph == nil {
-			return nil, fmt.Errorf("ephemeral storage not available")
+			return storage.NoopChunkedQuerier(), nil
 		}
 
 		return tsdb.NewBlockChunkQuerier(eph, mint, maxt)
