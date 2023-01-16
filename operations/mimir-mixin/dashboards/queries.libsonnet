@@ -313,11 +313,13 @@ local filename = 'mimir-queries.json';
         $.panel('Series batch preloading efficiency (streaming enabled)') +
         $.queryPanel(
           |||
-            (1 - (
+            # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
+            # slightly negative because of the small overhead introduced by preloading.
+            clamp_min(1 - (
                 sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%s}[$__rate_interval]))
                 /
                 sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%s}[$__rate_interval]))
-            ))
+            ), 0)
           ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
           '% of time reduced by preloading'
         ) +

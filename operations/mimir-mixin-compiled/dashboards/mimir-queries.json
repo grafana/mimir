@@ -2664,7 +2664,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "(1 - (\n    sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n    /\n    sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n))\n",
+                        "expr": "# Clamping min to 0 because if preloading not useful at all, then the actual value we get is\n# slightly negative because of the small overhead introduced by preloading.\nclamp_min(1 - (\n    sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n    /\n    sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n), 0)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "% of time reduced by preloading",
