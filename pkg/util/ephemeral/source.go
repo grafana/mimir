@@ -46,7 +46,7 @@ func (s *Source) String() string {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (s *Source) MarshalYAML() (interface{}, error) {
+func (s Source) MarshalYAML() (interface{}, error) {
 	return s.String(), nil
 }
 

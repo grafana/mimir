@@ -18,13 +18,11 @@ import (
 // LabelMatchers configures matchers based on which series get marked as ephemeral.
 type LabelMatchers struct {
 	raw      map[Source][]string
-	bySource map[Source]LabelMatchersForSource
+	bySource map[Source]MatcherSetsForSource
 	string   string
 }
 
-type LabelMatchersForSource struct {
-	config []matcherSet
-}
+type MatcherSetsForSource []matcherSet
 
 // matcherSet is like alertmanager's labels.Matchers but for Prometheus' labels.Matcher slice
 type matcherSet []*labels.Matcher
@@ -49,13 +47,13 @@ func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 }
 
 // HasMatchers returns true if there is at least one matcher defined, otherwise it returns false.
-func (c *LabelMatchersForSource) HasMatchers() bool {
-	return len(c.config) > 0
+func (m *MatcherSetsForSource) HasMatchers() bool {
+	return len(*m) > 0
 }
 
-func (c *LabelMatchersForSource) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
-	for _, m := range c.config {
-		if m.matches(lset) {
+func (m *MatcherSetsForSource) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
+	for _, ms := range *m {
+		if ms.matches(lset) {
 			return true
 		}
 	}
@@ -103,11 +101,12 @@ func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	if err != nil {
 		return err
 	}
+
 	*c, err = parseLabelMatchers(rawMatchers)
 	return err
 }
 
-func (c *LabelMatchers) ForSource(source mimirpb.WriteRequest_SourceEnum) LabelMatchersForSource {
+func (c *LabelMatchers) ForSource(source mimirpb.WriteRequest_SourceEnum) MatcherSetsForSource {
 	return c.bySource[convertMimirpbSource(source)]
 }
 
@@ -136,7 +135,7 @@ func convertStringToSource(source string) (Source, error) {
 
 func parseLabelMatchers(configIn map[Source][]string) (c LabelMatchers, err error) {
 	c.raw = configIn
-	c.bySource = map[Source]LabelMatchersForSource{}
+	c.bySource = map[Source]MatcherSetsForSource{}
 
 	// Iterate over ValidSources instead of configIn to keep the order deterministic.
 	for _, source := range ValidSources {
@@ -162,7 +161,7 @@ func parseLabelMatchers(configIn map[Source][]string) (c LabelMatchers, err erro
 
 			for _, addToSource := range addToSources {
 				bySource := c.bySource[addToSource]
-				bySource.config = append(bySource.config, promMatchers)
+				bySource = append(bySource, promMatchers)
 				c.bySource[addToSource] = bySource
 			}
 		}
@@ -210,5 +209,15 @@ func matchersConfigString(matchers map[Source][]string) string {
 
 // MarshalYAML implements yaml.Marshaler.
 func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
-	return c.raw, nil
+	res := map[Source][]string{}
+
+	for _, source := range ValidSources {
+		if len(c.raw[source]) == 0 {
+			continue
+		}
+
+		res[source] = c.raw[source]
+	}
+
+	return res, nil
 }
