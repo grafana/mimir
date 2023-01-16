@@ -121,6 +121,8 @@ var (
 	errMultipleStorageMatchersFound = fmt.Errorf("multiple matchers for %s label found, only one matcher supported", StorageLabelName)
 )
 
+var errEphemeralStorageDisabledForUser = errors.New("ephemeral storage is not enabled for user")
+
 // BlocksUploader interface is used to have an easy way to mock it in tests.
 type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
@@ -245,7 +247,8 @@ type Ingester struct {
 	compactionIdleTimeout time.Duration
 
 	// Number of series in memory, across all tenants.
-	seriesCount atomic.Int64
+	seriesCount          atomic.Int64
+	ephemeralSeriesCount atomic.Int64
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -769,22 +772,29 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if len(req.EphemeralTimeseries) > 0 {
 		a, err := db.EphemeralAppender(ctx)
-		if err != nil {
-			// TODO: handle error caused by limit (ephemeral storage disabled), and report it via firstPartialErr instead.
+
+		switch {
+		case err != nil && !errors.Is(err, errEphemeralStorageDisabledForUser):
 			rollback()
 			return nil, err
-		}
 
-		ephemeralApp = a.(extendedAppender)
+		case err != nil && errors.Is(err, errEphemeralStorageDisabledForUser):
+			updateFirstPartial(func() error {
+				return fmt.Errorf(globalerror.EphemeralStorageNotEnabledForUser.Message(errEphemeralStorageDisabledForUser.Error()))
+			})
 
-		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
+		default:
+			ephemeralApp = a.(extendedAppender)
 
-		minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+			level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
 
-		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
-		if err != nil {
-			rollback()
-			return nil, err
+			minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+
+			err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
+			if err != nil {
+				rollback()
+				return nil, err
+			}
 		}
 	}
 
@@ -980,6 +990,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				continue
 
 			case errMaxSeriesPerUserLimitExceeded:
+			case errMaxEphemeralSeriesPerUserLimitExceeded:
 				stats.perUserSeriesLimitCount++
 				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
 				continue
@@ -1691,14 +1702,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
 	userDB := &userTSDB{
-		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
-		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
-		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		instanceLimitsFn:    i.getInstanceLimits,
-		instanceSeriesCount: &i.seriesCount,
-		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
+		userID:                       userID,
+		activeSeries:                 activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
+		seriesInMetric:               newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
+		ingestedAPISamples:           util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		ingestedRuleSamples:          util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		instanceLimitsFn:             i.getInstanceLimits,
+		instanceSeriesCount:          &i.seriesCount,
+		instanceEphemeralSeriesCount: &i.ephemeralSeriesCount,
+		blockMinRetention:            i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
@@ -1715,7 +1727,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:           userDB,
+		SeriesLifecycleCallback:           userDB.persistentSeriesCallback(),
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                      int64(maxExemplars),
@@ -1778,7 +1790,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB.ephemeralSeriesRetentionPeriod = i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention
 	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
-		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
+		if i.limits.MaxGlobalEphemeralSeriesPerUser(userID) <= 0 {
+			return nil, errEphemeralStorageDisabledForUser
+		}
 
 		headOptions := &tsdb.HeadOptions{
 			ChunkRange:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention.Milliseconds(),
@@ -1788,7 +1802,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			ChunkEndTimeVariance:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksEndTimeVariance,
 			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteQueueSize,
 			StripeSize:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.StripeSize,
-			SeriesCallback:                 nil, // TODO: handle limits.
+			SeriesCallback:                 userDB.ephemeralSeriesCallback(),
 			EnableExemplarStorage:          false,
 			EnableMemorySnapshotOnShutdown: false,
 			IsolationDisabled:              true,
@@ -2240,10 +2254,12 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// but if we're closing TSDB because of tenant deletion mark, then it may still contain some series.
 	// We need to remove these series from series count.
 	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
+	eph := userDB.getEphemeralStorage()
+	if eph != nil {
+		i.ephemeralSeriesCount.Sub(int64(eph.NumSeries()))
+	}
 
 	dir := userDB.db.Dir()
-
-	ephemeral := userDB.hasEphemeralStorage()
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)
@@ -2267,7 +2283,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
-	if ephemeral {
+	if eph != nil {
 		i.metrics.memEphemeralUsers.Dec()
 	}
 	i.tsdbMetrics.removeRegistryForUser(userID)

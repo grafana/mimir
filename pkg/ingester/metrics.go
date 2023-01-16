@@ -48,6 +48,7 @@ type ingesterMetrics struct {
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
 	maxSeriesGauge          prometheus.GaugeFunc
+	maxEphemeralSeriesGauge prometheus.GaugeFunc
 	maxIngestionRate        prometheus.GaugeFunc
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
@@ -217,6 +218,17 @@ func newIngesterMetrics(
 		}, func() float64 {
 			if g := instanceLimitsFn(); g != nil {
 				return float64(g.MaxInMemorySeries)
+			}
+			return 0
+		}),
+
+		maxEphemeralSeriesGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_ephemeral_series"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInMemoryEphemeralSeries)
 			}
 			return 0
 		}),
