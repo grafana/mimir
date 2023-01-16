@@ -5,6 +5,7 @@ package ephemeral
 import (
 	"testing"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -165,6 +166,77 @@ api:
 				gotErr := got.Set(tc.inputStringArg)
 				check(t, tc.expect, got, tc.expectErr, gotErr)
 			})
+		})
+	}
+}
+
+func TestIsEphemeral(t *testing.T) {
+	labelBuilder := labels.NewBuilder(nil)
+	labelBuilder.Set("__name__", "test_metric")
+	labelBuilder.Set("testLabel1", "testValue1")
+	testLabels := mimirpb.FromLabelsToLabelAdapters(labelBuilder.Labels(nil))
+
+	type testCase struct {
+		name         string
+		matchers     string
+		source       mimirpb.WriteRequest_SourceEnum
+		seriesLabels []mimirpb.LabelAdapter
+		expectResult bool
+	}
+
+	testCases := []testCase{
+		{
+			name:         "no matchers",
+			matchers:     "",
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: false,
+		}, {
+			name:         "matching labels but with different source",
+			matchers:     `api:{__name__="test_metric"}`,
+			source:       mimirpb.RULE,
+			seriesLabels: testLabels,
+			expectResult: false,
+		}, {
+			name:         "matching source but with different labels",
+			matchers:     `api:{__name__="different_metric"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: false,
+		}, {
+			name:         "matching source and labels, matching on metric name",
+			matchers:     `api:{__name__="test_metric"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: true,
+		}, {
+			name:         "matching source and labels, matching on other label",
+			matchers:     `api:{testLabel1="testValue1"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: true,
+		}, {
+			name:         "matching source and labels, matching on both labels",
+			matchers:     `api:{__name__="test_metric", testLabel1="testValue1"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: true,
+		}, {
+			name:         "matching source and labels, matching on both labels, unsorted",
+			matchers:     `api:{testLabel1="testValue1", __name__="test_metric"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var lb LabelMatchers
+			require.NoError(t, lb.Set(tc.matchers))
+
+			got := lb.ShouldMarkEphemeral(tc.source, tc.seriesLabels)
+			require.Equal(t, tc.expectResult, got)
 		})
 	}
 }
