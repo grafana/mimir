@@ -7,27 +7,27 @@ weight: 10
 
 # Migrate from Cortex to Grafana Mimir
 
-This document guides an operator through the process of migrating a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-This document includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#migrating-to-grafana-mimir-using-jsonnet).
-This document was tested with Cortex versions 1.10 and 1.11. While it may work with more recent versions of Cortex, we cannot guarantee that.
-To migrate a Helm deployment of Cortex refer to [Migrate from Cortex](/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex).
+As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
+The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnent]({{< relref "#migrate-to-grafana-mimir-using-jsonnet" >}}).
+To migrate a Helm deployment of Cortex refer to [Migrate from Cortex]({{< relref "/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex" >}}).
+> **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 
 Grafana Mimir includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
-The changes focus on making Grafana Mimir easier to run out of the box, including:
+The changes make Grafana Mimir easier to run out of the box:
 
-- Removing configuration parameters that don't require tuning
-- Renaming some parameters so that they're more easily understood
-- Updating the default values of some existing parameters
+- Removed configuration parameters that don't require tuning
+- Renamed some parameters so that they're more easily understood
+- Updated the default values of some existing parameters
 
 The `mimirtool` automates configuration conversion.
 It provides a simple migration by generating Mimir configuration from Cortex configuration.
 
-## Before you begin
+**Before you begin:**
 
 - Ensure that you are running either Cortex 1.10.X or Cortex 1.11.X.
 
-  If you are running an older version of Cortex, upgrade to [1.11.1](https://github.com/cortexproject/cortex/releases) before proceeding with the migration.
+  If you are running an older version of Cortex, upgrade to [Cortex 1.11.1](https://github.com/cortexproject/cortex/releases) before proceeding with the migration.
 
 - Ensure you have installed Cortex alerting and recording rules as well as Cortex dashboards.
 
@@ -39,7 +39,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Notable changes
 
-> **Note:** For full list of changes, refer to the project [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
+> **Note:** For the full list of changes, refer to Mimir’s [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
 
 - The Grafana Mimir HTTP server defaults to listening on port 8080; Cortex defaults to listening on port 80.
   To maintain port 80 as the listening port, set `-server.http-listen-port=80`.
@@ -102,7 +102,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
     | `/<legacy-http-prefix>` | `/alertmanager`                    |
     | `/status`               | `/multitenant_alertmanager/status` |
 
-## Generating configuration for Grafana Mimir
+## Generate the configuration for Grafana Mimir
 
 [`mimirtool`]({{< relref "../operators-guide/tools/mimirtool.md" >}}) provides a command for converting Cortex configuration to Mimir configuration that you can use to update both flags and configuration files.
 
@@ -125,7 +125,7 @@ If you have explicitly set configuration parameters to a value matching the Cort
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
 Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
-## Migrating to Grafana Mimir using Jsonnet
+## Migrate to Grafana Mimir using Jsonnet
 
 Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
