@@ -212,14 +212,22 @@ local filename = 'mimir-reads.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
-            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
-            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            'sum(kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler=~"%s"})' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            'sum(kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler=~"%s"})' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            |||
+              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              + on(%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}* 0)
+            ||| % {
+              namespace_matcher: $.namespaceMatcher(),
+              cluster_labels: std.join(',', $._config.cluster_labels),
+              hpa_name: $._config.autoscaling.querier.hpa_name,
+            },
           ],
           [
             'Min',
             'Max',
-            'Current',
+            'Current {{ scaletargetref_name }}',
           ],
         ) +
         $.panelDescription(
@@ -227,7 +235,15 @@ local filename = 'mimir-reads.json';
           |||
             The minimum, maximum, and current number of querier replicas.
           |||
-        ),
+        ) +
+        {
+          seriesOverrides+: [
+            {
+              alias: '/Current .+/',
+              stack: true,
+            },
+          ],
+        }
       )
       .addPanel(
         local title = 'Scaling metric';
@@ -235,10 +251,17 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           [
             $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.querier.hpa_name),
-            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            |||
+              (keda_metrics_adapter_scaler_metrics_value*0) +
+              on(metric) group_left
+              label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
+            ||| % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
           ], [
-            'Scaling metric',
-            'Target per replica',
+            'Scaling metric for {{ scaledObject }}',
+            'Target per replica for {{ scaledObject }}',
           ]
         ) +
         $.panelDescription(
