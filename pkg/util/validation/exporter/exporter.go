@@ -8,14 +8,12 @@ package exporter
 import (
 	"context"
 	"flag"
-	"net/http"
-	"time"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"net/http"
 
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -178,7 +176,7 @@ func (oe *OverridesExporter) isLeader() bool {
 		// We haven't finished startup yet, likely waiting for ring stability.
 		return false
 	}
-	isLeaderNow, err := oe.ring.isLeader(time.Now())
+	isLeaderNow, err := oe.ring.isLeader()
 	if err != nil {
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
 		// If there was an error establishing ownership using the ring, assume leadership

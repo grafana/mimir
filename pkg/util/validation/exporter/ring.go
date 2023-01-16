@@ -131,9 +131,9 @@ func (c *RingConfig) toRingConfig() ring.Config {
 }
 
 // Validate the Config.
-func (cfg *RingConfig) Validate() error {
-	if cfg.WaitStabilityMinDuration > 0 {
-		if cfg.WaitStabilityMinDuration > cfg.WaitStabilityMaxDuration {
+func (c *RingConfig) Validate() error {
+	if c.WaitStabilityMinDuration > 0 {
+		if c.WaitStabilityMinDuration > c.WaitStabilityMaxDuration {
 			return errors.New("inconsistent config")
 		}
 	}
@@ -156,7 +156,7 @@ type overridesExporterRing struct {
 }
 
 // isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
-func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
+func (r *overridesExporterRing) isLeader() (bool, error) {
 	// Get the leader from the ring and check whether it's this replica.
 	rl, err := ringLeader(r.client)
 	if err != nil {

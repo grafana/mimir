@@ -36,7 +36,7 @@ func TestOverridesExporter_emptyRing(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i1.client))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i1.client)) })
 
-	_, err = i1.isLeader(time.Now())
+	_, err = i1.isLeader()
 	require.ErrorIs(t, err, ring.ErrEmptyRing)
 }
 
@@ -83,9 +83,9 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	})
 
 	// instance-1 should be the leader
-	i1IsLeader, err := i1.isLeader(time.Now())
+	i1IsLeader, err := i1.isLeader()
 	require.NoError(t, err)
-	i2IsLeader, err := i2.isLeader(time.Now())
+	i2IsLeader, err := i2.isLeader()
 	require.NoError(t, err)
 
 	require.True(t, i1IsLeader)
@@ -107,7 +107,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 		return nil
 	})
 
-	i2IsLeader, err = i2.isLeader(time.Now())
+	i2IsLeader, err = i2.isLeader()
 	require.NoError(t, err)
 	// Since the previous leader is still in the ring but in state ring.LEAVING,
 	// no other instance should be the leader now.
@@ -130,7 +130,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 		return i2.client.HasInstance(l1.GetInstanceID())
 	})
 
-	i2IsLeader, err = i2.isLeader(time.Now())
+	i2IsLeader, err = i2.isLeader()
 	require.NoError(t, err)
 	// instance-2 should now be the new leader.
 	require.True(t, i2IsLeader)
