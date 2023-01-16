@@ -52,7 +52,7 @@ func (c *LabelMatchers) String() string {
 
 // HasMatchers returns true if there is at least one matcher defined, otherwise it returns false.
 func (c *LabelMatchers) HasMatchers() bool {
-	return c != nil && len(c.config) > 0
+	return len(c.config) > 0
 }
 
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
