@@ -751,7 +751,7 @@ forwarding:
 
 # (experimental) Enable marking series as ephemeral based on the given matchers
 # in the runtime config.
-# CLI flag: -distributor.ephemeral-metrics-enabled
+# CLI flag: -distributor.ephemeral-series-enabled
 [ephemeral_metrics_enabled: <boolean> | default = false]
 ```
 

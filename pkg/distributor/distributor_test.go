@@ -3129,15 +3129,15 @@ func TestMarkEphemeralMiddleware(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), tenant)
 
 	type testCase struct {
-		name             string
-		ephemeralMetrics []string
-		reqs             []*mimirpb.WriteRequest
-		expectedReqs     []*mimirpb.WriteRequest
+		name            string
+		ephemeralSeries []string
+		reqs            []*mimirpb.WriteRequest
+		expectedReqs    []*mimirpb.WriteRequest
 	}
 	testCases := []testCase{
 		{
 			name: "half - half",
-			ephemeralMetrics: []string{
+			ephemeralSeries: []string{
 				"metric2",
 				"metric3",
 			},
@@ -3145,7 +3145,7 @@ func TestMarkEphemeralMiddleware(t *testing.T) {
 			expectedReqs: []*mimirpb.WriteRequest{markEphemeral(makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3"), 2, 3)},
 		}, {
 			name: "no ephemeral",
-			ephemeralMetrics: []string{
+			ephemeralSeries: []string{
 				"metric100",
 				"metric101",
 			},
@@ -3153,7 +3153,7 @@ func TestMarkEphemeralMiddleware(t *testing.T) {
 			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
 		}, {
 			name: "all ephemeral",
-			ephemeralMetrics: []string{
+			ephemeralSeries: []string{
 				"metric0",
 				"metric1",
 				"metric2",
@@ -3184,7 +3184,7 @@ func TestMarkEphemeralMiddleware(t *testing.T) {
 				numDistributors: 1,
 				markEphemeral:   true,
 				getEphemeralSeriesProvider: func() ephemeral.SeriesCheckerByUser {
-					memp := &mockEphemeralSeriesProvider{t, tc.ephemeralMetrics}
+					memp := &mockEphemeralSeriesProvider{t, tc.ephemeralSeries}
 					return memp
 				},
 			})
@@ -3587,7 +3587,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		}
 
 		if cfg.markEphemeral {
-			distributorCfg.EphemeralMetricsEnabled = true
+			distributorCfg.EphemeralSeriesEnabled = true
 		}
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
