@@ -31,7 +31,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 - Ensure you have installed Cortex alerting and recording rules as well as Cortex dashboards.
 
-  The monitoring mixin has both alerting and recording rules to install in either Prometheus or Cortex as well as dashboards to install in Grafana.
+  Using the monitoring mixin, you need to install both alerting and recording rules in either Prometheus or Cortex. You also need to install dashboards in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
