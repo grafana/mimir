@@ -220,7 +220,7 @@ local filename = 'mimir-reads.json';
               (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}* 0)
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
-              cluster_labels: std.join(',', $._config.cluster_labels),
+              cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
           ],
