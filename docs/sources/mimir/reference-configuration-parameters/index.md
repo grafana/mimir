@@ -2843,8 +2843,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
 
-# Matchers to check if a series should be marked ephemeral, matching series get
-# marked to be stored in the ephemeral store.
 ephemeral_series_matchers:
 ```
 

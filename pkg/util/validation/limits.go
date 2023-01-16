@@ -170,7 +170,7 @@ type Limits struct {
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 
-	EphemeralSeriesMatchers ephemeral.LabelMatchers `yaml:"ephemeral_series_matchers" json:"ephemeral_series_matchers" doc:"nocli|description=Matchers to check if a series should be marked ephemeral, matching series get marked to be stored in the ephemeral store." category:"experimental"`
+	EphemeralSeriesMatchers ephemeral.LabelMatchers `yaml:"ephemeral_series_matchers" json:"ephemeral_series_matchers" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
