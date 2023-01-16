@@ -285,12 +285,12 @@ overrides_exporter:
 
     # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
     # CLI flag: -overrides-exporter.ring.heartbeat-period
-    [heartbeat_period: <duration> | default = 10s]
+    [heartbeat_period: <duration> | default = 15s]
 
     # (advanced) The heartbeat timeout after which overrides-exporters are
     # considered unhealthy within the ring.
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
-    [heartbeat_timeout: <duration> | default = 21s]
+    [heartbeat_timeout: <duration> | default = 1m]
 
     # (advanced) Instance ID to register in the ring.
     # CLI flag: -overrides-exporter.ring.instance-id

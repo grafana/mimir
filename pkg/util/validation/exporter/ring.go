@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -34,7 +33,7 @@ const (
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
 	// unhealthy instance in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 2
+	ringAutoForgetUnhealthyPeriods = 4
 
 	// leaderToken is the special token that makes the owner the ring leader.
 	leaderToken = 0
@@ -78,8 +77,8 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring flags
 	c.KVStore.Store = "memberlist" // Override default value.
 	c.KVStore.RegisterFlagsWithPrefix("overrides-exporter.ring.", "collectors/", f)
-	f.DurationVar(&c.HeartbeatPeriod, "overrides-exporter.ring.heartbeat-period", 10*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&c.HeartbeatTimeout, "overrides-exporter.ring.heartbeat-timeout", 21*time.Second, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
+	f.DurationVar(&c.HeartbeatPeriod, "overrides-exporter.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&c.HeartbeatTimeout, "overrides-exporter.ring.heartbeat-timeout", 60*time.Second, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
 
 	// Instance flags
 	c.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
@@ -139,22 +138,26 @@ type overridesExporterRing struct {
 
 // isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
 func (r *overridesExporterRing) isLeader(at time.Time) (bool, error) {
-	// Instances in state ring.LEAVING are not eligible to be the leader.
 	if r.lifecycler.GetState() == ring.LEAVING {
 		return false, nil
-	}
-
-	rl, err := ringLeader(r.client)
-	if err != nil {
-		return false, err
 	}
 
 	// If the instance was registered less than ringAutoForgetUnhealthyPeriods ago,
 	// don't consider it. This serves to give other instances time to discover the
 	// new instance. It also means that there's a delay of this amount for metrics to
 	// be available on first deploy.
-	if r.lifecycler.GetRegisteredAt().Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
+	registeredAtTime, err := registeredAt(r.client, r.lifecycler.GetInstanceAddr())
+	if err != nil {
+		return false, err
+	}
+	if registeredAtTime.Add(time.Duration(ringAutoForgetUnhealthyPeriods) * r.config.HeartbeatTimeout).After(at) {
 		return false, nil
+	}
+
+	// Get the leader from the ring and check whether it's this replica.
+	rl, err := ringLeader(r.client)
+	if err != nil {
+		return false, err
 	}
 
 	return rl.Addr == r.lifecycler.GetInstanceAddr(), nil
@@ -210,14 +213,25 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	return r, nil
 }
 
+func registeredAt(r ring.ReadRing, instanceAddr string) (*time.Time, error) {
+	rs, err := r.GetAllHealthy(ringOp)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get instances from the ring")
+	}
+	for _, instance := range rs.Instances {
+		if instance.Addr == instanceAddr {
+			registeredAtTime := time.Unix(instance.RegisteredTimestamp, 0)
+			return &registeredAtTime, nil
+		}
+	}
+	return nil, fmt.Errorf("instance with address %s not found in the ring", instanceAddr)
+}
+
 // ringLeader returns the ring member that owns the special token.
 func ringLeader(r ring.ReadRing) (*ring.InstanceDesc, error) {
 	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "at least 1 live replicas required") {
-			return &ring.InstanceDesc{}, nil
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get a healthy instance for token %d", leaderToken)
 	}
 	if len(rs.Instances) != 1 {
 		return nil, fmt.Errorf("got %d instances for token 0 (but expected 1)", len(rs.Instances))
@@ -232,11 +246,11 @@ func (r *overridesExporterRing) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start overrides-exporter ring subservice manager")
 	}
 
-	_ = level.Info(r.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
+	level.Info(r.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
 	if err := ring.WaitInstanceState(ctx, r.client, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
 	}
-	_ = level.Info(r.logger).Log("msg", "overrides-exporter is ACTIVE in the r")
+	level.Info(r.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
 
 	return nil
 }

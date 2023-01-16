@@ -73,7 +73,7 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i2.client))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, i2.client)) })
 
-	// Register instances in the ring (manually, to be able to set a registered timestamp).
+	// Register instances in the ring (manually, to be able to assign registered timestamps and tokens).
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now().Add(-time.Hour))
@@ -81,10 +81,11 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	// Wait until the client has received the ring update.
-	test.Poll(t, time.Second, 2, func() interface{} {
-		rs, _ := i1.client.GetAllHealthy(ringOp)
-		return len(rs.Instances)
+	// Wait until the clients have received the ring update.
+	test.Poll(t, time.Second, []int{2, 2}, func() interface{} {
+		rs1, _ := i1.client.GetAllHealthy(ringOp)
+		rs2, _ := i2.client.GetAllHealthy(ringOp)
+		return []int{len(rs1.Instances), len(rs2.Instances)}
 	})
 
 	// instance-1 should be the leader
@@ -171,7 +172,7 @@ func TestOverridesExporterRing_scaleDownAndUp(t *testing.T) {
 
 	// However, instance-3 should become the leader once the wait time has passed and
 	// instance-2 has had time to become aware of the new ring leader.
-	i3WillBeLeader, err := i3.isLeader(time.Now().Add((ringAutoForgetUnhealthyPeriods + 1) * cfg.HeartbeatTimeout))
+	i3WillBeLeader, err := i3.isLeader(time.Now().Add((ringAutoForgetUnhealthyPeriods) * cfg.HeartbeatTimeout))
 	require.NoError(t, err)
 	require.True(t, i3WillBeLeader)
 }

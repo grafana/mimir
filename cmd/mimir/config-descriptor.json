@@ -11827,7 +11827,7 @@
               "required": false,
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
+              "fieldDefaultValue": 15000000000,
               "fieldFlag": "overrides-exporter.ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -11838,7 +11838,7 @@
               "required": false,
               "desc": "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.",
               "fieldValue": null,
-              "fieldDefaultValue": 21000000000,
+              "fieldDefaultValue": 60000000000,
               "fieldFlag": "overrides-exporter.ring.heartbeat-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"

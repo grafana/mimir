@@ -138,14 +138,31 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	cfg.Ring.InstanceID = "overrides-exporter-1"
 	cfg.Ring.InstanceAddr = "1.2.3.1"
 	e1, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	l1 := e1.ring.lifecycler
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, e1))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e1)) })
 
-	// Wait until it has registered itself into the ring.
+	// Wait until it has received the ring update.
 	test.Poll(t, time.Second, true, func() interface{} {
 		rs, _ := e1.ring.client.GetAllHealthy(ringOp)
-		return rs.Includes(e1.ring.lifecycler.GetInstanceAddr())
+		return rs.Includes(l1.GetInstanceAddr())
+	})
+
+	// Set registeredTimestamp and (leader) token.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		instance := desc.Ingesters[l1.GetInstanceID()]
+		instance.RegisteredTimestamp = time.Now().Add(-time.Hour).Unix()
+		instance.Tokens = []uint32{leaderToken + 1}
+		desc.Ingesters[l1.GetInstanceID()] = instance
+		return desc, true, nil
+	}))
+
+	// Wait for update of timestamp.
+	test.Poll(t, time.Second, true, func() interface{} {
+		rs, _ := e1.ring.client.GetAllHealthy(ringOp)
+		return rs.Instances[0].RegisteredTimestamp < time.Now().Add(-5*time.Minute).Unix()
 	})
 
 	// This instance is now the only ring member and should export metrics.
@@ -155,9 +172,17 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	cfg.Ring.InstanceID = "overrides-exporter-2"
 	cfg.Ring.InstanceAddr = "1.2.3.2"
 	e2, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	l2 := e2.ring.lifecycler
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, e2))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e2)) })
+
+	// Register instance in the ring.
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := in.(*ring.Desc)
+		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{1234}, ring.ACTIVE, time.Now().Add(-ringAutoForgetUnhealthyPeriods*cfg.Ring.HeartbeatTimeout))
+		return desc, true, nil
+	}))
 
 	// Wait until it has registered itself to the ring.
 	test.Poll(t, time.Second, true, func() interface{} {
