@@ -2706,7 +2706,8 @@ func findStorageLabelMatcher(matchers []*labels.Matcher) (string, int, error) {
 	return resultVal, resultIdx, nil
 }
 
-// removeStorageMatcher returns the value of storage label (or empty string, if not found), and input matchers without the storage label matcher.
+// removeStorageMatcher returns the value of storage label (or empty string, if not found),
+// and input matchers without the storage label matcher. When removing storage label matcher, original slice is reused.
 func removeStorageMatcher(matchers []*labels.Matcher) (val string, filtered []*labels.Matcher, _ error) {
 	val, idx, err := findStorageLabelMatcher(matchers)
 	if err != nil {
@@ -2716,10 +2717,8 @@ func removeStorageMatcher(matchers []*labels.Matcher) (val string, filtered []*l
 		return "", matchers, nil
 	}
 
-	// Create a new slice with the shard matcher removed.
-	filtered = make([]*labels.Matcher, 0, len(matchers)-1)
-	filtered = append(filtered, matchers[:idx]...)
-	filtered = append(filtered, matchers[idx+1:]...)
-
+	// Prepare slice without storage matcher.
+	copy(matchers[idx:], matchers[idx+1:])
+	filtered = matchers[:len(matchers)-1]
 	return val, filtered, nil
 }
