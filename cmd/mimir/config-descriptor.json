@@ -5990,6 +5990,104 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "ephemeral_tsdb",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "retention_period",
+              "required": false,
+              "desc": "Retention of ephemeral series.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.retention-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_chunks_write_buffer_size_bytes",
+              "required": false,
+              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.",
+              "fieldValue": null,
+              "fieldDefaultValue": 4194304,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_chunks_end_time_variance",
+              "required": false,
+              "desc": "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "stripe_size",
+              "required": false,
+              "desc": "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16384,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.stripe-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_chunks_write_queue_size",
+              "required": false,
+              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_ttl",
+              "required": false,
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_size",
+              "required": false,
+              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_force",
+              "required": false,
+              "desc": "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
