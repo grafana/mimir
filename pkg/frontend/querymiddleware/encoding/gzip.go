@@ -39,6 +39,8 @@ func (c GzipWrapperCodec) Encode(resp querymiddleware.PrometheusResponse) ([]byt
 	}
 
 	buf := &bytes.Buffer{}
+
+	// FIXME: this uses the default compression level
 	w := gzip.NewWriter(buf)
 
 	if _, err := w.Write(originalBytes); err != nil {
