@@ -5,10 +5,11 @@ package ephemeral
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestParseLabelMatchers(t *testing.T) {
@@ -29,8 +30,8 @@ api:
 - '{__name__="foo"}'
 `,
 			expect: LabelMatchers{
-				raw: map[source][]string{api: {`{__name__="foo"}`}},
-				config: map[source][]matcherSet{api: {{{
+				raw: map[Source][]string{API: {`{__name__="foo"}`}},
+				config: map[Source][]matcherSet{API: {{{
 					Type:  labels.MatchEqual,
 					Name:  "__name__",
 					Value: "foo",
@@ -53,13 +54,13 @@ any:
 - '{__name__="bar_any", testLabel2="testValue2"}'
 `,
 			expect: LabelMatchers{
-				raw: map[source][]string{
-					api:  {`{__name__="bar_api", testLabel2="testValue2"}`, `{__name__="foo_api", testLabel1="testValue1"}`},
-					rule: {`{__name__="foo_rule", testLabel1="testValue1"}`, `{__name__="bar_rule", testLabel2="testValue2"}`},
-					any:  {`{__name__="foo_any", testLabel1="testValue1"}`, `{__name__="bar_any", testLabel2="testValue2"}`},
+				raw: map[Source][]string{
+					API:  {`{__name__="bar_api", testLabel2="testValue2"}`, `{__name__="foo_api", testLabel1="testValue1"}`},
+					RULE: {`{__name__="foo_rule", testLabel1="testValue1"}`, `{__name__="bar_rule", testLabel2="testValue2"}`},
+					ANY:  {`{__name__="foo_any", testLabel1="testValue1"}`, `{__name__="bar_any", testLabel2="testValue2"}`},
 				},
-				config: map[source][]matcherSet{
-					api: {
+				config: map[Source][]matcherSet{
+					API: {
 						{
 							{
 								Type:  labels.MatchEqual,
@@ -83,7 +84,7 @@ any:
 							},
 						},
 					},
-					rule: {
+					RULE: {
 						{
 							{
 								Type:  labels.MatchEqual,
@@ -106,7 +107,7 @@ any:
 							},
 						},
 					},
-					any: {
+					ANY: {
 						{
 							{
 								Type:  labels.MatchEqual,

@@ -15,46 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type source uint8
-
-const (
-	invalid = iota
-	any
-	api
-	rule
-)
-
-func (s *source) String() string {
-	switch *s {
-	case any:
-		return "any"
-	case api:
-		return "api"
-	case rule:
-		return "rule"
-	default:
-		return "unknown"
-	}
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (s *source) MarshalYAML() (interface{}, error) {
-	return s.String(), nil
-}
-
-func (s *source) UnmarshalYAML(value *yaml.Node) error {
-	source, err := convertStringToSource(value.Value)
-	if err != nil {
-		return errors.Wrapf(err, "can't unmarshal source %q", value.Value)
-	}
-	*s = source
-	return nil
-}
-
 // LabelMatchers configures matchers based on which series get marked as ephemeral.
 type LabelMatchers struct {
-	raw    map[source][]string
-	config map[source][]matcherSet
+	raw    map[Source][]string
+	config map[Source][]matcherSet
 	string string
 }
 
@@ -93,7 +57,7 @@ func (c *LabelMatchers) Set(s string) error {
 		return nil
 	}
 
-	rawMatchers := map[source][]string{}
+	rawMatchers := map[Source][]string{}
 	for _, matcherSet := range strings.Split(s, ";") {
 		splits := strings.SplitN(matcherSet, ":", 2)
 		if len(splits) < 2 {
@@ -115,7 +79,7 @@ func (c *LabelMatchers) Set(s string) error {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
-	rawMatchers := map[source][]string{}
+	rawMatchers := map[Source][]string{}
 	err := value.DecodeWithOptions(&rawMatchers, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
@@ -124,9 +88,9 @@ func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	return err
 }
 
-func parseLabelMatchers(configIn map[source][]string) (c LabelMatchers, err error) {
+func parseLabelMatchers(configIn map[Source][]string) (c LabelMatchers, err error) {
 	c.raw = configIn
-	c.config = map[source][]matcherSet{}
+	c.config = map[Source][]matcherSet{}
 
 	for source, matcherSetsRaw := range configIn {
 		for _, matcherSetRaw := range matcherSetsRaw {
@@ -154,13 +118,13 @@ func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
 }
 
-func matchersConfigString(matchers map[source][]string) string {
+func matchersConfigString(matchers map[Source][]string) string {
 	if len(matchers) == 0 {
 		return ""
 	}
 
 	// Sort sources to have a deterministic output.
-	sources := make([]source, 0, len(matchers))
+	sources := make([]Source, 0, len(matchers))
 	for source := range matchers {
 		sources = append(sources, source)
 	}
@@ -192,7 +156,7 @@ func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
 func (c *LabelMatchers) ShouldMarkEphemeral(mimirPbSampleSource mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
 	sampleSource := convertMimirpbSource(mimirPbSampleSource)
 
-	for _, matcherSource := range []source{sampleSource, any} {
+	for _, matcherSource := range []Source{sampleSource, ANY} {
 		for _, m := range c.config[matcherSource] {
 			if m.matches(lset) {
 				return true
@@ -203,25 +167,25 @@ func (c *LabelMatchers) ShouldMarkEphemeral(mimirPbSampleSource mimirpb.WriteReq
 	return false
 }
 
-func convertStringToSource(source string) (source, error) {
+func convertStringToSource(source string) (Source, error) {
 	switch strings.ToLower(source) {
 	case "any":
-		return any, nil
+		return ANY, nil
 	case "api":
-		return api, nil
+		return API, nil
 	case "rule":
-		return rule, nil
+		return RULE, nil
 	}
-	return invalid, fmt.Errorf("invalid source %q", source)
+	return INVALID, fmt.Errorf("invalid source %q", source)
 }
 
-func convertMimirpbSource(source mimirpb.WriteRequest_SourceEnum) source {
+func convertMimirpbSource(source mimirpb.WriteRequest_SourceEnum) Source {
 	switch source {
 	case mimirpb.API:
-		return api
+		return API
 	case mimirpb.RULE:
-		return rule
+		return RULE
 	default:
-		return invalid
+		return INVALID
 	}
 }
