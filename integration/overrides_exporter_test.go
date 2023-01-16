@@ -7,7 +7,9 @@ package integration
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
@@ -69,12 +71,13 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
 			require.NoError(t, err)
 
-			value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
-			require.NoError(t, err)
-			value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
-			require.NoError(t, err)
-
-			require.Equal(t, tt.expectedMetricSum, int(value1+value2))
+			test.Poll(t, 30*time.Second, tt.expectedMetricSum, func() interface{} {
+				value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
+				require.NoError(t, err)
+				value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
+				require.NoError(t, err)
+				return int(value1 + value2)
+			})
 		})
 	}
 }
