@@ -19,21 +19,15 @@ const (
 var ValidSources = []Source{ANY, API, RULE}
 var ValidSourceStrings []string
 var Sources = []Source{INVALID, ANY, API, RULE}
-var SourceStringsBySource map[Source]string
 
 func init() {
 	for _, s := range ValidSources {
 		ValidSourceStrings = append(ValidSourceStrings, s.String())
 	}
-
-	SourceStringsBySource = make(map[Source]string)
-	for _, source := range Sources {
-		SourceStringsBySource[source] = source.String()
-	}
 }
 
-func (s *Source) String() string {
-	switch *s {
+func (s Source) String() string {
+	switch s {
 	case ANY:
 		return "any"
 	case API:
