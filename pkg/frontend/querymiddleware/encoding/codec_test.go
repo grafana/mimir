@@ -23,7 +23,8 @@ var knownCodecs = map[string]Codec{
 
 // This directory contains a selection of query results from an internal operational cluster
 // at Grafana Labs, and so can't be shared publicly.
-// You can capture equivalent data from your own cluster with the evaluate-query-log and evaluate-rules tools in the tools directory.
+// It contains two subdirectories: one named "ruler" for rule evaluation results, and another named "querier" for general query results.
+// You can capture equivalent data from your own cluster with the evaluate-rules and evaluate-query-log tools in the tools directory.
 const sourceDir = "/Users/charleskorn/Desktop/queries/all"
 
 func TestEncodingRoundtrip(t *testing.T) {
@@ -87,72 +88,90 @@ func requireEqual(t *testing.T, expected querymiddleware.PrometheusResponse, act
 }
 
 func BenchmarkDecodeAll(b *testing.B) {
-	files, err := filepath.Glob(path.Join(sourceDir, "**", "*.json"))
+	directories, err := os.ReadDir(sourceDir)
 	require.NoError(b, err)
-	require.NotEmpty(b, files)
 
 	originalJsonCodec := OriginalJsonCodec{}
 	codec := getCodec(b)
-	samples := make([][]byte, 0, len(files))
 
-	for _, file := range files {
-		jsonBytes, err := os.ReadFile(file)
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+
+		files, err := filepath.Glob(path.Join(sourceDir, directory.Name(), "**", "*.json"))
 		require.NoError(b, err)
+		require.NotEmpty(b, files)
 
-		resp, err := originalJsonCodec.Decode(jsonBytes)
-		require.NoError(b, err)
+		samples := make([][]byte, 0, len(files))
 
-		encodedBytes, err := codec.Encode(resp)
-		require.NoError(b, err)
+		for _, file := range files {
+			jsonBytes, err := os.ReadFile(file)
+			require.NoError(b, err)
 
-		samples = append(samples, encodedBytes)
-	}
+			resp, err := originalJsonCodec.Decode(jsonBytes)
+			require.NoError(b, err)
 
-	// Reuse setup above - see https://gopheradvent.com/calendar/2022/faster-go-benchmarks-by-reusing-setup/ for explanation.
-	b.Run("benchmark", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			for _, sample := range samples {
-				_, err := codec.Decode(sample)
+			encodedBytes, err := codec.Encode(resp)
+			require.NoError(b, err)
 
-				if err != nil {
-					require.NoError(b, err)
+			samples = append(samples, encodedBytes)
+		}
+
+		b.Run(directory.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, sample := range samples {
+					_, err := codec.Decode(sample)
+
+					if err != nil {
+						require.NoError(b, err)
+					}
 				}
 			}
-		}
-	})
+		})
+	}
 }
 
 func BenchmarkEncodeAll(b *testing.B) {
-	files, err := filepath.Glob(path.Join(sourceDir, "**", "*.json"))
+	directories, err := os.ReadDir(sourceDir)
 	require.NoError(b, err)
-	require.NotEmpty(b, files)
 
 	originalJsonCodec := OriginalJsonCodec{}
 	codec := getCodec(b)
-	samples := make([]querymiddleware.PrometheusResponse, 0, len(files))
 
-	for _, file := range files {
-		jsonBytes, err := os.ReadFile(file)
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+
+		files, err := filepath.Glob(path.Join(sourceDir, directory.Name(), "**", "*.json"))
 		require.NoError(b, err)
+		require.NotEmpty(b, files)
 
-		resp, err := originalJsonCodec.Decode(jsonBytes)
-		require.NoError(b, err)
+		samples := make([]querymiddleware.PrometheusResponse, 0, len(files))
 
-		samples = append(samples, resp)
-	}
+		for _, file := range files {
+			jsonBytes, err := os.ReadFile(file)
+			require.NoError(b, err)
 
-	// Reuse setup above - see https://gopheradvent.com/calendar/2022/faster-go-benchmarks-by-reusing-setup/ for explanation.
-	b.Run("benchmark", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			for _, resp := range samples {
-				_, err := codec.Encode(resp)
+			resp, err := originalJsonCodec.Decode(jsonBytes)
+			require.NoError(b, err)
 
-				if err != nil {
-					require.NoError(b, err)
+			samples = append(samples, resp)
+		}
+
+		b.Run(directory.Name(), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, resp := range samples {
+					_, err := codec.Encode(resp)
+
+					if err != nil {
+						require.NoError(b, err)
+					}
 				}
 			}
-		}
-	})
+		})
+	}
 }
 
 func getCodec(b require.TestingT) Codec {
