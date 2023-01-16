@@ -118,7 +118,7 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	EphemeralCheckerByUser ephemeral.SeriesCheckerByUser
+	ephemeralCheckerByUser ephemeral.SeriesCheckerByUser
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
@@ -249,7 +249,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		log:                    log,
 		ingestersRing:          ingestersRing,
 		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		EphemeralCheckerByUser: ephemeralChecker,
+		ephemeralCheckerByUser: ephemeralChecker,
 		healthyInstancesCount:  atomic.NewUint32(0),
 		limits:                 limits,
 		HATracker:              haTracker,
@@ -1058,7 +1058,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 
 		req.EphemeralTimeseries = nil
 
-		ephemeralChecker := d.EphemeralCheckerByUser.EphemeralChecker(userID)
+		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID)
 		if ephemeralChecker != nil {
 			first := true
 			var deleteTs []int
