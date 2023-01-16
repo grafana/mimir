@@ -108,9 +108,17 @@ const (
 	// Prefix used in Prometheus registry for ephemeral storage.
 	ephemeralPrometheusMetricsPrefix = "ephemeral_"
 
+	// Label name used to select queried storage type.
 	StorageLabelName            = "__storage__"
 	EphemeralStorageLabelValue  = "ephemeral"
 	PersistentStorageLabelValue = "persistent"
+
+	errInvalidStorageLabelValue = "invalid value of " + StorageLabelName + " label: %s"
+)
+
+var (
+	errInvalidStorageMatcherType    = fmt.Errorf("invalid matcher used together with %s label, only equality check supported", StorageLabelName)
+	errMultipleStorageMatchersFound = fmt.Errorf("multiple matchers for %s label found, only one matcher supported", StorageLabelName)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -1379,7 +1387,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	} else if storageValue == EphemeralStorageLabelValue {
 		ephemeral = true
 	} else {
-		return fmt.Errorf("invalid value of %s label: %s", StorageLabelName, storageValue)
+		return fmt.Errorf(errInvalidStorageLabelValue, storageValue)
 	}
 
 	if ephemeral {
@@ -2680,15 +2688,22 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 
 // findStorageLabelMatcher returns value of storage label matcher and its index, if it exists.
 func findStorageLabelMatcher(matchers []*labels.Matcher) (string, int, error) {
+	resultVal, resultIdx := "", -1
+
 	for idx, matcher := range matchers {
 		if matcher.Name == StorageLabelName {
-			if matcher.Type == labels.MatchEqual {
-				return matcher.Value, idx, nil
+			if resultIdx >= 0 {
+				return "", idx, errMultipleStorageMatchersFound
 			}
-			return "", idx, fmt.Errorf("invalid matchers used together with %s label, only equality check supported", StorageLabelName)
+			if matcher.Type != labels.MatchEqual {
+				return "", idx, errInvalidStorageMatcherType
+			}
+			resultVal = matcher.Value
+			resultIdx = idx
 		}
 	}
-	return "", -1, nil
+
+	return resultVal, resultIdx, nil
 }
 
 // removeStorageMatcher returns the value of storage label (or empty string, if not found), and input matchers without the storage label matcher.

@@ -6767,3 +6767,115 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 	_, err = i.Push(ctx, req)
 	require.Equal(t, err, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), metricLabels), userID).Error()))
 }
+
+func TestIngesterQueryingWithStorageLabel(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	type testCase struct {
+		matchers    []*client.LabelMatcher
+		expectedErr error
+	}
+
+	for name, tc := range map[string]testCase{
+		"no error on missing storage label": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid ephemeral storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid persistent storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"error on invalid storage label value": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: "invalid"},
+			},
+			expectedErr: fmt.Errorf(errInvalidStorageLabelValue, "invalid"),
+		},
+
+		"error on invalid matcher type !=": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.NOT_EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type =~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type !~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_NO_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"no real matchers is fine": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"multiple storage labels return error": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+
+		"multiple storage labels return error, even if they are the same": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err = i.QueryStream(&client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         tc.matchers,
+			}, &stream{ctx: ctx})
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
