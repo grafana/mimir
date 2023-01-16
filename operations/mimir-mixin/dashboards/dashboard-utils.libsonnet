@@ -1,4 +1,5 @@
 local utils = import 'mixin-utils/utils.libsonnet';
+local url = import 'xtd/url.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
   local resourceRequestStyle = { alias: 'request', color: '#FFC000', fill: 0, dashes: true, dashLength: 5 },
@@ -95,6 +96,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
           else d
                .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
                .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label),
+
+      addLogsDatasource()::
+        self {
+          templating+: {
+            list+: [
+              // Add the Loki datasource.
+              {
+                type: 'datasource',
+                name: 'lokidatasource',
+                label: 'Logs datasource',
+                query: 'loki',
+                hide: 0,
+                includeAll: false,
+                multi: false,
+              },
+            ],
+          },
+        },
 
       addActiveUserSelectorTemplates()::
         self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user'),
@@ -864,4 +883,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
       replaceFields: replaceFields,
     }),
 
+  exploreContainerLogsLink(container)::
+    local exploreManifest = {
+      datasource: 'DOLLARLOKIDATASOURCE',
+      queries:
+        [
+          {
+            refId: 'A',
+            expr: '{namespace="DOLLARNAMESPACE", container=~"%s"}' % container,
+            queryType: 'range',
+            datasource: { type: 'loki', uid: 'DOLLARLOKIDATASOURCE' },
+            editorMode: 'code',
+          },
+        ],
+      range: { from: 'now-1h', to: 'now' },
+    };
+    local encodedExploreManifest = url.escapeString(std.manifestJsonEx(exploreManifest, ''));
+    // We don't want to encode the ${...} vars, since they will be rendered by Grafana.
+    local encodedExploreManifestWithVars = std.strReplace(std.strReplace(encodedExploreManifest, 'DOLLARLOKIDATASOURCE', '${lokidatasource}'), 'DOLLARNAMESPACE', '${namespace}');
+
+    local link = '%(grafana_root_path)sexplore?left=%(left_explore_urlencoded_json)s' % {
+      grafana_root_path: $._config.grafana_root_path,
+      left_explore_urlencoded_json: encodedExploreManifestWithVars,
+    };
+
+    |||
+      [Explore logs for in ${lokidatasource}](%(link)s)
+    ||| % {
+      container: container,
+      link: link,
+    },
 }

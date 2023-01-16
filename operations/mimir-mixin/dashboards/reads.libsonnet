@@ -5,6 +5,7 @@ local filename = 'mimir-reads.json';
   [filename]:
     ($.dashboard('Reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addLogsDatasource()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Reads dashboard description') { height: '175px', showTitle: false })
@@ -105,6 +106,10 @@ local filename = 'mimir-reads.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription(
+          'Requests / sec',
+          $.exploreContainerLogsLink($._config.container_names.gateway)
+        ) +
         $.qpsPanel($.queries.gateway.readRequestsPerSecond)
       )
       .addPanel(
@@ -122,6 +127,10 @@ local filename = 'mimir-reads.json';
       $.row('Query-frontend')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription(
+          'Requests / sec',
+          $.exploreContainerLogsLink($._config.container_names.query_frontend)
+        ) +
         $.qpsPanel($.queries.query_frontend.readRequestsPerSecond)
       )
       .addPanel(
