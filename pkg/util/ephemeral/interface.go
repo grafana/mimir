@@ -14,4 +14,8 @@ type SeriesCheckerByUser interface {
 type SeriesChecker interface {
 	// ShouldMarkEphemeral checks if a series with the given labelset should be marked as ephemeral.
 	ShouldMarkEphemeral(mimirpb.WriteRequest_SourceEnum, []mimirpb.LabelAdapter) bool
+
+	// HasMatchers returns true if at least one matcher is defined, otherwise it returns false.
+	// This allows callers to shortcut their logic if there are no matchers defined.
+	HasMatchers() bool
 }

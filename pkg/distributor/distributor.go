@@ -1059,7 +1059,7 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 		req.EphemeralTimeseries = nil
 
 		ephemeralChecker := d.EphemeralCheckerByUser.EphemeralChecker(userID)
-		if ephemeralChecker != nil {
+		if ephemeralChecker.HasMatchers() {
 			first := true
 			var deleteTs []int
 			for ix := 0; ix < len(req.Timeseries); ix++ {
