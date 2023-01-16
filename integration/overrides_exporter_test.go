@@ -7,7 +7,9 @@ package integration
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,7 +27,7 @@ overrides:
 `
 )
 
-func TestOverridesExporterTenantSharding(t *testing.T) {
+func TestOverridesExporterRing(t *testing.T) {
 	limit := 20
 	tests := []struct {
 		name              string
@@ -33,15 +35,20 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 		expectedMetricSum int
 	}{
 		{
-			name: "tenant sharding enabled",
+			name: "ring enabled",
 			flags: map[string]string{
-				"-overrides-exporter.ring.enabled": "true",
+				"-overrides-exporter.ring.enabled":          "true",
+				"-overrides-exporter.ring.heartbeat-period": "1s",
+				// Overrides-exporter replicas start exposing limit metrics only after a period
+				// of 4 * heartbeat timeout has passed. Set this to a low value to speed up the
+				// test.
+				"-overrides-exporter.ring.heartbeat-timeout": "2s",
 			},
 			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
 			expectedMetricSum: limit,
 		},
 		{
-			name: "tenant sharding disabled",
+			name: "ring disabled",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled": "false",
 			},
@@ -69,12 +76,14 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
 			require.NoError(t, err)
 
-			value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
-			require.NoError(t, err)
-			value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
-			require.NoError(t, err)
+			test.Poll(t, 20*time.Second, tt.expectedMetricSum, func() interface{} {
+				value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
+				require.NoError(t, err)
+				value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
+				require.NoError(t, err)
 
-			require.Equal(t, tt.expectedMetricSum, int(value1+value2))
+				return int(value1 + value2)
+			})
 		})
 	}
 }
