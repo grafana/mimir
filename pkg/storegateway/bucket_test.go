@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1097,7 +1098,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
 	assert.NoError(t, err)
 
-	runTestWithStore := func(t test.TB, st *BucketStore) {
+	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
 		if !t.IsBenchmark() {
 			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
 
@@ -1161,6 +1162,26 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
 				assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
 			}
+
+			// Check exposed metrics. Ensure that streaming store-gateway metrics are tracked only when
+			// streaming store-gateway is enabled.
+			assertHistograms := map[string]bool{
+				"cortex_bucket_store_series_request_stage_duration_seconds":         st.maxSeriesPerBatch > 0,
+				"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch > 0 && st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+				"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch > 0 && st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+				"cortex_bucket_store_series_refs_fetch_duration_seconds":            st.maxSeriesPerBatch > 0,
+			}
+
+			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+
+			for metricName, expected := range assertHistograms {
+				if count := metrics.SumHistograms(metricName).Count(); expected {
+					assert.Greater(t, count, uint64(0), "metric name: %s", metricName)
+				} else {
+					assert.Equal(t, uint64(0), count, "metric name: %s", metricName)
+				}
+			}
 		}
 	}
 
@@ -1168,8 +1189,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		"with default options":                                 {WithLogger(logger), WithChunkPool(chunkPool)},
 		"with series streaming (1K per batch)":                 {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
 		"with series streaming (10K per batch)":                {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
-		"with series streaming and index cache (1K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000), WithIndexCache(newInMemoryIndexCache(t))},
+		"with series streaming and index cache (1K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000), WithIndexCache(newInMemoryIndexCache(t))},
 	} {
+		reg := prometheus.NewPedanticRegistry()
 		st, err := NewBucketStore(
 			"test",
 			ibkt,
@@ -1184,13 +1206,13 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			false,
 			0,
 			hashcache.NewSeriesHashCache(1024*1024),
-			NewBucketStoreMetrics(nil),
+			NewBucketStoreMetrics(reg),
 			bucketStoreOpts...,
 		)
 		assert.NoError(t, err)
 
 		t.Run(testName, func(t test.TB) {
-			runTestWithStore(t, st)
+			runTestWithStore(t, st, reg)
 		})
 	}
 }
