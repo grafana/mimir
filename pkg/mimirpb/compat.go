@@ -26,10 +26,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
+// ToWriteRequest converts matched slices of Labels, Samples, Histograms, Exemplars, and Metadata into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+// Sample indexes point to the same Labels, Exemplars index, whereas Histogram indexes are offset by len(Samples)
+func ToWriteRequest(lbls []labels.Labels, samples []Sample, histograms []Histogram, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	req := &WriteRequest{
 		Timeseries: PreallocTimeseriesSliceFromPool(),
 		Metadata:   metadata,
@@ -45,6 +46,23 @@ func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exempla
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
 			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
 			if e := exemplars[i]; e != nil {
+				ts.Exemplars = append(ts.Exemplars, *e)
+			}
+		}
+
+		req.Timeseries = append(req.Timeseries, PreallocTimeseries{TimeSeries: ts})
+	}
+
+	offset := len(samples)
+	for i, s := range histograms {
+		ts := TimeseriesFromPool()
+		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[offset+i])...)
+		ts.Histograms = append(ts.Histograms, s)
+
+		if exemplars != nil {
+			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
+			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
+			if e := exemplars[offset+i]; e != nil {
 				ts.Exemplars = append(ts.Exemplars, *e)
 			}
 		}

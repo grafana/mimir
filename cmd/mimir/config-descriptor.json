@@ -2794,17 +2794,6 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "native_histograms_enabled",
-          "required": false,
-          "desc": "Enable native histograms from prometheus.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.native-histograms-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -3061,6 +3050,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.max-global-exemplars-per-user",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "accept_native_histograms",
+          "required": false,
+          "desc": "Flag to enable the ingestion of native histogram samples.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.accept-native-histograms",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {

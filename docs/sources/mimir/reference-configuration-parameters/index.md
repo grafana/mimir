@@ -928,10 +928,6 @@ instance_limits:
 # the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
-
-# (advanced) Enable native histograms from prometheus.
-# CLI flag: -ingester.native-histograms-enabled
-[native_histograms_enabled: <boolean> | default = false]
 ```
 
 ### querier
@@ -2540,6 +2536,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 0 to disable exemplars ingestion.
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
+
+# (experimental) Flag to enable the ingestion of native histogram samples.
+# CLI flag: -ingester.accept-native-histograms
+[accept_native_histograms: <boolean> | default = false]
 
 # (advanced) Additional custom trackers for active metrics. If there are active
 # series matching a provided matcher (map value), the count will be exposed in

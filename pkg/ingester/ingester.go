@@ -153,8 +153,6 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
-
-	NativeHistogramsEnabled bool `yaml:"native_histograms_enabled" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -174,8 +172,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-
-	f.BoolVar(&cfg.NativeHistogramsEnabled, "ingester.native-histograms-enabled", false, "Enable native histograms from prometheus.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -597,13 +593,6 @@ func (i *Ingester) updateUsageStats() {
 // * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
 // * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
-	rwcs := make([]*promcfg.RemoteWriteConfig, 0)
-	if i.cfg.NativeHistogramsEnabled {
-		rwcs = append(rwcs, &promcfg.RemoteWriteConfig{
-			SendNativeHistograms: true,
-		})
-	}
-
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
@@ -626,7 +615,6 @@ func (i *Ingester) applyTSDBSettings() {
 					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
 				},
 			},
-			RemoteWriteConfigs: rwcs,
 		}
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -634,6 +622,12 @@ func (i *Ingester) applyTSDBSettings() {
 		}
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
+		}
+		if i.limits.AcceptNativeHistograms(userID) {
+			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
+			db.db.EnableNativeHistograms()
+		} else {
+			db.db.DisableNativeHistograms()
 		}
 	}
 }
@@ -1020,29 +1014,35 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		for _, h := range ts.Histograms {
-			var err error
+		if len(ts.Histograms) > 0 {
+			if i.limits.AcceptNativeHistograms(userID) {
+				for _, h := range ts.Histograms {
+					var err error
 
-			if ref != 0 {
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
-					stats.succeededHistogramsCount++
-					continue
+					if ref != 0 {
+						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
+							stats.succeededHistogramsCount++
+							continue
+						}
+					} else {
+						copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+						if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
+							stats.succeededHistogramsCount++
+							continue
+						}
+					}
+
+					stats.failedHistogramsCount++
+
+					if handleAppendError(err, h.Timestamp, ts.Labels, copiedLabels) {
+						continue
+					}
+
+					return wrapWithUser(err, userID)
 				}
-			} else {
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
-					stats.succeededHistogramsCount++
-					continue
-				}
+			} else { // ignore histograms and increase counter
+				stats.failedHistogramsCount++
 			}
-
-			stats.failedHistogramsCount++
-
-			if handleAppendError(err, h.Timestamp, ts.Labels, copiedLabels) {
-				continue
-			}
-
-			return wrapWithUser(err, userID)
 		}
 
 		if activeSeries != nil && (stats.succeededSamplesCount+stats.succeededHistogramsCount) > oldSucceededCount {
@@ -1782,7 +1782,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheTTL:   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
 		HeadPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
 		HeadPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-		EnableNativeHistograms:            i.cfg.NativeHistogramsEnabled,
+		EnableNativeHistograms:            i.limits.AcceptNativeHistograms(userID),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
