@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -124,8 +125,8 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) Histogram() model.SampleHistogramPair {
-	return model.SampleHistogramPair{}
+func (i *mockIterator) Histogram() mimirpb.Histogram {
+	return mimirpb.Histogram{}
 }
 
 func (i *mockIterator) Timestamp() int64 {

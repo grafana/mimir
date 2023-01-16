@@ -29,7 +29,7 @@ func TestReadWriteModeQueryingIngester(t *testing.T) {
 
 	client, _ := startReadWriteModeCluster(t, s)
 
-	runQueryingIngester(t, client, "test_series_1", generateSeries)
+	runQueryingIngester(t, client, "test_series_1", generateFloatSeries)
 	runQueryingIngester(t, client, "test_hseries_1", generateHistogramSeries)
 }
 
@@ -76,7 +76,7 @@ func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
 		"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
 	})
 
-	runQueryingStoreGateway(t, client, cluster, "test_series_1", generateSeries)
+	runQueryingStoreGateway(t, client, cluster, "test_series_1", generateFloatSeries)
 	runQueryingStoreGateway(t, client, cluster, "test_hseries_1", generateHistogramSeries)
 }
 
@@ -139,7 +139,7 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	testRuleNameFloat := "test_rule"
 	testRuleNameHisto := "test_hrule"
 
-	seriesFloat := runRecordingRulePush(t, client, seriesNameFloat, generateSeries)
+	seriesFloat := runRecordingRulePush(t, client, seriesNameFloat, generateFloatSeries)
 	seriesHisto := runRecordingRulePush(t, client, seriesNameHisto, generateHistogramSeries)
 
 	// Create recording rule
@@ -221,7 +221,7 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 }
 
 func TestReadWriteModeAlertingRule(t *testing.T) {
-	runAlertingRule(t, "test_alert", "test_series", "sum", generateSeries)
+	runAlertingRule(t, "test_alert", "test_series", "sum", generateFloatSeries)
 	runAlertingRule(t, "test_halert", "test_hseries", "histogram_sum", generateHistogramSeries)
 }
 
@@ -308,7 +308,7 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		"-compactor.blocks-retention-period": "5s",
 	})
 
-	runCompaction(t, client, cluster, "test_series_1", generateSeries)
+	runCompaction(t, client, cluster, "test_series_1", generateFloatSeries)
 	runCompaction(t, client, cluster, "test_hseries_1", generateHistogramSeries)
 }
 

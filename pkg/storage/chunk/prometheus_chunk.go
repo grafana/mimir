@@ -10,12 +10,12 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // Wrapper around a generic Prometheus chunk.
@@ -164,12 +164,9 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-func (p *prometheusChunkIterator) Histogram() model.SampleHistogramPair {
-	ts, val := p.it.AtFloatHistogram()
-	return model.SampleHistogramPair{
-		Timestamp: model.Time(ts),
-		Histogram: mimirpb.FromHistogramToPromCommonHistogram(*val),
-	}
+func (p *prometheusChunkIterator) Histogram() mimirpb.Histogram {
+	ts, val := p.it.AtHistogram() // TODO(zenador): what about float histogram
+	return mimirpb.FromHistogramToHistogramProto(ts, val)
 }
 
 func (p *prometheusChunkIterator) Timestamp() int64 {
@@ -231,7 +228,7 @@ type errorIterator string
 func (e errorIterator) Scan() chunkenc.ValueType                           { return chunkenc.ValNone }
 func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType   { return chunkenc.ValNone }
 func (e errorIterator) Value() model.SamplePair                            { panic("no values") }
-func (e errorIterator) Histogram() model.SampleHistogramPair               { panic("no histograms") }
+func (e errorIterator) Histogram() mimirpb.Histogram                       { panic("no histograms") }
 func (e errorIterator) Timestamp() int64                                   { panic("no samples") }
 func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
 func (e errorIterator) Err() error                                         { return errors.New(string(e)) }

@@ -65,7 +65,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// Wait until the querier has updated the ring.
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "series_1", generateSeries)
+	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "series_1", generateFloatSeries)
 	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "hseries_1", generateHistogramSeries)
 }
 
