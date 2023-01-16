@@ -6097,6 +6097,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 	tests := map[string]struct {
 		reqs                       []*mimirpb.WriteRequest
 		additionalMetrics          []string
+		disableQueryingEphemeral   bool
 		expectedIngestedEphemeral  model.Matrix
 		expectedIngestedPersistent model.Matrix
 		expectedErr                error
@@ -6533,6 +6534,74 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					cortex_ingester_queries_ephemeral_total 1
 			`,
 		},
+
+		"only persistent series -- does not initialize ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			disableQueryingEphemeral: true,
+			expectedErr:              nil,
+			expectedIngestedPersistent: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli() - 10)},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 0
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 0
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 0
+					cortex_ingester_queried_ephemeral_samples_sum 0
+					cortex_ingester_queried_ephemeral_samples_count 0
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 0
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 0
+					cortex_ingester_queried_ephemeral_series_sum 0
+					cortex_ingester_queried_ephemeral_series_count 0
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -6591,10 +6660,12 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			}
 
 			// Verify ephemeral samples.
-			verifyIngestedSamples(t, []*client.LabelMatcher{
-				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
-				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
-			}, testData.expectedIngestedEphemeral)
+			if !testData.disableQueryingEphemeral {
+				verifyIngestedSamples(t, []*client.LabelMatcher{
+					{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+					{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				}, testData.expectedIngestedEphemeral)
+			}
 
 			// Verify persistent samples.
 			verifyIngestedSamples(t, []*client.LabelMatcher{
