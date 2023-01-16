@@ -282,20 +282,22 @@ func (p *preloadingSetIterator[Set]) Err() error {
 
 func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, iterator genericIterator[Set], stats *safeQueryStats) genericIterator[Set] {
 	// Track the time spent loading batches (including preloading).
-	iterator = newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration) {
+	iterator = newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration, hasNext bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesBatchLoadDuration += duration
 
 			// This function is called for each Next() invocation, so we can use it to measure
 			// into how many batches the request has been split.
-			stats.streamingSeriesBatchCount++
+			if hasNext {
+				stats.streamingSeriesBatchCount++
+			}
 		})
 	})
 
 	iterator = newPreloadingSetIterator[Set](ctx, preloadedSetsCount, iterator)
 
 	// Track the time step waiting until the next batch is loaded once the "reader" is ready to get it.
-	return newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration) {
+	return newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration, _ bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesWaitBatchLoadedDuration += duration
 		})
@@ -392,22 +394,22 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 }
 
 type nextDurationMeasuringIterator[Set any] struct {
-	from             genericIterator[Set]
-	durationObserver func(time.Duration)
+	from     genericIterator[Set]
+	observer func(duration time.Duration, hasNext bool)
 }
 
-func newNextDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver func(time.Duration)) genericIterator[Set] {
+func newNextDurationMeasuringIterator[Set any](from genericIterator[Set], observer func(duration time.Duration, hasNext bool)) genericIterator[Set] {
 	return &nextDurationMeasuringIterator[Set]{
-		from:             from,
-		durationObserver: durationObserver,
+		from:     from,
+		observer: observer,
 	}
 }
 
 func (m *nextDurationMeasuringIterator[Set]) Next() bool {
 	start := time.Now()
-	next := m.from.Next()
-	m.durationObserver(time.Since(start))
-	return next
+	hasNext := m.from.Next()
+	m.observer(time.Since(start), hasNext)
+	return hasNext
 }
 
 func (m *nextDurationMeasuringIterator[Set]) At() Set {

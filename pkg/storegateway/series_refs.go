@@ -672,7 +672,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	)
 
 	// Track the time spent loading series and chunk refs.
-	iterator = newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration) {
+	iterator = newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
