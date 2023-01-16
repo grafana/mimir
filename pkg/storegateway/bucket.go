@@ -947,9 +947,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			err = errors.Wrap(seriesSet.Err(), "expand series set")
 			return
 		}
-		mergeDuration := time.Since(begin)
-		mergeStats.mergeDuration += mergeDuration
-		s.metrics.seriesMergeDuration.Observe(mergeDuration.Seconds())
+
+		if s.maxSeriesPerBatch <= 0 {
+			// When streaming is disabled, the time spent iterating over the series set is the
+			// actual time spent merging series and sending response to the client.
+			s.metrics.seriesMergeDuration.Observe(time.Since(begin).Seconds())
+		} else {
+			// When streaming is enabled, the time spent iterating over the series set is the
+			// actual time spent fetching series and chunks, and sending them to the client.
+			s.metrics.seriesRequestByStageDuration.WithLabelValues("fetch_series_and_chunks").Observe(time.Since(begin).Seconds())
+		}
 
 		err = nil
 	})
@@ -1005,6 +1012,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	var (
 		resMtx sync.Mutex
 		res    []storepb.SeriesSet
+		begin  = time.Now()
 	)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -1053,18 +1061,15 @@ func (s *BucketStore) synchronousSeriesSet(
 	}
 
 	// Wait until data is fetched from all blocks
-	begin := time.Now()
 	err := g.Wait()
 	if err != nil {
 		return nil, err
 	}
 
-	getAllDuration := time.Since(begin)
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(res)
-		stats.getAllDuration = getAllDuration
 	})
-	s.metrics.seriesGetAllDuration.Observe(getAllDuration.Seconds())
+	s.metrics.seriesGetAllDuration.Observe(time.Since(begin).Seconds())
 	s.metrics.seriesBlocksQueried.Observe(float64(len(res)))
 
 	return storepb.MergeSeriesSets(res...), err
@@ -1087,6 +1092,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 		mtx      = sync.Mutex{}
 		batches  = make([]seriesChunkRefsSetIterator, 0, len(blocks))
 		g, _     = errgroup.WithContext(ctx)
+		begin    = time.Now()
 	)
 
 	for _, b := range blocks {
@@ -1138,18 +1144,15 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 		})
 	}
 
-	begin := time.Now()
 	err := g.Wait()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	getAllDuration := time.Since(begin)
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
-		stats.getAllDuration = getAllDuration
 	})
-	s.metrics.seriesGetAllDuration.Observe(getAllDuration.Seconds())
+	s.metrics.seriesRequestByStageDuration.WithLabelValues("expand_postings").Observe(time.Since(begin).Seconds())
 	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)

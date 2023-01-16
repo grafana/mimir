@@ -29,12 +29,17 @@ type BucketStoreMetrics struct {
 	seriesDataSizeTouched *prometheus.SummaryVec
 	seriesDataSizeFetched *prometheus.SummaryVec
 	seriesBlocksQueried   prometheus.Summary
-	seriesGetAllDuration  prometheus.Histogram
-	seriesMergeDuration   prometheus.Histogram
 	resultSeriesCount     prometheus.Summary
 	chunkSizeBytes        prometheus.Histogram
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
+
+	// Metrics tracked when streaming store-gateway is disabled.
+	seriesGetAllDuration prometheus.Histogram
+	seriesMergeDuration  prometheus.Histogram
+
+	// Metrics tracked when streaming store-gateway is enabled.
+	seriesRequestByStageDuration *prometheus.HistogramVec
 
 	cachedPostingsCompressions           *prometheus.CounterVec
 	cachedPostingsCompressionErrors      *prometheus.CounterVec
@@ -98,14 +103,19 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 	m.seriesGetAllDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_get_all_duration_seconds",
-		Help:    "Time it takes until all per-block prepares and loads for a query are finished.",
+		Help:    "Time it takes until all per-block prepares and loads for a query are finished. This metric is tracked only if streaming store-gateway is disabled.",
 		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
 	})
 	m.seriesMergeDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_merge_duration_seconds",
-		Help:    "Time it takes to merge sub-results from all queried blocks into a single result.",
+		Help:    "Time it takes to merge sub-results from all queried blocks into a single result. This metric is tracked only if streaming store-gateway is disabled.",
 		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
 	})
+	m.seriesRequestByStageDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
+		Help:    "Time it takes to process a series request split by stages. This metric is tracked only if streaming store-gateway is enabled.",
+		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
+	}, []string{"stage"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
 		Help: "Total number of cases where the built-in max series size was not enough to fetch series from index, resulting in refetch.",

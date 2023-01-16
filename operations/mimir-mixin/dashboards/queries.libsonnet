@@ -239,17 +239,77 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Series fetch duration (per request)') +
-        $.latencyPanel('cortex_bucket_store_series_get_all_duration_seconds', '{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+        $.panel('Series request average latency (streaming disabled)') +
+        $.queryPanel([
+          // Fetch series and chunks.
+          |||
+            sum(rate(cortex_bucket_store_series_get_all_duration_seconds_sum{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_bucket_store_series_get_all_duration_seconds_count{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          // Merge series and chunks.
+          |||
+            sum(rate(cortex_bucket_store_series_merge_duration_seconds_sum{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_bucket_store_series_merge_duration_seconds_count{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+        ], [
+          'Fetch series and chunks',
+          'Merge series and chunks',
+        ]) +
+        $.stack +
+        { yaxes: $.yaxes('s') },
       )
       .addPanel(
-        $.panel('Series merge duration (per request)') +
-        $.latencyPanel('cortex_bucket_store_series_merge_duration_seconds', '{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+        $.panel('Series request 99th percentile latency (streaming disabled)') +
+        $.queryPanel([
+          // Fetch series and chunks.
+          |||
+            histogram_quantile(0.99, sum by(le) (rate(cortex_bucket_store_series_get_all_duration_seconds_bucket{%s}[$__rate_interval])))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
+          // Merge series and chunks.
+          |||
+            histogram_quantile(0.99, sum by(le) (rate(cortex_bucket_store_series_merge_duration_seconds_bucket{%s}[$__rate_interval])))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
+        ], [
+          'Fetch series and chunks',
+          'Merge series and chunks',
+        ]) +
+        $.stack +
+        { yaxes: $.yaxes('s') },
       )
       .addPanel(
         $.panel('Series returned (per request)') +
         $.queryPanel('sum(rate(cortex_bucket_store_series_result_series_sum{component="store-gateway",%s}[$__rate_interval])) / sum(rate(cortex_bucket_store_series_result_series_count{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'avg series returned'),
       )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.panel('Series request average latency (streaming enabled)') +
+        $.queryPanel(
+          |||
+            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
+            /
+            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          '{{stage}}'
+        ) +
+        $.stack +
+        { yaxes: $.yaxes('s') },
+      )
+      .addPanel(
+        $.panel('Series request 99th percentile latency (streaming enabled)') +
+        $.queryPanel(
+          |||
+            histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{%s}[$__rate_interval])))
+          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
+          '{{stage}}'
+        ) +
+        $.stack +
+        { yaxes: $.yaxes('s') },
+      )
+      // TODO preloading efficiency
     )
     .addRow(
       $.row('')
