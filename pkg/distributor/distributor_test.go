@@ -4409,10 +4409,6 @@ func (m mockEphemeralSeriesChecker) ShouldMarkEphemeral(source mimirpb.WriteRequ
 	return false
 }
 
-func (m mockEphemeralSeriesChecker) HasMatchers() bool {
-	return len(m.ephemeralMetrics) > 0
-}
-
 func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
 	return ts
 }
