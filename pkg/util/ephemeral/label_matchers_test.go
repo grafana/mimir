@@ -31,11 +31,22 @@ api:
 `,
 			expect: LabelMatchers{
 				raw: map[Source][]string{API: {`{__name__="foo"}`}},
-				config: map[Source][]matcherSet{API: {{{
-					Type:  labels.MatchEqual,
-					Name:  "__name__",
-					Value: "foo",
-				}}}},
+				bySource: map[Source]LabelMatchersForSource{
+					ANY: {
+						config: []matcherSet{{{
+							Type:  labels.MatchEqual,
+							Name:  "__name__",
+							Value: "foo",
+						}}},
+					},
+					API: {
+						config: []matcherSet{{{
+							Type:  labels.MatchEqual,
+							Name:  "__name__",
+							Value: "foo",
+						}}},
+					},
+				},
 				string: "api:{__name__=\"foo\"}",
 			},
 			expectErr: false,
@@ -59,74 +70,159 @@ any:
 					RULE: {`{__name__="foo_rule", testLabel1="testValue1"}`, `{__name__="bar_rule", testLabel2="testValue2"}`},
 					ANY:  {`{__name__="foo_any", testLabel1="testValue1"}`, `{__name__="bar_any", testLabel2="testValue2"}`},
 				},
-				config: map[Source][]matcherSet{
+				bySource: map[Source]LabelMatchersForSource{
 					API: {
-						{
+						config: []matcherSet{
 							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_api",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						},
-						{
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_api",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_api",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
+							}, {
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_api",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
 							},
 						},
 					},
 					RULE: {
-						{
+						config: []matcherSet{
 							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_rule",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_rule",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_rule",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
+							}, {
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_rule",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
 							},
 						},
 					},
 					ANY: {
-						{
+						config: []matcherSet{
 							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_any",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_any",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_any",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
 							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_api",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
+							}, {
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_api",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
+							}, {
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "foo_rule",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel1",
+									Value: "testValue1",
+								},
+							}, {
+								{
+									Type:  labels.MatchEqual,
+									Name:  "__name__",
+									Value: "bar_rule",
+								}, {
+									Type:  labels.MatchEqual,
+									Name:  "testLabel2",
+									Value: "testValue2",
+								},
 							},
 						},
 					},
@@ -138,9 +234,9 @@ any:
 			name:           "invalid matcher",
 			inputStringArg: `{__name__==="foo"}`,
 			inputYamlBlob: `
-api:
-- '{__name__==="foo"}'
-`,
+		api:
+		- '{__name__==="foo"}'
+		`,
 			expectErr: true,
 		},
 	}
@@ -228,6 +324,12 @@ func TestIsEphemeral(t *testing.T) {
 			source:       mimirpb.API,
 			seriesLabels: testLabels,
 			expectResult: true,
+		}, {
+			name:         "matching rule for source 'any'",
+			matchers:     `any:{testLabel1="testValue1", __name__="test_metric"}`,
+			source:       mimirpb.API,
+			seriesLabels: testLabels,
+			expectResult: true,
 		},
 	}
 
@@ -236,7 +338,8 @@ func TestIsEphemeral(t *testing.T) {
 			var lb LabelMatchers
 			require.NoError(t, lb.Set(tc.matchers))
 
-			got := lb.ShouldMarkEphemeral(tc.source, tc.seriesLabels)
+			lbForSource := lb.ForSource(tc.source)
+			got := lbForSource.ShouldMarkEphemeral(tc.seriesLabels)
 			require.Equal(t, tc.expectResult, got)
 		})
 	}

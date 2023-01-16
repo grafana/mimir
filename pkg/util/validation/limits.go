@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/ephemeral"
 )
@@ -767,8 +768,8 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
 }
 
-func (o *Overrides) EphemeralChecker(user string) ephemeral.SeriesChecker {
-	m := o.getOverridesForUser(user).EphemeralSeriesMatchers
+func (o *Overrides) EphemeralChecker(user string, source mimirpb.WriteRequest_SourceEnum) ephemeral.SeriesChecker {
+	m := o.getOverridesForUser(user).EphemeralSeriesMatchers.ForSource(source)
 	if m.HasMatchers() {
 		return &m
 	}

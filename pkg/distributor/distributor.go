@@ -1058,14 +1058,14 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 
 		req.EphemeralTimeseries = nil
 
-		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID)
+		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID, req.Source)
 		if ephemeralChecker != nil {
 			first := true
 			var deleteTs []int
 			for ix := 0; ix < len(req.Timeseries); ix++ {
 				ts := req.Timeseries[ix]
 
-				if !ephemeralChecker.ShouldMarkEphemeral(req.Source, ts.Labels) {
+				if !ephemeralChecker.ShouldMarkEphemeral(ts.Labels) {
 					continue
 				}
 

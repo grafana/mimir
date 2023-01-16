@@ -8,10 +8,10 @@ type SeriesCheckerByUser interface {
 	// EphemeralChecker returns an object which checks a series and decides whether
 	// this series should be ephemeral based on the given user's configuration.
 	// Can return nil if the user has no relevant configuration.
-	EphemeralChecker(string) SeriesChecker
+	EphemeralChecker(string, mimirpb.WriteRequest_SourceEnum) SeriesChecker
 }
 
 type SeriesChecker interface {
 	// ShouldMarkEphemeral checks if a series with the given labelset should be marked as ephemeral.
-	ShouldMarkEphemeral(mimirpb.WriteRequest_SourceEnum, []mimirpb.LabelAdapter) bool
+	ShouldMarkEphemeral([]mimirpb.LabelAdapter) bool
 }

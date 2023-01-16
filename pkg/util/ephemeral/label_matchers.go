@@ -17,9 +17,13 @@ import (
 
 // LabelMatchers configures matchers based on which series get marked as ephemeral.
 type LabelMatchers struct {
-	raw    map[Source][]string
-	config map[Source][]matcherSet
-	string string
+	raw      map[Source][]string
+	bySource map[Source]LabelMatchersForSource
+	string   string
+}
+
+type LabelMatchersForSource struct {
+	config []matcherSet
 }
 
 // matcherSet is like alertmanager's labels.Matchers but for Prometheus' labels.Matcher slice
@@ -44,15 +48,25 @@ func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 	return true
 }
 
+// HasMatchers returns true if there is at least one matcher defined, otherwise it returns false.
+func (c *LabelMatchersForSource) HasMatchers() bool {
+	return len(c.config) > 0
+}
+
+func (c *LabelMatchersForSource) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
+	for _, m := range c.config {
+		if m.matches(lset) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // String is a canonical representation of the config, it is compatible with the flag definition.
 // String is needed to implement flag.Value.
 func (c *LabelMatchers) String() string {
 	return c.string
-}
-
-// HasMatchers returns true if there is at least one matcher defined, otherwise it returns false.
-func (c *LabelMatchers) HasMatchers() bool {
-	return len(c.config) > 0
 }
 
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
@@ -93,12 +107,40 @@ func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	return err
 }
 
+func (c *LabelMatchers) ForSource(source mimirpb.WriteRequest_SourceEnum) LabelMatchersForSource {
+	return c.bySource[convertMimirpbSource(source)]
+}
+
+func convertMimirpbSource(source mimirpb.WriteRequest_SourceEnum) Source {
+	switch source {
+	case mimirpb.API:
+		return API
+	case mimirpb.RULE:
+		return RULE
+	default:
+		return INVALID
+	}
+}
+
+func convertStringToSource(source string) (Source, error) {
+	switch strings.ToLower(source) {
+	case "any":
+		return ANY, nil
+	case "api":
+		return API, nil
+	case "rule":
+		return RULE, nil
+	}
+	return INVALID, fmt.Errorf("invalid source %q", source)
+}
+
 func parseLabelMatchers(configIn map[Source][]string) (c LabelMatchers, err error) {
 	c.raw = configIn
-	c.config = map[Source][]matcherSet{}
+	c.bySource = map[Source]LabelMatchersForSource{}
 
-	for source, matcherSetsRaw := range configIn {
-		for _, matcherSetRaw := range matcherSetsRaw {
+	// Iterate over ValidSources instead of configIn to keep the order deterministic.
+	for _, source := range ValidSources {
+		for _, matcherSetRaw := range configIn[source] {
 			amMatchers, err := amlabels.ParseMatchers(matcherSetRaw)
 			if err != nil {
 				return c, fmt.Errorf("can't build ephemeral series matcher %q: %w", matcherSetRaw, err)
@@ -109,7 +151,20 @@ func parseLabelMatchers(configIn map[Source][]string) (c LabelMatchers, err erro
 				promMatchers[i] = amlabelMatcherToProm(m)
 			}
 
-			c.config[source] = append(c.config[source], promMatchers)
+			var addToSources []Source
+			if source == ANY {
+				// Add to all valid sources.
+				addToSources = ValidSources
+			} else {
+				// Add to the specified source and the "any" source.
+				addToSources = []Source{source, ANY}
+			}
+
+			for _, addToSource := range addToSources {
+				bySource := c.bySource[addToSource]
+				bySource.config = append(bySource.config, promMatchers)
+				c.bySource[addToSource] = bySource
+			}
 		}
 	}
 
@@ -156,41 +211,4 @@ func matchersConfigString(matchers map[Source][]string) string {
 // MarshalYAML implements yaml.Marshaler.
 func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
 	return c.raw, nil
-}
-
-func (c *LabelMatchers) ShouldMarkEphemeral(mimirPbSampleSource mimirpb.WriteRequest_SourceEnum, lset []mimirpb.LabelAdapter) bool {
-	sampleSource := convertMimirpbSource(mimirPbSampleSource)
-
-	for _, matcherSource := range []Source{sampleSource, ANY} {
-		for _, m := range c.config[matcherSource] {
-			if m.matches(lset) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-func convertStringToSource(source string) (Source, error) {
-	switch strings.ToLower(source) {
-	case "any":
-		return ANY, nil
-	case "api":
-		return API, nil
-	case "rule":
-		return RULE, nil
-	}
-	return INVALID, fmt.Errorf("invalid source %q", source)
-}
-
-func convertMimirpbSource(source mimirpb.WriteRequest_SourceEnum) Source {
-	switch source {
-	case mimirpb.API:
-		return API
-	case mimirpb.RULE:
-		return RULE
-	default:
-		return INVALID
-	}
 }
