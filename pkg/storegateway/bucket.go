@@ -918,26 +918,28 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// Merge the sub-results from each selected block.
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		var (
-			mergeStats = &queryStats{}
-			begin      = time.Now()
+			begin       = time.Now()
+			seriesCount int
+			chunksCount int
 		)
 
-		// Once the iteration is done we will merge the stats and track metrics.
-		defer func() {
+		// Once the iteration is done we will update the stats.
+		defer stats.update(func(stats *queryStats) {
+			stats.mergedSeriesCount += seriesCount
+			stats.mergedChunksCount += chunksCount
+
 			if s.maxSeriesPerBatch <= 0 {
 				// When streaming is disabled, the time spent iterating over the series set is the
 				// actual time spent merging series and sending response to the client.
-				mergeStats.synchronousSeriesMergeDuration += time.Since(begin)
+				stats.synchronousSeriesMergeDuration += time.Since(begin)
 			} else {
 				// When streaming is enabled, the time spent iterating over the series set is the
 				// actual time spent fetching series and chunks, and sending them to the client.
 				// We split the two timings to have a better view over how time is spent.
-				mergeStats.streamingSeriesFetchSeriesAndChunksDuration += mergeStats.streamingSeriesWaitBatchLoadedDuration
-				mergeStats.streamingSeriesSendResponseDuration += time.Duration(util_math.Max64(0, int64(time.Since(begin)-mergeStats.streamingSeriesFetchSeriesAndChunksDuration)))
+				stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
+				stats.streamingSeriesSendResponseDuration += time.Duration(util_math.Max64(0, int64(time.Since(begin)-stats.streamingSeriesFetchSeriesAndChunksDuration)))
 			}
-
-			stats.merge(mergeStats)
-		}()
+		})
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
 		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
@@ -945,7 +947,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			var lset labels.Labels
 			var series storepb.Series
 
-			mergeStats.mergedSeriesCount++
+			seriesCount++
 
 			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
 			// because the subsequent call to seriesSet.Next() may release it.
@@ -954,7 +956,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			} else {
 				lset, series.Chunks = seriesSet.At()
 
-				mergeStats.mergedChunksCount += len(series.Chunks)
+				chunksCount += len(series.Chunks)
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
