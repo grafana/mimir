@@ -178,7 +178,7 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, e2))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e2)) })
 
-	// Wait until it has registered itself to the ring.
+	// Wait until it has registered itself to the ring and both overrides-exporter instances got the updated ring.
 	test.Poll(t, time.Second, true, func() interface{} {
 		rs1, _ := e1.ring.client.GetAllHealthy(ringOp)
 		rs2, _ := e2.ring.client.GetAllHealthy(ringOp)
