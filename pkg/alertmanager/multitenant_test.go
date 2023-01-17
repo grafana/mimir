@@ -102,7 +102,11 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 		assert.NoError(t, closer.Close())
 	})
 
-	am, err := createMultitenantAlertmanager(cfg, nil, store, ringStore, limits, logger, registerer)
+	// The mock will have the default fallback config.
+	amCfg, err := ComputeFallbackConfig("")
+	require.NoError(t, err)
+
+	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, logger, registerer)
 	require.NoError(t, err)
 
 	// The mock client pool allows the distributor to talk to the instance
@@ -944,7 +948,8 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, log.NewNopLogger(), reg)
 
-	// Request when no user configuration is present.
+	// Request when fallback user configuration is used, as user hasn't
+	// created a configuration yet.
 	req := httptest.NewRequest("GET", externalURL.String(), nil)
 	ctx := user.InjectOrgID(req.Context(), "user1")
 
@@ -952,10 +957,8 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-		require.Equal(t, 412, w.Code)
-		require.Equal(t, "the Alertmanager is not configured\n", string(body))
+		_ = w.Result()
+		require.Equal(t, 301, w.Code) // redirect to UI
 	}
 
 	// Create a configuration for the user in storage.
@@ -1007,14 +1010,13 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// Request when the alertmanager is gone
+		// Request when the alertmanager is gone should result in setting the
+		// default fallback config, thus redirecting to the ui.
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-		require.Equal(t, 412, w.Code)
-		require.Equal(t, "the Alertmanager is not configured\n", string(body))
+		_ = w.Result()
+		require.Equal(t, 301, w.Code) // redirect to UI
 	}
 }
 
