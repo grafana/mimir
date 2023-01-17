@@ -46,19 +46,20 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg := RingConfig{Enabled: true}
-	cfg.KVStore.Mock = ringStore
-	cfg.HeartbeatTimeout = 15 * time.Second
+	cfg1 := RingConfig{Enabled: true}
+	cfg1.KVStore.Mock = ringStore
+	cfg1.HeartbeatTimeout = 15 * time.Second
 
-	cfg.InstanceID = "instance-1"
-	cfg.InstanceAddr = "127.0.0.1"
-	i1, err := newRing(cfg, log.NewNopLogger(), nil)
+	cfg1.InstanceID = "instance-1"
+	cfg1.InstanceAddr = "127.0.0.1"
+	i1, err := newRing(cfg1, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	l1 := i1.lifecycler
 
-	cfg.InstanceID = "instance-2"
-	cfg.InstanceAddr = "127.0.0.2"
-	i2, err := newRing(cfg, log.NewNopLogger(), nil)
+	cfg2 := cfg1
+	cfg2.InstanceID = "instance-2"
+	cfg2.InstanceAddr = "127.0.0.2"
+	i2, err := newRing(cfg2, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	l2 := i2.lifecycler
 
