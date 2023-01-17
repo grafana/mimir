@@ -179,10 +179,11 @@ func (oe *OverridesExporter) isLeader() bool {
 	}
 	isLeaderNow, err := oe.ring.isLeader()
 	if err != nil {
+		// If there was an error establishing ownership using the ring, log a warning and
+		// default to not exporting metrics to keep series churn low for transient ring
+		// issues.
 		level.Warn(oe.logger).Log("msg", "overrides-exporter failed to determine ring leader", "err", err.Error())
-		// If there was an error establishing ownership using the ring, assume leadership
-		// and export metrics anyway.
-		return true
+		return false
 	}
 	return isLeaderNow
 }
