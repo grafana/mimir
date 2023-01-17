@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-	alertConfig "github.com/prometheus/alertmanager/config"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -28,11 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
-
-	yaml "gopkg.in/yaml.v3"
 )
 
 const simpleAlertmanagerConfig = `route:
