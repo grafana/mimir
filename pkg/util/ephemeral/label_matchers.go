@@ -47,12 +47,12 @@ func (ms matcherSet) matches(lset []mimirpb.LabelAdapter) bool {
 }
 
 // HasMatchers returns true if there is at least one matcher defined, otherwise it returns false.
-func (m *MatcherSetsForSource) HasMatchers() bool {
-	return len(*m) > 0
+func (m MatcherSetsForSource) HasMatchers() bool {
+	return len(m) > 0
 }
 
-func (m *MatcherSetsForSource) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
-	for _, ms := range *m {
+func (m MatcherSetsForSource) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
+	for _, ms := range m {
 		if ms.matches(lset) {
 			return true
 		}
