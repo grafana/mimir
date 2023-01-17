@@ -18,7 +18,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir-Read, Mimir-Write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}) for the grouping of components.
 
 ## Endpoints
 

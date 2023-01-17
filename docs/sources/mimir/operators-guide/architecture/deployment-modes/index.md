@@ -47,7 +47,7 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 ## Read-Write mode
 
 > **Warning:**
-> Read-Write deployment mode is currently considered experimental and not ready for production use.
+> Read-Write deployment mode is currently considered experimental.
 
 The read-write mode provides a middle ground as an alternative to monolithic and microservices.
 

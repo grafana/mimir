@@ -12,11 +12,11 @@ Grafana Mimir supports multiple [deployment modes](). By default the provided js
 ## Use Read-Write deployment mode
 
 > **Warning:**
-> Read-Write deployment mode is currently considered experimental and not ready for production use.
+> Read-Write deployment mode is currently considered experimental.
 
 ### Requirements
 
-Read-Write deployment mode requires that multi-zone ingesters and multi-zone store gateways are used. Additionally rule evaluation is performed within Mimir-Backend, so ruler remote evaluation must be disabled.
+Read-write deployment mode requires that multi-zone ingesters and multi-zone store gateways are used. Additionally rule evaluation is performed within Mimir-Backend, so ruler remote evaluation must be disabled.
 
 The deployment mode is set by the `deployment_mode` configuration variable.
 
@@ -33,7 +33,8 @@ The deployment mode is set by the `deployment_mode` configuration variable.
     multi_zone_ingester_enabled: true,
     multi_zone_store_gateway_enabled: true,
     ruler_remote_evaluation_enabled: false,
-    // Disable microservice autoscaling.
+
+    // Disable microservices autoscaling.
     autoscaling_querier_enabled: false,
     autoscaling_ruler_querier_enabled: false,
   }
@@ -68,7 +69,7 @@ CLI Flags for Read-Write components are inherited from the microservices.
 
 ⚠️ Pitfall: Kubernetes resources overrides not inherited. Remember to apply overrides both microservices and read-write components, when changing:
 
-- Container spec (e.g. env vars)
+- Container specification, for example environment variables
 - Deployment
 - StatefulSet
 - Service
@@ -87,7 +88,6 @@ CLI Flags for Read-Write components are inherited from the microservices.
       container.withEnvMixin(
         [envVar.new('GOGC', '50')]
       ),
-
   }
 }
 ```

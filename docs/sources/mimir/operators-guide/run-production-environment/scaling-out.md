@@ -24,11 +24,11 @@ To scale down the Grafana Mimir cluster, see [Scaling down ingesters](#scaling-d
 
 When running Grafana Mimir in Read-Write mode, you can safely scale up any of the services.
 
-The Mimir-Read service can be safely scaled up and down as it is stateless (an autoscaler may also be used).
+The Mimir read service can be safely scaled up and down as it is stateless (an autoscaler may also be used).
 
-The Mimir-Backend service can be safely scaled down in one zone at a time. As it contains the store-gateway, see [Scaling down store-gateways](#scaling-down-store-gateways).
+The Mimir backend service can be safely scaled down in one zone at a time. As it contains the store-gateway, see [Scaling down store-gateways](#scaling-down-store-gateways).
 
-To scale down the Mimir-Write service, see [Scaling down ingesters](#scaling-down-ingesters).
+To scale down the Mimir write service, see [Scaling down ingesters](#scaling-down-ingesters).
 
 ## Microservices mode
 
