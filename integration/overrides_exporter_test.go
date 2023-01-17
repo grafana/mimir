@@ -43,7 +43,7 @@ func TestOverridesExporterRing(t *testing.T) {
 			expectedMetricSum: limit,
 		},
 		{
-			name: "ring enabled with stability",
+			name: "ring enabled with wait for stability at startup",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled":                     "true",
 				"-overrides-exporter.ring.wait-stability-min-duration": "2s",
