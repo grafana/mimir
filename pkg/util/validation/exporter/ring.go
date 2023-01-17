@@ -27,7 +27,7 @@ const (
 	ringKey = "overrides-exporter"
 
 	// ringNumTokens is how many tokens each overrides-exporter should have in the
-	// ring. Overrides-exporter uses timestamps to establish a ring leader, therefore
+	// ring. Overrides-exporter uses tokens to establish a ring leader, therefore
 	// only one token is needed.
 	ringNumTokens = 1
 
