@@ -2,12 +2,14 @@ name: "publish-technical-documentation-release-helm-charts"
 
 on:
   push:
-    branches:
-    - "TODO: update this and maybe ensure that it is mutually exclusive publish-technical-documentation-mimir"
-    tags:
-    - "TODO: update this and maybe ensure that it is mutually exclusive publish-technical-documentation-mimir"
+    # branches: intentionally left off, do not publish incomplete documentation
+    tags:  # this excludes pre-releases, e.g. mimir-distributed-2.2.0-weekly.192
+    - "mimir-distributed-[0-9]+.[0-9]+.[0-9]+"
     paths:
     - "docs/sources/helm-charts/**"
+
+  workflow_dispatch: # for manual testing
+
 jobs:
   test:
     runs-on: "ubuntu-latest"
@@ -48,8 +50,8 @@ jobs:
       uses: "./actions/has-matching-release-tag"
       with:
         ref_name: "${{ github.ref_name }}"
-        release_tag_regexp: "TODO: update this and maybe ensure that it is mutually exclusive publish-technical-documentation-mimir"
-        release_branch_regexp: "TODO: update this and maybe ensure that it is mutually exclusive publish-technical-documentation-mimir"
+        release_tag_regexp: "^mimir-distributed-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+        release_branch_regexp: "^mimir-distributed-release-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
 
     - name: "Determine technical documentation version"
       if: "steps.has-matching-release-tag.outputs.bool == 'true'"

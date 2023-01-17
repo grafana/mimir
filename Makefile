@@ -508,8 +508,8 @@ check-doc: doc
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
-	docker pull grafana/doc-validator:latest
-	docker run -v "$(CURDIR)/$(DOC_SOURCES_PATH):/$(DOC_SOURCES_PATH)" grafana/doc-validator:v1.0.0 ./$(DOC_SOURCES_PATH)
+	docker run -v "$(CURDIR)/$(DOC_SOURCES_PATH):/$(DOC_SOURCES_PATH)" grafana/doc-validator:v1.5.0 ./$(DOC_SOURCES_PATH)
+	docker run -v "$(CURDIR)/docs/sources/helm-charts:/docs/sources/helm-charts" grafana/doc-validator:v1.5.0 ./docs/sources/helm-charts
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.

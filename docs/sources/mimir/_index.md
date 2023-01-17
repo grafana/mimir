@@ -1,5 +1,6 @@
 ---
 title: "Grafana Mimir documentation"
+description: "Technical documentation for Grafana Mimir"
 menuTitle: "Grafana Mimir"
 weight: 1
 keywords:

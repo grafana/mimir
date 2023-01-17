@@ -1,6 +1,7 @@
 ---
 title: "Grafana mimir-distributed Helm chart documentation"
 menuTitle: "Grafana mimir-distributed Helm chart"
+description: "Technical documentation for the mimir-distributed Helm chart"
 weight: 1
 keywords:
   - Grafana Mimir

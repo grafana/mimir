@@ -12,7 +12,7 @@ weight: 60
 You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
 
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
-> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/integrations/integrations/integration-mimir/).
+> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
 
 Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
 
@@ -119,7 +119,6 @@ If you have deployed GEM, then there are two alternatives:
 - If you are using the enterprise authentication type (`mimir.structuredConfig.auth.type=enterprise`, which is
   also the default when `enterprise.enabled=true`), then you also need to provide a Secret with the authentication
   token for the tenant.The token should be to an access policy with `metrics:write` scope.
-  To set up the Secret, refer to [Credentials](#credentials).
   Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
 
 ```yaml
