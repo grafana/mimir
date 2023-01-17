@@ -48,6 +48,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 
 	cfg1 := RingConfig{Enabled: true}
 	cfg1.KVStore.Mock = ringStore
+	cfg1.HeartbeatPeriod = 1 * time.Second
 	cfg1.HeartbeatTimeout = 15 * time.Second
 
 	cfg1.InstanceID = "instance-1"
@@ -63,7 +64,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	require.NoError(t, err)
 	l2 := i2.lifecycler
 
-	// Register instances in the ring (manually, to be able to assign registered timestamps and tokens).
+	// Register instances in the ring (manually, to be able to assign tokens).
 	ctx := context.Background()
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := ring.NewDesc()
@@ -98,7 +99,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i1))
 
 	// Wait for the leader to have advertised its leaving state to the ring
-	test.Poll(t, time.Second, ring.LEAVING, func() interface{} {
+	test.Poll(t, 5*time.Second, ring.LEAVING, func() interface{} {
 		rs, _ := i1.client.GetAllHealthy(ringOp)
 		for _, instance := range rs.Instances {
 			if instance.Addr == l1.GetInstanceAddr() {
@@ -119,20 +120,20 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	// becomes healthy again during this period (e.g. during rollout), it will rejoin
 	// the ring and resume its function as the leader. Otherwise, it will be
 	// auto-forgotten from the ring and a different replica will become the leader.
-	// This is done manually in the unit test.
+
+	// Expire the heartbeat so the previous leader can be auto-forgotten.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.RemoveIngester(i1.lifecycler.GetInstanceID())
+		instance := desc.Ingesters[l1.GetInstanceID()]
+		instance.Timestamp = time.Now().Add(-ringAutoForgetUnhealthyPeriods * cfg1.HeartbeatTimeout).Unix()
+		desc.Ingesters[l1.GetInstanceID()] = instance
 		return desc, true, nil
 	}))
 
-	// Wait for ring update to be observed by the client.
-	test.Poll(t, time.Second, false, func() interface{} {
-		return i2.client.HasInstance(l1.GetInstanceID())
+	// Once the previous leader has been removed from the ring, instance-2 should
+	// become the new leader.
+	test.Poll(t, 5*time.Second, true, func() interface{} {
+		isLeader, _ := i2.isLeader()
+		return isLeader
 	})
-
-	i2IsLeader, err = i2.isLeader()
-	require.NoError(t, err)
-	// instance-2 should now be the new leader.
-	require.True(t, i2IsLeader)
 }
