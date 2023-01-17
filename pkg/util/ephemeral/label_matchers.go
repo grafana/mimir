@@ -70,7 +70,8 @@ func (c *LabelMatchers) String() string {
 // Set implements flag.Value, and is used to set the config value from a flag value provided as string.
 // Set is needed to implement flag.Value.
 func (c *LabelMatchers) Set(s string) error {
-	if strings.TrimSpace(s) == "" {
+	s = strings.TrimSpace(s)
+	if s == "" {
 		return nil
 	}
 
