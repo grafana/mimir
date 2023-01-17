@@ -3351,3 +3351,6 @@ continuous_test:
 
   tolerations: []
   terminationGracePeriodSeconds: 30
+
+# -- Add dynamic manifests via values:
+extraObjects: []
