@@ -81,6 +81,7 @@
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
 * [ENHANCEMENT] Update migration from cortex documentation. #3662
+* [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
 
 ### Tools
 
