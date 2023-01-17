@@ -358,9 +358,9 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
 	req := f.requests.get(qrReq.QueryID)
-	// It is possible that some old response belonging to different user was received, if frontend has restarted.
+	// It is possible that some old response belonging to a different user was received, if frontend has restarted.
 	// To avoid leaking query results between users, we verify the user here.
-	// To avoid mixing results from different queries, we randomize queryID counter on start.
+	// To avoid mixing results from different queries, we randomize the queryID counter on start.
 	if req != nil && req.userID == userID {
 		select {
 		case req.response <- queryResultWithBody{
@@ -375,100 +375,17 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
 
-func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
-	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
-		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
-			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
-		}
-	}(stream)
-
-	tenantIDs, err := tenant.TenantIDs(stream.Context())
-	if err != nil {
-		return err
-	}
-	userID := tenant.JoinTenantIDs(tenantIDs)
-
-	reader, writer := io.Pipe()
-	defer func(c *io.PipeWriter) {
-		if err := c.CloseWithError(err); err != nil {
-			level.Warn(f.log).Log("msg", "failed to close query result body writer", "err", err)
-		}
-	}(writer)
-
-	metadataReceived := false
-
-	for {
-		var resp *frontendv2pb.QueryResultStreamRequest
-		resp, err = stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if errors.Is(err, context.Canceled) {
-				if cause := context.Cause(stream.Context()); cause != nil {
-					return fmt.Errorf("aborted streaming on canceled context: %w", cause)
-				}
-			}
-			return fmt.Errorf("failed to receive query result stream message: %w", err)
-		}
-		switch d := resp.Data.(type) {
-		case *frontendv2pb.QueryResultStreamRequest_Metadata:
-			if metadataReceived {
-				return fmt.Errorf("metadata for query ID %d received more than once", resp.QueryID)
-			}
-			req := f.requests.get(resp.QueryID)
-			if req == nil {
-				return fmt.Errorf("query %d not found", resp.QueryID)
-			}
-			if req.userID != userID {
-				return fmt.Errorf("expected metadata for user: %s, got: %s", req.userID, userID)
-			}
-			res := queryResultWithBody{
-				queryResult: &frontendv2pb.QueryResultRequest{
-					QueryID: resp.QueryID,
-					Stats:   d.Metadata.Stats,
-					HttpResponse: &httpgrpc.HTTPResponse{
-						Code:    d.Metadata.Code,
-						Headers: d.Metadata.Headers,
-					},
-				},
-				bodyStream: reader,
-			}
-			select {
-			case req.response <- res: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
-				metadataReceived = true
-			default:
-				level.Warn(f.log).Log("msg", "failed to write query result to the response channel",
-					"queryID", resp.QueryID, "user", req.userID)
-			}
-		case *frontendv2pb.QueryResultStreamRequest_Body:
-			if !metadataReceived {
-				return fmt.Errorf("result body for query ID %d received before metadata", resp.QueryID)
-			}
-			_, err = writer.Write(d.Body.Chunk)
-			if err != nil {
-				return fmt.Errorf("failed to write query result body chunk: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown query result stream message type: %T", resp.Data)
-		}
-	}
-
-	return nil
-}
-
-// CheckReady determines if the query frontend is ready.  Function parameters/return
+// CheckReady determines if the query frontend is ready. Function parameters/return
 // chosen to match the same method in the ingester
 func (f *Frontend) CheckReady(_ context.Context) error {
 	workers := f.schedulerWorkers.getWorkersCount()
 
-	// If frontend is connected to at least one scheduler, we are ready.
+	// If the frontend is connected to at least one scheduler, we are ready.
 	if workers > 0 {
 		return nil
 	}
 
-	msg := fmt.Sprintf("not ready: number of schedulers this worker is connected to is %d", workers)
+	msg := fmt.Sprintf("not ready: number of schedulers this frontend is connected to is %d", workers)
 	level.Info(f.log).Log("msg", msg)
 	return errors.New(msg)
 }

@@ -136,13 +136,12 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	f.mu.Lock()
 	ws := f.workers
 	w := f.workers[address]
+	f.mu.Unlock()
 
 	// Already stopped or we already have worker for this address.
 	if ws == nil || w != nil {
-		f.mu.Unlock()
 		return
 	}
-	f.mu.Unlock()
 
 	level.Info(f.log).Log("msg", "adding connection to query-scheduler", "addr", address)
 	conn, err := f.connectToScheduler(context.Background(), address)
@@ -233,7 +232,7 @@ func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, addre
 }
 
 // Worker managing single gRPC connection to Scheduler. Each worker starts multiple goroutines for forwarding
-// requests and cancellations to scheduler.
+// requests and cancellations to Scheduler.
 type frontendSchedulerWorker struct {
 	log log.Logger
 
