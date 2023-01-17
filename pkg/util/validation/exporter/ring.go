@@ -134,7 +134,8 @@ func (c *RingConfig) toRingConfig() ring.Config {
 func (c *RingConfig) Validate() error {
 	if c.WaitStabilityMinDuration > 0 {
 		if c.WaitStabilityMinDuration > c.WaitStabilityMaxDuration {
-			return errors.New("inconsistent config")
+			return errors.New("-overrides-exporter.ring.wait-stability-max-duration must be greater or equal " +
+				"to -overrides-exporter.ring.wait-stability-min-duration")
 		}
 	}
 	return nil

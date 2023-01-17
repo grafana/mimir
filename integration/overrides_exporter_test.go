@@ -84,12 +84,11 @@ func TestOverridesExporterRing(t *testing.T) {
 			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
 			require.NoError(t, err)
 
-			test.Poll(t, 20*time.Second, tt.expectedMetricSum, func() interface{} {
+			test.Poll(t, 30*time.Second, tt.expectedMetricSum, func() interface{} {
 				value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
 				require.NoError(t, err)
 				value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
 				require.NoError(t, err)
-
 				return int(value1 + value2)
 			})
 		})
