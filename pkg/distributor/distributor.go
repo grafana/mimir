@@ -1056,6 +1056,8 @@ func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
+		// Ensure that only time series which shall be marked as ephemeral according to the ephemeral checker get
+		// ingested into the ephemeral store.
 		req.EphemeralTimeseries = nil
 
 		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID, req.Source)
