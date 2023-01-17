@@ -492,12 +492,10 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 
 	if numSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_result_series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "series"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
 
 		if streamingEnabled {
 			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))

@@ -51,8 +51,6 @@ type queryStats struct {
 	mergedSeriesCount int
 	mergedChunksCount int
 
-	expandedPostingsDuration time.Duration
-
 	// The total time spent fetching series and chunk refs.
 	streamingSeriesFetchRefsDuration time.Duration
 
@@ -106,8 +104,6 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
-
-	s.expandedPostingsDuration += o.expandedPostingsDuration
 
 	s.streamingSeriesFetchRefsDuration += o.streamingSeriesFetchRefsDuration
 	s.streamingSeriesBatchCount += o.streamingSeriesBatchCount

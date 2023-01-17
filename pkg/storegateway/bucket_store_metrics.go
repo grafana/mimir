@@ -57,8 +57,6 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
-
-	expandPostingsDuration prometheus.Histogram
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -205,12 +203,6 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.streamingSeriesRefsFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_refs_fetch_duration_seconds",
 		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request. This metric is tracked only if streaming store-gateway is enabled.",
-		Buckets: durationBuckets,
-	})
-
-	m.expandPostingsDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_expanded_postings_duration",
-		Help:    "The time it takes to get a list of all series that match the request matcher.",
 		Buckets: durationBuckets,
 	})
 
