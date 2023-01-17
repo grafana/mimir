@@ -301,7 +301,7 @@ overrides_exporter:
     # overrides-exporter ring keeps changing after this period of time, it will
     # start anyway.
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
-    [wait_stability_max_duration: <duration> | default = 1m]
+    [wait_stability_max_duration: <duration> | default = 5m]
 
     # (advanced) Instance ID to register in the ring.
     # CLI flag: -overrides-exporter.ring.instance-id

@@ -11860,7 +11860,7 @@
               "required": false,
               "desc": "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.",
               "fieldValue": null,
-              "fieldDefaultValue": 60000000000,
+              "fieldDefaultValue": 300000000000,
               "fieldFlag": "overrides-exporter.ring.wait-stability-max-duration",
               "fieldType": "duration",
               "fieldCategory": "advanced"
