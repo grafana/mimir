@@ -292,6 +292,17 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
+    # (advanced) Minimum time to wait for ring stability at startup, if set to
+    # positive value. Set to 0 to disable.
+    # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
+    [wait_stability_min_duration: <duration> | default = 0s]
+
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # overrides-exporter ring keeps changing after this period of time, it will
+    # start anyway.
+    # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
+    [wait_stability_max_duration: <duration> | default = 5m]
+
     # (advanced) Instance ID to register in the ring.
     # CLI flag: -overrides-exporter.ring.instance-id
     [instance_id: <string> | default = "<hostname>"]

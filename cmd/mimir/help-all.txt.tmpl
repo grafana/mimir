@@ -1283,6 +1283,10 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -overrides-exporter.ring.wait-stability-max-duration duration
+    	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
+  -overrides-exporter.ring.wait-stability-min-duration duration
+    	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -print.config
     	Print the config and exit.
   -querier.batch-iterators

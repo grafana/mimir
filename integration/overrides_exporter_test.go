@@ -27,7 +27,7 @@ overrides:
 `
 )
 
-func TestOverridesExporterTenantSharding(t *testing.T) {
+func TestOverridesExporterRing(t *testing.T) {
 	limit := 20
 	tests := []struct {
 		name              string
@@ -35,7 +35,7 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 		expectedMetricSum int
 	}{
 		{
-			name: "tenant sharding enabled",
+			name: "ring enabled",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled": "true",
 			},
@@ -43,7 +43,17 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			expectedMetricSum: limit,
 		},
 		{
-			name: "tenant sharding disabled",
+			name: "ring enabled with wait for stability at startup",
+			flags: map[string]string{
+				"-overrides-exporter.ring.enabled":                     "true",
+				"-overrides-exporter.ring.wait-stability-min-duration": "2s",
+				"-overrides-exporter.ring.wait-stability-max-duration": "4s",
+			},
+			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
+			expectedMetricSum: limit,
+		},
+		{
+			name: "ring disabled",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled": "false",
 			},
