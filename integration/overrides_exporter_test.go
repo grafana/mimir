@@ -37,8 +37,7 @@ func TestOverridesExporterRing(t *testing.T) {
 		{
 			name: "ring enabled",
 			flags: map[string]string{
-				"-overrides-exporter.ring.enabled":          "true",
-				"-overrides-exporter.ring.heartbeat-period": "1s",
+				"-overrides-exporter.ring.enabled": "true",
 			},
 			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
 			expectedMetricSum: limit,
@@ -47,8 +46,6 @@ func TestOverridesExporterRing(t *testing.T) {
 			name: "ring enabled with stability",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled":                     "true",
-				"-overrides-exporter.ring.heartbeat-period":            "1s",
-				"-overrides-exporter.ring.heartbeat-timeout":           "2s",
 				"-overrides-exporter.ring.wait-stability-min-duration": "2s",
 				"-overrides-exporter.ring.wait-stability-max-duration": "4s",
 			},
