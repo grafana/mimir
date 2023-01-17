@@ -5,10 +5,11 @@
 
 FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
 FROM alpine/helm:3.8.2 as helm
+FROM quay.io/skopeo/stable:v1.10.0 as skopeo
 FROM golang:1.19.3-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev skopeo && \
+RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
@@ -35,6 +36,9 @@ RUN GOARCH=$(go env GOARCH) && \
     chmod a+x /usr/bin/tk
 
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.49.0
+
+COPY --from=skopeo /usr/bin/skopeo /usr/bin/skopeo
+COPY --from=skopeo /etc/containers /etc/containers
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \

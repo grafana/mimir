@@ -151,15 +151,37 @@ func (u *userTSDB) hasEphemeralStorage() bool {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.Querier, error) {
+	if ephemeral {
+		eph := u.getEphemeralStorage()
+		if eph == nil {
+			return storage.NoopQuerier(), nil
+		}
+
+		return tsdb.NewBlockQuerier(eph, mint, maxt)
+	}
+
 	return u.db.Querier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		eph := u.getEphemeralStorage()
+		if eph == nil {
+			return storage.NoopChunkedQuerier(), nil
+		}
+
+		return tsdb.NewBlockChunkQuerier(eph, mint, maxt)
+	}
+
 	return u.db.ChunkQuerier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		// There is no "unordered chunk querier" for tsdb Head.
+		return u.ChunkQuerier(ctx, mint, maxt, ephemeral)
+	}
 	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
 }
 
