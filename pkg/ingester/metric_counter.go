@@ -14,8 +14,9 @@ import (
 
 // DiscardedSamples metric labels
 const (
-	perUserSeriesLimit   = "per_user_series_limit"
-	perMetricSeriesLimit = "per_metric_series_limit"
+	perUserSeriesLimit          = "per_user_series_limit"
+	perMetricSeriesLimit        = "per_metric_series_limit"
+	perUserEphemeralSeriesLimit = "per_user_ephemeral_series_limit"
 )
 
 const numMetricCounterShards = 128

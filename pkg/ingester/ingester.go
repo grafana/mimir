@@ -645,16 +645,17 @@ type extendedAppender interface {
 }
 
 type pushStats struct {
-	succeededSamplesCount     int
-	failedSamplesCount        int
-	succeededExemplarsCount   int
-	failedExemplarsCount      int
-	sampleOutOfBoundsCount    int
-	sampleOutOfOrderCount     int
-	sampleTooOldCount         int
-	newValueForTimestampCount int
-	perUserSeriesLimitCount   int
-	perMetricSeriesLimitCount int
+	succeededSamplesCount            int
+	failedSamplesCount               int
+	succeededExemplarsCount          int
+	failedExemplarsCount             int
+	sampleOutOfBoundsCount           int
+	sampleOutOfOrderCount            int
+	sampleTooOldCount                int
+	newValueForTimestampCount        int
+	perUserSeriesLimitCount          int
+	perMetricSeriesLimitCount        int
+	perUserEphemeralSeriesLimitCount int
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -896,6 +897,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.perMetricSeriesLimitCount > 0 {
 		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
 	}
+	if stats.perUserEphemeralSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerUserEphemeralSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserEphemeralSeriesLimitCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -990,7 +994,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				continue
 
 			case errMaxSeriesPerUserLimitExceeded:
-			case errMaxEphemeralSeriesPerUserLimitExceeded:
 				stats.perUserSeriesLimitCount++
 				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
 				continue
@@ -1000,6 +1003,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				updateFirstPartial(func() error {
 					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
 				})
+				continue
+
+			case errMaxEphemeralSeriesPerUserLimitExceeded:
+				stats.perUserEphemeralSeriesLimitCount++
+				updateFirstPartial(func() error { return makeLimitError(perUserEphemeralSeriesLimit, i.limiter.FormatError(userID, cause)) })
 				continue
 			}
 

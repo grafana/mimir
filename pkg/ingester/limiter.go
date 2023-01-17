@@ -116,10 +116,10 @@ func (l *Limiter) FormatError(userID string, err error) error {
 		return l.formatMaxSeriesPerUserError(userID)
 	case errMaxSeriesPerMetricLimitExceeded:
 		return l.formatMaxSeriesPerMetricError(userID)
-	case errMaxEphemeralSeriesPerUserLimitExceeded:
-		return l.formatMaxEphemeralSeriesPerUserError(userID)
 	case errMaxMetadataPerUserLimitExceeded:
 		return l.formatMaxMetadataPerUserError(userID)
+	case errMaxEphemeralSeriesPerUserLimitExceeded:
+		return l.formatMaxEphemeralSeriesPerUserError(userID)
 	case errMaxMetadataPerMetricLimitExceeded:
 		return l.formatMaxMetadataPerMetricError(userID)
 	default:

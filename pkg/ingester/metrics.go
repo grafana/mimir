@@ -63,12 +63,13 @@ type ingesterMetrics struct {
 	idleTsdbChecks         *prometheus.CounterVec
 
 	// Discarded samples
-	discardedSamplesSampleOutOfBounds    *prometheus.CounterVec
-	discardedSamplesSampleOutOfOrder     *prometheus.CounterVec
-	discardedSamplesSampleTooOld         *prometheus.CounterVec
-	discardedSamplesNewValueForTimestamp *prometheus.CounterVec
-	discardedSamplesPerUserSeriesLimit   *prometheus.CounterVec
-	discardedSamplesPerMetricSeriesLimit *prometheus.CounterVec
+	discardedSamplesSampleOutOfBounds           *prometheus.CounterVec
+	discardedSamplesSampleOutOfOrder            *prometheus.CounterVec
+	discardedSamplesSampleTooOld                *prometheus.CounterVec
+	discardedSamplesNewValueForTimestamp        *prometheus.CounterVec
+	discardedSamplesPerUserSeriesLimit          *prometheus.CounterVec
+	discardedSamplesPerMetricSeriesLimit        *prometheus.CounterVec
+	discardedSamplesPerUserEphemeralSeriesLimit *prometheus.CounterVec
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -320,12 +321,13 @@ func newIngesterMetrics(
 
 		idleTsdbChecks: idleTsdbChecks,
 
-		discardedSamplesSampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
-		discardedSamplesSampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
-		discardedSamplesSampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
-		discardedSamplesNewValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
-		discardedSamplesPerUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
-		discardedSamplesPerMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		discardedSamplesSampleOutOfBounds:           validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
+		discardedSamplesSampleOutOfOrder:            validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
+		discardedSamplesSampleTooOld:                validation.DiscardedSamplesCounter(r, sampleTooOld),
+		discardedSamplesNewValueForTimestamp:        validation.DiscardedSamplesCounter(r, newValueForTimestamp),
+		discardedSamplesPerUserSeriesLimit:          validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
+		discardedSamplesPerMetricSeriesLimit:        validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		discardedSamplesPerUserEphemeralSeriesLimit: validation.DiscardedSamplesCounter(r, perUserEphemeralSeriesLimit),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
@@ -350,6 +352,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedSamplesNewValueForTimestamp.DeletePartialMatch(filter)
 	m.discardedSamplesPerUserSeriesLimit.DeletePartialMatch(filter)
 	m.discardedSamplesPerMetricSeriesLimit.DeletePartialMatch(filter)
+	m.discardedSamplesPerUserEphemeralSeriesLimit.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
@@ -362,6 +365,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID, group)
 	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID, group)
+	m.discardedSamplesPerUserEphemeralSeriesLimit.DeleteLabelValues(userID, group)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
