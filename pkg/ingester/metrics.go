@@ -26,10 +26,15 @@ type ingesterMetrics struct {
 	ephemeralIngestedSamples     *prometheus.CounterVec
 	ephemeralIngestedSamplesFail *prometheus.CounterVec
 
-	queries                 prometheus.Counter
-	queriedSamples          prometheus.Histogram
-	queriedExemplars        prometheus.Histogram
-	queriedSeries           prometheus.Histogram
+	queries          prometheus.Counter
+	queriedSamples   prometheus.Histogram
+	queriedExemplars prometheus.Histogram
+	queriedSeries    prometheus.Histogram
+
+	ephemeralQueries        prometheus.Counter
+	ephemeralQueriedSamples prometheus.Histogram
+	ephemeralQueriedSeries  prometheus.Histogram
+
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
 	memEphemeralUsers       prometheus.Gauge
@@ -157,6 +162,20 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
+			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
+		}),
+		ephemeralQueries: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_queries_ephemeral_total",
+			Help: "The total number of queries the ingester has handled for ephemeral storage.",
+		}),
+		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_queried_ephemeral_samples",
+			Help:    "The total number of samples from ephemeral storage returned per query.",
+			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+		}),
+		ephemeralQueriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_queried_ephemeral_series",
+			Help:    "The total number of ephemeral series returned from queries.",
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
