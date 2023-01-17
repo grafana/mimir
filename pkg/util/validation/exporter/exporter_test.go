@@ -124,9 +124,11 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg := Config{RingConfig{Enabled: true}}
-	cfg.Ring.KVStore.Mock = ringStore
-	cfg.Ring.InstancePort = 1234
+	cfg1 := Config{RingConfig{Enabled: true}}
+	cfg1.Ring.KVStore.Mock = ringStore
+	cfg1.Ring.InstancePort = 1234
+	cfg1.Ring.HeartbeatPeriod = 15 * time.Second
+	cfg1.Ring.HeartbeatTimeout = 1 * time.Minute
 
 	// Create an empty ring.
 	ctx := context.Background()
@@ -135,9 +137,9 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	}))
 
 	// Create an overrides-exporter.
-	cfg.Ring.InstanceID = "overrides-exporter-1"
-	cfg.Ring.InstanceAddr = "1.2.3.1"
-	e1, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	cfg1.Ring.InstanceID = "overrides-exporter-1"
+	cfg1.Ring.InstanceAddr = "1.2.3.1"
+	e1, err := NewOverridesExporter(cfg1, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
 	l1 := e1.ring.lifecycler
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, e1))
@@ -149,40 +151,32 @@ func TestOverridesExporter_withRing(t *testing.T) {
 		return rs.Includes(l1.GetInstanceAddr())
 	})
 
-	// Set registeredTimestamp and (leader) token.
+	// Set leader token.
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		instance := desc.Ingesters[l1.GetInstanceID()]
-		instance.RegisteredTimestamp = time.Now().Add(-time.Hour).Unix()
 		instance.Tokens = []uint32{leaderToken + 1}
 		desc.Ingesters[l1.GetInstanceID()] = instance
 		return desc, true, nil
 	}))
 
-	// Wait for update of timestamp.
-	test.Poll(t, time.Second, true, func() interface{} {
+	// Wait for update of token.
+	test.Poll(t, time.Second, []uint32{leaderToken + 1}, func() interface{} {
 		rs, _ := e1.ring.client.GetAllHealthy(ringOp)
-		return rs.Instances[0].RegisteredTimestamp < time.Now().Add(-5*time.Minute).Unix()
+		return rs.Instances[0].Tokens
 	})
 
 	// This instance is now the only ring member and should export metrics.
 	require.True(t, hasOverrideMetrics(e1))
 
 	// Register a second instance.
-	cfg.Ring.InstanceID = "overrides-exporter-2"
-	cfg.Ring.InstanceAddr = "1.2.3.2"
-	e2, err := NewOverridesExporter(cfg, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
-	l2 := e2.ring.lifecycler
+	cfg2 := cfg1
+	cfg2.Ring.InstanceID = "overrides-exporter-2"
+	cfg2.Ring.InstanceAddr = "1.2.3.2"
+	e2, err := NewOverridesExporter(cfg2, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, e2))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, e2)) })
-
-	// Register instance in the ring.
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
-		desc := in.(*ring.Desc)
-		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{1234}, ring.ACTIVE, time.Now().Add(-ringAutoForgetUnhealthyPeriods*cfg.Ring.HeartbeatTimeout))
-		return desc, true, nil
-	}))
 
 	// Wait until it has registered itself to the ring.
 	test.Poll(t, time.Second, true, func() interface{} {
@@ -191,7 +185,7 @@ func TestOverridesExporter_withRing(t *testing.T) {
 		return rs1.Includes(e2.ring.lifecycler.GetInstanceAddr()) && rs2.Includes(e1.ring.lifecycler.GetInstanceAddr())
 	})
 
-	// Only one of the two instances should be exporting metrics.
+	// Only the leader instance (owner of the special token) should export metrics.
 	require.True(t, hasOverrideMetrics(e1))
 	require.False(t, hasOverrideMetrics(e2))
 }
