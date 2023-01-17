@@ -156,17 +156,6 @@ type overridesExporterRing struct {
 	logger            log.Logger
 }
 
-// isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
-func (r *overridesExporterRing) isLeader() (bool, error) {
-	// Get the leader from the ring and check whether it's this replica.
-	rl, err := ringLeader(r.client)
-	if err != nil {
-		return false, err
-	}
-
-	return rl.Addr == r.lifecycler.GetInstanceAddr(), nil
-}
-
 // newRing creates a new overridesExporterRing from the given configuration.
 func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*overridesExporterRing, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
@@ -215,6 +204,17 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	}
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
 	return r, nil
+}
+
+// isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
+func (r *overridesExporterRing) isLeader() (bool, error) {
+	// Get the leader from the ring and check whether it's this replica.
+	rl, err := ringLeader(r.client)
+	if err != nil {
+		return false, err
+	}
+
+	return rl.Addr == r.lifecycler.GetInstanceAddr(), nil
 }
 
 // ringLeader returns the ring member that owns the special token.
