@@ -24,7 +24,7 @@ func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper) http.RoundTripp
 	return &grpcRoundTripperAdapter{roundTripper: r}
 }
 
-// This adapter wraps GrpcRoundTripper and converted it into http.RoundTripper
+// This adapter wraps GrpcRoundTripper and converts it into http.RoundTripper.
 type grpcRoundTripperAdapter struct {
 	roundTripper GrpcRoundTripper
 }
