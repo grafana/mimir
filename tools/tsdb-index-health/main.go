@@ -328,7 +328,7 @@ func GatherIndexHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 	return stats, nil
 }
 
-func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []chunks.Meta) {
+func verifyChunks(l log.Logger, cr *chunks.Reader, _ labels.Labels, chks []chunks.Meta) {
 	for _, cm := range chks {
 		ch, err := cr.Chunk(cm)
 		if err != nil {
@@ -343,12 +343,19 @@ func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []ch
 		it := ch.Iterator(nil)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			samples++
-			if valType != chunkenc.ValFloat {
-				// TODO support native histograms
-				level.Warn(l).Log("ref", cm.Ref, "msg", "skipping unsupported value type", "valueType", valType)
+
+			var ts int64
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, _ = it.At()
+			case chunkenc.ValHistogram:
+				ts, _ = it.AtHistogram()
+			case chunkenc.ValFloatHistogram:
+				ts, _ = it.AtFloatHistogram()
+			default:
+				_ = level.Warn(l).Log("ref", cm.Ref, "msg", "skipping unsupported value type", "valueType", valType)
 				continue
 			}
-			ts, _ := it.At()
 
 			if firstSample {
 				firstSample = false
