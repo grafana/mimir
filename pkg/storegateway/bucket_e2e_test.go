@@ -447,19 +447,17 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.store.maxSeriesPerBatch > 0, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
-func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, streamingEnabled bool, registry *prometheus.Registry) {
 	t.Helper()
 
-	families, err := registry.Gather()
-	require.NoError(t, err, "couldn't gather metrics from BucketStore")
-	metrics, err := util.NewMetricFamilyMap(families)
+	metrics, err := util.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
 	toLabels := func(labelValuePairs []string) (result labels.Labels) {
@@ -494,14 +492,18 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 
 	if numSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_result_series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "series"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
+
+		if streamingEnabled {
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
+		} else {
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
+		}
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))

@@ -745,16 +745,19 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
-		input    seriesChunkRefsSetIterator
-		expected []labels.Labels
+		input              seriesChunkRefsSetIterator
+		expectedSeries     []labels.Labels
+		expectedBatchCount int
 	}{
 		"should iterate on no sets": {
-			input:    newSliceSeriesChunkRefsSetIterator(nil),
-			expected: nil,
+			input:              newSliceSeriesChunkRefsSetIterator(nil),
+			expectedSeries:     nil,
+			expectedBatchCount: 0,
 		},
 		"should iterate an empty set": {
-			input:    newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{}),
-			expected: nil,
+			input:              newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{}),
+			expectedSeries:     nil,
+			expectedBatchCount: 1,
 		},
 		"should iterate a set with multiple items": {
 			input: newSliceSeriesChunkRefsSetIterator(nil,
@@ -762,10 +765,11 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
 				}}),
-			expected: []labels.Labels{
+			expectedSeries: []labels.Labels{
 				labels.FromStrings("l1", "v1"),
 				labels.FromStrings("l1", "v2"),
 			},
+			expectedBatchCount: 1,
 		},
 		"should iterate multiple sets with multiple items each": {
 			input: newSliceSeriesChunkRefsSetIterator(nil,
@@ -780,13 +784,14 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
 					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
 				}}),
-			expected: []labels.Labels{
+			expectedSeries: []labels.Labels{
 				labels.FromStrings("l1", "v1"),
 				labels.FromStrings("l1", "v2"),
 				labels.FromStrings("l1", "v3"),
 				labels.FromStrings("l1", "v4"),
 				labels.FromStrings("l1", "v5"),
 			},
+			expectedBatchCount: 3,
 		},
 		"should keep iterating on empty sets": {
 			input: newSliceSeriesChunkRefsSetIterator(nil,
@@ -805,13 +810,14 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
 				}},
 				seriesChunkRefsSet{}),
-			expected: []labels.Labels{
+			expectedSeries: []labels.Labels{
 				labels.FromStrings("l1", "v1"),
 				labels.FromStrings("l1", "v2"),
 				labels.FromStrings("l1", "v3"),
 				labels.FromStrings("l1", "v4"),
 				labels.FromStrings("l1", "v5"),
 			},
+			expectedBatchCount: 7,
 		},
 	}
 
@@ -823,10 +829,12 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			chainedSet := newSeriesSetWithoutChunks(ctx, testCase.input)
+			stats := newSafeQueryStats()
+			chainedSet := newSeriesSetWithoutChunks(ctx, testCase.input, stats)
 			actual := readAllSeriesLabels(chainedSet)
 			require.NoError(t, chainedSet.Err())
-			assert.Equal(t, testCase.expected, actual)
+			assert.Equal(t, testCase.expectedSeries, actual)
+			assert.Equal(t, testCase.expectedBatchCount, stats.export().streamingSeriesBatchCount)
 		})
 	}
 }
