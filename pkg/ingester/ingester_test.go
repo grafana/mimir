@@ -6155,7 +6155,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
 					cortex_ingester_memory_ephemeral_users 1
 
-					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
 					# TYPE cortex_ingester_queried_ephemeral_samples histogram
 					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
 					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
@@ -6234,7 +6234,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
 					cortex_ingester_memory_ephemeral_users 1
 
-					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
 					# TYPE cortex_ingester_queried_ephemeral_samples histogram
 					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
 					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
@@ -6324,7 +6324,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
 					cortex_ingester_memory_ephemeral_users 1
 
-					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
 					# TYPE cortex_ingester_queried_ephemeral_samples histogram
 					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
 					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
@@ -6502,7 +6502,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
 					cortex_ingester_memory_ephemeral_users 1
 
-					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
 					# TYPE cortex_ingester_queried_ephemeral_samples histogram
 					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
 					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
@@ -6569,7 +6569,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
 					cortex_ingester_memory_ephemeral_users 0
 
-					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned from queries.
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
 					# TYPE cortex_ingester_queried_ephemeral_samples histogram
 					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
 					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1

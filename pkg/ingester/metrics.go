@@ -170,7 +170,7 @@ func newIngesterMetrics(
 		}),
 		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_queried_ephemeral_samples",
-			Help:    "The total number of samples from ephemeral storage returned from queries.",
+			Help:    "The total number of samples from ephemeral storage returned per query.",
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 		}),
 		ephemeralQueriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
