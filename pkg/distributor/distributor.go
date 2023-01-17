@@ -181,8 +181,8 @@ type Config struct {
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
 
-	// Enable the experimental feature to mark metrics as ephemeral.
-	EphemeralSeriesEnabled bool `yaml:"ephemeral_metrics_enabled" category:"experimental"`
+	// Enable the experimental feature to mark series as ephemeral.
+	EphemeralSeriesEnabled bool `yaml:"ephemeral_series_enabled" category:"experimental"`
 }
 
 type InstanceLimits struct {

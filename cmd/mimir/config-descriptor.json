@@ -1698,7 +1698,7 @@
         },
         {
           "kind": "field",
-          "name": "ephemeral_metrics_enabled",
+          "name": "ephemeral_series_enabled",
           "required": false,
           "desc": "Enable marking series as ephemeral based on the given matchers in the runtime config.",
           "fieldValue": null,
