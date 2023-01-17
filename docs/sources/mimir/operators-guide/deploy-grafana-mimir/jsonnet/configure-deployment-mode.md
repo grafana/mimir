@@ -7,7 +7,7 @@ weight: 40
 
 # Configure deployment mode
 
-Grafana Mimir supports multiple [deployment modes](). By default the provided jsonnet will deploy in microservices mode. Monolithic mode is not current supported in jsonnet.
+Grafana Mimir supports multiple [deployment modes]({{< relref "../../architecture/deployment-modes/index.md" >}}). By default the provided jsonnet will deploy in microservices mode. Monolithic mode is not currently supported in jsonnet.
 
 ## Use Read-Write deployment mode
 
@@ -91,14 +91,3 @@ CLI Flags for Read-Write components are inherited from the microservices.
   }
 }
 ```
-
-### Migrating from Microservices to Read-Write deployment mode
-
-> **Warning:**
-> Migration between deployment modes is not supported.
-
-1. Deploy read-write components along side microservices with `deployment_mode: 'migration'` (they join the same ring).
-1. Switch over end points in your ingress.
-1. Decommission microservices.
-
-Steps can be applied vice-versa for migrating from read-write mode to microservices.

@@ -51,7 +51,23 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 
 The read-write mode provides a middle ground as an alternative to monolithic and microservices.
 
-In read-write mode, components are grouped into just three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths.
+In read-write mode, components are grouped into just three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths. The services group the components as follows:
+
+1. read
+   - query-frontend
+   - querier
+2. backend
+   - store-gateway
+   - compactor
+   - ruler
+   - alertmanager
+   - query-scheduler
+   - overrides-exporter
+3. write
+   - distributor
+   - ingester
+
+Similar to the other modes, each Grafana Mimir process is invoked with its `-target` parameter set to the specific service (for example, `-target=read`, `-target=write`, or `-target=backend`).
 
 [//]: # "Diagram source at https://docs.google.com/drawings/d/18Qfl-H9On9zi2IRVX-rLawbpQPRcMcI0xh5uwyUjlak"
 
