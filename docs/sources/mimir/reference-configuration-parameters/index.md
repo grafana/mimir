@@ -2843,7 +2843,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
 
-ephemeral_series_matchers:
+# (experimental) Lists of series matchers prefixed by the source. The source
+# must be one of any, api, rule. If an incoming sample matches at least one of
+# the matchers with its source it gets marked as ephemeral. The format of the
+# value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
+# CLI flag: -distributor.ephemeral-series-matchers
+[ephemeral_series_matchers: <map of source name (string) to series matchers ([]string)> | default = ]
 ```
 
 ### blocks_storage
