@@ -35,8 +35,8 @@ type BucketStoreMetrics struct {
 	seriesRefetches       prometheus.Counter
 
 	// Metrics tracked when streaming store-gateway is disabled.
-	seriesGetAllDuration prometheus.Histogram
-	seriesMergeDuration  prometheus.Histogram
+	synchronousSeriesGetAllDuration prometheus.Histogram
+	synchronousSeriesMergeDuration  prometheus.Histogram
 
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
@@ -102,12 +102,12 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
 	})
-	m.seriesGetAllDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+	m.synchronousSeriesGetAllDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_get_all_duration_seconds",
 		Help:    "Time it takes until all per-block prepares and loads for a query are finished. This metric is tracked only if streaming store-gateway is disabled.",
 		Buckets: durationBuckets,
 	})
-	m.seriesMergeDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+	m.synchronousSeriesMergeDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_merge_duration_seconds",
 		Help:    "Time it takes to merge sub-results from all queried blocks into a single result. This metric is tracked only if streaming store-gateway is disabled.",
 		Buckets: durationBuckets,

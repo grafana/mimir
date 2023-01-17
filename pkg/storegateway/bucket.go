@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -923,25 +924,19 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		// Once the iteration is done we will merge the stats and track metrics.
 		defer func() {
-			stats.merge(mergeStats)
-
-			if err == nil {
-				if s.maxSeriesPerBatch <= 0 {
-					// When streaming is disabled, the time spent iterating over the series set is the
-					// actual time spent merging series and sending response to the client.
-					s.metrics.seriesMergeDuration.Observe(time.Since(begin).Seconds())
-				} else {
-					// When streaming is enabled, the time spent iterating over the series set is the
-					// actual time spent fetching series and chunks, and sending them to the client.
-					// We split the two timings to have a better view over how time is spent.
-					finalStats := stats.export()
-					fetchDuration := finalStats.streamingSeriesWaitBatchLoadedDuration.Seconds()
-					sendDuration := math.Max(0, time.Since(begin).Seconds()-fetchDuration)
-
-					s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(fetchDuration)
-					s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(sendDuration)
-				}
+			if s.maxSeriesPerBatch <= 0 {
+				// When streaming is disabled, the time spent iterating over the series set is the
+				// actual time spent merging series and sending response to the client.
+				mergeStats.synchronousSeriesMergeDuration += time.Since(begin)
+			} else {
+				// When streaming is enabled, the time spent iterating over the series set is the
+				// actual time spent fetching series and chunks, and sending them to the client.
+				// We split the two timings to have a better view over how time is spent.
+				mergeStats.streamingSeriesFetchSeriesAndChunksDuration += mergeStats.streamingSeriesWaitBatchLoadedDuration
+				mergeStats.streamingSeriesSendResponseDuration += time.Duration(util_math.Max64(0, int64(time.Since(begin)-mergeStats.streamingSeriesFetchSeriesAndChunksDuration)))
 			}
+
+			stats.merge(mergeStats)
 		}()
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
@@ -1082,8 +1077,8 @@ func (s *BucketStore) synchronousSeriesSet(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(res)
+		stats.synchronousSeriesGetAllDuration += time.Since(begin)
 	})
-	s.metrics.seriesGetAllDuration.Observe(time.Since(begin).Seconds())
 	s.metrics.seriesBlocksQueried.Observe(float64(len(res)))
 
 	return storepb.MergeSeriesSets(res...), err
@@ -1165,8 +1160,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
+		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(time.Since(begin).Seconds())
 	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
@@ -1212,9 +1207,16 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 		s.metrics.streamingSeriesBatchPreloadingWaitDuration.Observe(stats.streamingSeriesWaitBatchLoadedDuration.Seconds())
 	}
 
-	// Track the streaming store-gateway specific metrics only if they're actually measured (which means it's enabled).
-	if stats.streamingSeriesFetchRefsDuration > 0 {
+	// Track the streaming store-gateway specific metrics only if it's enabled.
+	if s.maxSeriesPerBatch > 0 {
 		s.metrics.streamingSeriesRefsFetchDuration.Observe(stats.streamingSeriesFetchRefsDuration.Seconds())
+
+		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
+		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
+		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	} else {
+		s.metrics.synchronousSeriesGetAllDuration.Observe(stats.synchronousSeriesGetAllDuration.Seconds())
+		s.metrics.synchronousSeriesMergeDuration.Observe(stats.synchronousSeriesMergeDuration.Seconds())
 	}
 }
 
