@@ -108,7 +108,7 @@ const (
 	// Prefix used in Prometheus registry for ephemeral storage.
 	ephemeralPrometheusMetricsPrefix = "ephemeral_"
 
-	// Label name used to select queried storage type.
+	// StorageLabelName is a label name used to select queried storage type.
 	StorageLabelName            = "__mimir_storage__"
 	EphemeralStorageLabelValue  = "ephemeral"
 	PersistentStorageLabelValue = "persistent"
@@ -1375,21 +1375,12 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	storageValue, matchers, err := removeStorageMatcher(matchers)
+	storageType, matchers, err := removeStorageMatcherAndGetStorageType(matchers)
 	if err != nil {
 		return err
 	}
 
-	ephemeral := false
-	if storageValue == "" || storageValue == PersistentStorageLabelValue {
-		// storageValue is logged later, so set it to proper value.
-		storageValue = PersistentStorageLabelValue
-	} else if storageValue == EphemeralStorageLabelValue {
-		ephemeral = true
-	} else {
-		return fmt.Errorf(errInvalidStorageLabelValue, storageValue)
-	}
-
+	ephemeral := storageType == EphemeralStorageLabelValue
 	if ephemeral {
 		i.metrics.ephemeralQueries.Inc()
 	} else {
@@ -1439,7 +1430,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		i.metrics.queriedSeries.Observe(float64(numSeries))
 		i.metrics.queriedSamples.Observe(float64(numSamples))
 	}
-	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "storage", storageValue)
+	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "storage", storageType)
 	return nil
 }
 
@@ -2706,15 +2697,21 @@ func findStorageLabelMatcher(matchers []*labels.Matcher) (string, int, error) {
 	return resultVal, resultIdx, nil
 }
 
-// removeStorageMatcher returns the value of storage label (or empty string, if not found),
-// and input matchers without the storage label matcher. When removing storage label matcher, original slice is reused.
-func removeStorageMatcher(matchers []*labels.Matcher) (val string, filtered []*labels.Matcher, _ error) {
+// This function returns the storage type (PersistentStorageLabelValue or EphemeralStorageLabelValue) from label matchers.
+// If storage label is not found, returns PersistentStorageLabelValue.
+// If storage label matcher is invalid (wrong type or value), returns error.
+// Returned matchers have storage label matcher removed (original slice is reused).
+func removeStorageMatcherAndGetStorageType(matchers []*labels.Matcher) (storageType string, filtered []*labels.Matcher, _ error) {
 	val, idx, err := findStorageLabelMatcher(matchers)
 	if err != nil {
-		return "", matchers, err
+		return PersistentStorageLabelValue, matchers, err
 	}
 	if idx < 0 {
-		return "", matchers, nil
+		return PersistentStorageLabelValue, matchers, nil
+	}
+
+	if val != PersistentStorageLabelValue && val != EphemeralStorageLabelValue {
+		return val, matchers, fmt.Errorf(errInvalidStorageLabelValue, val)
 	}
 
 	// Prepare slice without storage matcher.
