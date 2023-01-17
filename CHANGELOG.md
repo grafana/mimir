@@ -8,6 +8,7 @@
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [CHANGE] Ingester: If shipping is enabled block retention will now be relative to the upload time to cloud storage. If shipping is disabled block retention will be relative to the creation time of the block instead of the mintime of the last block created. #3816
 * [CHANGE] Query-frontend: Deprecated CLI flag `-query-frontend.align-querier-with-step` has been removed. #3982
+* [CHANGE] Alertmanager: added default configuration so that `-alertmanager.configs.fallback` is not explicitly needed anymore if no config is provided for a tenant. #2772
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779 #3839
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
@@ -113,7 +114,7 @@
 * [CHANGE] Experimental flag `-blocks-storage.tsdb.out-of-order-capacity-min` has been removed. #3261
 * [CHANGE] Distributor: Wrap errors from pushing to ingesters with useful context, for example clarifying timeouts. #3307
 * [CHANGE] The default value of `-server.http-write-timeout` has changed from 30s to 2m. #3346
-* [CHANGE] Reduce period of health checks in connection pools for querier->store-gateway, ruler->ruler, and alertmanager->alertmanager clients to 10s. This reduces the time to fail a gRPC call when the remote stops responding. #3168
+* [CHANGE] Reduce period of health checks in connection pools for querier->store-gateway, ruler->ruler, and alertmanager->alertmanager clients to 10s. This reduces the time to fail a gRPC call when the remote stops responding. #316
 * [CHANGE] Hide TSDB block ranges period config from doc and mark it experimental. #3518
 * [FEATURE] Alertmanager: added Discord support. #3309
 * [ENHANCEMENT] Added `-server.tls-min-version` and `-server.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by HTTP and gRPC servers. #2898
