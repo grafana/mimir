@@ -1004,7 +1004,7 @@ store_gateway_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_RSA_WITH_AES_128_CBC_SHA
   # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -1023,7 +1023,7 @@ store_gateway_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1382,7 +1382,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_RSA_WITH_AES_128_CBC_SHA
   # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -1401,7 +1401,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1814,7 +1814,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_RSA_WITH_AES_128_CBC_SHA
   # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -1833,7 +1833,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2013,7 +2013,7 @@ backoff_config:
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_RSA_WITH_AES_128_CBC_SHA
 # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -2032,7 +2032,7 @@ backoff_config:
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2144,7 +2144,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_RSA_WITH_AES_128_CBC_SHA
 # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -2163,7 +2163,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2401,7 +2401,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_RSA_WITH_AES_128_CBC_SHA
 # - TLS_RSA_WITH_AES_256_CBC_SHA
@@ -2420,7 +2420,7 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
