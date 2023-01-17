@@ -190,7 +190,8 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.GetAlertmanagerConfig(context.Background())
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
 
 	err = c.SetAlertmanagerConfig(context.Background(), mimirAlertmanagerUserConfigYaml, map[string]string{})
 	require.NoError(t, err)
@@ -230,16 +231,10 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, am.WaitRemovedMetric("cortex_alertmanager_config_last_reload_successful_seconds", e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
-	// This will trigger to apply the fallback configuration.
 	cfg, err = c.GetAlertmanagerConfig(context.Background())
-	require.NoError(t, err)
-	require.NotNil(t, cfg)
-
-	fallbackCfgBytes, _ := alertmanager.ComputeFallbackConfig("")
-	fallbackCfg := &alertConfig.Config{}
-	err = yaml.Unmarshal([]byte(fallbackCfgBytes), fallbackCfg)
-	require.NoError(t, err)
-	require.Equal(t, cfg, fallbackCfg)
+	require.Error(t, err)
+	require.Nil(t, cfg)
+	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
 }
 
 func TestAlertmanagerSharding(t *testing.T) {

@@ -891,8 +891,8 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
 
-	// Upload the fallback config so that the Alertmanager is no de-activated in the next poll.
-	cfgDesc := alertspb.ToProto(am.fallbackConfig, nil, userID)
+	// Upload an empty config so that the Alertmanager is no de-activated in the next poll.
+	cfgDesc := alertspb.ToProto("", nil, userID)
 	err = am.store.SetAlertConfig(ctx, cfgDesc)
 	if err != nil {
 		return nil, err
