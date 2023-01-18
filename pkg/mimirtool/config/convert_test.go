@@ -576,6 +576,8 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "querier.query_store_after", OldDefault: "0s", NewDefault: "12h0m0s"},
 	{Path: "server.grpc_server_max_recv_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
 	{Path: "server.grpc_server_max_send_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
+	{Path: "memberlist.leave_timeout", OldDefault: "5s", NewDefault: "20s"},
+	{Path: "memberlist.packet_dial_timeout", OldDefault: "5s", NewDefault: "2s"},
 
 	// Changed in 2.4, 2.5, 2.6
 	{Path: "server.http_server_write_timeout", OldDefault: "30s", NewDefault: "2m0s"},
@@ -585,8 +587,6 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "compactor.sharding_ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
 	{Path: "ruler.for_grace_period", OldDefault: "10m0s", NewDefault: "2m0s"},
 	{Path: "ruler.ring.heartbeat_period", OldDefault: "5s", NewDefault: "15s"},
-	{Path: "memberlist.leave_timeout", OldDefault: "5s", NewDefault: "20s"},
-	{Path: "memberlist.packet_dial_timeout", OldDefault: "5s", NewDefault: "2s"},
 }
 
 func TestChangedCortexDefaults(t *testing.T) {
