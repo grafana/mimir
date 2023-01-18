@@ -25,20 +25,15 @@
   local containerPort = $.core.v1.containerPort,
   overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
-  local ringConfig = {
-    'overrides-exporter.ring.enabled': true,
-    // If the ring is enabled, wait for ring stability at startup to lower limit metrics series churn.
-    'overrides-exporter.ring.wait-stability-min-duration': '1m',
-  },
+  overrides_exporter_args::
+    $._config.limitsConfig +
+    $._config.overridesExporterRingConfig +
+    $.mimirRuntimeConfigFile +
+    {
+      target: 'overrides-exporter',
 
-  overrides_exporter_args:: {
-                              target: 'overrides-exporter',
-
-                              'server.http-listen-port': $._config.server_http_port,
-                            } +
-                            $._config.limitsConfig +
-                            $.mimirRuntimeConfigFile +
-                            if $._config.overrides_exporter_ring_enabled then ringConfig else {},
+      'server.http-listen-port': $._config.server_http_port,
+    },
 
   local container = $.core.v1.container,
   overrides_exporter_container::

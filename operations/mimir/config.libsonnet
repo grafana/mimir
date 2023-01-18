@@ -218,6 +218,18 @@
       else
         querySchedulerRingConfig,
 
+    overridesExporterRingConfig:
+      if !$._config.overrides_exporter_ring_enabled then
+        {}
+      else
+        {
+          'overrides-exporter.ring.enabled': true,
+          'overrides-exporter.ring.store': 'consul',
+          'overrides-exporter.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+          'overrides-exporter.ring.prefix': '',
+          'overrides-exporter.ring.wait-stability-min-duration': '1m',
+        },
+
     ruler_enabled: false,
     ruler_storage_backend: $._config.storage_backend,
     ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
