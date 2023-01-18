@@ -11,6 +11,7 @@
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
 * [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to shard tenants to overrides-exporters and avoid export of duplicate per-tenant limit override metrics. #3908
+* [ENHANCEMENT] Helm Chart: Enable users to specify additional Kubernetes resource manifests using the `extraObjects` variable.
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
