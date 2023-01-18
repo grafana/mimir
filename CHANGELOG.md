@@ -79,6 +79,7 @@
 ### Mimirtool
 
 * [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+* [ENHANCEMENT] Added `--concurrency` to `mimirtool rules sync` command. #3996
 * [BUGFIX] Fix summary output from `mimirtool rules sync` to display correct number of groups created and updated. #3918
 
 ### Documentation
