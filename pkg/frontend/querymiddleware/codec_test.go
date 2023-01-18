@@ -547,7 +547,82 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 			},
-		}} {
+		},
+
+		{
+			name: "Handling single histogram result",
+			input: []Response{
+				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Histograms: []mimirpb.SampleHistogramPair{
+								{
+									Timestamp: 1000,
+									Histogram: &mimirpb.SampleHistogram{
+										Count: 10,
+										Sum:   20,
+										Buckets: []*mimirpb.HistogramBucket{
+											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "Handling non overlapping histogram result",
+			input: []Response{
+				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
+				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[2,{"count":"10","sum":"15","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Histograms: []mimirpb.SampleHistogramPair{
+								{
+									Timestamp: 1000,
+									Histogram: &mimirpb.SampleHistogram{
+										Count: 10,
+										Sum:   20,
+										Buckets: []*mimirpb.HistogramBucket{
+											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+										},
+									},
+								},
+								{
+									Timestamp: 2000,
+									Histogram: &mimirpb.SampleHistogram{
+										Count: 10,
+										Sum:   15,
+										Buckets: []*mimirpb.HistogramBucket{
+											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := PrometheusCodec.MergeResponse(tc.input...)
 			require.NoError(t, err)
