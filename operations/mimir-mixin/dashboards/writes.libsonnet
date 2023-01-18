@@ -6,6 +6,7 @@ local filename = 'mimir-writes.json';
   [filename]:
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addLogsDatasource()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
@@ -107,6 +108,7 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.gateway)) +
         $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
       )
       .addPanel(
@@ -124,6 +126,7 @@ local filename = 'mimir-writes.json';
       $.row('Distributor')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.distributor)) +
         $.qpsPanel($.queries.distributor.writeRequestsPerSecond)
       )
       .addPanel(
@@ -294,6 +297,7 @@ local filename = 'mimir-writes.json';
       $.row('Ingester')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.ingester)) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(

@@ -9,6 +9,7 @@ local filename = 'mimir-remote-ruler-reads.json';
   [filename]:
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addLogsDatasource()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Remote ruler reads dashboard description') { height: '175px', showTitle: false })
@@ -56,6 +57,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.ruler_query_frontend)) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
       )
       .addPanel(
@@ -73,6 +75,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.ruler_query_scheduler)) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
@@ -84,6 +87,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Querier (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.ruler_querier)) +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex])
       )
       .addPanel(

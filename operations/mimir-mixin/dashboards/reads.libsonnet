@@ -106,10 +106,7 @@ local filename = 'mimir-reads.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
-        $.panelDescription(
-          'Requests / sec',
-          $.exploreContainerLogsLink($._config.container_names.gateway)
-        ) +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.gateway)) +
         $.qpsPanel($.queries.gateway.readRequestsPerSecond)
       )
       .addPanel(
@@ -162,6 +159,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.query_scheduler)) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
@@ -200,6 +198,7 @@ local filename = 'mimir-reads.json';
       $.row('Querier')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.querier)) +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex])
       )
       .addPanel(
@@ -319,6 +318,7 @@ local filename = 'mimir-reads.json';
       $.row('Ingester')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.ingester)) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -336,6 +336,7 @@ local filename = 'mimir-reads.json';
       $.row('Store-gateway')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription('Requests / sec', $.exploreContainerLogsLink($._config.container_names.store_gateway)) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
