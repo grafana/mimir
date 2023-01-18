@@ -222,7 +222,7 @@ func (b *blockWithSuccessors) addSuccessorIfPossible(other *blockWithSuccessors)
 	}
 
 	// if the other block has not been added as a successor of any direct or indirect successor of this block,
-	// it must be added a direct successor of this block
+	// it must be added as a direct successor of this block
 	if !added {
 		if b.successors == nil {
 			b.successors = map[ulid.ULID]*blockWithSuccessors{}
@@ -235,11 +235,11 @@ func (b *blockWithSuccessors) addSuccessorIfPossible(other *blockWithSuccessors)
 // isFullyIncludedInSuccessors returns true if this block is *fully* included in its own successor blocks.
 // This is true under the following conditions:
 //
-// - if this block has a non-empty shardID, and it has *any* successors, then the block is fully included in its successors.
+// - if this block has a non-empty shardID, and it has *any* successors, then it is fully included in its successors.
 //
-// - if this block doesn't have a shardID, and it has a successor without a shardID, then the block is fully included in that successor.
+// - if this block doesn't have a shardID, and it has a successor without a shardID, then it is fully included in that successor.
 //
-// - if this block doesn't have shardID, but *all* its successors do, and together they cover all shards, then the block fully included in its successors.
+// - if this block doesn't have shardID, but *all* its successors do, and together they cover all shards, then it is fully included in its successors.
 func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 	if len(b.successors) == 0 {
 		return false
