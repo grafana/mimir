@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -918,9 +917,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// Merge the sub-results from each selected block.
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		var (
-			begin       = time.Now()
-			seriesCount int
-			chunksCount int
+			begin        = time.Now()
+			seriesCount  int
+			chunksCount  int
+			sendDuration time.Duration
 		)
 
 		// Once the iteration is done we will update the stats.
@@ -936,8 +936,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				// When streaming is enabled, the time spent iterating over the series set is the
 				// actual time spent fetching series and chunks, and sending them to the client.
 				// We split the two timings to have a better view over how time is spent.
-				stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
-				stats.streamingSeriesSendResponseDuration += time.Duration(util_math.Max64(0, int64(time.Since(begin)-stats.streamingSeriesFetchSeriesAndChunksDuration)))
+				stats.streamingSeriesSendResponseDuration += sendDuration
+				stats.streamingSeriesFetchSeriesAndChunksDuration += time.Since(begin) - sendDuration
 			}
 		})
 
@@ -960,10 +960,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+			beforeSend := time.Now()
 			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
 				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 				return
 			}
+			sendDuration += time.Since(beforeSend)
 		}
 		if seriesSet.Err() != nil {
 			err = errors.Wrap(seriesSet.Err(), "expand series set")
