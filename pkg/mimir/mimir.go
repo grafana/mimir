@@ -263,6 +263,9 @@ func (c *Config) Validate(log log.Logger) error {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
 	}
+	if err := c.OverridesExporter.Validate(); err != nil {
+		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
 	return nil
 }
 
