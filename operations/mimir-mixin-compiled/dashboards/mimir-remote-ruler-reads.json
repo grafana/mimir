@@ -160,7 +160,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\n[Explore logs for in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquery%2Dfrontend%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
+                  "description": "### Requests / sec\n[Explore logs for ruler-query-frontend in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquery%2Dfrontend%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
                   "fill": 10,
                   "id": 3,
                   "legend": {
@@ -400,7 +400,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\n[Explore logs for in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquery%2Dscheduler%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
+                  "description": "### Requests / sec\n[Explore logs for ruler-query-scheduler in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquery%2Dscheduler%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
                   "fill": 10,
                   "id": 6,
                   "legend": {
@@ -589,7 +589,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\n[Explore logs for in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquerier%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
+                  "description": "### Requests / sec\n[Explore logs for ruler-querier in ${lokidatasource}](../../explore?left=%7B%0A%22datasource%22%3A%20%22${lokidatasource}%22%2C%0A%22queries%22%3A%20%5B%0A%7B%0A%22datasource%22%3A%20%7B%0A%22type%22%3A%20%22loki%22%2C%0A%22uid%22%3A%20%22${lokidatasource}%22%0A%7D%2C%0A%22editorMode%22%3A%20%22code%22%2C%0A%22expr%22%3A%20%22%7Bnamespace%3D%5C%22${namespace}%5C%22%2C%20container%3D%7E%5C%22ruler%2Dquerier%5C%22%7D%22%2C%0A%22queryType%22%3A%20%22range%22%2C%0A%22refId%22%3A%20%22A%22%0A%7D%0A%5D%2C%0A%22range%22%3A%20%7B%0A%22from%22%3A%20%22now%2D1h%22%2C%0A%22to%22%3A%20%22now%22%0A%7D%0A%7D)\n\n",
                   "fill": 10,
                   "id": 8,
                   "legend": {

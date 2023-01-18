@@ -907,7 +907,7 @@ local url = import 'xtd/url.libsonnet';
     };
 
     |||
-      [Explore logs for in ${lokidatasource}](%(link)s)
+      [Explore logs for %(container)s in ${lokidatasource}](%(link)s)
     ||| % {
       container: container,
       link: link,
