@@ -22,23 +22,32 @@ var knownCodecs = map[string]Codec{
 	"interned protobuf":                     InternedProtobufCodec{},
 	"gzipped uninterned protobuf":           GzipWrapperCodec{UninternedProtobufCodec{}},
 	"snappy compressed uninterned protobuf": SnappyWrapperCodec{UninternedProtobufCodec{}},
+	"Arrow":                                 ArrowCodec{},
 }
 
 // This directory contains a selection of query results from an internal operational cluster
 // at Grafana Labs, and so can't be shared publicly.
 // It contains two subdirectories: one named "ruler" for rule evaluation results, and another named "querier" for general query results.
 // You can capture equivalent data from your own cluster with the evaluate-rules and evaluate-query-log tools in the tools directory.
-const sourceDir = "/Users/charleskorn/Desktop/queries/all"
+const realExamplesDir = "/Users/charleskorn/Desktop/queries/all"
 
-func TestEncodingRoundtrip(t *testing.T) {
-	originalFileNames, err := recursivelyFindFilesWithSuffix(sourceDir, ".json")
+func TestEncodingRoundtripAll(t *testing.T) {
+	testEncodingRoundtrip(t, realExamplesDir)
+}
+
+func TestEncodingRoundtripExamples(t *testing.T) {
+	testEncodingRoundtrip(t, "testdata")
+}
+
+func testEncodingRoundtrip(t *testing.T, dir string) {
+	originalFileNames, err := recursivelyFindFilesWithSuffix(dir, ".json")
 	require.NoError(t, err)
 	require.NotEmpty(t, originalFileNames)
 
 	originalJsonCodec := OriginalJsonCodec{}
 
 	for _, originalFileName := range originalFileNames {
-		relativeName, err := filepath.Rel(sourceDir, originalFileName)
+		relativeName, err := filepath.Rel(dir, originalFileName)
 		require.NoError(t, err)
 
 		t.Run(relativeName, func(t *testing.T) {
@@ -91,7 +100,7 @@ func requireEqual(t *testing.T, expected querymiddleware.PrometheusResponse, act
 }
 
 func BenchmarkDecodeAll(b *testing.B) {
-	directories, err := os.ReadDir(sourceDir)
+	directories, err := os.ReadDir(realExamplesDir)
 	require.NoError(b, err)
 
 	originalJsonCodec := OriginalJsonCodec{}
@@ -102,7 +111,7 @@ func BenchmarkDecodeAll(b *testing.B) {
 			continue
 		}
 
-		files, err := recursivelyFindFilesWithSuffix(path.Join(sourceDir, directory.Name()), ".json")
+		files, err := recursivelyFindFilesWithSuffix(path.Join(realExamplesDir, directory.Name()), ".json")
 		require.NoError(b, err)
 		require.NotEmpty(b, files)
 
@@ -166,7 +175,7 @@ func BenchmarkDecodeExamples(b *testing.B) {
 }
 
 func BenchmarkEncodeAll(b *testing.B) {
-	directories, err := os.ReadDir(sourceDir)
+	directories, err := os.ReadDir(realExamplesDir)
 	require.NoError(b, err)
 
 	originalJsonCodec := OriginalJsonCodec{}
@@ -177,7 +186,7 @@ func BenchmarkEncodeAll(b *testing.B) {
 			continue
 		}
 
-		files, err := recursivelyFindFilesWithSuffix(path.Join(sourceDir, directory.Name()), ".json")
+		files, err := recursivelyFindFilesWithSuffix(path.Join(realExamplesDir, directory.Name()), ".json")
 		require.NoError(b, err)
 		require.NotEmpty(b, files)
 

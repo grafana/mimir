@@ -11,6 +11,7 @@ codecs=(
   "interned protobuf"
   "gzipped uninterned protobuf"
   "snappy compressed uninterned protobuf"
+  "Arrow"
 )
 
 mkdir -p "$OUTPUT_DIR"
