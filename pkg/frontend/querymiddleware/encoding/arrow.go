@@ -27,6 +27,11 @@ type ArrowCodec struct{}
 
 func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
 	buf := bytes.NewReader(b)
+	resultType, err := c.decodeResultType(buf)
+	if err != nil {
+		return querymiddleware.PrometheusResponse{}, err
+	}
+
 	pool := memory.NewGoAllocator()
 
 	// TODO: is there some way we could pre-allocate this?
@@ -49,12 +54,31 @@ func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error)
 	resp := querymiddleware.PrometheusResponse{
 		Status: "success",
 		Data: &querymiddleware.PrometheusData{
-			ResultType: "matrix", // TODO
+			ResultType: resultType,
 			Result:     result,
 		},
 	}
 
 	return resp, nil
+}
+
+// HACK: see note on Encode about dealing with the result type in a better way
+func (c ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
+	b, err := r.ReadByte()
+	if err != nil {
+		return "", err
+	}
+
+	switch b {
+	case byte(model.ValScalar):
+		return model.ValScalar.String(), nil
+	case byte(model.ValVector):
+		return model.ValVector.String(), nil
+	case byte(model.ValMatrix):
+		return model.ValMatrix.String(), nil
+	default:
+		return "", fmt.Errorf("unknown result type 0x%x", b)
+	}
 }
 
 func (c ArrowCodec) decodeSeries(r io.Reader, pool memory.Allocator) (querymiddleware.SampleStream, error) {
@@ -101,22 +125,31 @@ func (c ArrowCodec) decodeSeries(r io.Reader, pool memory.Allocator) (querymiddl
 	return series, nil
 }
 
-// TODO: how to encode result type (scalar / vector / matrix)?
+// TODO: how to encode result type (scalar / vector / matrix)? For now, we send a single byte at the start of the stream to signal what data type it contains
 // - content-type header in response?
-// - attached as metadata to stream (is this possible?) or to record?
-// - infer from schema?
+// - attached as metadata to entire stream (is this possible?) or to record?
+// - infer from schema and shape of data?
 // TODO: how to encode errors? Send as JSON instead?
 func (c ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
 	buf := &bytes.Buffer{}
 
 	switch prometheusResponse.Data.ResultType {
-	//case model.ValScalar.String():
-	//	scalar := encodeUninternedPrometheusScalar(prometheusResponse.Data)
-	//	resp.Data = &uninternedquerypb.QueryResponse_Scalar{Scalar: &scalar}
-	//case model.ValVector.String():
-	//	vector := encodeUninternedPrometheusVector(prometheusResponse.Data)
-	//	resp.Data = &uninternedquerypb.QueryResponse_Vector{Vector: &vector}
+	case model.ValScalar.String():
+		buf.WriteByte(byte(model.ValScalar)) // HACK: see comment above about encoding result type
+
+		if err := c.encodeMatrix(buf, prometheusResponse.Data); err != nil {
+			return nil, err
+		}
+	case model.ValVector.String():
+		buf.WriteByte(byte(model.ValVector)) // HACK: see comment above about encoding result type
+
+		// TODO: implement more efficient schema for vectors?
+		if err := c.encodeMatrix(buf, prometheusResponse.Data); err != nil {
+			return nil, err
+		}
 	case model.ValMatrix.String():
+		buf.WriteByte(byte(model.ValMatrix)) // HACK: see comment above about encoding result type
+
 		if err := c.encodeMatrix(buf, prometheusResponse.Data); err != nil {
 			return nil, err
 		}
