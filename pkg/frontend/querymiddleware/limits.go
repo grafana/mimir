@@ -67,6 +67,9 @@ type Limits interface {
 	// CreationGracePeriod returns the time interval to control how far into the future
 	// incoming samples are accepted compared to the wall clock.
 	CreationGracePeriod(userID string) time.Duration
+
+	// AcceptNativeHistograms returns whether to accept native histograms in the ingester
+	AcceptNativeHistograms(userID string) bool
 }
 
 type limitsMiddleware struct {
