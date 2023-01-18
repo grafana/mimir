@@ -632,7 +632,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 			return r.cli.DeleteRuleGroup(ctx, op.Namespace, op.RuleGroup.Name)
 
 		default:
-			return fmt.Errorf("unsupported operation %q", op.State)
+			return fmt.Errorf("internal error: unexpected operation %q", op.State)
 		}
 	})
 
