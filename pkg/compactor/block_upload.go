@@ -329,7 +329,6 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(blockLogger log.Lo
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(blockLogger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
 	meta.ULID = blockID
-
 	for l, v := range meta.Thanos.Labels {
 		switch l {
 		// Preserve this label
@@ -416,8 +415,8 @@ func (c *MultitenantCompactor) createTemporaryBlockDirectory() (dir string, err 
 	if _, err := os.Stat(c.compactorCfg.DataDir); !os.IsNotExist(err) {
 		tmpDir = c.compactorCfg.DataDir
 	}
-	blockDir, err := os.MkdirTemp(tmpDir, "upload")
 
+	blockDir, err := os.MkdirTemp(tmpDir, "upload")
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to create temporary block directory", "err", err)
 		return "", errors.New("failed to create temporary block directory")
@@ -461,7 +460,6 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID,
 	userBkt objstore.Bucket, meta metadata.Meta) error {
-
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
