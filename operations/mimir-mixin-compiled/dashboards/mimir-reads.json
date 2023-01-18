@@ -1240,7 +1240,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report zero only if the HPA is not active.\n\n",
+                  "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                   "fill": 1,
                   "id": 17,
                   "legend": {
@@ -1370,7 +1370,7 @@
                         "expr": "keda_metrics_adapter_scaler_metrics_value\n/\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "Desired for {{ scaledObject }}",
+                        "legendFormat": "{{ scaledObject }}",
                         "legendLink": null,
                         "step": 10
                      }
