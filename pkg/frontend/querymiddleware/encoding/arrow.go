@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 
 	"github.com/apache/arrow/go/v11/arrow"
 	"github.com/apache/arrow/go/v11/arrow/array"
@@ -46,7 +45,7 @@ func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error)
 	var result []querymiddleware.SampleStream
 
 	for {
-		series, err := c.decodeSeries(buf, c.allocator)
+		series, err := c.decodeSeries(buf)
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -89,8 +88,8 @@ func (c ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
 	}
 }
 
-func (c ArrowCodec) decodeSeries(r io.Reader, pool memory.Allocator) (querymiddleware.SampleStream, error) {
-	reader, err := ipc.NewReader(r, ipc.WithAllocator(pool))
+func (c ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, error) {
+	reader, err := ipc.NewReader(r, ipc.WithAllocator(c.allocator))
 	if err != nil {
 		return querymiddleware.SampleStream{}, err
 	}
@@ -265,19 +264,15 @@ func newArrowAllocator() *arrowAllocator {
 
 func (a *arrowAllocator) Allocate(size int) []byte {
 	b := a.pool.Get(size).([]byte)
-	slice := reflect.ValueOf(b)
-	return slice.Slice(0, size).Bytes()
+	return b[:size]
 }
 
 func (a *arrowAllocator) Reallocate(size int, b []byte) []byte {
 	if cap(b) >= size {
-		slice := reflect.ValueOf(b)
-		return a.Allocator.Reallocate(size, slice.Slice(0, size).Bytes())
+		return b[:size]
 	}
 	newB := a.pool.Get(size).([]byte)
-	slice := reflect.ValueOf(newB)
-	slice.SetLen(size)
-	newB = slice.Slice(0, size).Bytes()
+	newB = newB[:size]
 	copy(newB, b)
 
 	// TODO: this wasn't in Chris' original implementation
