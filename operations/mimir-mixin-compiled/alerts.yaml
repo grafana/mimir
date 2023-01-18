@@ -896,9 +896,17 @@ groups:
         }} in {{ $labels.namespace }} is not active.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirautoscalernotactive
     expr: |
-      kube_horizontalpodautoscaler_status_condition{condition="ScalingActive",status="false"}
-      * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
-      > 0
+      (
+          kube_horizontalpodautoscaler_status_condition{condition="ScalingActive",status="false"}
+          # Match only Mimir namespaces.
+          * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+          # Add "metric" label.
+          + on(cluster, namespace, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
+          > 0
+      )
+      # Do not alert if metric is 0, because in that case we expect the HPA to be inactive.
+      unless on (cluster, namespace, metric)
+      (label_replace(keda_metrics_adapter_scaler_metrics_value, "namespace", "$0", "exported_namespace", ".+") == 0)
     for: 1h
     labels:
       severity: critical

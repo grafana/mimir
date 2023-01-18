@@ -1042,7 +1042,8 @@ How to **investigate**:
 
 ### MimirAutoscalerNotActive
 
-This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false` and the related scaling metrics are not 0.
+When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
@@ -1076,6 +1077,9 @@ How to **investigate**:
   # Assuming Prometheus is running in namespace "default":
   kubectl -n default get pod -lname=prometheus
   ```
+
+For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
+When `keda_metrics_adapter_scaler_metrics_value` value is 0, the alert should not be firing.
 
 ### MimirContinuousTestNotRunningOnWrites
 

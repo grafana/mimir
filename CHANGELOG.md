@@ -61,6 +61,7 @@
 * [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 * [BUGFIX] Tenants dashboard: Make it compatible with all deployment types. #3754
 * [BUGFIX] Alerts: Fixed `MimirCompactorHasNotUploadedBlocks` to not fire if compactor has nothing to do. #3793
+* [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric is 0, to avoid false positives on scaled objects with 0 min replicas. #3999
 
 ### Jsonnet
 
