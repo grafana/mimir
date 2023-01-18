@@ -3,21 +3,21 @@
 package exporter
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -26,19 +26,27 @@ const (
 	// ringKey is the key under which we store the overrides-exporter's ring in the KVStore.
 	ringKey = "overrides-exporter"
 
-	// ringNumTokens is how many tokens each overrides-exporter should have in the ring.
-	// Overrides-exporters use a ring for tenant sharding and don't need perfect balancing.
-	ringNumTokens = 64
+	// ringNumTokens is how many tokens each overrides-exporter should have in the
+	// ring. Overrides-exporter uses tokens to establish a ring leader, therefore
+	// only one token is needed.
+	ringNumTokens = 1
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
+	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
+	// unhealthy instance in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 4
+
+	// leaderToken is the special token that makes the owner the ring leader.
+	leaderToken = 0
 )
 
-// ringOp is used as an instace state filter when obtaining instances from the ring
-var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+// ringOp is used as an instance state filter when obtaining instances from the
+// ring. Instances in the LEAVING state are included to help minimise the number
+// of leader changes during rollout and scaling operations. These instances will
+// be forgotten after ringAutoForgetUnhealthyPeriods (see
+// `KeepInstanceInTheRingOnShutdown`).
+var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
-// RingConfig holds the configuration for the overrides-exporter ring
+// RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
@@ -46,6 +54,10 @@ type RingConfig struct {
 	KVStore          kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances."`
 	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
 	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+
+	// Ring stability (used to decrease token reshuffling on scale-up)
+	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
+	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
 
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
@@ -57,30 +69,35 @@ type RingConfig struct {
 	ListenPort int `yaml:"-"`
 }
 
-// RegisterFlags configures this RingConfig to the given flag set and sets defaults
+// RegisterFlags configures this RingConfig to the given flag set and sets defaults.
 func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	const flagNamePrefix = "overrides-exporter.ring."
 	hostname, err := os.Hostname()
 	if err != nil {
 		_ = level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
-	f.BoolVar(&c.Enabled, "overrides-exporter.ring.enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
+	f.BoolVar(&c.Enabled, flagNamePrefix+"enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
 
 	// Ring flags
 	c.KVStore.Store = "memberlist" // Override default value.
-	c.KVStore.RegisterFlagsWithPrefix("overrides-exporter.ring.", "collectors/", f)
-	f.DurationVar(&c.HeartbeatPeriod, "overrides-exporter.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&c.HeartbeatTimeout, "overrides-exporter.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
+	c.KVStore.RegisterFlagsWithPrefix(flagNamePrefix, "collectors/", f)
+	f.DurationVar(&c.HeartbeatPeriod, flagNamePrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&c.HeartbeatTimeout, flagNamePrefix+"heartbeat-timeout", 60*time.Second, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
+
+	// Ring stability flags.
+	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")
+	f.DurationVar(&c.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.")
 
 	// Instance flags
 	c.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
-	f.Var((*flagext.StringSlice)(&c.InstanceInterfaceNames), "overrides-exporter.ring.instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
-	f.StringVar(&c.InstanceAddr, "overrides-exporter.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
-	f.IntVar(&c.InstancePort, "overrides-exporter.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
-	f.StringVar(&c.InstanceID, "overrides-exporter.ring.instance-id", hostname, "Instance ID to register in the ring.")
+	f.Var((*flagext.StringSlice)(&c.InstanceInterfaceNames), flagNamePrefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
+	f.StringVar(&c.InstanceAddr, flagNamePrefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
+	f.IntVar(&c.InstancePort, flagNamePrefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
+	f.StringVar(&c.InstanceID, flagNamePrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-// toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler
+// toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
 	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
 	if err != nil {
@@ -96,7 +113,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 		HeartbeatTimeout:                c.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
-		KeepInstanceInTheRingOnShutdown: false,
+		KeepInstanceInTheRingOnShutdown: true,
 	}, nil
 }
 
@@ -113,17 +130,30 @@ func (c *RingConfig) toRingConfig() ring.Config {
 	return rc
 }
 
-// overridesExporterRing is a ring client that overrides-exporters can use to
-// assume ownership of a tenant shard
-type overridesExporterRing struct {
-	config     RingConfig
-	client     *ring.Ring
-	lifecycler *ring.BasicLifecycler
+// Validate the Config.
+func (c *RingConfig) Validate() error {
+	if c.WaitStabilityMinDuration > 0 {
+		if c.WaitStabilityMinDuration > c.WaitStabilityMaxDuration {
+			return errors.New("-overrides-exporter.ring.wait-stability-max-duration must be greater or equal " +
+				"to -overrides-exporter.ring.wait-stability-min-duration")
+		}
+	}
+	return nil
 }
 
-// Owns looks up whether this ring member owns the given tenant.
-func (o *overridesExporterRing) Owns(tenantID string) (bool, error) {
-	return instanceOwnsIdentifier(o.client, o.lifecycler.GetInstanceAddr(), tenantID)
+// overridesExporterRing is a ring client that overrides-exporters can use to
+// establish a leader replica that is the unique exporter of per-tenant limit metrics.
+type overridesExporterRing struct {
+	services.Service
+
+	config RingConfig
+
+	client     *ring.Ring
+	lifecycler *ring.BasicLifecycler
+
+	subserviceManager *services.Manager
+	subserviceWatcher *services.FailureWatcher
+	logger            log.Logger
 }
 
 // newRing creates a new overridesExporterRing from the given configuration.
@@ -159,33 +189,89 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 		return nil, errors.Wrap(err, "failed to create a overrides-exporter ring client")
 	}
 
-	return &overridesExporterRing{
-		config:     config,
-		client:     ringClient,
-		lifecycler: lifecycler,
-	}, nil
+	manager, err := services.NewManager(lifecycler, ringClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create service manager")
+	}
+
+	r := &overridesExporterRing{
+		config:            config,
+		client:            ringClient,
+		lifecycler:        lifecycler,
+		subserviceManager: manager,
+		subserviceWatcher: services.NewFailureWatcher(),
+		logger:            logger,
+	}
+	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
+	return r, nil
 }
 
-// instanceOwnsIdentifier hashes the given key to a token, looks up the token
-// owner in the ring and checks whether this instance is the token owner
-func instanceOwnsIdentifier(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
-	// Hash the key.
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
-	hash := hasher.Sum32()
-
-	// Check whether this instance owns the token.
-	rs, err := r.Get(hash, ringOp, nil, nil, nil)
+// isLeader checks whether this instance is the leader replica that exports metrics for all tenants.
+func (r *overridesExporterRing) isLeader() (bool, error) {
+	// Get the leader from the ring and check whether it's this replica.
+	rl, err := ringLeader(r.client)
 	if err != nil {
-		return false, errors.Wrap(err, "failed to get instances from the ring")
+		return false, err
 	}
 
+	return rl.Addr == r.lifecycler.GetInstanceAddr(), nil
+}
+
+// ringLeader returns the ring member that owns the special token.
+func ringLeader(r ring.ReadRing) (*ring.InstanceDesc, error) {
+	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get a healthy instance for token %d", leaderToken)
+	}
 	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf(
-			"unexpected number of overrides-exporters in the shard (expected 1, got %d)",
-			len(rs.Instances),
-		)
+		return nil, fmt.Errorf("got %d instances for token %d (but expected 1)", len(rs.Instances), leaderToken)
 	}
 
-	return rs.Instances[0].Addr == instanceAddr, nil
+	return &rs.Instances[0], nil
+}
+
+func (r *overridesExporterRing) starting(ctx context.Context) error {
+	r.subserviceWatcher.WatchManager(r.subserviceManager)
+	if err := services.StartManagerAndAwaitHealthy(ctx, r.subserviceManager); err != nil {
+		return errors.Wrap(err, "unable to start overrides-exporter ring subservice manager")
+	}
+
+	level.Info(r.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
+	if err := ring.WaitInstanceState(ctx, r.client, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
+	}
+	level.Info(r.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
+
+	// In the event of a cluster cold start or scale up of 2+ overrides-exporter
+	// instances at the same time, the leader token may hop from one instance to
+	// another, creating high series churn for the limit metrics. Waiting for a
+	// stable ring helps to counteract that.
+	if r.config.WaitStabilityMinDuration > 0 {
+		minWaiting := r.config.WaitStabilityMinDuration
+		maxWaiting := r.config.WaitStabilityMaxDuration
+
+		level.Info(r.logger).Log("msg", "waiting until overrides-exporter ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
+		if err := ring.WaitRingTokensStability(ctx, r.client, ringOp, minWaiting, maxWaiting); err != nil {
+			level.Warn(r.logger).Log("msg", "overrides-exporter ring topology is not stable after the max waiting time, proceeding anyway")
+		} else {
+			level.Info(r.logger).Log("msg", "overrides-exporter ring topology is stable")
+		}
+	}
+	return nil
+}
+
+func (r *overridesExporterRing) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-r.subserviceWatcher.Chan():
+		return errors.Wrap(err, "a subservice of overrides-exporter ring has failed")
+	}
+}
+
+func (r *overridesExporterRing) stopping(_ error) error {
+	return errors.Wrap(
+		services.StopManagerAndAwaitStopped(context.Background(), r.subserviceManager),
+		"failed to stop overrides-exporter's ring subservice manager",
+	)
 }

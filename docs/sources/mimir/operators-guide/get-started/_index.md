@@ -22,7 +22,7 @@ The written instructions focus on deploying Grafana Mimir as a [monolith]({{< re
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or the [Grafana Agent](https://grafana.com/docs/grafana-cloud/agent/#installing-the-grafana-agent).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or the [Grafana Agent](/docs/grafana-cloud/agent/#installing-the-grafana-agent).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Download Grafana Mimir
@@ -184,9 +184,9 @@ docker run --rm --name=grafana --network=host grafana/grafana
    | Name  | Mimir                                                                |
    | URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
 
-To add a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+To add a data source, refer to [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
 
 ## Verify success
 
-When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
+When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/)
 as well as create dashboard panels using the newly configured Grafana Mimir data source.

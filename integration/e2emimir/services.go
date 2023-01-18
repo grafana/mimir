@@ -143,7 +143,7 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
-			"-ingester.native-histograms-enabled": "true",
+			"-ingester.accept-native-histograms": "true",
 		},
 		flags,
 		options...,
@@ -209,7 +209,7 @@ func NewSingleBinary(name string, flags map[string]string, options ...Option) *M
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
-			"-ingester.native-histograms-enabled": "true",
+			"-ingester.accept-native-histograms": "true",
 		},
 		flags,
 		options...,
@@ -239,7 +239,7 @@ func NewWriteInstance(name string, flags map[string]string, options ...Option) *
 			// Speed up startup.
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
-			"-ingester.native-histograms-enabled": "true",
+			"-ingester.accept-native-histograms": "true",
 		},
 		flags,
 		options...,

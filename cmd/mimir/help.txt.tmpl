@@ -192,7 +192,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.retention-period duration
-    	TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
+    	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -common.storage.azure.account-key string
     	Azure storage account key
   -common.storage.azure.account-name string
@@ -413,8 +413,6 @@ Usage of ./cmd/mimir/mimir:
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
-  -query-frontend.align-querier-with-step
-    	Mutate incoming queries to align their start and end with their step. It has been deprecated. Please use -query-frontend.align-queries-with-step instead.
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results

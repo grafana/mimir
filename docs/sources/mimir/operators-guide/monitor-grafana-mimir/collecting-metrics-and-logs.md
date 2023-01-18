@@ -11,11 +11,11 @@ weight: 60
 
 You can collect logs and metrics from a Mimir or GEM cluster. To set up dashboards and alerts,
 see [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}})
-or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/integrations/integrations/integration-mimir/)
+or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/)
 .
 
 It is easier and best to monitor a cluster if it was installed via the Grafana Mimir Helm chart.
-For more information, see the [documentation for the Grafana Mimir Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
+For more information, see the [documentation for the Grafana Mimir Helm chart](/docs/helm-charts/mimir-distributed/latest/).
 
 It is also possible to use this integration if Mimir was deployed another way.
 For more information, see [Collect metrics and logs without the Helm chart]({{< relref "#collect-metrics-and-logs-without-the-helm-chart" >}}).
@@ -34,12 +34,12 @@ more information, see [dashboards and alerts requirements]({{< relref "requireme
 The Agent configuration relies on Kubernetes service discovery and Pod labels to constrain the collected metrics and
 logs to ones that are strictly related to the Grafana Mimir deployment. If you are deploying Grafana Mimir on something other than Kubernetes,
 then replace the `kubernetes_sd_configs` block with a block from
-the [Agent configuration](https://grafana.com/docs/agent/latest/configuration/) that can discover the Mimir processes.
+the [Agent configuration](/docs/agent/latest/configuration/) that can discover the Mimir processes.
 
 ### Collect metrics and logs via Grafana Agent
 
 Set up a Grafana Agent that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
-see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/). After your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) to configure the Agent to scrape Mimir or GEM.
+see [Set up Grafana Agent](/docs/agent/latest/set-up/). After your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) to configure the Agent to scrape Mimir or GEM.
 
 #### Caveats
 
@@ -56,7 +56,7 @@ Managing your own Agent comes with some caveats:
   configuration cannot account for multiple installations of the Helm chart.
 
 If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
-the [built-in Grafana Agent operator](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). Using the Agent operator allows the
+the [built-in Grafana Agent operator](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). Using the Agent operator allows the
 chart to automatically configure the Agent, eliminating the aforementioned caveats.
 
 #### Example Agent configuration

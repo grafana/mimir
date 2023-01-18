@@ -75,7 +75,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	commonFlags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 		"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
 		"-blocks-storage.tsdb.ship-interval":       "1s",
-		"-blocks-storage.tsdb.retention-period":    ((blockRangePeriod * 2) - 1).String(),
+		"-blocks-storage.tsdb.retention-period":    "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
 	})
 
 	// Start dependencies in common with all test cases.

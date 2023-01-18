@@ -36,8 +36,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -106,6 +108,7 @@ func TestIngester_Push(t *testing.T) {
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
+					nil,
 					[]*mimirpb.MetricMetadata{
 						{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 					},
@@ -113,6 +116,7 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					nil,
 					nil,
 					[]*mimirpb.MetricMetadata{
 						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
@@ -179,11 +183,13 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					nil,
 					[]*mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -271,10 +277,12 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					nil,
 					nil,
 					nil,
 					mimirpb.API),
@@ -311,11 +319,13 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -357,6 +367,7 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -409,6 +420,7 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -466,11 +478,13 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
+					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -861,11 +875,13 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
 				nil,
+				nil,
 				mimirpb.API,
 			),
 			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
 				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+				nil,
 				nil,
 				nil,
 				mimirpb.API,
@@ -949,11 +965,13 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
 				nil,
+				nil,
 				mimirpb.API,
 			),
 			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
 				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+				nil,
 				nil,
 				nil,
 				mimirpb.API,
@@ -1019,6 +1037,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
 		nil,
 		nil,
+		nil,
 		mimirpb.API,
 	)
 	_, err = ingester.Push(ctx, currTimeReq)
@@ -1038,7 +1057,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 			for i := range allSamples {
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
-			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, nil, mimirpb.API))
 			if !errorsExpected {
 				require.NoError(b, err)
 			}
@@ -1102,6 +1121,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1112,7 +1132,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -1128,6 +1148,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
 						nil,
+						nil,
 						mimirpb.API)
 
 					_, err := ingester.Push(ctx, currTimeReq)
@@ -1139,7 +1160,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -1157,6 +1178,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1165,7 +1187,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-user series limit")
 				}
 			},
@@ -1182,6 +1204,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
+					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1190,7 +1213,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-metric series limit")
 				}
 			},
@@ -1213,7 +1236,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "push rate limit reached")
 				}
 			},
@@ -1235,7 +1258,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "max tenants limit reached")
 				}
 			},
@@ -1254,7 +1277,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
 				}
 			},
@@ -1272,7 +1295,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "too many inflight push requests")
 				}
 			},
@@ -2236,7 +2259,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			}
 
 			// Send metrics to the ingester.
-			req := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+			req := mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)
 			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
@@ -2859,7 +2882,7 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 		},
 	}
 
-	req := mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, mimirpb.API)
+	req := mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, nil, mimirpb.API)
 
 	// Generate the expected response
 	expectedQueryRes := &client.QueryResponse{
@@ -3263,7 +3286,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), &shipperMeta{
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), shipperMeta{
 		Version: shipperMetaVersion1,
 	}))
 
@@ -4170,7 +4193,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4182,9 +4205,9 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
-		Version:  shipperMetaVersion1,
-		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID},
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
 
@@ -4194,7 +4217,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -4210,9 +4233,13 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), &shipperMeta{
-		Version:  shipperMetaVersion1,
-		Uploaded: []ulid.ULID{oldBlocks[1].Meta().ULID, newBlocks[0].Meta().ULID, newBlocks[1].Meta().ULID},
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{
+			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+			newBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+			newBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
+		},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
 
@@ -4222,7 +4249,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()
@@ -4239,6 +4266,152 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
 		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
 	`, newBlocks2[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+}
+
+func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
+	chunkRange := 2 * time.Hour
+	chunkRangeMilliSec := chunkRange.Milliseconds()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
+	cfg.BlocksStorageConfig.TSDB.Retention = 1 * time.Hour // This means only blocks that are shipped for more than an hour can be deleted
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds 0
+	`), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+
+	// Push some data to create 3 blocks.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	for j := int64(0); j < 5; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Nil(t, db.Compact(time.Now()))
+
+	oldBlocks := db.Blocks()
+	require.Equal(t, 3, len(oldBlocks))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
+	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+
+	// Lets say that the first block was shipped 2 hours ago and the second block only 30 minutes ago.
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
+		Shipped: map[ulid.ULID]model.Time{
+			oldBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-2 * time.Hour).UnixNano()),
+			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-30 * time.Minute).UnixNano()),
+		},
+	}))
+	require.NoError(t, db.updateCachedShippedBlocks())
+
+	// Add more samples that could trigger another compaction and hence reload of blocks.
+	for j := int64(5); j < 6; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+	require.Nil(t, db.Compact(time.Now()))
+
+	// Only the last two old blocks plus the one containing the newly added samples should remain.
+	newBlocks := db.Blocks()
+	require.Equal(t, 3, len(newBlocks))
+	require.Equal(t, oldBlocks[1].Meta().ULID, newBlocks[0].Meta().ULID) // Second block becomes first block.
+	require.Equal(t, oldBlocks[2].Meta().ULID, newBlocks[1].Meta().ULID) // Third block becomes second block.
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
+		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
+		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
+	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+}
+
+func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *testing.T) {
+	chunkRange := 2 * time.Hour
+	chunkRangeMilliSec := chunkRange.Milliseconds()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
+	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0            // Disabled shipping
+	cfg.BlocksStorageConfig.TSDB.Retention = 1 * time.Second // With shipping disabled this means will only expire 1 hour after the block creation time.
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
+		# TYPE cortex_ingester_tsdb_compactions_total counter
+		cortex_ingester_tsdb_compactions_total 0
+	`), "cortex_ingester_tsdb_compactions_total"))
+
+	// Push some data to create 3 blocks.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	for j := int64(0); j < 5; j++ {
+		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Nil(t, db.Compact(time.Now()))
+
+	oldBlocks := db.Blocks()
+	require.Equal(t, 3, len(oldBlocks))
+
+	// Yes, we're sleeping in this test to let the retention of the newly compacted blocks expire
+	time.Sleep(1 * time.Second)
+
+	// Add more samples that could trigger another compaction and hence reload of blocks.
+	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+	require.Nil(t, db.Compact(time.Now()))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
+		# TYPE cortex_ingester_tsdb_compactions_total counter
+		cortex_ingester_tsdb_compactions_total 4
+	`), "cortex_ingester_tsdb_compactions_total"))
+
+	// Only last compacted block should remain.
+	newBlocks := db.Blocks()
+	require.Equal(t, 1, len(newBlocks))
+	require.NotContains(t, []ulid.ULID{oldBlocks[0].Meta().ULID, oldBlocks[1].Meta().ULID, oldBlocks[2].Meta().ULID}, newBlocks[0].Meta().ULID)
+
 }
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
@@ -4346,6 +4519,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}})},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
+						nil,
 						[]*mimirpb.MetricMetadata{
 							{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 						},
@@ -4366,12 +4540,14 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
+						nil,
 						mimirpb.API,
 					),
 
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4392,6 +4568,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
+						nil,
 						mimirpb.API,
 					),
 				},
@@ -4400,6 +4577,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4419,12 +4597,14 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
+						nil,
 						mimirpb.API,
 					),
 
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4630,7 +4810,7 @@ func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mim
 		}
 	}
 
-	return mimirpb.ToWriteRequest(lbls, ss, nil, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest(lbls, ss, nil, nil, nil, mimirpb.API)
 }
 
 func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matrix {
@@ -4723,7 +4903,7 @@ func pushTestMetadata(t *testing.T, ing *Ingester, numMetadata, metadataPerMetri
 	// Append metadata.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, testData[userID], mimirpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, testData[userID], mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -4742,7 +4922,7 @@ func pushTestSamples(t testing.TB, ing *Ingester, numSeries, samplesPerSeries, o
 	// Append samples.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, nil, mimirpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, nil, nil, mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -4902,6 +5082,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 		[]mimirpb.Sample{{TimestampMs: 1, Value: 0}},
 		nil,
 		nil,
+		nil,
 		mimirpb.API,
 	))
 	require.NoError(t, err)
@@ -4972,19 +5153,19 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append to two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, nil, mimirpb.API))
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 		assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 		require.NoError(t, err)
 
 		// Read samples back via ingester queries.
@@ -5077,19 +5258,19 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, nil, mimirpb.API))
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 		assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 		require.NoError(t, err)
 
 		// Read samples back via ingester queries.
@@ -5192,6 +5373,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		return mimirpb.ToWriteRequest(
 			[]labels.Labels{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
+			nil,
 			nil,
 			nil,
 			mimirpb.API,
@@ -5390,6 +5572,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		return mimirpb.ToWriteRequest(
 			[]labels.Labels{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
+			nil,
 			nil,
 			nil,
 			mimirpb.API,
@@ -5787,7 +5970,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 			lbls = append(lbls, s)
 		}
 
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, nil, mimirpb.API)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
@@ -5917,6 +6100,978 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
+}
+
+func TestIngester_PushAndQueryEphemeral(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
+
+	metricNames := []string{
+		"cortex_ingester_ingested_ephemeral_samples_total",
+		"cortex_ingester_ingested_ephemeral_samples_failures_total",
+		"cortex_ingester_memory_ephemeral_series",
+		"cortex_ingester_memory_series",
+		"cortex_ingester_memory_users",
+		"cortex_ingester_ephemeral_series_created_total",
+		"cortex_ingester_ephemeral_series_removed_total",
+		"cortex_discarded_samples_total",
+		"cortex_ingester_memory_ephemeral_users",
+		"cortex_ingester_queries_ephemeral_total",
+		"cortex_ingester_queried_ephemeral_samples",
+		"cortex_ingester_queried_ephemeral_series",
+	}
+	userID := "test"
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		reqs                       []*mimirpb.WriteRequest
+		additionalMetrics          []string
+		expectedIngestedEphemeral  model.Matrix
+		expectedIngestedPersistent model.Matrix
+		expectedErr                error
+		expectedMetrics            string
+	}{
+		"should succeed on pushing valid series to ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API),
+
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: model.Time(now.UnixMilli() - 10)}, {Value: 2, Timestamp: model.Time(now.UnixMilli())}}},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 2
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 0
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 2
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 1
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"old ephemeral samples are discarded": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 100}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr:               httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngestedEphemeral: nil, // No returned samples.
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 0
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+        	        # TYPE cortex_discarded_samples_total counter
+        	        cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 0
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 0
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"should fail on out-of-order samples": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(now.UnixMilli()-10), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: model.Time(now.UnixMilli())}}},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 1
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+					# TYPE cortex_discarded_samples_total counter
+					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 1
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 1
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"request with mix of ephemeral and persistent series, with some good and some bad samples plus some metadata": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Source: mimirpb.API,
+					EphemeralTimeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric2"}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli(), Value: 100}, // Good sample. Next request will contain sample with lower TS.
+							},
+						},
+					}},
+				},
+
+				{
+					Source: mimirpb.API,
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							Type:             mimirpb.COUNTER,
+							MetricFamilyName: "per_metric",
+							Help:             "Some help goes here...",
+							Unit:             "light years",
+						},
+					},
+
+					Timeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: labels.MetricName, Value: "per_metric"},
+							},
+							Exemplars: []mimirpb.Exemplar{{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli(), Value: 100},
+								{TimestampMs: now.UnixMilli() + 1000, Value: 200},
+							},
+						},
+					}},
+
+					EphemeralTimeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}},
+							Exemplars: []mimirpb.Exemplar{{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 100, Value: 100}, // out of bounds, this will be reported as first error
+								{TimestampMs: now.UnixMilli(), Value: 200},
+								{TimestampMs: now.UnixMilli() + 1000, Value: 200},
+								{TimestampMs: now.UnixMilli() + 2000, Value: 300},
+							},
+						},
+					}, {
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric2"}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli() - 1000, Value: 100}, // out of order (compared to previous request)
+								{TimestampMs: now.UnixMilli(), Value: 500},        // This sample was sent in previous request, with different value.
+								{TimestampMs: now.UnixMilli() + 1000, Value: 1000},
+							},
+						},
+					}},
+				}},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}}), userID).Error()),
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "eph_metric2"},
+					Values: []model.SamplePair{
+						{Value: 100, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 1000, Timestamp: model.Time(now.UnixMilli() + 1000)},
+					},
+				},
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "eph_metric1"},
+					Values: []model.SamplePair{
+						{Value: 200, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 200, Timestamp: model.Time(now.UnixMilli() + 1000)},
+						{Value: 300, Timestamp: model.Time(now.UnixMilli() + 2000)},
+					},
+				},
+			},
+			expectedIngestedPersistent: model.Matrix{
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "per_metric"},
+					Values: []model.SamplePair{
+						{Value: 100, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 200, Timestamp: model.Time(now.UnixMilli() + 1000)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_exemplars_total", "cortex_ingester_ingested_metadata_total"},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+					# TYPE cortex_ingester_ingested_exemplars_total counter
+					cortex_ingester_ingested_exemplars_total 1
+
+					# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+					# TYPE cortex_ingester_ingested_samples_total counter
+					cortex_ingester_ingested_samples_total{user="test"} 2
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+					# TYPE cortex_ingester_ingested_metadata_total counter
+					cortex_ingester_ingested_metadata_total 1
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 5
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 2
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 2
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+					# TYPE cortex_discarded_samples_total counter
+					cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 5
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 2
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+
+		"only persistent series -- does not initialize ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedIngestedPersistent: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli() - 10)},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 0
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 0
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 0
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			cfg.ActiveSeriesMetricsEnabled = false
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = 100
+			limits.OutOfOrderTimeWindow = model.Duration(time.Minute * 10)
+
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			// Push timeseries
+			for idx, req := range testData.reqs {
+				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
+				_, err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
+
+				// We expect no error on any request except the last one
+				// which may error (and in that case we assert on it)
+				if idx < len(testData.reqs)-1 {
+					assert.NoError(t, err)
+				} else {
+					assert.Equal(t, testData.expectedErr, err)
+				}
+			}
+
+			verifyIngestedSamples := func(t *testing.T, matchers []*client.LabelMatcher, expected model.Matrix) {
+				s := &stream{ctx: ctx}
+				err = i.QueryStream(&client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers:         matchers,
+				}, s)
+				require.NoError(t, err)
+
+				res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+				require.NoError(t, err)
+				if len(res) == 0 {
+					res = nil
+				}
+				assert.Equal(t, expected, res)
+			}
+
+			// Verify ephemeral samples.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			}, testData.expectedIngestedEphemeral)
+
+			// Verify persistent samples.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+			}, testData.expectedIngestedPersistent)
+
+			// Verify persistent samples again, this time with storage label.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			}, testData.expectedIngestedPersistent)
+
+			// Check tracked Prometheus metrics
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), append(metricNames, testData.additionalMetrics...)...)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func ToWriteRequestEphemeral(lbls []labels.Labels, samples []mimirpb.Sample, exemplars []*mimirpb.Exemplar, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) *mimirpb.WriteRequest {
+	req := mimirpb.ToWriteRequest(lbls, samples, nil, exemplars, metadata, source)
+	req.EphemeralTimeseries = req.Timeseries
+	req.Timeseries = nil
+	return req
+}
+
+func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.EphemeralTSDB.Retention = 10 * time.Minute
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	metricLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+
+	now := time.Now()
+
+	// Push ephemeral series with good timestamps (in last 10 minutes)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := ToWriteRequestEphemeral(
+		[]labels.Labels{mimirpb.FromLabelAdaptersToLabels(metricLabels)},
+		[]mimirpb.Sample{{Value: float64(100), TimestampMs: now.Add(-9 * time.Minute).UnixMilli()}},
+		nil,
+		nil,
+		mimirpb.API,
+	)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	// Query back the series and verify that sample exists.
+	verifySamples := func(t *testing.T, expected model.Matrix) {
+		s := &stream{ctx: ctx}
+		err = i.QueryStream(&client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				// Query everything from ephemeral storage.
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+		}, s)
+		require.NoError(t, err)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		if len(res) == 0 {
+			res = nil
+		}
+		assert.Equal(t, expected, res)
+	}
+
+	verifySamples(t, model.Matrix{
+		&model.SampleStream{
+			Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "test"},
+			Values: []model.SamplePair{
+				{Value: 100, Timestamp: model.Time(now.Add(-9 * time.Minute).UnixMilli())},
+			},
+		},
+	})
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Advance time for ephemeral storage
+	require.Nil(t, db.Compact(now.Add(5*time.Minute)))
+
+	// Old sample is no longer available for querying.
+	verifySamples(t, nil)
+
+	// Pushing the same request should now fail, because min valid time for ephemeral storage has moved on to (now + 5 minutes - ephemeral series retention = now - 5 minutes)
+	_, err = i.Push(ctx, req)
+	require.Equal(t, err, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), metricLabels), userID).Error()))
+}
+
+func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.AcceptNativeHistograms = false
+
+	userID := "1"
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", userID).Return(nil)
+	override, err := validation.NewOverrides(limits, tenantOverride)
+	require.NoError(t, err)
+
+	setAcceptNativeHistograms := func(enabled bool) {
+		tenantOverride.ExpectedCalls = nil
+		tenantOverride.On("ByUserID", userID).Return(&validation.Limits{
+			AcceptNativeHistograms: enabled,
+		})
+		// TSDB config is updated every second.
+		<-time.After(1500 * time.Millisecond)
+	}
+
+	registry := prometheus.NewRegistry()
+
+	newIngester := func() *Ingester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+		// Global Ingester limits are computed based on replication factor
+		// Set RF=1 here to ensure the series and metadata limits
+		// are actually set to 1 instead of 3.
+		cfg.IngesterRing.ReplicationFactor = 1
+		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", registry)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+
+		// Wait until it's healthy
+		test.Poll(t, time.Second, 1, func() interface{} {
+			return ing.lifecycler.HealthyInstancesCount()
+		})
+
+		return ing
+	}
+
+	ing := newIngester()
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	labels1 := labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")
+	sample1 := mimirpb.Sample{
+		TimestampMs: 0,
+		Value:       1,
+	}
+
+	histogram := tsdb.GenerateTestHistograms(1)[0]
+	sampleHistograms := makeWriteRequestHistograms(1, histogram)
+
+	// Metadata
+	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+
+	// Append only one series and one metadata first, expect no error.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels1}, []mimirpb.Sample{sample1}, sampleHistograms, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	require.NoError(t, err)
+
+	expectedMetrics := `
+		# HELP cortex_ingester_ingested_histograms_failures_total The total number of histograms that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_histograms_failures_total counter
+		cortex_ingester_ingested_histograms_failures_total{user="1"} 1
+		# HELP cortex_ingester_ingested_histograms_total The total number of histograms ingested per user.
+		# TYPE cortex_ingester_ingested_histograms_total counter
+		cortex_ingester_ingested_histograms_total{user="1"} 0
+		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_samples_failures_total counter
+		cortex_ingester_ingested_samples_failures_total{user="1"} 0
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{user="1"} 1
+				`
+	metricNames := []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total", "cortex_ingester_ingested_histograms_total", "cortex_ingester_ingested_histograms_failures_total"}
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except histogram writes to fail and floats to succeed")
+
+	testResult := func(expected model.Matrix, msg string) {
+		// Query back the histogram
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "testmetric"},
+			},
+		}
+
+		s := stream{ctx: ctx}
+		err = ing.QueryStream(req, &s)
+		require.NoError(t, err, msg)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err, msg)
+		assert.ElementsMatch(t, expected, res, msg)
+	}
+
+	testResult(model.Matrix{{
+		Metric: model.Metric{"__name__": "testmetric", "foo": "bar"},
+		Values: []model.SamplePair{{
+			Timestamp: 0,
+			Value:     1,
+		}},
+		Histograms: nil,
+	}}, "Should have no histogram in result")
+
+	setAcceptNativeHistograms(true)
+
+	// resend the histogram at time 2
+	sampleHistograms[0].Timestamp = 2
+
+	// Metadata
+	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.HISTOGRAM}
+
+	// Append only one series and one metadata first, expect no error.
+	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels1}, nil, sampleHistograms, nil, []*mimirpb.MetricMetadata{metadata2}, mimirpb.API))
+	require.NoError(t, err)
+
+	expectedMetrics = `
+		# HELP cortex_ingester_ingested_histograms_failures_total The total number of histograms that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_histograms_failures_total counter
+		cortex_ingester_ingested_histograms_failures_total{user="1"} 1
+		# HELP cortex_ingester_ingested_histograms_total The total number of histograms ingested per user.
+		# TYPE cortex_ingester_ingested_histograms_total counter
+		cortex_ingester_ingested_histograms_total{user="1"} 1
+		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_samples_failures_total counter
+		cortex_ingester_ingested_samples_failures_total{user="1"} 0
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{user="1"} 1
+				`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except histogram writes to succeed")
+
+	expectedMatrix := model.Matrix{{
+		Metric: model.Metric{"__name__": "testmetric", "foo": "bar"},
+		Values: []model.SamplePair{{
+			Timestamp: 0,
+			Value:     1,
+		}},
+		Histograms: []model.SampleHistogramPair{{
+			Timestamp: 2,
+			Histogram: mimirpb.FromHistogramToPromCommonHistogram(*histogram.ToFloat()),
+		}},
+	}}
+
+	testResult(expectedMatrix, "Result should contain the histogram when accepting histograms")
+
+	setAcceptNativeHistograms(false)
+
+	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
+}
+
+func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
+	h := remote.HistogramToHistogramProto(ts, histogram)
+	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
+	// histogram protobuf representation but we need the Mimir one here.
+	d, _ := h.Marshal()
+	h2 := mimirpb.Histogram{}
+	h2.Unmarshal(d) // nolint:errcheck
+	return []mimirpb.Histogram{h2}
+}
+
+func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	type testCase struct {
+		matchers    []*client.LabelMatcher
+		expectedErr error
+	}
+
+	for name, tc := range map[string]testCase{
+		"no error on missing storage label": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid ephemeral storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid persistent storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"error on invalid storage label value": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: "invalid"},
+			},
+			expectedErr: fmt.Errorf(errInvalidStorageLabelValue, "invalid"),
+		},
+
+		"error on invalid matcher type !=": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.NOT_EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type =~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type !~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_NO_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"no real matchers is fine": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"multiple storage labels return error": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+
+		"multiple storage labels return error, even if they are the same": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err = i.QueryStream(&client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         tc.matchers,
+			}, &stream{ctx: ctx})
+			require.Equal(t, tc.expectedErr, err)
 		})
 	}
 }

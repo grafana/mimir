@@ -8,6 +8,9 @@ on:
     - "mimir-[0-9]+.[0-9]+.[0-9]+"
     paths:
     - "docs/sources/mimir/**"
+
+  workflow_dispatch: # for manual testing
+
 jobs:
   test:
     runs-on: "ubuntu-latest"

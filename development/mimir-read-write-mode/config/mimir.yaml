@@ -60,6 +60,7 @@ alertmanager_storage:
 overrides_exporter:
   ring:
     enabled: true
+    wait_stability_min_duration: 30s
 
 runtime_config:
   file: ./config/runtime.yaml

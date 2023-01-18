@@ -65,6 +65,17 @@ func (m singleValueWithLabelsMap) WriteToMetricChannel(out chan<- prometheus.Met
 // Keeping map of metric name to its family makes it easier to do searches later.
 type MetricFamilyMap map[string]*dto.MetricFamily
 
+// NewMetricFamilyMapFromGatherer is like NewMetricFamilyMap but gets metrics directly from a
+// prometheus.Gatherer instance.
+func NewMetricFamilyMapFromGatherer(gatherer prometheus.Gatherer) (MetricFamilyMap, error) {
+	metrics, err := gatherer.Gather()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewMetricFamilyMap(metrics)
+}
+
 // NewMetricFamilyMap sorts output from Gatherer.Gather method into a map.
 // Gatherer.Gather specifies that there metric families are uniquely named, and we use that fact here.
 // If they are not, this method returns error.
@@ -465,6 +476,11 @@ type HistogramData struct {
 	sampleCount uint64
 	sampleSum   float64
 	buckets     map[float64]uint64
+}
+
+// Count returns the histogram count value.
+func (d HistogramData) Count() uint64 {
+	return d.sampleCount
 }
 
 // AddHistogram adds histogram from gathered metrics to this histogram data.

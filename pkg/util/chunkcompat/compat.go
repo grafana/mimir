@@ -70,11 +70,11 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 		}
 		if len(histograms) > 0 {
 			histogramsDecoded := make([]model.SampleHistogramPair, 0, len(histograms))
-			for i, h := range histograms {
-				histogramsDecoded[i] = model.SampleHistogramPair{
+			for _, h := range histograms {
+				histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
 					Timestamp: model.Time(h.Timestamp),
 					Histogram: mimirpb.FromHistogramToPromCommonHistogram(*mimirpb.FromHistogramProtoToHistogram(h).ToFloat()),
-				}
+				})
 			}
 			stream.Histograms = histogramsDecoded
 		}
