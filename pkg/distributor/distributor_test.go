@@ -51,6 +51,8 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1509,7 +1511,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
-					Exemplars: nil,
+					Exemplars: []mimirpb.Exemplar{},
 				}},
 			},
 		},
@@ -1834,7 +1836,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -3122,6 +3124,86 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
+func TestMarkEphemeralMiddleware(t *testing.T) {
+	tenant := "user"
+	ctx := user.InjectOrgID(context.Background(), tenant)
+
+	type testCase struct {
+		name            string
+		ephemeralSeries []string
+		reqs            []*mimirpb.WriteRequest
+		expectedReqs    []*mimirpb.WriteRequest
+	}
+	testCases := []testCase{
+		{
+			name: "half - half",
+			ephemeralSeries: []string{
+				"metric2",
+				"metric3",
+			},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
+			expectedReqs: []*mimirpb.WriteRequest{markEphemeral(makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3"), 2, 3)},
+		}, {
+			name: "no ephemeral",
+			ephemeralSeries: []string{
+				"metric100",
+				"metric101",
+			},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
+		}, {
+			name: "all ephemeral",
+			ephemeralSeries: []string{
+				"metric0",
+				"metric1",
+				"metric2",
+				"metric3",
+			},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
+			expectedReqs: []*mimirpb.WriteRequest{markEphemeral(makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3"), 0, 1, 2, 3)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanupCallCount := 0
+			cleanup := func() {
+				cleanupCallCount++
+			}
+
+			var gotReqs []*mimirpb.WriteRequest
+			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+				req, err := pushReq.WriteRequest()
+				require.NoError(t, err)
+				gotReqs = append(gotReqs, req)
+				pushReq.CleanUp()
+				return nil, nil
+			}
+
+			ds, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				markEphemeral:   true,
+				getEphemeralSeriesProvider: func() ephemeral.SeriesCheckerByUser {
+					memp := &mockEphemeralSeriesProvider{t, tc.ephemeralSeries}
+					return memp
+				},
+			})
+			middleware := ds[0].prePushEphemeralMiddleware(next)
+
+			for _, req := range tc.reqs {
+				pushReq := push.NewParsedRequest(req)
+				pushReq.AddCleanup(cleanup)
+				_, _ = middleware(ctx, pushReq)
+			}
+
+			assert.Equal(t, tc.expectedReqs, gotReqs)
+
+			// Cleanup must have been called once per request.
+			assert.Equal(t, len(tc.reqs), cleanupCallCount)
+		})
+	}
+}
+
 func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"
@@ -3385,7 +3467,10 @@ type prepConfig struct {
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	forwarding                         bool
 	getForwarder                       func() forwarding.Forwarder
-	timeOut                            bool
+	getEphemeralSeriesProvider         func() ephemeral.SeriesCheckerByUser
+	markEphemeral                      bool
+
+	timeOut bool
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
@@ -3501,6 +3586,10 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			distributorCfg.Forwarding.RequestConcurrency = 5
 		}
 
+		if cfg.markEphemeral {
+			distributorCfg.EphemeralSeriesEnabled = true
+		}
+
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
 		if cfg.enableTracker {
@@ -3522,8 +3611,13 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		overrides, err := validation.NewOverrides(*cfg.limits, nil)
 		require.NoError(t, err)
 
+		var ephemeralChecker ephemeral.SeriesCheckerByUser
+		if cfg.markEphemeral && cfg.getEphemeralSeriesProvider != nil {
+			ephemeralChecker = cfg.getEphemeralSeriesProvider()
+		}
+
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, ephemeralChecker, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 
 		if cfg.forwarding && cfg.getForwarder != nil {
@@ -3556,6 +3650,16 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 
 	// Mock consul doesn't stop quickly, so don't wait.
 	r.StopAsync()
+}
+
+func markEphemeral(req *mimirpb.WriteRequest, indexes ...int) *mimirpb.WriteRequest {
+	var deletedCount int
+	for _, idx := range indexes {
+		req.EphemeralTimeseries = append(req.EphemeralTimeseries, req.Timeseries[idx-deletedCount])
+		req.Timeseries = append(req.Timeseries[:idx-deletedCount], req.Timeseries[idx-deletedCount+1:]...)
+		deletedCount++
+	}
+	return req
 }
 
 func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exemplars bool, metrics ...string) *mimirpb.WriteRequest {
@@ -4278,6 +4382,32 @@ func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwar
 }
 
 func (m *mockForwarder) DeleteMetricsForUser(user string) {}
+
+type mockEphemeralSeriesProvider struct {
+	t                *testing.T
+	ephemeralMetrics []string
+}
+
+func (m mockEphemeralSeriesProvider) EphemeralChecker(user string, source mimirpb.WriteRequest_SourceEnum) ephemeral.SeriesChecker {
+	return &mockEphemeralSeriesChecker{m}
+}
+
+type mockEphemeralSeriesChecker struct {
+	mockEphemeralSeriesProvider
+}
+
+func (m mockEphemeralSeriesChecker) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
+	metricName, err := extract.UnsafeMetricNameFromLabelAdapters(lset)
+	require.NoError(m.t, err)
+
+	for _, m := range m.ephemeralMetrics {
+		if m == metricName {
+			return true
+		}
+	}
+
+	return false
+}
 
 func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
 	return ts

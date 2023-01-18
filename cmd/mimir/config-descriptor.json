@@ -1695,6 +1695,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "ephemeral_series_enabled",
+          "required": false,
+          "desc": "Enable marking series as ephemeral based on the given matchers in the runtime config.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.ephemeral-series-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -3532,6 +3543,17 @@
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldType": "map of string to validation.ForwardingRule"
+        },
+        {
+          "kind": "field",
+          "name": "ephemeral_series_matchers",
+          "required": false,
+          "desc": "Lists of series matchers prefixed by the source. The source must be one of any, api, rule. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace=\"dev\"};rule:{host=\"server1\",namespace=\"prod\"}",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldFlag": "distributor.ephemeral-series-matchers",
+          "fieldType": "map of source name (string) to series matchers ([]string)",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -12,6 +12,7 @@
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
 * [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to establish a leader replica for the export of limit override metrics. #3908 #3953
+* [FEATURE] Distributor: Added the `-distributor.ephemeral-series-enabled` flag, this functionality allows the user to specify matchers and if an ingested samples matches them then it gets marked as ephemeral. #3897
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
