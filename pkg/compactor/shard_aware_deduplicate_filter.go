@@ -140,7 +140,9 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 		root.addSuccessorIfPossible(newBlockWithSuccessors(meta))
 	}
 
-	return root.getDuplicateBlocks(), nil
+	duplicateULIDs := make(map[ulid.ULID]struct{})
+	root.getDuplicateBlocks(duplicateULIDs)
+	return duplicateULIDs, nil
 }
 
 // DuplicateIDs returns slice of block ids that are filtered out by ShardAwareDeduplicateFilter.
@@ -281,19 +283,12 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 	return uint64(len(shards)) == shardCount
 }
 
-func (b *blockWithSuccessors) getDuplicateBlocks() map[ulid.ULID]struct{} {
-	var getDuplicates func(b *blockWithSuccessors, output map[ulid.ULID]struct{})
-	getDuplicates = func(b *blockWithSuccessors, output map[ulid.ULID]struct{}) {
-		if b.meta != nil && b.isFullyIncludedInSuccessors() {
-			output[b.meta.ULID] = struct{}{}
-		}
-
-		for _, s := range b.successors {
-			getDuplicates(s, output)
-		}
+func (b *blockWithSuccessors) getDuplicateBlocks(output map[ulid.ULID]struct{}) {
+	if b.meta != nil && b.isFullyIncludedInSuccessors() {
+		output[b.meta.ULID] = struct{}{}
 	}
 
-	duplicateULIDs := make(map[ulid.ULID]struct{})
-	getDuplicates(b, duplicateULIDs)
-	return duplicateULIDs
+	for _, s := range b.successors {
+		s.getDuplicateBlocks(output)
+	}
 }

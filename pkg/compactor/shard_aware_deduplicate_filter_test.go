@@ -378,9 +378,8 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 			require.Equal(t, float64(inputLen-len(tcase.expected)), promtest.ToFloat64(m.Synced.WithLabelValues(duplicateMeta)))
 
 			for _, id := range f.duplicateIDs {
-				in, out := tcase.input[id], metas[id]
-				require.NotNil(t, in)
-				require.Nil(t, out)
+				require.NotNil(t, tcase.input[id])
+				require.Nil(t, metas[id])
 			}
 		})
 	}
