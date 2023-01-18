@@ -864,6 +864,7 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:        {Overrides, MemberlistKV},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
 		DistributorService:       {Ring, Overrides, EphemeralChecker},
+		EphemeralChecker:         {Overrides},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
