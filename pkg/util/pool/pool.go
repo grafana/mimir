@@ -138,6 +138,80 @@ func (p *BucketedBytes) Put(b *[]byte) {
 	}
 }
 
+// UnlimitedBucketedBytes is a bucketed pool for variably sized byte slices.
+// It is like BucketedBytes, but is optimised for the case where there is no limit
+// on how much of the pool can be in use at any time.
+type UnlimitedBucketedBytes struct {
+	buckets []sync.Pool
+	sizes   []int
+
+	new func(s int) *[]byte
+}
+
+// NewUnlimitedBucketedBytes returns a new Bytes with size buckets for minSize to maxSize
+// increasing by the given factor and maximum number of used bytes.
+func NewUnlimitedBucketedBytes(minSize, maxSize int, factor float64) *UnlimitedBucketedBytes {
+	if minSize < 1 {
+		panic("invalid minimum pool size")
+	}
+	if maxSize < 1 {
+		panic("invalid maximum pool size")
+	}
+	if factor < 1 {
+		panic("invalid factor")
+	}
+
+	var sizes []int
+
+	for s := minSize; s <= maxSize; s = int(float64(s) * factor) {
+		sizes = append(sizes, s)
+	}
+	p := &UnlimitedBucketedBytes{
+		buckets: make([]sync.Pool, len(sizes)),
+		sizes:   sizes,
+		new: func(sz int) *[]byte {
+			s := make([]byte, 0, sz)
+			return &s
+		},
+	}
+	return p
+}
+
+// Get returns a new byte slice that fits the given size.
+func (p *UnlimitedBucketedBytes) Get(sz int) *[]byte {
+	for i, bktSize := range p.sizes {
+		if sz > bktSize {
+			continue
+		}
+		b, ok := p.buckets[i].Get().(*[]byte)
+		if !ok {
+			b = p.new(bktSize)
+		}
+
+		return b
+	}
+
+	// The requested size exceeds that of our highest bucket, allocate it directly.
+	return p.new(sz)
+}
+
+// Put returns a byte slice to the right bucket in the pool.
+func (p *UnlimitedBucketedBytes) Put(b *[]byte) {
+	if b == nil {
+		return
+	}
+
+	sz := cap(*b)
+	for i, bktSize := range p.sizes {
+		if sz > bktSize {
+			continue
+		}
+		*b = (*b)[:0]
+		p.buckets[i].Put(b)
+		break
+	}
+}
+
 // BatchBytes uses a Bytes pool to hand out byte slices, but they don't need to be
 // individually put back into the pool. Instead, they can be all released at once.
 // Additionally, BatchBytes combines results from the other two.

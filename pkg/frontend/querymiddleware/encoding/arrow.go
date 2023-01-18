@@ -16,10 +16,10 @@ import (
 	"github.com/apache/arrow/go/v11/arrow/ipc"
 	"github.com/apache/arrow/go/v11/arrow/memory"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/pool"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // This is based on https://github.com/prometheus/prometheus/pull/11591 and https://github.com/prometheus/prometheus/compare/csmarchbanks/optmize-arrow-responses.
@@ -248,7 +248,7 @@ func labelsFrom(metadata arrow.Metadata) []mimirpb.LabelAdapter {
 
 type arrowAllocator struct {
 	base memory.Allocator
-	pool *pool.Pool
+	pool *pool.UnlimitedBucketedBytes
 }
 
 func newArrowAllocator() *arrowAllocator {
@@ -256,14 +256,12 @@ func newArrowAllocator() *arrowAllocator {
 
 	return &arrowAllocator{
 		base: base,
-		pool: pool.New(1e3, 100e6, 3, func(size int) interface{} {
-			return base.Allocate(size)
-		}),
+		pool: pool.NewUnlimitedBucketedBytes(1e3, 100e6, 3),
 	}
 }
 
 func (a *arrowAllocator) Allocate(size int) []byte {
-	b := a.pool.Get(size).([]byte)
+	b := *a.pool.Get(size)
 	return b[:size]
 }
 
@@ -271,12 +269,12 @@ func (a *arrowAllocator) Reallocate(size int, b []byte) []byte {
 	if cap(b) >= size {
 		return b[:size]
 	}
-	newB := a.pool.Get(size).([]byte)
+	newB := *a.pool.Get(size)
 	newB = newB[:size]
 	copy(newB, b)
 
 	// TODO: this wasn't in Chris' original implementation
-	a.pool.Put(b)
+	a.Free(b)
 	return newB
 }
 
@@ -286,5 +284,5 @@ func (a *arrowAllocator) Free(b []byte) {
 		return
 	}
 
-	a.pool.Put(b)
+	a.pool.Put(&b)
 }
