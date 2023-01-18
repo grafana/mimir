@@ -866,3 +866,12 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 	}
 	return result
 }
+
+func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if f(tenantID) {
+			return true
+		}
+	}
+	return false
+}

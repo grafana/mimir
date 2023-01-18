@@ -291,6 +291,7 @@ type mockLimits struct {
 	compactorBlocksRetentionPeriod time.Duration
 	outOfOrderTimeWindow           model.Duration
 	creationGracePeriod            time.Duration
+	acceptNativeHistograms         bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -345,6 +346,10 @@ func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
 
 func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.creationGracePeriod
+}
+
+func (m mockLimits) AcceptNativeHistograms(userID string) bool {
+	return m.acceptNativeHistograms
 }
 
 type mockHandler struct {
