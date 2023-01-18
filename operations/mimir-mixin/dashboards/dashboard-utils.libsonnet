@@ -775,7 +775,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       %(query)s +
       on(metric) group_left
       label_replace(
-          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler="%(hpa_name)s"}
+          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"}
           * 0, "metric", "$1", "metric_name", "(.+)"
       )
     ||| % {

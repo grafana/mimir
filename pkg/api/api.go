@@ -218,7 +218,8 @@ func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultC
 	a.RegisterRoutesWithPrefix("/static/", http.StripPrefix(httpPathPrefix, http.FileServer(http.FS(staticFiles))), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
-	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(actualCfg), false, true, "GET")
+	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(), false, true, "GET")
+	a.RegisterRoute("/api/v1/status/flags", a.cfg.statusFlagsHandler(), false, true, "GET")
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration

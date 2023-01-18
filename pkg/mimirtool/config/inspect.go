@@ -638,10 +638,10 @@ func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
 
 const notInYaml = "not-in-yaml"
 
-//go:embed descriptors/mimir-v2.3.0-flags-only.json
+//go:embed descriptors/mimir-v2.6.0-flags-only.json
 var mimirConfigFlagsOnly []byte
 
-//go:embed descriptors/mimir-v2.3.0.json
+//go:embed descriptors/mimir-v2.6.0.json
 var mimirConfig []byte
 
 var mimirConfigDeserialized = loadDefaultMimirConfig()
@@ -737,10 +737,10 @@ func DefaultGEM170Config() *InspectedEntry {
 	return gem170CortexConfigDeserialized.Clone()
 }
 
-//go:embed descriptors/gem-v2.3.0.json
+//go:embed descriptors/gem-v2.6.0.json
 var gemCortexConfig []byte
 
-//go:embed descriptors/gem-v2.3.0-flags-only.json
+//go:embed descriptors/gem-v2.6.0-flags-only.json
 var gemCortexConfigFlagsOnly []byte
 
 var gemCortexConfigDeserialized = loadDefaultGEMConfig()

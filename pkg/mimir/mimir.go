@@ -67,6 +67,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -667,6 +668,7 @@ type Mimir struct {
 	ActivityTracker          *activitytracker.ActivityTracker
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
+	EphemeralChecker         ephemeral.SeriesCheckerByUser
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter

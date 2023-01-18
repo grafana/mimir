@@ -100,7 +100,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 
 	// Wait for the leader to have advertised its leaving state to the ring
 	test.Poll(t, 5*time.Second, ring.LEAVING, func() interface{} {
-		rs, _ := i1.client.GetAllHealthy(ringOp)
+		rs, _ := i2.client.GetAllHealthy(ringOp)
 		for _, instance := range rs.Instances {
 			if instance.Addr == l1.GetInstanceAddr() {
 				return instance.GetState()

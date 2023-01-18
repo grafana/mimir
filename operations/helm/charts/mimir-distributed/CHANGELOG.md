@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
 * [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
 * [ENHANCEMENT] Update memcached image to `memcached:1.6.17-alpine`. #3914
+* [ENHANCEMENT] Update minio subchart to `5.0.4`. #3942
 * [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
 * [BUGFIX] Fixed gateway's checksum/config when using nginx #3780
 * [BUGFIX] Disable gateway's serviceMonitor when using nginx #3781
