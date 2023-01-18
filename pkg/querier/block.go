@@ -118,9 +118,23 @@ func (bqs *blockQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	its := make([]iteratorWithMaxTime, 0, len(bqs.chunks))
 
 	for _, c := range bqs.chunks {
-		ch, err := chunkenc.FromData(chunkenc.EncXOR, c.Raw.Data)
+		var (
+			ch  chunkenc.Chunk
+			err error
+		)
+		switch c.Raw.Type {
+		case storepb.Chunk_XOR:
+			ch, err = chunkenc.FromData(chunkenc.EncXOR, c.Raw.Data)
+		case storepb.Chunk_Histogram:
+			ch, err = chunkenc.FromData(chunkenc.EncHistogram, c.Raw.Data)
+		case storepb.Chunk_FloatHistogram:
+			ch, err = chunkenc.FromData(chunkenc.EncFloatHistogram, c.Raw.Data)
+		default:
+			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from unknown type (%v) encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, bqs.Labels(), c.MinTime, c.MaxTime))
+		}
+
 		if err != nil {
-			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from XOR encoded raw data (series: %v min time: %d max time: %d)", bqs.Labels(), c.MinTime, c.MaxTime))
+			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from %v type encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, bqs.Labels(), c.MinTime, c.MaxTime))
 		}
 
 		it := ch.Iterator(nil)
