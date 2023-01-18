@@ -151,7 +151,7 @@ var cortexRenameMappings = map[string]Mapping{
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
 
-	// limits.max_query_length replcaed with limits.max_partial_query_length in 2.5
+	// limits.max_query_length replaced with limits.max_partial_query_length in 2.5
 	"limits.max_query_length": RenameMapping("limits.max_partial_query_length"),
 }
 
