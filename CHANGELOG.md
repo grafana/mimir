@@ -52,6 +52,7 @@
 * [ENHANCEMENT] Alerts: Added `MimirAlertmanagerInstanceHasNoTenants` alert that fires when an alertmanager instance ows no tenants. #3826
 * [ENHANCEMENT] Alerts: Added `MimirRulerInstanceHasNoRuleGroups` alert that fires when a ruler replica is not assigned any rule group to evaluate. #3723
 * [ENHANCEMENT] Support for baremetal deployment for alerts and scaling recording rules. #3719
+* [ENHANCEMENT] Dashboards: querier autoscaling now supports multiple scaled objects (configurable via `$._config.autoscale.querier.hpa_name`). #3962
 * [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
