@@ -132,11 +132,11 @@ func BenchmarkDecodeAll(b *testing.B) {
 
 		b.Run(directory.Name(), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				for _, sample := range samples {
+				for sampleIdx, sample := range samples {
 					_, err := codec.Decode(sample)
 
 					if err != nil {
-						require.NoError(b, err)
+						require.NoError(b, err, files[sampleIdx])
 					}
 				}
 			}
@@ -167,7 +167,7 @@ func BenchmarkDecodeExamples(b *testing.B) {
 				_, err := codec.Decode(encodedBytes)
 
 				if err != nil {
-					require.NoError(b, err)
+					require.NoError(b, err, file)
 				}
 			}
 		})
@@ -204,11 +204,11 @@ func BenchmarkEncodeAll(b *testing.B) {
 
 		b.Run(directory.Name(), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				for _, resp := range samples {
+				for sampleIdx, resp := range samples {
 					_, err := codec.Encode(resp)
 
 					if err != nil {
-						require.NoError(b, err)
+						require.NoError(b, err, files[sampleIdx])
 					}
 				}
 			}
@@ -236,7 +236,7 @@ func BenchmarkEncodeExamples(b *testing.B) {
 				_, err := codec.Encode(resp)
 
 				if err != nil {
-					require.NoError(b, err)
+					require.NoError(b, err, file)
 				}
 			}
 		})

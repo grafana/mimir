@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/apache/arrow/go/v11/arrow"
 	"github.com/apache/arrow/go/v11/arrow/array"
@@ -25,17 +26,24 @@ import (
 // This is based on https://github.com/prometheus/prometheus/pull/11591 and https://github.com/prometheus/prometheus/compare/csmarchbanks/optmize-arrow-responses.
 
 type ArrowCodec struct {
-	allocator memory.Allocator
+	allocator  memory.Allocator
+	readerPool sync.Pool
+	bufferPool sync.Pool
 }
 
 func NewArrowCodec() Codec {
-	return ArrowCodec{
-		allocator: newArrowAllocator(),
+	return &ArrowCodec{
+		allocator:  newArrowAllocator(),
+		readerPool: sync.Pool{New: func() any { return &bytes.Reader{} }},
+		bufferPool: sync.Pool{New: func() any { return &bytes.Buffer{} }},
 	}
 }
 
-func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
-	buf := bytes.NewReader(b)
+func (c *ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
+	buf := c.readerPool.Get().(*bytes.Reader)
+	buf.Reset(b)
+	defer c.readerPool.Put(buf)
+
 	resultType, err := c.decodeResultType(buf)
 	if err != nil {
 		return querymiddleware.PrometheusResponse{}, err
@@ -66,7 +74,7 @@ func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error)
 }
 
 // HACK: see note on Encode about dealing with the result type in a better way
-func (c ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
+func (c *ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
 	b, err := r.ReadByte()
 	if err != nil {
 		return "", err
@@ -84,7 +92,7 @@ func (c ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
 	}
 }
 
-func (c ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, error) {
+func (c *ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, error) {
 	reader, err := ipc.NewReader(r, ipc.WithAllocator(c.allocator))
 	if err != nil {
 		return querymiddleware.SampleStream{}, err
@@ -133,8 +141,10 @@ func (c ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, err
 // - attached as metadata to entire stream (is this possible?) or to record?
 // - infer from schema and shape of data?
 // TODO: how to encode errors? Send as JSON instead?
-func (c ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
-	buf := &bytes.Buffer{}
+func (c *ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
+	buf := c.bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer c.bufferPool.Put(buf)
 
 	switch prometheusResponse.Data.ResultType {
 	case model.ValScalar.String():
@@ -160,10 +170,15 @@ func (c ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse
 		return nil, fmt.Errorf("unknown result type %v", prometheusResponse.Data.ResultType)
 	}
 
-	return buf.Bytes(), nil
+	// buf.Bytes() is only valid until the next modification of buf,
+	// so we can't return it directly given we pool buffers.
+	res := make([]byte, buf.Len())
+	copy(res, buf.Bytes())
+
+	return res, nil
 }
 
-func (c ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusData) error {
+func (c *ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusData) error {
 	// TODO: Chris' implementation reserves a builder with the length of the longest series, but that doesn't seem to work
 	// - it panics when there is more than one series due to the builders having nil internal buffers
 	timestampsBuilder := array.NewTimestampBuilder(c.allocator, &arrow.TimestampType{Unit: arrow.Millisecond})
@@ -186,7 +201,7 @@ func (c ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusDa
 	return nil
 }
 
-func (c ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStream, fields []arrow.Field, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder, allocator memory.Allocator) error {
+func (c *ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStream, fields []arrow.Field, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder, allocator memory.Allocator) error {
 	sampleCount := len(series.Samples)
 	timestampsBuilder.Reserve(sampleCount)
 	valuesBuilder.Reserve(sampleCount)
