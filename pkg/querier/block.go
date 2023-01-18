@@ -173,8 +173,7 @@ func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
 			if typ := it.iterators[it.i].Seek(t); typ != chunkenc.ValNone {
-				// Calling .At() to update it.lastT
-				it.At()
+				it.updateLastT(typ)
 				return typ
 			}
 		}
@@ -229,8 +228,7 @@ func (it *blockQuerierSeriesIterator) Next() chunkenc.ValueType {
 	}
 
 	if typ := it.iterators[it.i].Next(); typ != chunkenc.ValNone {
-		// Calling .At() to update it.lastT
-		it.At()
+		it.updateLastT(typ)
 		return typ
 	}
 	if it.iterators[it.i].Err() != nil {
@@ -259,4 +257,17 @@ func (it *blockQuerierSeriesIterator) Err() error {
 		return errors.Wrapf(err, "cannot iterate chunk for series: %v", it.labels)
 	}
 	return nil
+}
+
+func (it *blockQuerierSeriesIterator) updateLastT(typ chunkenc.ValueType) {
+	switch typ {
+	case chunkenc.ValFloat:
+		it.lastT, _ = it.iterators[it.i].At()
+	case chunkenc.ValHistogram:
+		it.lastT, _ = it.iterators[it.i].AtHistogram()
+	case chunkenc.ValFloatHistogram:
+		it.lastT, _ = it.iterators[it.i].AtFloatHistogram()
+	default:
+		panic("Unsupported chunktype in blockQuerierSeriesIterator iterator")
+	}
 }
