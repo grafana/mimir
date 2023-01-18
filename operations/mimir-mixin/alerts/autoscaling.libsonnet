@@ -11,7 +11,7 @@
             # Match only Mimir namespaces.
             * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
             # Add "metric" label.
-            + on(cluster, namespace, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
+            + on(%(aggregation_labels)s, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
             > 0
             # Do not alert if metric is 0, because in that case we expect the HPA to be inactive.
             unless on (%(aggregation_labels)s, metric)
