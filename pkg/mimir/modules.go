@@ -73,6 +73,7 @@ const (
 	ActiveGroupsCleanupService string = "active-groups-cleanup-service"
 	Distributor                string = "distributor"
 	DistributorService         string = "distributor-service"
+	EphemeralChecker           string = "ephemeral-checker"
 	Ingester                   string = "ingester"
 	IngesterService            string = "ingester-service"
 	Flusher                    string = "flusher"
@@ -297,7 +298,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, t.Overrides, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, t.EphemeralChecker, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -307,6 +308,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	}
 
 	return t.Distributor, nil
+}
+
+func (t *Mimir) initEphemeralChecker() (serv services.Service, err error) {
+	t.EphemeralChecker = t.Overrides
+	return nil, nil
 }
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
@@ -825,6 +831,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
+	mm.RegisterModule(EphemeralChecker, t.initEphemeralChecker, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(Flusher, t.initFlusher)
@@ -856,7 +863,8 @@ func (t *Mimir) setupModuleManager() error {
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides, MemberlistKV},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
-		DistributorService:       {Ring, Overrides},
+		DistributorService:       {Ring, Overrides, EphemeralChecker},
+		EphemeralChecker:         {Overrides},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
