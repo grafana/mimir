@@ -902,8 +902,7 @@ local url = import 'xtd/url.libsonnet';
     // We don't want to encode the ${...} vars, since they will be rendered by Grafana.
     local encodedExploreManifestWithVars = std.strReplace(std.strReplace(encodedExploreManifest, 'DOLLARLOKIDATASOURCE', '${lokidatasource}'), 'DOLLARNAMESPACE', '${namespace}');
 
-    local link = '%(grafana_root_path)sexplore?left=%(left_explore_urlencoded_json)s' % {
-      grafana_root_path: $._config.grafana_root_path,
+    local link = '../../explore?left=%(left_explore_urlencoded_json)s' % {
       left_explore_urlencoded_json: encodedExploreManifestWithVars,
     };
 

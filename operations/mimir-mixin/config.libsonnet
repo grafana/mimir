@@ -6,9 +6,6 @@
     // The product name used when building dashboards.
     product: 'Mimir',
 
-    // The path on the server where Grafana is running (should end with a slash).
-    grafana_root_path: '/',
-
     // The prefix including product name used when building dashboards.
     dashboard_prefix: '%(product)s / ' % $._config.product,
     // Controls tooltip and hover highlight behavior across different panels
