@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/apache/arrow/go/v11/arrow"
 	"github.com/apache/arrow/go/v11/arrow/array"
 	"github.com/apache/arrow/go/v11/arrow/ipc"
 	"github.com/apache/arrow/go/v11/arrow/memory"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/pool"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -23,7 +25,15 @@ import (
 
 // This is based on https://github.com/prometheus/prometheus/pull/11591 and https://github.com/prometheus/prometheus/compare/csmarchbanks/optmize-arrow-responses.
 
-type ArrowCodec struct{}
+type ArrowCodec struct {
+	allocator memory.Allocator
+}
+
+func NewArrowCodec() Codec {
+	return ArrowCodec{
+		allocator: newArrowAllocator(),
+	}
+}
 
 func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
 	buf := bytes.NewReader(b)
@@ -32,13 +42,11 @@ func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error)
 		return querymiddleware.PrometheusResponse{}, err
 	}
 
-	pool := memory.NewGoAllocator()
-
 	// TODO: is there some way we could pre-allocate this?
 	var result []querymiddleware.SampleStream
 
 	for {
-		series, err := c.decodeSeries(buf, pool)
+		series, err := c.decodeSeries(buf, c.allocator)
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -91,7 +99,7 @@ func (c ArrowCodec) decodeSeries(r io.Reader, pool memory.Allocator) (querymiddl
 
 	if !reader.Next() {
 		if reader.Err() != nil {
-			return querymiddleware.SampleStream{}, fmt.Errorf("expected to read a record, but got error: %w", err)
+			return querymiddleware.SampleStream{}, fmt.Errorf("expected to read a record, but got error: %w", reader.Err())
 		}
 
 		return querymiddleware.SampleStream{}, errors.New("expected to read a record, but reached end of stream before reading any records")
@@ -161,16 +169,12 @@ func (c ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse
 }
 
 func (c ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusData) error {
-	// TODO: replace with Chris' more efficient implementation
-	// TODO: share amongst all encodeMatrix() calls
-	pool := memory.NewGoAllocator()
-
 	// TODO: Chris' implementation reserves a builder with the length of the longest series, but that doesn't seem to work
 	// - it panics when there is more than one series due to the builders having nil internal buffers
-	timestampsBuilder := array.NewTimestampBuilder(pool, &arrow.TimestampType{Unit: arrow.Millisecond})
+	timestampsBuilder := array.NewTimestampBuilder(c.allocator, &arrow.TimestampType{Unit: arrow.Millisecond})
 	defer timestampsBuilder.Release()
 
-	valuesBuilder := array.NewFloat64Builder(pool)
+	valuesBuilder := array.NewFloat64Builder(c.allocator)
 	defer valuesBuilder.Release()
 
 	fields := []arrow.Field{
@@ -179,7 +183,7 @@ func (c ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusDa
 	}
 
 	for _, series := range data.Result {
-		if err := c.encodeSeries(w, &series, fields, timestampsBuilder, valuesBuilder, pool); err != nil {
+		if err := c.encodeSeries(w, &series, fields, timestampsBuilder, valuesBuilder, c.allocator); err != nil {
 			return err
 		}
 	}
@@ -208,7 +212,6 @@ func (c ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStre
 	rec := array.NewRecord(seriesSchema, []arrow.Array{timestamps, values}, int64(sampleCount))
 	defer rec.Release()
 
-	// TODO: move earlier?
 	writer := ipc.NewWriter(w, ipc.WithAllocator(allocator), ipc.WithSchema(seriesSchema))
 	defer writer.Close()
 
@@ -242,4 +245,51 @@ func labelsFrom(metadata arrow.Metadata) []mimirpb.LabelAdapter {
 	}
 
 	return labels
+}
+
+type arrowAllocator struct {
+	base memory.Allocator
+	pool *pool.Pool
+}
+
+func newArrowAllocator() *arrowAllocator {
+	base := memory.DefaultAllocator
+
+	return &arrowAllocator{
+		base: base,
+		pool: pool.New(1e3, 100e6, 3, func(size int) interface{} {
+			return base.Allocate(size)
+		}),
+	}
+}
+
+func (a *arrowAllocator) Allocate(size int) []byte {
+	b := a.pool.Get(size).([]byte)
+	slice := reflect.ValueOf(b)
+	return slice.Slice(0, size).Bytes()
+}
+
+func (a *arrowAllocator) Reallocate(size int, b []byte) []byte {
+	if cap(b) >= size {
+		slice := reflect.ValueOf(b)
+		return a.Allocator.Reallocate(size, slice.Slice(0, size).Bytes())
+	}
+	newB := a.pool.Get(size).([]byte)
+	slice := reflect.ValueOf(newB)
+	slice.SetLen(size)
+	newB = slice.Slice(0, size).Bytes()
+	copy(newB, b)
+
+	// TODO: this wasn't in Chris' original implementation
+	a.pool.Put(b)
+	return newB
+}
+
+func (a *arrowAllocator) Free(b []byte) {
+	// TODO: this wasn't in Chris' original implementation
+	if b == nil {
+		return
+	}
+
+	a.pool.Put(b)
 }

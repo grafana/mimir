@@ -22,7 +22,7 @@ var knownCodecs = map[string]Codec{
 	"interned protobuf":                     InternedProtobufCodec{},
 	"gzipped uninterned protobuf":           GzipWrapperCodec{UninternedProtobufCodec{}},
 	"snappy compressed uninterned protobuf": SnappyWrapperCodec{UninternedProtobufCodec{}},
-	"Arrow":                                 ArrowCodec{},
+	"Arrow":                                 NewArrowCodec(),
 }
 
 // This directory contains a selection of query results from an internal operational cluster
