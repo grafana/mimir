@@ -37,7 +37,7 @@ type InstanceLimits struct {
 	MaxIngestionRate           float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInMemoryTenants         int64   `yaml:"max_tenants" category:"advanced"`
 	MaxInMemorySeries          int64   `yaml:"max_series" category:"advanced"`
-	MaxInMemoryEphemeralSeries int64   `yaml:"max_ephemeral_series" category:"advanced"`
+	MaxInMemoryEphemeralSeries int64   `yaml:"max_ephemeral_series" category:"experimental"`
 	MaxInflightPushRequests    int64   `yaml:"max_inflight_push_requests" category:"advanced"`
 }
 

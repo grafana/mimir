@@ -95,7 +95,7 @@ type Limits struct {
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
 	// Ephemeral series
-	MaxGlobalEphemeralSeriesPerUser int `yaml:"max_global_ephemeral_series_per_user" json:"max_global_ephemeral_series_per_user"`
+	MaxGlobalEphemeralSeriesPerUser int `yaml:"max_global_ephemeral_series_per_user" json:"max_global_ephemeral_series_per_user" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
