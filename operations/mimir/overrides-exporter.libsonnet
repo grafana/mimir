@@ -6,6 +6,7 @@
 
   _config+: {
     overrides_exporter_enabled: false,
+    overrides_exporter_ring_enabled: false,
 
     // overrides exporter can also make the configured presets available, this
     // list references entries within $._config.overrides
@@ -24,11 +25,20 @@
   local containerPort = $.core.v1.containerPort,
   overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
-  overrides_exporter_args:: {
-    target: 'overrides-exporter',
+  local ringConfig = {
+    'overrides-exporter.ring.enabled': true,
+    // If the ring is enabled, wait for ring stability at startup to lower limit metrics series churn.
+    'overrides-exporter.ring.wait-stability-min-duration': '1m',
+  },
 
-    'server.http-listen-port': $._config.server_http_port,
-  } + $._config.limitsConfig + $.mimirRuntimeConfigFile,
+  overrides_exporter_args:: {
+                              target: 'overrides-exporter',
+
+                              'server.http-listen-port': $._config.server_http_port,
+                            } +
+                            $._config.limitsConfig +
+                            $.mimirRuntimeConfigFile +
+                            if $._config.overrides_exporter_ring_enabled then ringConfig else {},
 
   local container = $.core.v1.container,
   overrides_exporter_container::
