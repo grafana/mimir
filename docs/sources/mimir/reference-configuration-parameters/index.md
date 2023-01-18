@@ -292,6 +292,17 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
+    # (advanced) Minimum time to wait for ring stability at startup, if set to
+    # positive value. Set to 0 to disable.
+    # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
+    [wait_stability_min_duration: <duration> | default = 0s]
+
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # overrides-exporter ring keeps changing after this period of time, it will
+    # start anyway.
+    # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
+    [wait_stability_max_duration: <duration> | default = 5m]
+
     # (advanced) Instance ID to register in the ring.
     # CLI flag: -overrides-exporter.ring.instance-id
     [instance_id: <string> | default = "<hostname>"]
@@ -737,6 +748,11 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
+
+# (experimental) Enable marking series as ephemeral based on the given matchers
+# in the runtime config.
+# CLI flag: -distributor.ephemeral-series-enabled
+[ephemeral_series_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -2826,6 +2842,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
+
+# (experimental) Lists of series matchers prefixed by the source. The source
+# must be one of any, api, rule. If an incoming sample matches at least one of
+# the matchers with its source it gets marked as ephemeral. The format of the
+# value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
+# CLI flag: -distributor.ephemeral-series-matchers
+[ephemeral_series_matchers: <map of source name (string) to series matchers ([]string)> | default = ]
 ```
 
 ### blocks_storage
@@ -3252,6 +3275,51 @@ tsdb:
   # (experimental) Force the cache to be used for postings for matchers in the
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
+  [head_postings_for_matchers_cache_force: <boolean> | default = false]
+
+ephemeral_tsdb:
+  # (experimental) Retention of ephemeral series.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.retention-period
+  [retention_period: <duration> | default = 10m]
+
+  # (experimental) The write buffer size used by the head chunks mapper. Lower
+  # values reduce memory utilisation on clusters with a large number of tenants
+  # at the cost of increased disk I/O operations.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes
+  [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
+
+  # (experimental) How much variance (as percentage between 0 and 1) should be
+  # applied to the chunk end time, to spread chunks writing across time. Doesn't
+  # apply to the last chunk of the chunk range. 0 means no variance.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance
+  [head_chunks_end_time_variance: <float> | default = 0]
+
+  # (experimental) The number of shards of series to use in TSDB (must be a
+  # power of 2). Reducing this will decrease memory footprint, but can
+  # negatively impact performance.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.stripe-size
+  [stripe_size: <int> | default = 16384]
+
+  # (experimental) The size of the write queue used by the head chunks mapper.
+  # Lower values reduce memory utilisation at the cost of potentially higher
+  # ingest latency. Value of 0 switches chunks mapper to implementation without
+  # a queue.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size
+  [head_chunks_write_queue_size: <int> | default = 1000000]
+
+  # (experimental) How long to cache postings for matchers in the Head and
+  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl
+  [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in the Head and OOOHead when ttl > 0.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size
+  [head_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in the
+  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 

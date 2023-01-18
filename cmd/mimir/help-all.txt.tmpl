@@ -403,6 +403,22 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
     	Maximum number of concurrent tenants synching blocks. (default 10)
+  -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance float
+    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
+  -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes int
+    	[experimental] The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
+  -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size int
+    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
+  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force
+    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size int
+    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0. (default 100)
+  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl duration
+    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+  -blocks-storage.ephemeral-tsdb.retention-period duration
+    	[experimental] Retention of ephemeral series. (default 10m0s)
+  -blocks-storage.ephemeral-tsdb.stripe-size int
+    	[experimental] The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -753,6 +769,10 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
+  -distributor.ephemeral-series-enabled
+    	[experimental] Enable marking series as ephemeral based on the given matchers in the runtime config.
+  -distributor.ephemeral-series-matchers value
+    	Lists of series matchers prefixed by the source. The source must be one of any, api, rule. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
   -distributor.forwarding.grpc-client.backoff-max-period duration
@@ -1267,6 +1287,10 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -overrides-exporter.ring.wait-stability-max-duration duration
+    	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
+  -overrides-exporter.ring.wait-stability-min-duration duration
+    	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -print.config
     	Print the config and exit.
   -querier.batch-iterators
@@ -1369,8 +1393,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
-  -query-frontend.align-querier-with-step
-    	Mutate incoming queries to align their start and end with their step. It has been deprecated. Please use -query-frontend.align-queries-with-step instead.
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results

@@ -212,40 +212,80 @@ local filename = 'mimir-reads.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
-            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
-            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            |||
+              kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            ||| % {
+              namespace_matcher: $.namespaceMatcher(),
+              cluster_labels: std.join(', ', $._config.cluster_labels),
+              hpa_name: $._config.autoscaling.querier.hpa_name,
+            },
+            |||
+              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.
+              * on (%(cluster_labels)s, horizontalpodautoscaler)
+                kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
+              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            ||| % {
+              namespace_matcher: $.namespaceMatcher(),
+              cluster_labels: std.join(', ', $._config.cluster_labels),
+              hpa_name: $._config.autoscaling.querier.hpa_name,
+            },
           ],
           [
-            'Min',
-            'Max',
-            'Current',
+            'Max {{ scaletargetref_name }}',
+            'Current {{ scaletargetref_name }}',
           ],
         ) +
         $.panelDescription(
           title,
           |||
-            The minimum, maximum, and current number of querier replicas.
+            The maximum, and current number of querier replicas.
+            Please note that the current number of replicas can still show 1 replica even when scaled to 0.
+            Since HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
-        ),
+        ) +
+        {
+          seriesOverrides+: [
+            {
+              alias: '/Max .+/',
+              dashes: true,
+              fill: 0,
+            },
+            {
+              alias: '/Current .+/',
+              fill: 0,
+            },
+          ],
+        }
       )
       .addPanel(
-        local title = 'Scaling metric';
+        local title = 'Scaling metric (desired replicas)';
         $.panel(title) +
         $.queryPanel(
           [
-            $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.querier.hpa_name),
-            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            |||
+              keda_metrics_adapter_scaler_metrics_value
+              /
+              on(metric) group_left
+              label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
+            ||| % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
           ], [
-            'Scaling metric',
-            'Target per replica',
+            '{{ scaledObject }}',
           ]
         ) +
         $.panelDescription(
           title,
           |||
-            This panel shows the result of the query used as scaling metric and target/threshold used.
-            The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+            This panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.
+            It should represent the desired number of replicas, ignoring the min/max constraints which are applied later.
           |||
         ) +
         $.panelAxisPlacement('Target per replica', 'right'),

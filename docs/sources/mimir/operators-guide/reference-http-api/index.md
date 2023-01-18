@@ -26,6 +26,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
 | [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
+| [Status Flags](#status-flags)                                                         | _All services_                 | `GET /api/v1/status/flags`                                                |
 | [Runtime Configuration](#runtime-configuration)                                       | _All services_                 | `GET /runtime_config`                                                     |
 | [Services' status](#services-status)                                                  | _All services_                 | `GET /services`                                                           |
 | [Readiness probe](#readiness-probe)                                                   | _All services_                 | `GET /ready`                                                              |
@@ -148,9 +149,15 @@ This endpoint displays the default configuration values.
 GET /api/v1/status/config
 ```
 
-This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
+This endpoint displays empty configuration settings, it exists only to be compatible with the Prometheus `/api/v1/status/config` API.
 
-It is a simplified wrapper for `/config` to be compatible with the prometheus `/api/v1/status/config` API.
+### Status Flags
+
+```
+GET /api/v1/status/flags
+```
+
+This endpoint displays empty configuration flags, it exists only to be compatible with the Prometheus `/api/v1/status/flags` API.
 
 ### Runtime Configuration
 

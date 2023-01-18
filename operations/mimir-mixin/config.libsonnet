@@ -596,6 +596,7 @@
     autoscaling: {
       querier: {
         enabled: false,
+        // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
         hpa_name: 'keda-hpa-querier',
       },
       ruler_querier: {

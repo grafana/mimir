@@ -65,6 +65,14 @@ const (
 	// DefaultPartitionerMaxGapSize is the default max size - in bytes - of a gap for which the store-gateway
 	// partitioner aggregates together two bucket GET object requests.
 	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
+
+	headChunkWriterBufferSizeHelp        = "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations."
+	headChunksEndTimeVarianceHelp        = "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance."
+	headStripeSizeHelp                   = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
+	headChunksWriteQueueSizeHelp         = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
+	headPostingsForMatchersCacheTTLHelp  = "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls."
+	headPostingsForMatchersCacheSizeHelp = "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0."
+	headPostingsForMatchersCacheForce    = "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call."
 )
 
 // Validation errors
@@ -80,9 +88,10 @@ var (
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket        bucket.Config       `yaml:",inline"`
+	BucketStore   BucketStoreConfig   `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB          TSDBConfig          `yaml:"tsdb"`
+	EphemeralTSDB EphemeralTSDBConfig `yaml:"ephemeral_tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -127,6 +136,7 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
+	cfg.EphemeralTSDB.RegisterFlags(f)
 }
 
 // Validate the config.
@@ -206,19 +216,19 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HeadCompactionInterval, "blocks-storage.tsdb.head-compaction-interval", 1*time.Minute, "How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes.")
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 1, "Maximum number of tenants concurrently compacting TSDB head into a new block")
 	f.DurationVar(&cfg.HeadCompactionIdleTimeout, "blocks-storage.tsdb.head-compaction-idle-timeout", 1*time.Hour, "If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled.")
-	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.")
-	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.tsdb.head-chunks-end-time-variance", 0, "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.")
-	f.IntVar(&cfg.StripeSize, "blocks-storage.tsdb.stripe-size", 16384, "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance.")
+	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, headChunkWriterBufferSizeHelp)
+	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.tsdb.head-chunks-end-time-variance", 0, headChunksEndTimeVarianceHelp)
+	f.IntVar(&cfg.StripeSize, "blocks-storage.tsdb.stripe-size", 16384, headStripeSizeHelp)
 	f.BoolVar(&cfg.WALCompressionEnabled, "blocks-storage.tsdb.wal-compression-enabled", false, "True to enable TSDB WAL compression.")
 	f.IntVar(&cfg.WALSegmentSizeBytes, "blocks-storage.tsdb.wal-segment-size-bytes", wlog.DefaultSegmentSize, "TSDB WAL segments files max size (bytes).")
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 13*time.Hour, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
-	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.")
+	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
-	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
-	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", 100, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0.")
-	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.")
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, headPostingsForMatchersCacheTTLHelp)
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", 100, headPostingsForMatchersCacheSizeHelp)
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", false, headPostingsForMatchersCacheForce)
 }
 
 // Validate the config.
@@ -371,4 +381,41 @@ func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.DurationVar(&cfg.UpdateOnErrorInterval, prefix+"update-on-error-interval", time.Minute, "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.")
 	f.DurationVar(&cfg.IdleTimeout, prefix+"idle-timeout", time.Hour, "How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier.")
 	f.DurationVar(&cfg.MaxStalePeriod, prefix+"max-stale-period", time.Hour, "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).")
+}
+
+// EphemeralTSDBConfig holds the config for Ephemeral Storage opened in the ingesters.
+type EphemeralTSDBConfig struct {
+	Retention                         time.Duration `yaml:"retention_period" category:"experimental"`
+	HeadChunksWriteBufferSize         int           `yaml:"head_chunks_write_buffer_size_bytes" category:"experimental"`
+	HeadChunksEndTimeVariance         float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
+	StripeSize                        int           `yaml:"stripe_size" category:"experimental"`
+	HeadChunksWriteQueueSize          int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
+	HeadPostingsForMatchersCacheTTL   time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
+	HeadPostingsForMatchersCacheSize  int           `yaml:"head_postings_for_matchers_cache_size" category:"experimental"`
+	HeadPostingsForMatchersCacheForce bool          `yaml:"head_postings_for_matchers_cache_force" category:"experimental"`
+}
+
+// RegisterFlags registers the TSDBConfig flags.
+func (cfg *EphemeralTSDBConfig) RegisterFlags(f *flag.FlagSet) {
+	f.DurationVar(&cfg.Retention, "blocks-storage.ephemeral-tsdb.retention-period", 10*time.Minute, "Retention of ephemeral series.")
+	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, headChunkWriterBufferSizeHelp)
+	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance", 0, headChunksEndTimeVarianceHelp)
+	f.IntVar(&cfg.StripeSize, "blocks-storage.ephemeral-tsdb.stripe-size", 16384, headStripeSizeHelp)
+	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, headPostingsForMatchersCacheTTLHelp)
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size", 100, headPostingsForMatchersCacheSizeHelp)
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force", false, headPostingsForMatchersCacheForce)
+}
+
+// Validate the config.
+func (cfg *EphemeralTSDBConfig) Validate() error {
+	if cfg.HeadChunksWriteBufferSize < chunks.MinWriteBufferSize || cfg.HeadChunksWriteBufferSize > chunks.MaxWriteBufferSize || cfg.HeadChunksWriteBufferSize%1024 != 0 {
+		return errors.Errorf("head chunks write buffer size must be a multiple of 1024 between %d and %d", chunks.MinWriteBufferSize, chunks.MaxWriteBufferSize)
+	}
+
+	if cfg.StripeSize <= 1 || (cfg.StripeSize&(cfg.StripeSize-1)) != 0 { // ensure stripe size is a positive power of 2
+		return errInvalidStripeSize
+	}
+
+	return nil
 }

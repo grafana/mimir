@@ -104,6 +104,21 @@ const (
 	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
+
+	// Prefix used in Prometheus registry for ephemeral storage.
+	ephemeralPrometheusMetricsPrefix = "ephemeral_"
+
+	// StorageLabelName is a label name used to select queried storage type.
+	StorageLabelName            = "__mimir_storage__"
+	EphemeralStorageLabelValue  = "ephemeral"
+	PersistentStorageLabelValue = "persistent"
+
+	errInvalidStorageLabelValue = "invalid value of " + StorageLabelName + " label: %s"
+)
+
+var (
+	errInvalidStorageMatcherType    = fmt.Errorf("invalid matcher used together with %s label, only equality check supported", StorageLabelName)
+	errMultipleStorageMatchersFound = fmt.Errorf("multiple matchers for %s label found, only one matcher supported", StorageLabelName)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -306,6 +321,11 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 			Name: "cortex_ingester_memory_series",
 			Help: "The current number of series in memory.",
 		}, i.getMemorySeriesMetric)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_memory_ephemeral_series",
+			Help: "The current number of ephemeral series in memory.",
+		}, i.getEphemeralSeriesMetric)
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
@@ -679,7 +699,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 {
+	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -702,9 +722,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		stats pushStats
-
-		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
+		persistentStats, ephemeralStats pushStats
 
 		firstPartialErr    error
 		updateFirstPartial = func(errFn func() error) {
@@ -715,16 +733,59 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
-	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
+	var persistentApp, ephemeralApp extendedAppender
 
-	var activeSeries *activeseries.ActiveSeries
-	if i.cfg.ActiveSeriesMetricsEnabled {
-		activeSeries = db.activeSeries
+	rollback := func() {
+		if persistentApp != nil {
+			if err := persistentApp.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback persistent appender on error", "user", userID, "err", err)
+			}
+		}
+		if ephemeralApp != nil {
+			if err := ephemeralApp.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral appender on error", "user", userID, "err", err)
+			}
+		}
 	}
-	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
-	if err != nil {
-		return nil, err
+
+	if len(req.Timeseries) > 0 {
+		persistentApp = db.Appender(ctx).(extendedAppender)
+
+		level.Debug(spanlog).Log("event", "got appender for persistent series", "series", len(req.Timeseries))
+
+		var activeSeries *activeseries.ActiveSeries
+		if i.cfg.ActiveSeriesMetricsEnabled {
+			activeSeries = db.activeSeries
+		}
+
+		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
+
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &persistentStats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, true)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+	}
+
+	if len(req.EphemeralTimeseries) > 0 {
+		a, err := db.EphemeralAppender(ctx)
+		if err != nil {
+			// TODO: handle error caused by limit (ephemeral storage disabled), and report it via firstPartialErr instead.
+			rollback()
+			return nil, err
+		}
+
+		ephemeralApp = a.(extendedAppender)
+
+		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
+
+		minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+
+		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -732,15 +793,35 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
+		"succeededSamplesCount", persistentStats.succeededSamplesCount,
+		"failedSamplesCount", persistentStats.failedSamplesCount,
+		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
+		"failedExemplarsCount", persistentStats.failedExemplarsCount,
+
+		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
+		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
+		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return nil, wrapWithUser(err, userID)
+	if persistentApp != nil {
+		app := persistentApp
+		persistentApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
+
+		if err := app.Commit(); err != nil {
+			rollback()
+			return nil, wrapWithUser(err, userID)
+		}
+	}
+	if ephemeralApp != nil {
+		app := ephemeralApp
+		ephemeralApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
+
+		if err := app.Commit(); err != nil {
+			rollback()
+			return nil, wrapWithUser(err, userID)
+		}
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -748,22 +829,45 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if stats.succeededSamplesCount > 0 {
+	if persistentStats.succeededSamplesCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
+
+	if ephemeralStats.succeededSamplesCount > 0 || ephemeralStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
+
+		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
+	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
+	i.updateMetricsFromPushStats(userID, group, &persistentStats, req.Source, db)
+	i.updateMetricsFromPushStats(userID, group, &ephemeralStats, req.Source, db)
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB) {
 	if stats.sampleOutOfBoundsCount > 0 {
 		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
 	}
@@ -785,33 +889,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
-		switch req.Source {
-		case mimirpb.RULE:
+		if samplesSource == mimirpb.RULE {
 			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
-		case mimirpb.API:
-			fallthrough
-		default:
+		} else {
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
-
-	if firstPartialErr != nil {
-		code := http.StatusBadRequest
-		var ve *validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
-		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
-	}
-
-	return &mimirpb.WriteResponse{}, nil
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, appendExemplars bool) error {
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -902,11 +992,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				continue
 			}
 
-			// The error looks an issue on our side, so we should rollback
-			if rollbackErr := app.Rollback(); rollbackErr != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
-			}
-
 			return wrapWithUser(err, userID)
 		}
 
@@ -917,7 +1002,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 		}
 
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+		if appendExemplars && len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
@@ -1026,7 +1111,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs)
+	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1062,7 +1147,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1101,7 +1186,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1290,7 +1375,17 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	i.metrics.queries.Inc()
+	storageType, matchers, err := removeStorageMatcherAndGetStorageType(matchers)
+	if err != nil {
+		return err
+	}
+
+	ephemeral := storageType == EphemeralStorageLabelValue
+	if ephemeral {
+		i.metrics.ephemeralQueries.Inc()
+	} else {
+		i.metrics.queries.Inc()
+	}
 
 	db := i.getTSDB(userID)
 	if db == nil {
@@ -1319,23 +1414,28 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, ephemeral)
 	}
 	if err != nil {
 		return err
 	}
 
-	i.metrics.queriedSeries.Observe(float64(numSeries))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
-	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples)
+	if ephemeral {
+		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
+		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
+	} else {
+		i.metrics.queriedSeries.Observe(float64(numSeries))
+		i.metrics.queriedSamples.Observe(float64(numSamples))
+	}
+	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "storage", storageType)
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(ctx, from, through)
+func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
+	q, err := db.Querier(ctx, from, through, ephemeral)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1412,13 +1512,13 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 }
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+		q, err = db.UnorderedChunkQuerier(ctx, from, through, ephemeral)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
+		q, err = db.ChunkQuerier(ctx, from, through, ephemeral)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -1604,7 +1704,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
-	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
+	const storageKey = "storage"
+	db, err := tsdb.Open(udir, log.With(userLogger, storageKey, "persistent"), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                  blockRanges[0],
 		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
@@ -1674,6 +1775,45 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+
+	userDB.ephemeralSeriesRetentionPeriod = i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention
+	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
+		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
+
+		headOptions := &tsdb.HeadOptions{
+			ChunkRange:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention.Milliseconds(),
+			ChunkDirRoot:                   filepath.Join(udir, "ephemeral_chunks"),
+			ChunkPool:                      nil,
+			ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteBufferSize,
+			ChunkEndTimeVariance:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksEndTimeVariance,
+			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteQueueSize,
+			StripeSize:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.StripeSize,
+			SeriesCallback:                 nil, // TODO: handle limits.
+			EnableExemplarStorage:          false,
+			EnableMemorySnapshotOnShutdown: false,
+			IsolationDisabled:              true,
+			PostingsForMatchersCacheTTL:    i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheTTL,
+			PostingsForMatchersCacheSize:   i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheSize,
+			PostingsForMatchersCacheForce:  i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadPostingsForMatchersCacheForce,
+		}
+
+		headOptions.MaxExemplars.Store(0)
+		headOptions.OutOfOrderTimeWindow.Store(0)
+		headOptions.OutOfOrderCapMax.Store(int64(tsdb.DefaultOutOfOrderCapMax)) // We need to set this, despite OOO time window being 0.
+		headOptions.EnableNativeHistograms.Store(false)
+
+		h, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix(ephemeralPrometheusMetricsPrefix, tsdbPromReg), log.With(userLogger, storageKey, "ephemeral"), nil, nil, headOptions, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		i.metrics.memEphemeralUsers.Inc()
+
+		// Don't allow ingestion of old samples into ephemeral storage.
+		h.SetMinValidTime(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli())
+		return h, nil
+	}
+
 	return userDB, nil
 }
 
@@ -1690,6 +1830,8 @@ func (i *Ingester) closeAllTSDB() {
 		go func(db *userTSDB) {
 			defer wg.Done()
 
+			ephemeral := db.hasEphemeralStorage()
+
 			if err := db.Close(); err != nil {
 				level.Warn(i.logger).Log("msg", "unable to close TSDB", "err", err, "user", userID)
 				return
@@ -1705,6 +1847,9 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.CurrentMatcherNames())
+			if ephemeral {
+				i.metrics.memEphemeralUsers.Dec()
+			}
 		}(userDB)
 	}
 
@@ -1828,6 +1973,26 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 	count := uint64(0)
 	for _, db := range i.tsdbs {
 		count += db.Head().NumSeries()
+	}
+
+	return float64(count)
+}
+
+// getEphemeralSeriesMetric returns the total number of in-memory series in ephemeral storage across all tenants.
+func (i *Ingester) getEphemeralSeriesMetric() float64 {
+	if err := i.checkRunning(); err != nil {
+		return 0
+	}
+
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	count := uint64(0)
+	for _, db := range i.tsdbs {
+		eph := db.getEphemeralStorage()
+		if eph != nil {
+			count += eph.NumSeries()
+		}
 	}
 
 	return float64(count)
@@ -2012,7 +2177,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		default:
 			reason = "regular"
-			err = userDB.Compact()
+			err = userDB.Compact(time.Now())
 		}
 
 		if err != nil {
@@ -2078,6 +2243,8 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	dir := userDB.db.Dir()
 
+	ephemeral := userDB.hasEphemeralStorage()
+
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)
 		return tsdbCloseFailed
@@ -2100,6 +2267,9 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
+	if ephemeral {
+		i.metrics.memEphemeralUsers.Dec()
+	}
 	i.tsdbMetrics.removeRegistryForUser(userID)
 
 	i.deleteUserMetadata(userID)
@@ -2505,4 +2675,47 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// findStorageLabelMatcher returns value of storage label matcher and its index, if it exists.
+func findStorageLabelMatcher(matchers []*labels.Matcher) (string, int, error) {
+	resultVal, resultIdx := "", -1
+
+	for idx, matcher := range matchers {
+		if matcher.Name == StorageLabelName {
+			if resultIdx >= 0 {
+				return "", idx, errMultipleStorageMatchersFound
+			}
+			if matcher.Type != labels.MatchEqual {
+				return "", idx, errInvalidStorageMatcherType
+			}
+			resultVal = matcher.Value
+			resultIdx = idx
+		}
+	}
+
+	return resultVal, resultIdx, nil
+}
+
+// This function returns the storage type (PersistentStorageLabelValue or EphemeralStorageLabelValue) from label matchers.
+// If storage label is not found, returns PersistentStorageLabelValue.
+// If storage label matcher is invalid (wrong type or value), returns error.
+// Returned matchers have storage label matcher removed (original slice is reused).
+func removeStorageMatcherAndGetStorageType(matchers []*labels.Matcher) (storageType string, filtered []*labels.Matcher, _ error) {
+	val, idx, err := findStorageLabelMatcher(matchers)
+	if err != nil {
+		return PersistentStorageLabelValue, matchers, err
+	}
+	if idx < 0 {
+		return PersistentStorageLabelValue, matchers, nil
+	}
+
+	if val != PersistentStorageLabelValue && val != EphemeralStorageLabelValue {
+		return val, matchers, fmt.Errorf(errInvalidStorageLabelValue, val)
+	}
+
+	// Prepare slice without storage matcher.
+	copy(matchers[idx:], matchers[idx+1:])
+	filtered = matchers[:len(matchers)-1]
+	return val, filtered, nil
 }

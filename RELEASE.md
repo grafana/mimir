@@ -14,7 +14,8 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 | 2.3.0   | 2022-08-08 | Tyler Reid        |
 | 2.4.0   | 2022-10-10 | Marco Pracucci    |
 | 2.5.0   | 2022-11-28 | Mauro Stettler    |
-| 2.6.0   | 2023-01-16 | _To be announced_ |
+| 2.6.0   | 2023-01-16 | Nick Pillitteri   |
+| 2.7.0   | 2023-02-27 | _To be announced_ |
 
 ## Release shepherd responsibilities
 

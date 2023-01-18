@@ -7,7 +7,9 @@ package integration
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,7 +27,7 @@ overrides:
 `
 )
 
-func TestOverridesExporterTenantSharding(t *testing.T) {
+func TestOverridesExporterRing(t *testing.T) {
 	limit := 20
 	tests := []struct {
 		name              string
@@ -33,7 +35,7 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 		expectedMetricSum int
 	}{
 		{
-			name: "tenant sharding enabled",
+			name: "ring enabled",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled": "true",
 			},
@@ -41,7 +43,17 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			expectedMetricSum: limit,
 		},
 		{
-			name: "tenant sharding disabled",
+			name: "ring enabled with wait for stability at startup",
+			flags: map[string]string{
+				"-overrides-exporter.ring.enabled":                     "true",
+				"-overrides-exporter.ring.wait-stability-min-duration": "2s",
+				"-overrides-exporter.ring.wait-stability-max-duration": "4s",
+			},
+			// the limit should only be exported once, i.e. the expected sum of metrics should equal the limit value
+			expectedMetricSum: limit,
+		},
+		{
+			name: "ring disabled",
 			flags: map[string]string{
 				"-overrides-exporter.ring.enabled": "false",
 			},
@@ -69,12 +81,13 @@ func TestOverridesExporterTenantSharding(t *testing.T) {
 			services, err := newOverridesExporterServices(mergeFlags(flags, tt.flags), s)
 			require.NoError(t, err)
 
-			value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
-			require.NoError(t, err)
-			value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
-			require.NoError(t, err)
-
-			require.Equal(t, tt.expectedMetricSum, int(value1+value2))
+			test.Poll(t, 30*time.Second, tt.expectedMetricSum, func() interface{} {
+				value1, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e1)
+				require.NoError(t, err)
+				value2, err := getOverrideMetricForTenantFromService("tenant-a", "ingestion_rate", services.e2)
+				require.NoError(t, err)
+				return int(value1 + value2)
+			})
 		})
 	}
 }

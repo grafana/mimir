@@ -21,7 +21,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
 )
 
 const (
@@ -168,6 +170,8 @@ type Limits struct {
 	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+
+	EphemeralSeriesMatchers ephemeral.LabelMatchers `yaml:"ephemeral_series_matchers" json:"ephemeral_series_matchers" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -255,6 +259,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+
+	f.Var(&l.EphemeralSeriesMatchers, "distributor.ephemeral-series-matchers", fmt.Sprintf("Lists of series matchers prefixed by the source. The source must be one of %s. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: %s:{namespace=\"dev\"};%s:{host=\"server1\",namespace=\"prod\"}", strings.Join(ephemeral.ValidSourceStrings, ", "), ephemeral.API, ephemeral.RULE))
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -760,6 +766,15 @@ func (o *Overrides) ForwardingRules(user string) ForwardingRules {
 
 func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
+}
+
+func (o *Overrides) EphemeralChecker(user string, source mimirpb.WriteRequest_SourceEnum) ephemeral.SeriesChecker {
+	m := o.getOverridesForUser(user).EphemeralSeriesMatchers.ForSource(source)
+	if m.HasMatchers() {
+		return &m
+	}
+
+	return nil
 }
 
 func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {

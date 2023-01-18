@@ -4170,7 +4170,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4194,7 +4194,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -4226,7 +4226,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()
@@ -4283,7 +4283,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4310,7 +4310,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	// Only the last two old blocks plus the one containing the newly added samples should remain.
 	newBlocks := db.Blocks()
@@ -4322,7 +4322,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
 		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
 		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
-	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+	`, newBlocks[1].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds")) // Note it has to be newBlocks[1] because newBlocks[0] was already shipped, it is just kept due to the retention.
 }
 
 func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *testing.T) {
@@ -4364,7 +4364,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4376,7 +4376,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
-	require.Nil(t, db.Compact())
+	require.Nil(t, db.Compact(time.Now()))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -6067,6 +6067,815 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
+}
+
+func TestIngester_PushAndQueryEphemeral(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
+
+	metricNames := []string{
+		"cortex_ingester_ingested_ephemeral_samples_total",
+		"cortex_ingester_ingested_ephemeral_samples_failures_total",
+		"cortex_ingester_memory_ephemeral_series",
+		"cortex_ingester_memory_series",
+		"cortex_ingester_memory_users",
+		"cortex_ingester_ephemeral_series_created_total",
+		"cortex_ingester_ephemeral_series_removed_total",
+		"cortex_discarded_samples_total",
+		"cortex_ingester_memory_ephemeral_users",
+		"cortex_ingester_queries_ephemeral_total",
+		"cortex_ingester_queried_ephemeral_samples",
+		"cortex_ingester_queried_ephemeral_series",
+	}
+	userID := "test"
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		reqs                       []*mimirpb.WriteRequest
+		additionalMetrics          []string
+		expectedIngestedEphemeral  model.Matrix
+		expectedIngestedPersistent model.Matrix
+		expectedErr                error
+		expectedMetrics            string
+	}{
+		"should succeed on pushing valid series to ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API),
+
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: model.Time(now.UnixMilli() - 10)}, {Value: 2, Timestamp: model.Time(now.UnixMilli())}}},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 2
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 0
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 2
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 1
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"old ephemeral samples are discarded": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 100}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr:               httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngestedEphemeral: nil, // No returned samples.
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 0
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+        	        # TYPE cortex_discarded_samples_total counter
+        	        cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 0
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 0
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"should fail on out-of-order samples": {
+			reqs: []*mimirpb.WriteRequest{
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+
+				ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(now.UnixMilli()-10), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: model.Time(now.UnixMilli())}}},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 1
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 1
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 1
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 0
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+					# TYPE cortex_discarded_samples_total counter
+					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 1
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 1
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+		"request with mix of ephemeral and persistent series, with some good and some bad samples plus some metadata": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Source: mimirpb.API,
+					EphemeralTimeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric2"}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli(), Value: 100}, // Good sample. Next request will contain sample with lower TS.
+							},
+						},
+					}},
+				},
+
+				{
+					Source: mimirpb.API,
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							Type:             mimirpb.COUNTER,
+							MetricFamilyName: "per_metric",
+							Help:             "Some help goes here...",
+							Unit:             "light years",
+						},
+					},
+
+					Timeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: labels.MetricName, Value: "per_metric"},
+							},
+							Exemplars: []mimirpb.Exemplar{{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli(), Value: 100},
+								{TimestampMs: now.UnixMilli() + 1000, Value: 200},
+							},
+						},
+					}},
+
+					EphemeralTimeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}},
+							Exemplars: []mimirpb.Exemplar{{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 100, Value: 100}, // out of bounds, this will be reported as first error
+								{TimestampMs: now.UnixMilli(), Value: 200},
+								{TimestampMs: now.UnixMilli() + 1000, Value: 200},
+								{TimestampMs: now.UnixMilli() + 2000, Value: 300},
+							},
+						},
+					}, {
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric2"}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli() - 1000, Value: 100}, // out of order (compared to previous request)
+								{TimestampMs: now.UnixMilli(), Value: 500},        // This sample was sent in previous request, with different value.
+								{TimestampMs: now.UnixMilli() + 1000, Value: 1000},
+							},
+						},
+					}},
+				}},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}}), userID).Error()),
+			expectedIngestedEphemeral: model.Matrix{
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "eph_metric2"},
+					Values: []model.SamplePair{
+						{Value: 100, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 1000, Timestamp: model.Time(now.UnixMilli() + 1000)},
+					},
+				},
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "eph_metric1"},
+					Values: []model.SamplePair{
+						{Value: 200, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 200, Timestamp: model.Time(now.UnixMilli() + 1000)},
+						{Value: 300, Timestamp: model.Time(now.UnixMilli() + 2000)},
+					},
+				},
+			},
+			expectedIngestedPersistent: model.Matrix{
+				&model.SampleStream{
+					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "per_metric"},
+					Values: []model.SamplePair{
+						{Value: 100, Timestamp: model.Time(now.UnixMilli())},
+						{Value: 200, Timestamp: model.Time(now.UnixMilli() + 1000)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_exemplars_total", "cortex_ingester_ingested_metadata_total"},
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+					# TYPE cortex_ingester_ingested_exemplars_total counter
+					cortex_ingester_ingested_exemplars_total 1
+
+					# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+					# TYPE cortex_ingester_ingested_samples_total counter
+					cortex_ingester_ingested_samples_total{user="test"} 2
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+					# TYPE cortex_ingester_ingested_metadata_total counter
+					cortex_ingester_ingested_metadata_total 1
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 5
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
+
+					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
+					# TYPE cortex_ingester_ephemeral_series_created_total counter
+					cortex_ingester_ephemeral_series_created_total{user="test"} 2
+
+					# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
+					# TYPE cortex_ingester_ephemeral_series_removed_total counter
+					cortex_ingester_ephemeral_series_removed_total{user="test"} 0
+
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 2
+
+					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+					# TYPE cortex_discarded_samples_total counter
+					cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 1
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 5
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 2
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+
+		"only persistent series -- does not initialize ephemeral storage": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
+					nil,
+					nil,
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedIngestedPersistent: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli() - 10)},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_ingester_memory_ephemeral_series The current number of ephemeral series in memory.
+        	        # TYPE cortex_ingester_memory_ephemeral_series gauge
+        	        cortex_ingester_memory_ephemeral_series 0
+
+					# HELP cortex_ingester_memory_series The current number of series in memory.
+        	        # TYPE cortex_ingester_memory_series gauge
+        	        cortex_ingester_memory_series 1
+
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+
+					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
+					# TYPE cortex_ingester_memory_ephemeral_users gauge
+					cortex_ingester_memory_ephemeral_users 0
+
+					# HELP cortex_ingester_queried_ephemeral_samples The total number of samples from ephemeral storage returned per query.
+					# TYPE cortex_ingester_queried_ephemeral_samples histogram
+					cortex_ingester_queried_ephemeral_samples_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.62144e+06"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="2.097152e+07"} 1
+					cortex_ingester_queried_ephemeral_samples_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_samples_sum 0
+					cortex_ingester_queried_ephemeral_samples_count 1
+
+					# HELP cortex_ingester_queried_ephemeral_series The total number of ephemeral series returned from queries.
+					# TYPE cortex_ingester_queried_ephemeral_series histogram
+					cortex_ingester_queried_ephemeral_series_bucket{le="10"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="80"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="640"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="5120"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="40960"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="327680"} 1
+					cortex_ingester_queried_ephemeral_series_bucket{le="+Inf"} 1
+					cortex_ingester_queried_ephemeral_series_sum 0
+					cortex_ingester_queried_ephemeral_series_count 1
+
+					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
+					# TYPE cortex_ingester_queries_ephemeral_total counter
+					cortex_ingester_queries_ephemeral_total 1
+			`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			cfg.ActiveSeriesMetricsEnabled = false
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = 100
+			limits.OutOfOrderTimeWindow = model.Duration(time.Minute * 10)
+
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			// Push timeseries
+			for idx, req := range testData.reqs {
+				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
+				_, err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
+
+				// We expect no error on any request except the last one
+				// which may error (and in that case we assert on it)
+				if idx < len(testData.reqs)-1 {
+					assert.NoError(t, err)
+				} else {
+					assert.Equal(t, testData.expectedErr, err)
+				}
+			}
+
+			verifyIngestedSamples := func(t *testing.T, matchers []*client.LabelMatcher, expected model.Matrix) {
+				s := &stream{ctx: ctx}
+				err = i.QueryStream(&client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers:         matchers,
+				}, s)
+				require.NoError(t, err)
+
+				res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+				require.NoError(t, err)
+				if len(res) == 0 {
+					res = nil
+				}
+				assert.Equal(t, expected, res)
+			}
+
+			// Verify ephemeral samples.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			}, testData.expectedIngestedEphemeral)
+
+			// Verify persistent samples.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+			}, testData.expectedIngestedPersistent)
+
+			// Verify persistent samples again, this time with storage label.
+			verifyIngestedSamples(t, []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			}, testData.expectedIngestedPersistent)
+
+			// Check tracked Prometheus metrics
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), append(metricNames, testData.additionalMetrics...)...)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func ToWriteRequestEphemeral(lbls []labels.Labels, samples []mimirpb.Sample, exemplars []*mimirpb.Exemplar, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) *mimirpb.WriteRequest {
+	req := mimirpb.ToWriteRequest(lbls, samples, exemplars, metadata, source)
+	req.EphemeralTimeseries = req.Timeseries
+	req.Timeseries = nil
+	return req
+}
+
+func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.EphemeralTSDB.Retention = 10 * time.Minute
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	metricLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+
+	now := time.Now()
+
+	// Push ephemeral series with good timestamps (in last 10 minutes)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := ToWriteRequestEphemeral(
+		[]labels.Labels{mimirpb.FromLabelAdaptersToLabels(metricLabels)},
+		[]mimirpb.Sample{{Value: float64(100), TimestampMs: now.Add(-9 * time.Minute).UnixMilli()}},
+		nil,
+		nil,
+		mimirpb.API,
+	)
+	_, err = i.Push(ctx, req)
+	require.NoError(t, err)
+
+	// Query back the series and verify that sample exists.
+	verifySamples := func(t *testing.T, expected model.Matrix) {
+		s := &stream{ctx: ctx}
+		err = i.QueryStream(&client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				// Query everything from ephemeral storage.
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+		}, s)
+		require.NoError(t, err)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		if len(res) == 0 {
+			res = nil
+		}
+		assert.Equal(t, expected, res)
+	}
+
+	verifySamples(t, model.Matrix{
+		&model.SampleStream{
+			Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "test"},
+			Values: []model.SamplePair{
+				{Value: 100, Timestamp: model.Time(now.Add(-9 * time.Minute).UnixMilli())},
+			},
+		},
+	})
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Advance time for ephemeral storage
+	require.Nil(t, db.Compact(now.Add(5*time.Minute)))
+
+	// Old sample is no longer available for querying.
+	verifySamples(t, nil)
+
+	// Pushing the same request should now fail, because min valid time for ephemeral storage has moved on to (now + 5 minutes - ephemeral series retention = now - 5 minutes)
+	_, err = i.Push(ctx, req)
+	require.Equal(t, err, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), metricLabels), userID).Error()))
+}
+
+func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+
+	// Create ingester
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	type testCase struct {
+		matchers    []*client.LabelMatcher
+		expectedErr error
+	}
+
+	for name, tc := range map[string]testCase{
+		"no error on missing storage label": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid ephemeral storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"no error on valid persistent storage matcher": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"error on invalid storage label value": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: "invalid"},
+			},
+			expectedErr: fmt.Errorf(errInvalidStorageLabelValue, "invalid"),
+		},
+
+		"error on invalid matcher type !=": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.NOT_EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type =~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"error on invalid matcher type !~": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_NO_MATCH, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errInvalidStorageMatcherType,
+		},
+
+		"no real matchers is fine": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: nil,
+		},
+
+		"multiple storage labels return error": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: PersistentStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+
+		"multiple storage labels return error, even if they are the same": {
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+				{Type: client.EQUAL, Name: StorageLabelName, Value: EphemeralStorageLabelValue},
+			},
+			expectedErr: errMultipleStorageMatchersFound,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err = i.QueryStream(&client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         tc.matchers,
+			}, &stream{ctx: ctx})
+			require.Equal(t, tc.expectedErr, err)
 		})
 	}
 }

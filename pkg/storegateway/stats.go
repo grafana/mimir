@@ -48,12 +48,30 @@ type queryStats struct {
 	chunksFetchCount       int
 	chunksFetchDurationSum time.Duration
 
-	getAllDuration    time.Duration
 	mergedSeriesCount int
 	mergedChunksCount int
-	mergeDuration     time.Duration
 
-	expandedPostingsDuration time.Duration
+	// The total time spent fetching series and chunk refs.
+	streamingSeriesFetchRefsDuration time.Duration
+
+	// The number of batches the Series() request has been split into.
+	streamingSeriesBatchCount int
+
+	// The total time spent loading batches.
+	streamingSeriesBatchLoadDuration time.Duration
+
+	// The total time spent waiting until the next batch is loaded, once the store-gateway was
+	// ready to send it to the client.
+	streamingSeriesWaitBatchLoadedDuration time.Duration
+
+	// The Series() request timing breakdown when streaming store-gateway is enabled.
+	streamingSeriesExpandPostingsDuration       time.Duration
+	streamingSeriesFetchSeriesAndChunksDuration time.Duration
+	streamingSeriesSendResponseDuration         time.Duration
+
+	// The Series() request timing breakdown when streaming store-gateway is disabled.
+	synchronousSeriesGetAllDuration time.Duration
+	synchronousSeriesMergeDuration  time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -93,12 +111,19 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.chunksFetchCount += o.chunksFetchCount
 	s.chunksFetchDurationSum += o.chunksFetchDurationSum
 
-	s.getAllDuration += o.getAllDuration
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
-	s.mergeDuration += o.mergeDuration
 
-	s.expandedPostingsDuration += o.expandedPostingsDuration
+	s.streamingSeriesFetchRefsDuration += o.streamingSeriesFetchRefsDuration
+	s.streamingSeriesBatchCount += o.streamingSeriesBatchCount
+	s.streamingSeriesBatchLoadDuration += o.streamingSeriesBatchLoadDuration
+	s.streamingSeriesWaitBatchLoadedDuration += o.streamingSeriesWaitBatchLoadedDuration
+	s.streamingSeriesExpandPostingsDuration += o.streamingSeriesExpandPostingsDuration
+	s.streamingSeriesFetchSeriesAndChunksDuration += o.streamingSeriesFetchSeriesAndChunksDuration
+	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
+
+	s.synchronousSeriesGetAllDuration += o.synchronousSeriesGetAllDuration
+	s.synchronousSeriesMergeDuration += o.synchronousSeriesMergeDuration
 
 	return &s
 }

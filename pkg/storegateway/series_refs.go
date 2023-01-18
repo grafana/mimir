@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -447,8 +448,9 @@ func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.Series
 	}
 }
 
-func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
-	return newSeriesChunkRefsSeriesSet(newPreloadingSetIterator[seriesChunkRefsSet](ctx, 1, batches))
+func newSeriesSetWithoutChunks(ctx context.Context, iterator seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
+	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunkRefsSet](ctx, 1, iterator, stats)
+	return newSeriesChunkRefsSeriesSet(iterator)
 }
 
 func (s *seriesChunkRefsSeriesSet) Next() bool {
@@ -668,7 +670,14 @@ func openBlockSeriesChunkRefsSetsIterator(
 		tenantID,
 		logger,
 	)
-	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("series_load"))
+
+	// Track the time spent loading series and chunk refs.
+	iterator = newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
+		stats.update(func(stats *queryStats) {
+			stats.streamingSeriesFetchRefsDuration += duration
+		})
+	})
+
 	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
 	return iterator, nil
 }
