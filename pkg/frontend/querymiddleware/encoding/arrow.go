@@ -44,14 +44,10 @@ func (c ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error)
 	// TODO: is there some way we could pre-allocate this?
 	var result []querymiddleware.SampleStream
 
-	for {
+	for buf.Len() > 0 {
 		series, err := c.decodeSeries(buf)
 
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
 			return querymiddleware.PrometheusResponse{}, err
 		}
 
