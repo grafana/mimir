@@ -62,6 +62,10 @@ const (
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
 
+	EphemeralSampleTimestampTooOld    ID = "ephemeral-sample-timestamp-too-old"
+	EphemeralSampleOutOfOrder         ID = "ephemeral-sample-out-of-order"
+	EphemeralSampleDuplicateTimestamp ID = "ephemeral-sample-duplicate-timestamp"
+
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 

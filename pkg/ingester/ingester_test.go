@@ -4650,9 +4650,10 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	l := InstanceLimits{
-		MaxIngestionRate:   10,
-		MaxInMemoryTenants: 20,
-		MaxInMemorySeries:  30,
+		MaxIngestionRate:           10,
+		MaxInMemoryTenants:         20,
+		MaxInMemorySeries:          30,
+		MaxInMemoryEphemeralSeries: 50,
 	}
 
 	cfg := defaultIngesterTestConfig(t)
@@ -4670,6 +4671,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 30
 		cortex_ingester_instance_limits{limit="max_tenants"} 20
+		cortex_ingester_instance_limits{limit="max_ephemeral_series"} 50
 	`), "cortex_ingester_instance_limits"))
 
 	l.MaxInMemoryTenants = 1000
@@ -4682,6 +4684,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 2000
 		cortex_ingester_instance_limits{limit="max_tenants"} 1000
+		cortex_ingester_instance_limits{limit="max_ephemeral_series"} 50
 	`), "cortex_ingester_instance_limits"))
 }
 
@@ -6046,6 +6049,10 @@ func TestNewIngestErrMsgs(t *testing.T) {
 			err: newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters),
 			msg: `the sample has been rejected because its timestamp is too old (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
+		"newEphemeralIngestErrSampleTimestampTooOld": {
+			err: newEphemeralIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters),
+			msg: `the sample for ephemeral series has been rejected because its timestamp is too old (err-mimir-ephemeral-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+		},
 		"newIngestErrSampleTimestampTooOld_out_of_order_enabled": {
 			err: newIngestErrSampleTimestampTooOldOOOEnabled(timestamp, metricLabelAdapters, model.Duration(2*time.Hour)),
 			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of 2h (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
@@ -6054,9 +6061,17 @@ func TestNewIngestErrMsgs(t *testing.T) {
 			err: newIngestErrSampleOutOfOrder(timestamp, metricLabelAdapters),
 			msg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
+		"newEphemeralIngestErrSampleOutOfOrder": {
+			err: newEphemeralIngestErrSampleOutOfOrder(timestamp, metricLabelAdapters),
+			msg: `the sample for ephemeral series has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-ephemeral-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+		},
 		"newIngestErrSampleDuplicateTimestamp": {
 			err: newIngestErrSampleDuplicateTimestamp(timestamp, metricLabelAdapters),
 			msg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+		},
+		"newEphemeralIngestErrSampleDuplicateTimestamp": {
+			err: newEphemeralIngestErrSampleDuplicateTimestamp(timestamp, metricLabelAdapters),
+			msg: `the sample for ephemeral series has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-ephemeral-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
 		"newIngestErrExemplarMissingSeries": {
 			err: newIngestErrExemplarMissingSeries(timestamp, metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}),
@@ -6198,7 +6213,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					mimirpb.API),
 			},
 			maxEphemeralSeriesLimit:   10,
-			expectedErr:               httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedErr:               httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedIngestedEphemeral: nil, // No returned samples.
 			expectedMetrics: `
 					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
@@ -6231,7 +6246,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
         	        # TYPE cortex_discarded_samples_total counter
-        	        cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
+        	        cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6287,7 +6302,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 				),
 			},
 			maxEphemeralSeriesLimit: 10,
-			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(now.UnixMilli()-10), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleOutOfOrder(model.Time(now.UnixMilli()-10), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedIngestedEphemeral: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: model.Time(now.UnixMilli())}}},
 			},
@@ -6322,7 +6337,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6428,7 +6443,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					}},
 				}},
 			maxEphemeralSeriesLimit: 10,
-			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(100), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}}), userID).Error()),
+			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(100), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "eph_metric1"}}), userID).Error()),
 			expectedIngestedEphemeral: model.Matrix{
 				&model.SampleStream{
 					Metric: map[model.LabelName]model.LabelValue{labels.MetricName: "eph_metric2"},
@@ -6499,9 +6514,9 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 1
-					cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
-					cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-new-value-for-timestamp",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6606,12 +6621,19 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 		},
 		"ephemeral storage disabled": {
 			reqs: []*mimirpb.WriteRequest{
-				ToWriteRequestEphemeral(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
-					nil,
-					nil,
-					mimirpb.API),
+				{
+					Source: mimirpb.API,
+					EphemeralTimeseries: []mimirpb.PreallocTimeseries{{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: now.UnixMilli(), Value: 100},
+								{TimestampMs: now.UnixMilli() + 1, Value: 100},
+								{TimestampMs: now.UnixMilli() + 2, Value: 100},
+							},
+						},
+					}},
+				},
 			},
 			maxEphemeralSeriesLimit: 0,
 			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(errors.New("ephemeral storage is not enabled for user (err-mimir-ephemeral-storage-not-enabled-for-user)"), userID).Error()),
@@ -6661,6 +6683,14 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					# HELP cortex_ingester_queries_ephemeral_total The total number of queries the ingester has handled for ephemeral storage.
 					# TYPE cortex_ingester_queries_ephemeral_total counter
 					cortex_ingester_queries_ephemeral_total 1
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
+
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
 			`,
 		},
 
@@ -6750,7 +6780,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="per_user_ephemeral_series_limit",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-per_user_series_limit",user="test"} 1
 			`,
 		},
 	}
@@ -6931,7 +6961,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 
 	// Pushing the same request should now fail, because min valid time for ephemeral storage has moved on to (now + 5 minutes - ephemeral series retention = now - 5 minutes)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}), userID).Error()), err)
+	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}), userID).Error()), err)
 
 	// Pushing new series now works.
 	_, err = i.Push(ctx, newReq)
