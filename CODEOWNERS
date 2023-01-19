@@ -3,3 +3,6 @@
 
 # Documentation.
 /docs/ @grafana/docs-metrics @grafana/mimir-maintainers
+
+/pkg/alertmanager/ @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
+/pkg/ruler/ @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
