@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/apache/arrow/go/v11/arrow"
@@ -49,17 +50,23 @@ func (c *ArrowCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error
 		return querymiddleware.PrometheusResponse{}, err
 	}
 
-	// TODO: is there some way we could pre-allocate this?
 	var result []querymiddleware.SampleStream
 
-	for buf.Len() > 0 {
-		series, err := c.decodeSeries(buf)
-
+	switch resultType {
+	case model.ValScalar.String(), model.ValMatrix.String():
+		result, err = c.decodeMatrix(buf)
 		if err != nil {
 			return querymiddleware.PrometheusResponse{}, err
 		}
 
-		result = append(result, series)
+	case model.ValVector.String():
+		result, err = c.decodeVector(buf)
+		if err != nil {
+			return querymiddleware.PrometheusResponse{}, err
+		}
+
+	default:
+		panic(fmt.Sprintf("unknown result type %v", resultType))
 	}
 
 	resp := querymiddleware.PrometheusResponse{
@@ -92,7 +99,29 @@ func (c *ArrowCodec) decodeResultType(r io.ByteReader) (string, error) {
 	}
 }
 
-func (c *ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, error) {
+type LengthReader interface {
+	io.Reader
+	Len() int
+}
+
+func (c *ArrowCodec) decodeMatrix(r LengthReader) ([]querymiddleware.SampleStream, error) {
+	// TODO: is there some way we could pre-allocate this?
+	var result []querymiddleware.SampleStream
+
+	for r.Len() > 0 {
+		series, err := c.decodeMatrixSeries(r)
+
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, series)
+	}
+
+	return result, nil
+}
+
+func (c *ArrowCodec) decodeMatrixSeries(r io.Reader) (querymiddleware.SampleStream, error) {
 	reader, err := ipc.NewReader(r, ipc.WithAllocator(c.allocator))
 	if err != nil {
 		return querymiddleware.SampleStream{}, err
@@ -136,6 +165,66 @@ func (c *ArrowCodec) decodeSeries(r io.Reader) (querymiddleware.SampleStream, er
 	return series, nil
 }
 
+func (c *ArrowCodec) decodeVector(r io.Reader) ([]querymiddleware.SampleStream, error) {
+	reader, err := ipc.NewReader(r, ipc.WithAllocator(c.allocator))
+	if err != nil {
+		return nil, err
+	}
+
+	defer reader.Release()
+
+	// TODO: is there some way we could pre-allocate this?
+	var result []querymiddleware.SampleStream
+
+	for reader.Next() {
+		rec := reader.Record()
+
+		// TODO: should we verify that the schema matches what we expect?
+		labelNamesColumn := rec.Column(0).(*array.List)
+		labelNamesColumnValues := labelNamesColumn.ListValues().(*array.String)
+		labelValuesColumn := rec.Column(1).(*array.List)
+		labelValuesColumnValues := labelValuesColumn.ListValues().(*array.String)
+		timestampColumn := rec.Column(2).(*array.Timestamp)
+		valueColumn := rec.Column(3).(*array.Float64)
+
+		lastNameOffset := labelNamesColumn.Offsets()[1]
+		lastValueOffset := labelValuesColumn.Offsets()[1]
+
+		if lastNameOffset != lastValueOffset {
+			return nil, fmt.Errorf("have different number of label names (%v) and values (%v)", lastNameOffset, lastValueOffset)
+		}
+
+		labels := make([]mimirpb.LabelAdapter, lastNameOffset)
+
+		for i := 0; i < int(lastNameOffset); i++ {
+			// We must clone the strings as we can't rely on the backing byte buffer not changing.
+			name := strings.Clone(labelNamesColumnValues.Value(i))
+			value := strings.Clone(labelValuesColumnValues.Value(i))
+
+			labels[i] = mimirpb.LabelAdapter{
+				Name:  name,
+				Value: value,
+			}
+		}
+
+		result = append(result, querymiddleware.SampleStream{
+			Samples: []mimirpb.Sample{
+				{
+					TimestampMs: int64(timestampColumn.Value(0)),
+					Value:       valueColumn.Value(0),
+				},
+			},
+			Labels: labels,
+		})
+	}
+
+	if reader.Err() != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // TODO: how to encode result type (scalar / vector / matrix)? For now, we send a single byte at the start of the stream to signal what data type it contains
 // - content-type header in response?
 // - attached as metadata to entire stream (is this possible?) or to record?
@@ -156,8 +245,7 @@ func (c *ArrowCodec) Encode(prometheusResponse querymiddleware.PrometheusRespons
 	case model.ValVector.String():
 		buf.WriteByte(byte(model.ValVector)) // HACK: see comment above about encoding result type
 
-		// TODO: implement more efficient schema for vectors?
-		if err := c.encodeMatrix(buf, prometheusResponse.Data); err != nil {
+		if err := c.encodeVector(buf, prometheusResponse.Data); err != nil {
 			return nil, err
 		}
 	case model.ValMatrix.String():
@@ -193,7 +281,7 @@ func (c *ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusD
 	}
 
 	for _, series := range data.Result {
-		if err := c.encodeSeries(w, &series, fields, timestampsBuilder, valuesBuilder, c.allocator); err != nil {
+		if err := c.encodeMatrixSeries(w, &series, fields, timestampsBuilder, valuesBuilder); err != nil {
 			return err
 		}
 	}
@@ -201,7 +289,7 @@ func (c *ArrowCodec) encodeMatrix(w io.Writer, data *querymiddleware.PrometheusD
 	return nil
 }
 
-func (c *ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStream, fields []arrow.Field, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder, allocator memory.Allocator) error {
+func (c *ArrowCodec) encodeMatrixSeries(w io.Writer, series *querymiddleware.SampleStream, fields []arrow.Field, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder) error {
 	sampleCount := len(series.Samples)
 	timestampsBuilder.Reserve(sampleCount)
 	valuesBuilder.Reserve(sampleCount)
@@ -222,7 +310,7 @@ func (c *ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStr
 	rec := array.NewRecord(seriesSchema, []arrow.Array{timestamps, values}, int64(sampleCount))
 	defer rec.Release()
 
-	writer := ipc.NewWriter(w, ipc.WithAllocator(allocator), ipc.WithSchema(seriesSchema))
+	writer := ipc.NewWriter(w, ipc.WithAllocator(c.allocator), ipc.WithSchema(seriesSchema))
 	defer writer.Close()
 
 	if err := writer.Write(rec); err != nil {
@@ -230,6 +318,85 @@ func (c *ArrowCodec) encodeSeries(w io.Writer, series *querymiddleware.SampleStr
 	}
 
 	return nil
+}
+
+// TODO: try alternative layout where we emit a single record, with a struct representing each series
+func (c *ArrowCodec) encodeVector(w io.Writer, data *querymiddleware.PrometheusData) error {
+	labelNamesBuilder := array.NewListBuilder(c.allocator, &arrow.StringType{})
+	defer labelNamesBuilder.Release()
+
+	labelValuesBuilder := array.NewListBuilder(c.allocator, &arrow.StringType{})
+	defer labelValuesBuilder.Release()
+
+	timestampsBuilder := array.NewTimestampBuilder(c.allocator, &arrow.TimestampType{Unit: arrow.Millisecond})
+	defer timestampsBuilder.Release()
+
+	valuesBuilder := array.NewFloat64Builder(c.allocator)
+	defer valuesBuilder.Release()
+
+	fields := []arrow.Field{
+		{Name: "labelNames", Type: labelNamesBuilder.Type()},
+		{Name: "labelValues", Type: labelNamesBuilder.Type()},
+		{Name: "t", Type: timestampsBuilder.Type()},
+		{Name: "v", Type: valuesBuilder.Type()},
+	}
+
+	schema := arrow.NewSchema(fields, nil)
+	writer := ipc.NewWriter(w, ipc.WithAllocator(c.allocator), ipc.WithSchema(schema))
+	defer writer.Close()
+
+	for _, series := range data.Result {
+		if err := c.encodeVectorSeries(writer, &series, schema, labelNamesBuilder, labelValuesBuilder, timestampsBuilder, valuesBuilder); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *ArrowCodec) encodeVectorSeries(w *ipc.Writer, series *querymiddleware.SampleStream, schema *arrow.Schema, labelNamesBuilder *array.ListBuilder, labelValuesBuilder *array.ListBuilder, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder) error {
+	labelNamesBuilder.Reserve(1)
+	labelNamesBuilder.Append(true)
+	labelNameListBuilder := labelNamesBuilder.ValueBuilder().(*array.StringBuilder)
+	labelNameListBuilder.Reserve(len(series.Labels))
+
+	labelValuesBuilder.Reserve(1)
+	labelValuesBuilder.Append(true)
+	labelValueListBuilder := labelValuesBuilder.ValueBuilder().(*array.StringBuilder)
+	labelValueListBuilder.Reserve(len(series.Labels))
+
+	for _, label := range series.Labels {
+		labelNameListBuilder.Append(label.Name)
+		labelValueListBuilder.Append(label.Value)
+	}
+
+	timestampsBuilder.Reserve(1)
+	valuesBuilder.Reserve(1)
+
+	if len(series.Samples) != 1 {
+		return fmt.Errorf("expected vector series to have one sample, but has %v", len(series.Samples))
+	}
+
+	sample := series.Samples[0]
+	timestampsBuilder.UnsafeAppend(arrow.Timestamp(sample.TimestampMs))
+	valuesBuilder.UnsafeAppend(sample.Value)
+
+	labelNames := labelNamesBuilder.NewArray()
+	defer labelNames.Release()
+
+	labelValues := labelValuesBuilder.NewArray()
+	defer labelValues.Release()
+
+	timestamps := timestampsBuilder.NewArray()
+	defer timestamps.Release()
+
+	values := valuesBuilder.NewArray()
+	defer values.Release()
+
+	rec := array.NewRecord(schema, []arrow.Array{labelNames, labelValues, timestamps, values}, 1)
+	defer rec.Release()
+
+	return w.Write(rec)
 }
 
 func arrowMetadataFrom(labels []mimirpb.LabelAdapter) arrow.Metadata {
