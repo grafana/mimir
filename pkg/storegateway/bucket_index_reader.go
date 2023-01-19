@@ -234,7 +234,6 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		hasAdds          = false
 	)
 
-	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
 		rawPostingGroups = append(rawPostingGroups, toRawPostingGroup(m))

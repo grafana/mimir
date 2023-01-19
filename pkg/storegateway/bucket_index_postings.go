@@ -106,10 +106,6 @@ func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.L
 	return g.keys[:writeIdx], nil
 }
 
-// toRawPostingGroup returns a rawPostingGroup. toRawPostingGroup does not guarantee that
-// they keys of each rawPostingGroup exist in the index of the block. To verify this,
-// call rawPostingGroup.toPostingGroup() with an index reader.
-// NOTE: Derived from tsdb.postingsForMatcher
 func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
