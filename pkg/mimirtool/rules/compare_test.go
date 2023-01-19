@@ -15,6 +15,56 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
+func TestNamespaceChange_ToOperations(t *testing.T) {
+	// Create some fixtures.
+	group1A := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-1", Interval: 10}}
+	group1B := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-1", Interval: 20}}
+	group2A := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-2", Interval: 10}}
+	group2B := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-2", Interval: 20}}
+	group3A := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-3", Interval: 30}}
+	group4A := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-4", Interval: 40}}
+	group5A := rwrulefmt.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: "group-5", Interval: 50}}
+
+	change := NamespaceChange{
+		Namespace: "test",
+		GroupsUpdated: []UpdatedRuleGroup{
+			{
+				Original: group1A,
+				New:      group1B,
+			}, {
+				Original: group2A,
+				New:      group2B,
+			},
+		},
+		GroupsCreated: []rwrulefmt.RuleGroup{group3A},
+		GroupsDeleted: []rwrulefmt.RuleGroup{group4A, group5A},
+	}
+
+	assert.Equal(t, []NamespaceChangeOperation{
+		{
+			Namespace: "test",
+			State:     Created,
+			RuleGroup: group3A,
+		}, {
+			Namespace: "test",
+			State:     Updated,
+			RuleGroup: group1B,
+		}, {
+			Namespace: "test",
+			State:     Updated,
+			RuleGroup: group2B,
+		}, {
+			Namespace: "test",
+			State:     Deleted,
+			RuleGroup: group4A,
+		}, {
+			Namespace: "test",
+			State:     Deleted,
+			RuleGroup: group5A,
+		},
+	}, change.ToOperations())
+}
+
 func Test_rulesEqual(t *testing.T) {
 	tests := []struct {
 		name string

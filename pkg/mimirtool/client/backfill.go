@@ -4,6 +4,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,13 +22,13 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
-func (c *MimirClient) Backfill(blocks []string, sleepTime time.Duration) error {
+func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
 	for _, b := range blocks {
 		logctx := logrus.WithFields(logrus.Fields{"path": b})
-		if err := c.backfillBlock(b, logctx, sleepTime); err != nil {
+		if err := c.backfillBlock(ctx, b, logctx, sleepTime); err != nil {
 			if errors.Is(err, errConflict) {
 				logctx.Warning("block already exists on the server")
 				alreadyExists++
@@ -57,7 +58,7 @@ func drainAndCloseBody(resp *http.Response) {
 	_ = resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry, sleepTime time.Duration) error {
+func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry, sleepTime time.Duration) error {
 	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
 	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {
@@ -81,7 +82,7 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry, sleep
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	resp, err := c.doRequest(path.Join(endpointPrefix, url.PathEscape(blockID), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
@@ -94,19 +95,19 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry, sleep
 			continue
 		}
 
-		if err := c.uploadBlockFile(tf, blockDir, path.Join(endpointPrefix, url.PathEscape(blockID), uploadFile), logctx); err != nil {
+		if err := c.uploadBlockFile(ctx, tf, blockDir, path.Join(endpointPrefix, url.PathEscape(blockID), uploadFile), logctx); err != nil {
 			return err
 		}
 	}
 
-	resp, err = c.doRequest(path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
+	resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
 	drainAndCloseBody(resp)
 
 	for {
-		uploadResult, err := c.getBlockUpload(path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))
+		uploadResult, err := c.getBlockUpload(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))
 		if err != nil {
 			return errors.Wrap(err, "failed to check state of block upload")
 		}
@@ -131,8 +132,8 @@ type result struct {
 	Error string `json:"error,omitempty"`
 }
 
-func (c *MimirClient) getBlockUpload(url string) (result, error) {
-	resp, err := c.doRequest(url, http.MethodGet, nil, -1)
+func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, error) {
+	resp, err := c.doRequest(ctx, url, http.MethodGet, nil, -1)
 	if err != nil {
 		return result{}, err
 	}
@@ -148,7 +149,7 @@ func (c *MimirClient) getBlockUpload(url string) (result, error) {
 	return r, nil
 }
 
-func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
+func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -160,7 +161,7 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, fileUploadEndp
 
 	logctx.WithFields(logrus.Fields{"file": tf.RelPath, "size": tf.SizeBytes}).Info("uploading block file")
 
-	resp, err := c.doRequest(fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, f, tf.SizeBytes)
+	resp, err := c.doRequest(ctx, fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, f, tf.SizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "request to upload file %q failed", pth)
 	}

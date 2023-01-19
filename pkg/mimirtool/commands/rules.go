@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -29,6 +30,9 @@ import (
 
 const (
 	defaultPrepareAggregationLabel = "cluster"
+
+	// maxSyncConcurrency is the upper bound limit on the concurrency value that can be set.
+	maxSyncConcurrency = 32
 )
 
 var (
@@ -36,11 +40,30 @@ var (
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
 
+// ruleCommandClient defines the interface that should be implemented by the API client used by
+// the RuleCommand. This is useful for testing purposes.
+type ruleCommandClient interface {
+	// CreateRuleGroup creates a new rule group.
+	CreateRuleGroup(ctx context.Context, namespace string, rg rwrulefmt.RuleGroup) error
+
+	// DeleteRuleGroup deletes a rule group.
+	DeleteRuleGroup(ctx context.Context, namespace, groupName string) error
+
+	// GetRuleGroup retrieves a rule group.
+	GetRuleGroup(ctx context.Context, namespace, groupName string) (*rwrulefmt.RuleGroup, error)
+
+	// ListRules retrieves a rule group.
+	ListRules(ctx context.Context, namespace string) (map[string][]rwrulefmt.RuleGroup, error)
+
+	// DeleteNamespace delete all the rule groups in a namespace including the namespace itself.
+	DeleteNamespace(ctx context.Context, namespace string) error
+}
+
 // RuleCommand configures and executes rule related mimir operations
 type RuleCommand struct {
 	ClientConfig client.Config
 
-	cli *client.MimirClient
+	cli ruleCommandClient
 
 	// Backend type (cortex | loki)
 	Backend string
@@ -59,6 +82,9 @@ type RuleCommand struct {
 	namespacesMap        map[string]struct{}
 	IgnoredNamespaces    string
 	ignoredNamespacesMap map[string]struct{}
+
+	// Sync Rules Config
+	SyncConcurrency int
 
 	// Prepare Rules Config
 	InPlaceEdit                            bool
@@ -198,6 +224,10 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		"rule-dirs",
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
+	syncRulesCmd.Flag(
+		"concurrency",
+		fmt.Sprintf("How many concurrent rule groups to sync. The maximum accepted value is %d.", maxSyncConcurrency),
+	).Default("8").IntVar(&r.SyncConcurrency)
 
 	// Prepare Command
 	prepareCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
@@ -504,6 +534,11 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
+	// Check the configuration.
+	if r.SyncConcurrency < 1 || r.SyncConcurrency > maxSyncConcurrency {
+		return fmt.Errorf("the configured concurrency (%d) must be a value between 1 and %d", r.SyncConcurrency, maxSyncConcurrency)
+	}
+
 	err := r.setupFiles()
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
@@ -562,7 +597,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 		})
 	}
 
-	err = r.executeChanges(context.Background(), changes)
+	err = r.executeChanges(context.Background(), changes, r.SyncConcurrency)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to complete executing changes")
 	}
@@ -570,53 +605,39 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.NamespaceChange) error {
-	var err error
+func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.NamespaceChange, concurrencyLimit int) error {
+	// Prepare operations to run, so that we can easily parallelize them.
+	var ops []rules.NamespaceChangeOperation
 	for _, ch := range changes {
-		for _, g := range ch.GroupsCreated {
-			if !r.shouldCheckNamespace(ch.Namespace) {
-				continue
-			}
+		ops = append(ops, ch.ToOperations()...)
+	}
 
-			log.WithFields(log.Fields{
-				"group":     g.Name,
-				"namespace": ch.Namespace,
-			}).Infof("creating group")
-			err = r.cli.CreateRuleGroup(ctx, ch.Namespace, g)
-			if err != nil {
-				return err
-			}
+	// The execution breaks on first error encountered.
+	err := concurrency.ForEachJob(ctx, len(ops), concurrencyLimit, func(ctx context.Context, idx int) error {
+		op := ops[idx]
+
+		log.WithFields(log.Fields{
+			"group":     op.RuleGroup.Name,
+			"namespace": op.Namespace,
+		}).Infof("synching %s group", op.State.String())
+
+		switch op.State {
+		case rules.Created:
+			return r.cli.CreateRuleGroup(ctx, op.Namespace, op.RuleGroup)
+
+		case rules.Updated:
+			return r.cli.CreateRuleGroup(ctx, op.Namespace, op.RuleGroup)
+
+		case rules.Deleted:
+			return r.cli.DeleteRuleGroup(ctx, op.Namespace, op.RuleGroup.Name)
+
+		default:
+			return fmt.Errorf("internal error: unexpected operation %q", op.State)
 		}
+	})
 
-		for _, g := range ch.GroupsUpdated {
-			if !r.shouldCheckNamespace(ch.Namespace) {
-				continue
-			}
-
-			log.WithFields(log.Fields{
-				"group":     g.New.Name,
-				"namespace": ch.Namespace,
-			}).Infof("updating group")
-			err = r.cli.CreateRuleGroup(ctx, ch.Namespace, g.New)
-			if err != nil {
-				return err
-			}
-		}
-
-		for _, g := range ch.GroupsDeleted {
-			if !r.shouldCheckNamespace(ch.Namespace) {
-				continue
-			}
-
-			log.WithFields(log.Fields{
-				"group":     g.Name,
-				"namespace": ch.Namespace,
-			}).Infof("deleting group")
-			err = r.cli.DeleteRuleGroup(ctx, ch.Namespace, g.Name)
-			if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
-				return err
-			}
-		}
+	if err != nil {
+		return err
 	}
 
 	created, updated, deleted := rules.SummarizeChanges(changes)
