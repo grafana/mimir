@@ -60,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -6711,7 +6712,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					mimirpb.API),
 			},
 			maxEphemeralSeriesLimit: 1,
-			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(errors.New("per-user ephemeral series limit of 1 exceeded (err-mimir-max-ephemeral-series-per-user). To adjust the related per-tenant limit, configure -ingester.max-global-ephemeral-series-per-user, or contact your service administrator."), userID).Error()),
+			expectedErr:             httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(errors.New(globalerror.MaxEphemeralSeriesPerUser.MessageWithPerTenantLimitConfig(fmt.Sprintf("per-user ephemeral series limit of %d exceeded", 1), validation.MaxEphemeralSeriesPerUserFlag)), userID).Error()),
 			expectedIngestedEphemeral: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: model.Time(now.UnixMilli())}}},
 			},
