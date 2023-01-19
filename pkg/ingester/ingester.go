@@ -98,6 +98,8 @@ const (
 	perUserSeriesLimit   = "per_user_series_limit"
 	perMetricSeriesLimit = "per_metric_series_limit"
 
+	ephemeralPerUserSeriesLimit = ephemeralDiscardPrefix + perUserSeriesLimit
+
 	// Prefix for discard reasons when ingesting ephemeral series.
 	ephemeralDiscardPrefix = "ephemeral-"
 
@@ -1022,7 +1024,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				stats.perUserSeriesLimitCount++
 				updateFirstPartial(func() error {
 					if ephemeral {
-						return makeLimitError(ephemeralDiscardPrefix+perUserSeriesLimit, i.limiter.FormatError(userID, cause))
+						return makeLimitError(ephemeralPerUserSeriesLimit, i.limiter.FormatError(userID, cause))
 					}
 					return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause))
 				})
