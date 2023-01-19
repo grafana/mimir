@@ -817,6 +817,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		code := codes.Aborted
 		if st, ok := status.FromError(errors.Cause(err)); ok {
 			code = st.Code()
+		} else if errors.Is(err, context.Canceled) {
+			code = codes.Canceled
 		}
 		err = status.Error(code, err.Error())
 	}()

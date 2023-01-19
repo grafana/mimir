@@ -47,6 +47,7 @@
 * [BUGFIX] Distributor: don't panic when `metric_relabel_configs` in overrides contains null element. #3868
 * [BUGFIX] Distributor: don't panic when OTLP histograms don't have any buckets. #3853
 * [BUGFIX] Ingester, Compactor: fix panic that can occur when compaction fails. #3955
+* [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` error when the calling querier cancels the request. #4007
 
 ### Mixin
 

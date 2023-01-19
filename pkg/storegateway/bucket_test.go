@@ -48,6 +48,8 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -1695,6 +1697,108 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	err = store.Series(req, srv)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
+}
+
+func TestSeries_CanceledRequest(t *testing.T) {
+	tmpDir := t.TempDir()
+	bktDir := filepath.Join(tmpDir, "bkt")
+	bkt, err := filesystem.NewBucket(bktDir)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, bkt.Close()) }()
+
+	logger := log.NewNopLogger()
+	instrBkt := objstore.WithNoopInstr(bkt)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	assert.NoError(t, err)
+
+	store, err := NewBucketStore(
+		"test",
+		instrBkt,
+		fetcher,
+		tmpDir,
+		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		NewSeriesLimiterFactory(0),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		10,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.Config{},
+		false,
+		0,
+		hashcache.NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
+		WithLogger(logger),
+		WithQueryGate(gate.NewBlocking(0)),
+	)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
+
+	req := &storepb.SeriesRequest{
+		MinTime: 0,
+		MaxTime: 3,
+		Matchers: []storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	srv := newBucketStoreSeriesServer(ctx)
+	err = store.Series(req, srv)
+	assert.Error(t, err)
+	s, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, s.Code())
+}
+
+func TestSeries_InvalidRequest(t *testing.T) {
+	tmpDir := t.TempDir()
+	bktDir := filepath.Join(tmpDir, "bkt")
+	bkt, err := filesystem.NewBucket(bktDir)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, bkt.Close()) }()
+
+	logger := log.NewNopLogger()
+	instrBkt := objstore.WithNoopInstr(bkt)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	assert.NoError(t, err)
+
+	store, err := NewBucketStore(
+		"test",
+		instrBkt,
+		fetcher,
+		tmpDir,
+		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		NewSeriesLimiterFactory(0),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		10,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		indexheader.Config{},
+		false,
+		0,
+		hashcache.NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
+		WithLogger(logger),
+	)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
+
+	// Use an invalid matcher regex to trigger an error.
+	req := &storepb.SeriesRequest{
+		MinTime: 0,
+		MaxTime: 3,
+		Matchers: []storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_RE, Name: "foo", Value: "("},
+		},
+	}
+
+	srv := newBucketStoreSeriesServer(context.Background())
+	err = store.Series(req, srv)
+	assert.Error(t, err)
+	s, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, s.Code())
+	assert.ErrorContains(t, s.Err(), "error parsing regexp: missing closing )")
 }
 
 func TestSeries_BlockWithMultipleChunks(t *testing.T) {
