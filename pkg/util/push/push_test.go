@@ -58,35 +58,35 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	md := pmetric.NewMetrics()
 	const name = "foo"
 	attributes := pcommon.NewMap()
-	attributes.InsertString(model.MetricNameLabel, name)
+	attributes.PutStr(model.MetricNameLabel, name)
 
 	metric1 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric1.SetName(name)
-	metric1.SetDataType(pmetric.MetricDataTypeGauge)
+	metric1.SetEmptyGauge()
 
 	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint1.SetDoubleVal(0)
+	datapoint1.SetDoubleValue(0)
 	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().InsertString("diff_label", "bar")
+	datapoint1.Attributes().PutStr("diff_label", "bar")
 
 	datapoint2 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint2.SetDoubleVal(0)
+	datapoint2.SetDoubleValue(0)
 	attributes.CopyTo(datapoint2.Attributes())
-	datapoint2.Attributes().InsertString("diff_label", "baz")
+	datapoint2.Attributes().PutStr("diff_label", "baz")
 
 	datapoint3 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint3.SetDoubleVal(0)
+	datapoint3.SetDoubleValue(0)
 	attributes.CopyTo(datapoint3.Attributes())
-	datapoint3.Attributes().InsertString("diff_label", "food")
+	datapoint3.Attributes().PutStr("diff_label", "food")
 
 	metric2 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric2.SetName(name)
-	metric2.SetDataType(pmetric.MetricDataTypeGauge)
+	metric2.SetEmptyGauge()
 
-	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
+	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
@@ -108,25 +108,25 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	md := pmetric.NewMetrics()
 	const name = "foo"
 	attributes := pcommon.NewMap()
-	attributes.InsertString(model.MetricNameLabel, name)
+	attributes.PutStr(model.MetricNameLabel, name)
 
 	resource1 := md.ResourceMetrics().AppendEmpty()
-	resource1.Resource().Attributes().InsertString("region", "us-central1")
+	resource1.Resource().Attributes().PutStr("region", "us-central1")
 
 	metric1 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric1.SetName(name)
-	metric1.SetDataType(pmetric.MetricDataTypeGauge)
+	metric1.SetEmptyGauge()
 	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint1.SetDoubleVal(0)
+	datapoint1.SetDoubleValue(0)
 	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().InsertString("diff_label", "bar")
+	datapoint1.Attributes().PutStr("diff_label", "bar")
 
 	metric2 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric2.SetName(name)
-	metric2.SetDataType(pmetric.MetricDataTypeGauge)
+	metric2.SetEmptyGauge()
 
-	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
+	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
@@ -142,17 +142,17 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric3.SetName("http_request_duration_seconds")
-	metric3.SetDataType(pmetric.MetricDataTypeHistogram)
-	metric3.Histogram().SetAggregationTemporality(pmetric.MetricAggregationTemporalityCumulative)
+	metric3.SetEmptyHistogram()
+	metric3.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 	datapoint3 := metric3.Histogram().DataPoints().AppendEmpty()
 	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint3.SetCount(50)
 	datapoint3.SetSum(100)
-	datapoint3.SetExplicitBounds(pcommon.NewImmutableFloat64Slice([]float64{0.1, 0.2, 0.3, 0.4, 0.5}))
-	datapoint3.SetBucketCounts(pcommon.NewImmutableUInt64Slice([]uint64{10, 20, 30, 40, 50}))
+	datapoint3.ExplicitBounds().FromRaw([]float64{0.1, 0.2, 0.3, 0.4, 0.5})
+	datapoint3.BucketCounts().FromRaw([]uint64{10, 20, 30, 40, 50})
 	attributes.CopyTo(datapoint3.Attributes())
 
-	req = createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
+	req = createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
@@ -386,7 +386,7 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress bool) *http.Request {
+func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.ExportRequest, compress bool) *http.Request {
 	t.Helper()
 
 	rawBytes, err := metricRequest.MarshalProto()
@@ -421,7 +421,7 @@ func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress
 	return req
 }
 
-func createOTLPMetricRequest(t testing.TB) pmetricotlp.Request {
+func createOTLPMetricRequest(t testing.TB) pmetricotlp.ExportRequest {
 	input := createPrometheusRemoteWriteProtobuf(t)
 	prwReq := &prompb.WriteRequest{}
 	require.NoError(t, proto.Unmarshal(input, prwReq))
