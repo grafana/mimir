@@ -187,35 +187,43 @@ func (c *ArrowCodec) decodeVector(r io.Reader) ([]querymiddleware.SampleStream, 
 		timestampColumn := rec.Column(2).(*array.Timestamp)
 		valueColumn := rec.Column(3).(*array.Float64)
 
-		lastNameOffset := labelNamesColumn.Offsets()[1]
-		lastValueOffset := labelValuesColumn.Offsets()[1]
+		labelNameOffsets := labelNamesColumn.Offsets()
+		labelValueOffsets := labelValuesColumn.Offsets()
 
-		if lastNameOffset != lastValueOffset {
-			return nil, fmt.Errorf("have different number of label names (%v) and values (%v)", lastNameOffset, lastValueOffset)
-		}
+		for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
+			firstNameOffset := int(labelNameOffsets[rowIdx])
+			lastNameOffset := int(labelNameOffsets[rowIdx+1])
+			firstValueOffset := int(labelValueOffsets[rowIdx])
+			lastValueOffset := int(labelValueOffsets[rowIdx+1])
 
-		labels := make([]mimirpb.LabelAdapter, lastNameOffset)
-
-		for i := 0; i < int(lastNameOffset); i++ {
-			// We must clone the strings as we can't rely on the backing byte buffer not changing.
-			name := strings.Clone(labelNamesColumnValues.Value(i))
-			value := strings.Clone(labelValuesColumnValues.Value(i))
-
-			labels[i] = mimirpb.LabelAdapter{
-				Name:  name,
-				Value: value,
+			if firstNameOffset != firstValueOffset || lastNameOffset != lastValueOffset {
+				return nil, fmt.Errorf("have different number of label names (first offset %v, last offset %v) and values (first offset %v, last offset %v)", firstNameOffset, lastNameOffset, firstValueOffset, lastValueOffset)
 			}
-		}
 
-		result = append(result, querymiddleware.SampleStream{
-			Samples: []mimirpb.Sample{
-				{
-					TimestampMs: int64(timestampColumn.Value(0)),
-					Value:       valueColumn.Value(0),
+			labelCount := lastNameOffset - firstNameOffset
+			labels := make([]mimirpb.LabelAdapter, labelCount)
+
+			for i := 0; i < labelCount; i++ {
+				// We must clone the strings as we can't rely on the backing byte buffer not changing.
+				name := strings.Clone(labelNamesColumnValues.Value(i + firstNameOffset))
+				value := strings.Clone(labelValuesColumnValues.Value(i + firstNameOffset))
+
+				labels[i] = mimirpb.LabelAdapter{
+					Name:  name,
+					Value: value,
+				}
+			}
+
+			result = append(result, querymiddleware.SampleStream{
+				Samples: []mimirpb.Sample{
+					{
+						TimestampMs: int64(timestampColumn.Value(rowIdx)),
+						Value:       valueColumn.Value(rowIdx),
+					},
 				},
-			},
-			Labels: labels,
-		})
+				Labels: labels,
+			})
+		}
 	}
 
 	if reader.Err() != nil {
@@ -320,18 +328,22 @@ func (c *ArrowCodec) encodeMatrixSeries(w io.Writer, series *querymiddleware.Sam
 	return nil
 }
 
-// TODO: try alternative layout where we emit a single record, with a struct representing each series
 func (c *ArrowCodec) encodeVector(w io.Writer, data *querymiddleware.PrometheusData) error {
+	seriesCount := len(data.Result)
 	labelNamesBuilder := array.NewListBuilder(c.allocator, &arrow.StringType{})
+	labelNamesBuilder.Reserve(seriesCount)
 	defer labelNamesBuilder.Release()
 
 	labelValuesBuilder := array.NewListBuilder(c.allocator, &arrow.StringType{})
+	labelValuesBuilder.Reserve(seriesCount)
 	defer labelValuesBuilder.Release()
 
 	timestampsBuilder := array.NewTimestampBuilder(c.allocator, &arrow.TimestampType{Unit: arrow.Millisecond})
+	timestampsBuilder.Reserve(seriesCount)
 	defer timestampsBuilder.Release()
 
 	valuesBuilder := array.NewFloat64Builder(c.allocator)
+	valuesBuilder.Reserve(seriesCount)
 	defer valuesBuilder.Release()
 
 	fields := []arrow.Field{
@@ -346,40 +358,10 @@ func (c *ArrowCodec) encodeVector(w io.Writer, data *querymiddleware.PrometheusD
 	defer writer.Close()
 
 	for _, series := range data.Result {
-		if err := c.encodeVectorSeries(writer, &series, schema, labelNamesBuilder, labelValuesBuilder, timestampsBuilder, valuesBuilder); err != nil {
+		if err := c.encodeVectorSeries(&series, labelNamesBuilder, labelValuesBuilder, timestampsBuilder, valuesBuilder); err != nil {
 			return err
 		}
 	}
-
-	return nil
-}
-
-func (c *ArrowCodec) encodeVectorSeries(w *ipc.Writer, series *querymiddleware.SampleStream, schema *arrow.Schema, labelNamesBuilder *array.ListBuilder, labelValuesBuilder *array.ListBuilder, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder) error {
-	labelNamesBuilder.Reserve(1)
-	labelNamesBuilder.Append(true)
-	labelNameListBuilder := labelNamesBuilder.ValueBuilder().(*array.StringBuilder)
-	labelNameListBuilder.Reserve(len(series.Labels))
-
-	labelValuesBuilder.Reserve(1)
-	labelValuesBuilder.Append(true)
-	labelValueListBuilder := labelValuesBuilder.ValueBuilder().(*array.StringBuilder)
-	labelValueListBuilder.Reserve(len(series.Labels))
-
-	for _, label := range series.Labels {
-		labelNameListBuilder.Append(label.Name)
-		labelValueListBuilder.Append(label.Value)
-	}
-
-	timestampsBuilder.Reserve(1)
-	valuesBuilder.Reserve(1)
-
-	if len(series.Samples) != 1 {
-		return fmt.Errorf("expected vector series to have one sample, but has %v", len(series.Samples))
-	}
-
-	sample := series.Samples[0]
-	timestampsBuilder.UnsafeAppend(arrow.Timestamp(sample.TimestampMs))
-	valuesBuilder.UnsafeAppend(sample.Value)
 
 	labelNames := labelNamesBuilder.NewArray()
 	defer labelNames.Release()
@@ -393,10 +375,35 @@ func (c *ArrowCodec) encodeVectorSeries(w *ipc.Writer, series *querymiddleware.S
 	values := valuesBuilder.NewArray()
 	defer values.Release()
 
-	rec := array.NewRecord(schema, []arrow.Array{labelNames, labelValues, timestamps, values}, 1)
+	rec := array.NewRecord(schema, []arrow.Array{labelNames, labelValues, timestamps, values}, int64(len(data.Result)))
 	defer rec.Release()
 
-	return w.Write(rec)
+	return writer.Write(rec)
+}
+
+func (c *ArrowCodec) encodeVectorSeries(series *querymiddleware.SampleStream, labelNamesBuilder *array.ListBuilder, labelValuesBuilder *array.ListBuilder, timestampsBuilder *array.TimestampBuilder, valuesBuilder *array.Float64Builder) error {
+	labelNamesBuilder.Append(true)
+	labelNameListBuilder := labelNamesBuilder.ValueBuilder().(*array.StringBuilder)
+	labelNameListBuilder.Reserve(len(series.Labels))
+
+	labelValuesBuilder.Append(true)
+	labelValueListBuilder := labelValuesBuilder.ValueBuilder().(*array.StringBuilder)
+	labelValueListBuilder.Reserve(len(series.Labels))
+
+	for _, label := range series.Labels {
+		labelNameListBuilder.Append(label.Name)
+		labelValueListBuilder.Append(label.Value)
+	}
+
+	if len(series.Samples) != 1 {
+		return fmt.Errorf("expected vector series to have one sample, but has %v", len(series.Samples))
+	}
+
+	sample := series.Samples[0]
+	timestampsBuilder.UnsafeAppend(arrow.Timestamp(sample.TimestampMs))
+	valuesBuilder.UnsafeAppend(sample.Value)
+
+	return nil
 }
 
 func arrowMetadataFrom(labels []mimirpb.LabelAdapter) arrow.Metadata {
