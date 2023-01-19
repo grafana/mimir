@@ -16,15 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 )
 
-var knownCodecs = map[string]Codec{
-	"original JSON":                         OriginalJsonCodec{},
-	"uninterned protobuf":                   UninternedProtobufCodec{},
-	"interned protobuf":                     InternedProtobufCodec{},
-	"gzipped uninterned protobuf":           GzipWrapperCodec{UninternedProtobufCodec{}},
-	"snappy compressed uninterned protobuf": SnappyWrapperCodec{UninternedProtobufCodec{}},
-	"Arrow":                                 NewArrowCodec(),
-}
-
 // This directory contains a selection of query results from an internal operational cluster
 // at Grafana Labs, and so can't be shared publicly.
 // It contains two subdirectories: one named "ruler" for rule evaluation results, and another named "querier" for general query results.
@@ -57,7 +48,7 @@ func testEncodingRoundtrip(t *testing.T, dir string) {
 			original, err := originalJsonCodec.Decode(originalBytes)
 			require.NoError(t, err)
 
-			for name, codec := range knownCodecs {
+			for name, codec := range KnownCodecs {
 				t.Run(name, func(t *testing.T) {
 					encoded, err := codec.Encode(original)
 					require.NoError(t, err)
@@ -270,7 +261,7 @@ func recursivelyFindFilesWithSuffix(dir string, suffix string) ([]string, error)
 func getCodec(b require.TestingT) Codec {
 	name := os.Getenv("CODEC")
 	require.NotEmpty(b, name, "the CODEC environment variable is not set")
-	require.Contains(b, knownCodecs, name, "the CODEC environment variable is set to an unknown codec name")
+	require.Contains(b, KnownCodecs, name, "the CODEC environment variable is set to an unknown codec name")
 
-	return knownCodecs[name]
+	return KnownCodecs[name]
 }
