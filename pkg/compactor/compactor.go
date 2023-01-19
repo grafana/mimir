@@ -549,8 +549,10 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	level.Info(c.logger).Log("msg", "discovering users from bucket")
 	users, err := c.discoverUsersWithRetries(ctx)
 	if err != nil {
-		compactionErrorCount++
-		level.Error(c.logger).Log("msg", "failed to discover users from bucket", "err", err)
+		if !errors.Is(err, context.Canceled) {
+			compactionErrorCount++
+			level.Error(c.logger).Log("msg", "failed to discover users from bucket", "err", err)
+		}
 		return
 	}
 
@@ -603,6 +605,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 			case errors.Is(err, context.Canceled):
 				// We don't want to count shutdowns as failed compactions because we will pick up with the rest of the compaction after the restart.
 				level.Info(c.logger).Log("msg", "compaction for user was interrupted by a shutdown", "user", userID)
+				return
 			default:
 				c.compactionRunFailedTenants.Inc()
 				compactionErrorCount++
