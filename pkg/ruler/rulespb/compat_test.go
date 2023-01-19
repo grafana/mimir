@@ -42,6 +42,17 @@ rules:
     - record: test_metric:sum:rate1m
       expr: sum(rate(test_metric[1m]))
 `,
+		"with eval delay and source tenants and align of execution time": `
+name: testrules
+evaluation_delay: 3m
+align_evaluation_time_on_interval: true
+source_tenants:
+  - a
+  - b
+rules:
+    - record: test_metric:sum:rate1m
+      expr: sum(rate(test_metric[1m]))
+`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			rg := rulefmt.RuleGroup{}
