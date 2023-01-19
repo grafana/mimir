@@ -75,7 +75,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		}
 	} else {
 		var err error
-		keys, err = g.filterKeys(r)
+		keys, err = g.filterNonExistingKeys(r)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
@@ -87,12 +87,11 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 	}, nil
 }
 
-// filterKeys modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error) {
-	keys := g.keys
+// filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
+// modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
+func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, error) {
 	writeIdx := 0
-	for i := range keys {
-		l := keys[i]
+	for _, l := range g.keys {
 		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
 			// Try with the rest of the set matchers, maybe they can match some series.
@@ -101,17 +100,10 @@ func (g rawPostingGroup) filterKeys(r indexheader.Reader) ([]labels.Label, error
 		} else if err != nil {
 			return nil, err
 		}
-		if writeIdx < i {
-			keys[writeIdx], keys[i] = keys[i], keys[writeIdx]
-		}
+		g.keys[writeIdx] = l
 		writeIdx++
 	}
-	if writeIdx == 0 {
-		// return a nil so the keys can be garbage collected
-		return nil, nil
-	}
-
-	return keys[:writeIdx], nil
+	return g.keys[:writeIdx], nil
 }
 
 // toRawPostingGroup returns a rawPostingGroup. toRawPostingGroup does not guarantee that
