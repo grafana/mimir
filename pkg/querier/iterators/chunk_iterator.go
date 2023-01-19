@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -24,10 +23,11 @@ type chunkIterator struct {
 
 	// At() is called often in the heap code, so caching its result seems like
 	// a good idea.
-	cacheValid      bool
-	cachedTime      int64
-	cachedValue     float64
-	cachedHistogram *histogram.Histogram
+	cacheValid           bool
+	cachedTime           int64
+	cachedValue          float64
+	cachedHistogram      *histogram.Histogram
+	cachedFloatHistogram *histogram.FloatHistogram
 }
 
 // Seek advances the iterator forward to the value at or after
@@ -44,15 +44,6 @@ func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
 
 	i.valType = i.it.FindAtOrAfter(model.Time(t))
 	return i.valType
-}
-
-func (i *chunkIterator) AtTime() int64 {
-	if i.valType == chunkenc.ValFloat {
-		t, _ := i.At()
-		return t
-	}
-	t, _ := i.AtHistogram()
-	return t
 }
 
 func (i *chunkIterator) At() (int64, float64) {
@@ -79,8 +70,7 @@ func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return i.cachedTime, i.cachedHistogram
 	}
 
-	h := i.it.Histogram()
-	i.cachedTime, i.cachedHistogram = h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)
+	i.cachedTime, i.cachedHistogram = i.it.AtHistogram()
 	i.cacheValid = true
 	return i.cachedTime, i.cachedHistogram
 }
@@ -91,22 +81,28 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	}
 
 	if i.cacheValid {
-		return i.cachedTime, i.cachedHistogram.ToFloat()
+		return i.cachedTime, i.cachedFloatHistogram
 	}
 
-	h := i.it.Histogram()
-	i.cachedTime, i.cachedHistogram = h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)
+	i.cachedTime, i.cachedFloatHistogram = i.it.AtFloatHistogram()
 	i.cacheValid = true
-	return i.cachedTime, i.cachedHistogram.ToFloat()
+	return i.cachedTime, i.cachedFloatHistogram
 }
 
 func (i *chunkIterator) AtT() int64 {
-	if i.valType == chunkenc.ValFloat {
+	switch i.valType {
+	case chunkenc.ValFloat:
 		t, _ := i.At()
 		return t
+	case chunkenc.ValHistogram:
+		t, _ := i.AtHistogram()
+		return t
+	case chunkenc.ValFloatHistogram:
+		t, _ := i.AtFloatHistogram()
+		return t
+	default:
+		panic(fmt.Sprintf("unknown chunk encodeing %v", i.valType))
 	}
-	t, _ := i.AtHistogram()
-	return t
 }
 
 func (i *chunkIterator) AtType() chunkenc.ValueType {
