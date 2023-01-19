@@ -253,8 +253,8 @@ type Ingester struct {
 	compactionIdleTimeout time.Duration
 
 	// Number of series in memory, across all tenants.
-	seriesCount          atomic.Int64
-	ephemeralSeriesCount atomic.Int64
+	persistentSeriesCount atomic.Int64
+	ephemeralSeriesCount  atomic.Int64
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -1742,7 +1742,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		ingestedAPISamples:           util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:          util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		instanceLimitsFn:             i.getInstanceLimits,
-		instanceSeriesCount:          &i.seriesCount,
+		instanceSeriesCount:          &i.persistentSeriesCount,
 		instanceEphemeralSeriesCount: &i.ephemeralSeriesCount,
 		blockMinRetention:            i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
@@ -2287,7 +2287,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// At this point there are no more pushes to TSDB, and no possible compaction. Normally TSDB is empty,
 	// but if we're closing TSDB because of tenant deletion mark, then it may still contain some series.
 	// We need to remove these series from series count.
-	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
+	i.persistentSeriesCount.Sub(int64(userDB.Head().NumSeries()))
 	eph := userDB.getEphemeralStorage()
 	if eph != nil {
 		i.ephemeralSeriesCount.Sub(int64(eph.NumSeries()))

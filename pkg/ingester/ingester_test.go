@@ -3167,9 +3167,9 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.seriesCount.Load())
+	require.Equal(t, int64(1), i.persistentSeriesCount.Load())
 	i.compactBlocks(context.Background(), true, nil)
-	require.Equal(t, int64(0), i.seriesCount.Load())
+	require.Equal(t, int64(0), i.persistentSeriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
 	numObjects := len(bucket.Objects())
@@ -3184,9 +3184,9 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 	// After writing tenant deletion mark,
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.seriesCount.Load())
+	require.Equal(t, int64(1), i.persistentSeriesCount.Load())
 	i.compactBlocks(context.Background(), true, nil)
-	require.Equal(t, int64(0), i.seriesCount.Load())
+	require.Equal(t, int64(0), i.persistentSeriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
 	numObjectsAfterMarkingTenantForDeletion := len(bucket.Objects())
@@ -3218,7 +3218,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.seriesCount.Load())
+	require.Equal(t, int64(1), i.persistentSeriesCount.Load())
 
 	// We call shipBlocks to check for deletion marker (it happens inside this method).
 	i.shipBlocks(context.Background(), nil)
@@ -3233,7 +3233,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	require.Equal(t, tsdbTenantMarkedForDeletion, i.closeAndDeleteUserTSDBIfIdle(userID))
 
 	// Closing should decrease series count.
-	require.Equal(t, int64(0), i.seriesCount.Load())
+	require.Equal(t, int64(0), i.persistentSeriesCount.Load())
 }
 
 func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInProgress(t *testing.T) {
@@ -3920,7 +3920,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	pushSingleSampleWithMetadata(t, i)
 	i.updateActiveSeries(time.Now())
 
-	require.Equal(t, int64(1), i.seriesCount.Load())
+	require.Equal(t, int64(1), i.persistentSeriesCount.Load())
 
 	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
 		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
@@ -3960,7 +3960,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
 	i.updateActiveSeries(time.Now())
-	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
+	require.Equal(t, int64(0), i.persistentSeriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
