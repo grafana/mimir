@@ -272,7 +272,6 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filtering posting group")
 		}
-		postingGroups = append(postingGroups, pg)
 
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
@@ -281,12 +280,11 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 			return nil, nil, nil
 		}
 
+		postingGroups = append(postingGroups, pg)
+		numKeys += len(pg.keys)
 		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
 		allRequested = allRequested || pg.isSubtract
-
 		hasAdds = hasAdds || !pg.isSubtract
-
-		numKeys += len(pg.keys)
 	}
 
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
