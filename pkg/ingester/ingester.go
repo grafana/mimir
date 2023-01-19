@@ -98,10 +98,10 @@ const (
 	perUserSeriesLimit   = "per_user_series_limit"
 	perMetricSeriesLimit = "per_metric_series_limit"
 
-	ephemeralPerUserSeriesLimit = ephemeralDiscardPrefix + perUserSeriesLimit
-
 	// Prefix for discard reasons when ingesting ephemeral series.
 	ephemeralDiscardPrefix = "ephemeral-"
+
+	ephemeralPerUserSeriesLimit = "ephemeral_per_user_series_limit"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
