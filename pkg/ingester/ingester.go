@@ -1036,7 +1036,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						fh  *histogram.FloatHistogram
 					)
 
-					if h.GetCountFloat() > 0 || h.GetZeroCountFloat() > 0 { // It is a float histogram.
+					if h.IsFloatHistogram() {
 						fh = mimirpb.FromHistogramProtoToFloatHistogram(h)
 					} else {
 						ih = mimirpb.FromHistogramProtoToHistogram(h)

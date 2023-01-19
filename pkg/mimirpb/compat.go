@@ -204,6 +204,13 @@ func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram 
 	}
 }
 
+func FromHistogramProtoToPromCommonHistogram(h Histogram) model.SampleHistogram {
+	if h.IsFloatHistogram() {
+		return FromFloatHistogramToPromCommonHistogram(*FromHistogramProtoToFloatHistogram(h))
+	}
+	return FromHistogramToPromCommonHistogram(*FromHistogramProtoToHistogram(h))
+}
+
 func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {

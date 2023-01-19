@@ -71,17 +71,10 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 		if len(histograms) > 0 {
 			histogramsDecoded := make([]model.SampleHistogramPair, 0, len(histograms))
 			for _, h := range histograms {
-				if h.GetCountFloat() > 0 || h.GetZeroCountFloat() > 0 { // it's a float histogram
-					histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
-						Timestamp: model.Time(h.Timestamp),
-						Histogram: mimirpb.FromFloatHistogramToPromCommonHistogram(*mimirpb.FromHistogramProtoToFloatHistogram(h)),
-					})
-				} else {
-					histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
-						Timestamp: model.Time(h.Timestamp),
-						Histogram: mimirpb.FromHistogramToPromCommonHistogram(*mimirpb.FromHistogramProtoToHistogram(h)),
-					})
-				}
+				histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
+					Timestamp: model.Time(h.Timestamp),
+					Histogram: mimirpb.FromHistogramProtoToPromCommonHistogram(h),
+				})
 			}
 			stream.Histograms = histogramsDecoded
 		}

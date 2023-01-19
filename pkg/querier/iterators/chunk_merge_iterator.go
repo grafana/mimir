@@ -21,10 +21,11 @@ type chunkMergeIterator struct {
 	its []*nonOverlappingIterator
 	h   seriesIteratorHeap
 
-	currTime      int64
-	currValue     float64
-	currHistogram *histogram.Histogram
-	currErr       error
+	currTime           int64
+	currValue          float64
+	currHistogram      *histogram.Histogram
+	currFloatHistogram *histogram.FloatHistogram
+	currErr            error
 }
 
 // NewChunkMergeIterator creates a chunkenc.Iterator for a set of chunks.
@@ -117,8 +118,10 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 		switch valType {
 		case chunkenc.ValFloat:
 			c.currTime, c.currValue = c.h[0].At()
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		case chunkenc.ValHistogram:
 			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+		case chunkenc.ValFloatHistogram:
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
 		default:
 			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
 			return chunkenc.ValNone
@@ -141,8 +144,10 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 		switch valType {
 		case chunkenc.ValFloat:
 			c.currTime, c.currValue = c.h[0].At()
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		case chunkenc.ValHistogram:
 			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+		case chunkenc.ValFloatHistogram:
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
 		default:
 			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
 			return chunkenc.ValNone
@@ -175,7 +180,7 @@ func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return c.currTime, c.currHistogram.ToFloat()
+	return c.currTime, c.currFloatHistogram
 }
 
 func (c *chunkMergeIterator) AtT() int64 {

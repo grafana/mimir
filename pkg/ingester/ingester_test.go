@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/e2e"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,6 +66,12 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+var (
+	generateTestHistogram       = e2e.GenerateTestHistogram
+	generateTestFloatHistogram  = e2e.GenerateTestFloatHistogram
+	generateTestSampleHistogram = e2e.GenerateTestSampleHistogram
 )
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
@@ -6808,12 +6815,12 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		expectHistogram  model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: makeWriteRequestHistograms(1, tsdb.GenerateTestHistograms(1)[0]),
-			expectHistogram:  mimirpb.FromHistogramToPromCommonHistogram(*(tsdb.GenerateTestHistograms(1)[0])),
+			sampleHistograms: makeWriteRequestHistograms(1, generateTestHistogram(0)),
+			expectHistogram:  *generateTestSampleHistogram(0),
 		},
 		"float histogram": {
-			sampleHistograms: makeWriteRequestFloatHistograms(1, tsdb.GenerateTestFloatHistograms(1)[0]),
-			expectHistogram:  mimirpb.FromFloatHistogramToPromCommonHistogram(*(tsdb.GenerateTestFloatHistograms(1)[0])),
+			sampleHistograms: makeWriteRequestFloatHistograms(1, generateTestFloatHistogram(0)),
+			expectHistogram:  *generateTestSampleHistogram(0),
 		},
 	}
 	for testName, testCfg := range tests {

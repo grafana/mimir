@@ -101,7 +101,7 @@ func (i *chunkIterator) AtT() int64 {
 		t, _ := i.AtFloatHistogram()
 		return t
 	default:
-		panic(fmt.Sprintf("unknown chunk encodeing %v", i.valType))
+		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
 	}
 }
 

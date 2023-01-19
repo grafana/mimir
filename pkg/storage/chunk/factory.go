@@ -51,7 +51,7 @@ var encodings = map[Encoding]encoding{
 		},
 	},
 	PrometheusFloatHistogramChunk: {
-		Name: "PrometheusHistogramChunk",
+		Name: "PrometheusFloatHistogramChunk",
 		New: func() EncodedChunk {
 			return newPrometheusFloatHistogramChunk()
 		},

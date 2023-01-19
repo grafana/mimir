@@ -280,6 +280,28 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 	}
 }
 
+// based on GenerateTestFloatHistograms in github.com/prometheus/prometheus/tsdb
+func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Count:         10 + float64(i*8),
+		ZeroCount:     2 + float64(i),
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * float64(i+1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+	}
+}
+
+// explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
 func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	return &model.SampleHistogram{
 		Count: model.FloatString(10 + i*8),

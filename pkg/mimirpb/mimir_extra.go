@@ -37,3 +37,7 @@ func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(s)
 }
+
+func (h Histogram) IsFloatHistogram() bool {
+	return h.GetCountFloat() > 0 || h.GetZeroCountFloat() > 0
+}
