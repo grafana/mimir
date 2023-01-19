@@ -200,8 +200,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
-
-	f.IntVar(&l.MaxGlobalEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 150000, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
