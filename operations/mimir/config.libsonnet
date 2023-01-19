@@ -180,7 +180,7 @@
       // splitting in the frontend, the reality is this only limits rate(foo[32d])
       // type queries. 32 days to allow for comparision over the last month (31d) and
       // then some.
-      'store.max-query-length': '768h',
+      'querier.max-partial-query-length': '768h',
     } + $.mimirRuntimeConfigFile,
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).

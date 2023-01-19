@@ -398,9 +398,9 @@ overrides:
 
 	flags = mergeFlags(flags, map[string]string{
 		"-querier.max-samples":                          "20",                                                 // Very low limit so that we can easily hit it, but high enough to test other features.
+		"-querier.max-partial-query-length":             "30d",                                                // To test too long query error (31d)
 		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-query-frontend.query-sharding-total-shards":   "0",                                                  // Disable query-sharding by default
-		"-store.max-query-length":                       "30d",                                                // To test too long query error (31d)
 		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()

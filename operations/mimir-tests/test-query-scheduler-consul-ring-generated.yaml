@@ -862,6 +862,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
         - -query-scheduler.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=consul
@@ -874,7 +875,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.max-query-length=768h
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -1095,6 +1095,7 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
+        - -querier.max-partial-query-length=768h
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -1110,7 +1111,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.max-query-length=768h
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0

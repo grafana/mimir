@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825
+* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825 #4017
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [CHANGE] Ingester: If shipping is enabled block retention will now be relative to the upload time to cloud storage. If shipping is disabled block retention will be relative to the creation time of the block instead of the mintime of the last block created. #3816
 * [CHANGE] Query-frontend: Deprecated CLI flag `-query-frontend.align-querier-with-step` has been removed. #3982

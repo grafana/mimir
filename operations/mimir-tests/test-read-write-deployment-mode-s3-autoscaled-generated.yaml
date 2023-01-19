@@ -446,6 +446,7 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -468,7 +469,6 @@ spec:
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
-        - -store.max-query-length=768h
         - -target=read
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -865,6 +865,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2
         - -query-scheduler.ring.prefix=
@@ -889,7 +890,6 @@ spec:
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
-        - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0
@@ -1038,6 +1038,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2
         - -query-scheduler.ring.prefix=
@@ -1062,7 +1063,6 @@ spec:
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
-        - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0
@@ -1211,6 +1211,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2
         - -query-scheduler.ring.prefix=
@@ -1235,7 +1236,6 @@ spec:
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
-        - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0
