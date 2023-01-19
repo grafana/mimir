@@ -10,7 +10,7 @@ weight: 40
 
 # Run Grafana Mimir in production using the Helm chart
 
-Beyond [Getting started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts/" >}}),
+In addition to the guide [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts/" >}}),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
 within a low-risk development environment, you can prepare Grafana Mimir
 for production.
