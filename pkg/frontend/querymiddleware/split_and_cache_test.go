@@ -348,6 +348,30 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
+					Histograms: []mimirpb.SampleHistogramPair{
+						{
+							Timestamp: 1634292000000,
+							Histogram: &mimirpb.SampleHistogram{
+								Count: 10,
+								Sum:   20,
+								Buckets: []*mimirpb.HistogramBucket{
+									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								},
+							},
+						},
+						{
+							Timestamp: 1634292120000,
+							Histogram: &mimirpb.SampleHistogram{
+								Count: 10,
+								Sum:   20,
+								Buckets: []*mimirpb.HistogramBucket{
+									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
