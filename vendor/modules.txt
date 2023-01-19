@@ -678,11 +678,11 @@ github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.57.2
-## explicit; go 1.17
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.69.0
+## explicit; go 1.18
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.57.2
-## explicit; go 1.17
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.69.0
+## explicit; go 1.18
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite
 # github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 ## explicit; go 1.11
@@ -989,9 +989,11 @@ go.opencensus.io/trace/tracestate
 # go.opentelemetry.io/collector v0.57.2
 ## explicit; go 1.17
 go.opentelemetry.io/collector/consumer/consumererror
-go.opentelemetry.io/collector/service/featuregate
-# go.opentelemetry.io/collector/pdata v0.57.2
-## explicit; go 1.17
+# go.opentelemetry.io/collector/featuregate v0.69.0
+## explicit; go 1.18
+go.opentelemetry.io/collector/featuregate
+# go.opentelemetry.io/collector/pdata v1.0.0-rc3.0.20230109164642-7d168dd20efd
+## explicit; go 1.18
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
 go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/logs/v1
@@ -1002,14 +1004,18 @@ go.opentelemetry.io/collector/pdata/internal/data/protogen/logs/v1
 go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1
 go.opentelemetry.io/collector/pdata/internal/data/protogen/resource/v1
 go.opentelemetry.io/collector/pdata/internal/data/protogen/trace/v1
+go.opentelemetry.io/collector/pdata/internal/json
 go.opentelemetry.io/collector/pdata/internal/otlp
 go.opentelemetry.io/collector/pdata/pcommon
 go.opentelemetry.io/collector/pdata/plog
+go.opentelemetry.io/collector/pdata/plog/internal/plogjson
 go.opentelemetry.io/collector/pdata/pmetric
+go.opentelemetry.io/collector/pdata/pmetric/internal/pmetricjson
 go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
 go.opentelemetry.io/collector/pdata/ptrace
-# go.opentelemetry.io/collector/semconv v0.57.2
-## explicit; go 1.17
+go.opentelemetry.io/collector/pdata/ptrace/internal/ptracejson
+# go.opentelemetry.io/collector/semconv v0.69.0
+## explicit; go 1.18
 go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.37.0
 ## explicit; go 1.18
@@ -1048,8 +1054,8 @@ go.uber.org/atomic
 ## explicit; go 1.18
 go.uber.org/goleak
 go.uber.org/goleak/internal/stack
-# go.uber.org/multierr v1.8.0
-## explicit; go 1.14
+# go.uber.org/multierr v1.9.0
+## explicit; go 1.19
 go.uber.org/multierr
 # go.uber.org/zap v1.21.0
 ## explicit; go 1.13
@@ -1082,7 +1088,7 @@ golang.org/x/exp/slices
 # golang.org/x/mod v0.7.0
 ## explicit; go 1.17
 golang.org/x/mod/semver
-# golang.org/x/net v0.4.0
+# golang.org/x/net v0.5.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context
@@ -1113,14 +1119,14 @@ golang.org/x/oauth2/jwt
 ## explicit
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.3.0
+# golang.org/x/sys v0.4.0
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/text v0.5.0
+# golang.org/x/text v0.6.0
 ## explicit; go 1.17
 golang.org/x/text/cases
 golang.org/x/text/internal
