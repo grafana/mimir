@@ -773,6 +773,21 @@ func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples .
 	}
 }
 
+func mockPrometheusResponseHistogram(labels []mimirpb.LabelAdapter, histograms ...mimirpb.SampleHistogramPair) *PrometheusResponse {
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "matrix",
+			Result: []SampleStream{
+				{
+					Labels:     labels,
+					Histograms: histograms,
+				},
+			},
+		},
+	}
+}
+
 func Test_DecodeOptions(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
