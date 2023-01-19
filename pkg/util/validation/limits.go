@@ -30,7 +30,7 @@ const (
 	MaxSeriesPerMetricFlag        = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag      = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag          = "ingester.max-global-series-per-user"
-	MaxEphemeralSeriesPerUserFlag = "ingester.max-global-ephemeral-series-per-user"
+	MaxEphemeralSeriesPerUserFlag = "ingester.max-ephemeral-series-per-user"
 	MaxMetadataPerUserFlag        = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag         = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag     = "querier.max-fetched-chunk-bytes-per-query"
@@ -95,7 +95,7 @@ type Limits struct {
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
 	// Ephemeral series
-	MaxGlobalEphemeralSeriesPerUser int `yaml:"max_global_ephemeral_series_per_user" json:"max_global_ephemeral_series_per_user" category:"experimental"`
+	MaxEphemeralSeriesPerUser int `yaml:"max_ephemeral_series_per_user" json:"max_ephemeral_series_per_user" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -200,7 +200,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
+	f.IntVar(&l.MaxEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -460,9 +460,9 @@ func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
 }
 
-// MaxGlobalEphemeralSeriesPerUser returns the maximum number of ephemeral series a user is allowed to store across the cluster.
-func (o *Overrides) MaxGlobalEphemeralSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxGlobalEphemeralSeriesPerUser
+// MaxEphemeralSeriesPerUser returns the maximum number of ephemeral series a user is allowed to store across the cluster.
+func (o *Overrides) MaxEphemeralSeriesPerUser(userID string) int {
+	return o.getOverridesForUser(userID).MaxEphemeralSeriesPerUser
 }
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {

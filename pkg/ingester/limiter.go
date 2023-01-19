@@ -146,7 +146,7 @@ func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 }
 
 func (l *Limiter) formatMaxEphemeralSeriesPerUserError(userID string) error {
-	globalLimit := l.limits.MaxGlobalEphemeralSeriesPerUser(userID)
+	globalLimit := l.limits.MaxEphemeralSeriesPerUser(userID)
 
 	return errors.New(globalerror.MaxEphemeralSeriesPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user ephemeral series limit of %d exceeded", globalLimit),
@@ -185,7 +185,7 @@ func (l *Limiter) maxSeriesPerUser(userID string) int {
 }
 
 func (l *Limiter) maxEphemeralSeriesPerUser(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalEphemeralSeriesPerUser)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxEphemeralSeriesPerUser)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {

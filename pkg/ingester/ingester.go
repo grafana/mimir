@@ -1824,7 +1824,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB.ephemeralSeriesRetentionPeriod = i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention
 	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
-		if i.limits.MaxGlobalEphemeralSeriesPerUser(userID) <= 0 {
+		if i.limits.MaxEphemeralSeriesPerUser(userID) <= 0 {
 			return nil, errEphemeralStorageDisabledForUser
 		}
 

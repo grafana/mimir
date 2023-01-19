@@ -6795,7 +6795,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			cfg.ActiveSeriesMetricsEnabled = false
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = 100
-			limits.MaxGlobalEphemeralSeriesPerUser = testData.maxEphemeralSeriesLimit
+			limits.MaxEphemeralSeriesPerUser = testData.maxEphemeralSeriesLimit
 			limits.OutOfOrderTimeWindow = model.Duration(time.Minute * 10)
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
@@ -6878,7 +6878,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 	cfg.IngesterRing.ReplicationFactor = 1 // for computing limits.
 
 	limits := defaultLimitsTestConfig()
-	limits.MaxGlobalEphemeralSeriesPerUser = 1
+	limits.MaxEphemeralSeriesPerUser = 1
 
 	reg := prometheus.NewPedanticRegistry()
 	i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", reg)
