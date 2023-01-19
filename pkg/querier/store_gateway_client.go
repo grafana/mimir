@@ -7,6 +7,7 @@ package querier
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -42,9 +43,19 @@ func DialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDur
 		return nil, err
 	}
 
-	// TODO experiment
-	//opts = append(opts, grpc.WithInitialWindowSize(1024*1024))
-	//opts = append(opts, grpc.WithInitialConnWindowSize(1024*1024))
+	customConnectionWindowSize := int32(0)
+	customStreamWindowSize := int32(0)
+
+	//customConnectionWindowSize := int32(500 * 1024)
+	//customStreamWindowSize := int32(500 * 1024)
+
+	if customConnectionWindowSize > 0 || customStreamWindowSize > 0 {
+		opts = append(opts, grpc.WithInitialWindowSize(customStreamWindowSize))
+		opts = append(opts, grpc.WithInitialConnWindowSize(customConnectionWindowSize))
+		fmt.Println("Custom connection window size:", customConnectionWindowSize, "Custom stream window size:", customStreamWindowSize)
+	} else {
+		fmt.Println("Default window size")
+	}
 
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {

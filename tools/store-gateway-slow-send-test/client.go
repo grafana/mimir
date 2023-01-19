@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/prometheus/client_golang/prometheus"
@@ -19,7 +21,8 @@ import (
 )
 
 type testClient struct {
-	client storegatewaypb.StoreGatewayClient
+	client  storegatewaypb.StoreGatewayClient
+	ballast []byte
 }
 
 func newClient() (*testClient, error) {
@@ -40,8 +43,39 @@ func newClient() (*testClient, error) {
 	}
 
 	return &testClient{
-		client: client,
+		client:  client,
+		ballast: make([]byte, 1024*1024*1024), // 1GB
 	}, nil
+}
+
+func (c *testClient) runRequests(totalRequests, concurrencyLimit int) error {
+	fmt.Println("Num requests:", totalRequests, "Concurrency:", concurrencyLimit)
+
+	// Keep track of timing.
+	var (
+		durationsMx sync.Mutex
+		durations   []time.Duration
+	)
+
+	err := concurrency.ForEachJob(context.Background(), totalRequests, concurrencyLimit, func(ctx context.Context, idx int) error {
+		startTime := time.Now()
+
+		defer func() {
+			elapsedTime := time.Since(startTime)
+			fmt.Println(fmt.Sprintf("Request #%d took %s", idx, elapsedTime.String()))
+
+			durationsMx.Lock()
+			durations = append(durations, elapsedTime)
+			durationsMx.Unlock()
+		}()
+
+		return c.runRequest()
+	})
+
+	// Print stats.
+	printStats(durations)
+
+	return err
 }
 
 func (c *testClient) runRequest() error {
@@ -53,7 +87,7 @@ func (c *testClient) runRequest() error {
 	}
 
 	for {
-		res, err := stream.Recv()
+		_, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -62,10 +96,29 @@ func (c *testClient) runRequest() error {
 		}
 
 		// TODO introduce a slow down
-		time.Sleep(250 * time.Millisecond)
+		//time.Sleep(250 * time.Millisecond)
 
-		fmt.Println(time.Now().String(), "Client received:", res.GetSeries().Labels)
+		//fmt.Println(time.Now().String(), "Client received:", res.GetSeries().Labels)
 	}
 
 	return nil
+}
+
+func printStats(durations []time.Duration) {
+	minDuration := durations[0]
+	maxDuration := durations[0]
+	sumDuration := time.Duration(0)
+
+	for _, value := range durations {
+		sumDuration += value
+
+		if value < minDuration {
+			minDuration = value
+		}
+		if value > maxDuration {
+			maxDuration = value
+		}
+	}
+
+	fmt.Println(fmt.Sprintf("Min: %s Max: %s Avg: %s", minDuration, maxDuration, sumDuration/time.Duration(len(durations))))
 }
