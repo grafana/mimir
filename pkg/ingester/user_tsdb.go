@@ -276,7 +276,6 @@ func (u *userTSDB) persistentSeriesCallback() tsdb.SeriesLifecycleCallback {
 	}
 }
 
-// PreCreation implements SeriesLifecycleCallback interface.
 func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 	if u.limiter == nil {
 		return nil
@@ -307,7 +306,6 @@ func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 	return nil
 }
 
-// PostCreation implements SeriesLifecycleCallback interface.
 func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
@@ -319,7 +317,6 @@ func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-// PostDeletion implements SeriesLifecycleCallback interface.
 func (u *userTSDB) persistentPostDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
@@ -341,7 +338,6 @@ func (u *userTSDB) ephemeralSeriesCallback() tsdb.SeriesLifecycleCallback {
 	}
 }
 
-// PreCreation implements SeriesLifecycleCallback interface.
 func (u *userTSDB) ephemeralPreCreation(_ labels.Labels) error {
 	if u.limiter == nil {
 		return nil
@@ -369,12 +365,10 @@ func (u *userTSDB) ephemeralPreCreation(_ labels.Labels) error {
 	return nil
 }
 
-// PostCreation implements SeriesLifecycleCallback interface.
 func (u *userTSDB) ephemeralPostCreation(_ labels.Labels) {
 	u.instanceEphemeralSeriesCount.Inc()
 }
 
-// PostDeletion implements SeriesLifecycleCallback interface.
 func (u *userTSDB) ephemeralPostDeletion(metrics ...labels.Labels) {
 	u.instanceEphemeralSeriesCount.Sub(int64(len(metrics)))
 }
