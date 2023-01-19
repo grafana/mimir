@@ -32,15 +32,19 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	}, []string{"operation", "status_code"})
 
 	return func(addr string) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, addr, requestDuration)
+		return DialStoreGatewayClient(clientCfg, addr, requestDuration)
 	}
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
+func DialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
 	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO experiment
+	//opts = append(opts, grpc.WithInitialWindowSize(1024*1024))
+	//opts = append(opts, grpc.WithInitialConnWindowSize(1024*1024))
 
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {

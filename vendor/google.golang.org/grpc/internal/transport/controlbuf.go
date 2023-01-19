@@ -579,10 +579,14 @@ func (l *loopyWriter) run() (err error) {
 }
 
 func (l *loopyWriter) outgoingWindowUpdateHandler(w *outgoingWindowUpdate) error {
+	//fmt.Println("outgoingWindowUpdateHandler() streamID:", w.streamID, "increment:", w.increment)
+
 	return l.framer.fr.WriteWindowUpdate(w.streamID, w.increment)
 }
 
 func (l *loopyWriter) incomingWindowUpdateHandler(w *incomingWindowUpdate) error {
+	fmt.Println("incomingWindowUpdateHandler() streamID:", w.streamID, "increment:", w.increment)
+
 	// Otherwise update the quota.
 	if w.streamID == 0 {
 		l.sendQuota += w.increment
