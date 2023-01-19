@@ -214,6 +214,21 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 	}
 }
 
+func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+	return Histogram{
+		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
+		Sum:            fh.Sum,
+		Schema:         fh.Schema,
+		ZeroThreshold:  fh.ZeroThreshold,
+		ZeroCount:      &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans:  fromSpansToSpansProto(fh.NegativeSpans),
+		NegativeCounts: fh.NegativeBuckets,
+		PositiveSpans:  fromSpansToSpansProto(fh.PositiveSpans),
+		PositiveCounts: fh.PositiveBuckets,
+		Timestamp:      timestamp,
+	}
+}
+
 func fromSpansToSpansProto(s []histogram.Span) []*BucketSpan {
 	spans := make([]*BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {

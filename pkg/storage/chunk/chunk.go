@@ -6,6 +6,7 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
 	"unsafe"
 
@@ -68,6 +69,7 @@ type Iterator interface {
 	// those methods were called.
 	Value() model.SamplePair
 	Histogram() mimirpb.Histogram
+	FloatHistogram() mimirpb.Histogram
 	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
@@ -127,10 +129,15 @@ func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]mo
 		return resultFloat, resultHist, it.Err()
 	}
 	for !model.Time(it.Timestamp()).After(newestInclusive) {
-		if currValType == chunkenc.ValFloat {
+		switch currValType {
+		case chunkenc.ValFloat:
 			resultFloat = append(resultFloat, it.Value())
-		} else if currValType == chunkenc.ValHistogram || currValType == chunkenc.ValFloatHistogram {
+		case chunkenc.ValHistogram:
 			resultHist = append(resultHist, it.Histogram())
+		case chunkenc.ValFloatHistogram:
+			resultHist = append(resultHist, it.FloatHistogram())
+		default:
+			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
 		}
 		currValType = it.Scan()
 		if currValType == chunkenc.ValNone {

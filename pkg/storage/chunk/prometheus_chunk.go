@@ -165,8 +165,13 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 }
 
 func (p *prometheusChunkIterator) Histogram() mimirpb.Histogram {
-	ts, val := p.it.AtHistogram() // TODO(zenador): what about float histogram
+	ts, val := p.it.AtHistogram() 
 	return mimirpb.FromHistogramToHistogramProto(ts, val)
+}
+
+func (p* prometheusChunkIterator) FloatHistogram() mimirpb.Histogram {
+	ts, val := p.it.AtFloatHistogram()
+	return mimirpb.FromFloatHistogramToHistogramProto(ts, val)
 }
 
 func (p *prometheusChunkIterator) Timestamp() int64 {
@@ -228,7 +233,8 @@ type errorIterator string
 func (e errorIterator) Scan() chunkenc.ValueType                           { return chunkenc.ValNone }
 func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType   { return chunkenc.ValNone }
 func (e errorIterator) Value() model.SamplePair                            { panic("no values") }
-func (e errorIterator) Histogram() mimirpb.Histogram                       { panic("no histograms") }
+func (e errorIterator) Histogram() mimirpb.Histogram                       { panic("no integer histograms") }
+func (e errorIterator) FloatHistogram() mimirpb.Histogram                  { panic("no float histograms") }
 func (e errorIterator) Timestamp() int64                                   { panic("no samples") }
 func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
 func (e errorIterator) Err() error                                         { return errors.New(string(e)) }
