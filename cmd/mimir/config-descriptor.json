@@ -3045,12 +3045,12 @@
         },
         {
           "kind": "field",
-          "name": "max_global_ephemeral_series_per_user",
+          "name": "max_ephemeral_series_per_user",
           "required": false,
-          "desc": "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable.",
+          "desc": "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.",
           "fieldValue": null,
-          "fieldDefaultValue": 150000,
-          "fieldFlag": "ingester.max-global-ephemeral-series-per-user",
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.max-ephemeral-series-per-user",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },

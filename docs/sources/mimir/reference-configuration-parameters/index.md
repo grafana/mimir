@@ -2546,9 +2546,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_global_series_per_metric: <int> | default = 0]
 
 # (experimental) The maximum number of in-memory ephemeral series per tenant,
-# across the cluster before replication. 0 to disable.
-# CLI flag: -ingester.max-global-ephemeral-series-per-user
-[max_global_ephemeral_series_per_user: <int> | default = 150000]
+# across the cluster before replication. 0 to disable ephemeral storage.
+# CLI flag: -ingester.max-ephemeral-series-per-user
+[max_ephemeral_series_per_user: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
