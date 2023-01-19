@@ -1365,6 +1365,10 @@ How to **fix** it:
 
 - See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
+### err-mimir-ingester-max-ephemeral-series
+
+This error refers to experimental ephemeral storage in ingesters. Documentation TBD.
+
 ### err-mimir-ingester-max-inflight-push-requests
 
 This error occurs when an ingester rejects a write request because the maximum in-flight requests limit has been reached.
@@ -1392,6 +1396,10 @@ How to **fix** it:
 
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
+
+### err-mimir-max-ephemeral-series-per-user
+
+This error refers to experimental ephemeral storage in ingesters. Documentation TBD.
 
 ### err-mimir-max-series-per-metric
 
@@ -1558,6 +1566,10 @@ How it **works**:
 
 > **Note**: If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
 
+### err-mimir-ephemeral-sample-timestamp-too-old
+
+This error refers to ingesting samples into experimental ephemeral storage in ingesters. Documentation TBD.
+
 ### err-mimir-sample-out-of-order
 
 This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested.
@@ -1577,6 +1589,10 @@ Common **causes**:
 
 > **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
+### err-mimir-ephemeral-sample-out-of-order
+
+This error refers to ingesting samples into experimental ephemeral storage in ingesters. Documentation TBD.
+
 ### err-mimir-sample-duplicate-timestamp
 
 This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
@@ -1585,6 +1601,10 @@ Common **causes**:
 
 - Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+
+### err-mimir-ephemeral-sample-duplicate-timestamp
+
+This error refers to ingesting samples into experimental ephemeral storage in ingesters. Documentation TBD.
 
 ### err-mimir-exemplar-series-missing
 
@@ -1640,6 +1660,10 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-mimir-ephemeral-storage-not-enabled-for-user
+
+This error refers to experimental ephemeral storage in ingesters. Documentation TBD.
 
 ## Mimir routes by path
 
