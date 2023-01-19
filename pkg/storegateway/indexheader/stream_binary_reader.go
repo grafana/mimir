@@ -216,8 +216,8 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
-func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
-	return r.postingsOffsetTable.LabelValues(name, filter)
+func (r *StreamBinaryReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
+	return r.postingsOffsetTable.LabelValues(name, prefix, filter)
 }
 
 func (r *StreamBinaryReader) LabelNames() ([]string, error) {

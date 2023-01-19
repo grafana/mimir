@@ -757,13 +757,13 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	if iir.onLabelValuesCalled != nil {
 		if err := iir.onLabelValuesCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValues(name, filter)
+	return iir.Reader.LabelValues(name, prefix, filter)
 }
 
 type contextNotifyingOnDoneWaiting struct {

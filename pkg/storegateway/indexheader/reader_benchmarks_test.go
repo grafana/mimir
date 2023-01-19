@@ -179,7 +179,7 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValues(name, func(s string) bool {
+			values, err := br.LabelValues(name, "", func(s string) bool {
 				return true
 			})
 
@@ -223,7 +223,7 @@ func BenchmarkLabelValuesIndexV2(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValues(name, func(s string) bool {
+			values, err := br.LabelValues(name, "", func(s string) bool {
 				return true
 			})
 

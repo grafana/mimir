@@ -25,8 +25,8 @@ type PostingOffsetTable interface {
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
 	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
-	// LabelValues returns a list of values for the label named name that match filter.
-	LabelValues(name string, filter func(string) bool) ([]string, error)
+	// LabelValues returns a list of values for the label named name that match filter and have the prefix provided.
+	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -236,14 +236,14 @@ func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.
 	return rng, true, nil
 }
 
-func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (t *PostingOffsetTableV1) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
 	}
 	values := make([]string, 0, len(e))
 	for k := range e {
-		if filter == nil || filter(k) {
+		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
 			values = append(values, k)
 		}
 	}
@@ -373,7 +373,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) (v []string, err error) {
+func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) (v []string, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -404,7 +404,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 			d.Skip(skip)
 		}
 		s := yoloString(d.UnsafeUvarintBytes()) // Label value.
-		if filter == nil || filter(s) {
+		if strings.HasPrefix(s, prefix) && (filter == nil || filter(s)) {
 			// Clone the yolo string since its bytes will be invalidated as soon as
 			// any other reads against the decoding buffer are performed.
 			values = append(values, strings.Clone(s))

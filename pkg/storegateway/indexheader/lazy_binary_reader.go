@@ -176,7 +176,7 @@ func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
 }
 
 // LabelValues implements Reader.
-func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (r *LazyBinaryReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
@@ -185,7 +185,7 @@ func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([
 	}
 
 	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.LabelValues(name, filter)
+	return r.reader.LabelValues(name, prefix, filter)
 }
 
 // LabelNames implements Reader.

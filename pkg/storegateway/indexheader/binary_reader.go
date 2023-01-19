@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -843,7 +844,7 @@ func (r *BinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
-func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (r *BinaryReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	if r.indexVersion == index.FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -851,7 +852,7 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			if filter == nil || filter(k) {
+			if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
 				values = append(values, k)
 			}
 		}
@@ -885,7 +886,7 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		if filter == nil || filter(s) {
+		if strings.HasPrefix(s, prefix) && (filter == nil || filter(s)) {
 			values = append(values, s)
 		}
 		if s == lastVal {

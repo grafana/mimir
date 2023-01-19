@@ -33,6 +33,7 @@ type rawPostingGroup struct {
 
 	isLazy      bool
 	lazyMatcher func(string) bool
+	prefix      string
 }
 
 func newRawIntersectingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
@@ -51,21 +52,23 @@ func newRawSubtractingPostingGroup(labelName string, keys []labels.Label) rawPos
 	}
 }
 
-func newLazyIntersectingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
+func newLazyIntersectingPostingGroup(labelName string, prefix string, matcher func(string) bool) rawPostingGroup {
 	return rawPostingGroup{
 		isLazy:      true,
 		isSubtract:  false,
 		labelName:   labelName,
 		lazyMatcher: matcher,
+		prefix:      prefix,
 	}
 }
 
-func newLazySubtractingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
+func newLazySubtractingPostingGroup(labelName string, prefix string, matcher func(string) bool) rawPostingGroup {
 	return rawPostingGroup{
 		isLazy:      true,
 		isSubtract:  true,
 		labelName:   labelName,
 		lazyMatcher: matcher,
+		prefix:      prefix,
 	}
 }
 
@@ -74,7 +77,7 @@ func newLazySubtractingPostingGroup(labelName string, matcher func(string) bool)
 func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
 	var keys []labels.Label
 	if g.isLazy {
-		vals, err := r.LabelValues(g.labelName, g.lazyMatcher)
+		vals, err := r.LabelValues(g.labelName, g.prefix, g.lazyMatcher)
 		if err != nil {
 			return postingGroup{}, err
 		}
@@ -150,12 +153,12 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		return newLazySubtractingPostingGroup(m.Name, not(m.Matches))
+		return newLazySubtractingPostingGroup(m.Name, m.Prefix(), not(m.Matches))
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	return newLazyIntersectingPostingGroup(m.Name, m.Matches)
+	return newLazyIntersectingPostingGroup(m.Name, m.Prefix(), m.Matches)
 }
 
 func not(filter func(string) bool) func(string) bool {

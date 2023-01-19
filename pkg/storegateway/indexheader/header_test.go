@@ -188,7 +188,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname, nil)
+		vals, err := headerReader.LabelValues(lname, "", nil)
 		require.NoError(t, err)
 		require.Equal(t, expectedLabelVals, vals)
 

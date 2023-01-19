@@ -1463,7 +1463,7 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName, nil)
+	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
