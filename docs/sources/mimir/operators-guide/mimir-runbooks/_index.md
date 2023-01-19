@@ -1616,7 +1616,7 @@ Common **causes**:
 
 This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested for the same series in the ephemeral storage.
 
-Please refer to [err-mimir-sample-out-of-order](#err-mimir-sample-out-of-order) for possible reasons. 
+Please refer to [err-mimir-sample-out-of-order](#err-mimir-sample-out-of-order) for possible reasons.
 
 > **Note**: It is not possible to enable out-of-order sample ingestion for ephemeral storage.
 
