@@ -51,7 +51,7 @@ The following features are currently experimental:
   - Disable alerting and recording rules evaluation on a per-tenant basis
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
-  - Aligning of evaluation timestamp on interval ()
+  - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
