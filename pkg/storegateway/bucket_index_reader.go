@@ -262,7 +262,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		return ri.labelName < rj.labelName
 	})
 
-	postingGroups := make([]postingGroup, 0, len(rawPostingGroups))
+	postingGroups := make([]postingGroup, 0, len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
