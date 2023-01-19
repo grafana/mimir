@@ -241,7 +241,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 
 	// We can check whether their requested values exist
 	// in the index. We do these checks in a specific order, so we minimize the reads from disk
-	// and/or to minimize the number of label values we help in memory (assumption being that indexhdr.LabelValues
+	// and/or to minimize the number of label values we keep in memory (assumption being that indexhdr.LabelValues
 	// is likely to return a lot of values).
 	sort.Slice(rawPostingGroups, func(i, j int) bool {
 		// First we check the non-lazy groups, since for those we only need to call PostingsOffset, which
@@ -257,13 +257,14 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 			return len(ri.keys) < len(rj.keys)
 		}
 
-		// Sort by label name to make this a deterministic sort.
+		// Sort by label name to make this a deterministic-ish sort.
+		// We could still have two matchers for the same name. (`foo!="bar", foo!="baz"`)
 		return ri.labelName < rj.labelName
 	})
 
 	filteredPostingGroups := make([]postingGroup, 0, len(rawPostingGroups))
 	// Next we check whether the posting groups won't select an empty set of postings.
-	// We start with the ones that have a known set of values because it's less expensive to check them in
+	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
 	numKeys := 0
 	for _, rawGroup := range rawPostingGroups {
