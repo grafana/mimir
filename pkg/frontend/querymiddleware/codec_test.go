@@ -773,7 +773,7 @@ func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples .
 	}
 }
 
-func mockPrometheusResponseHistogram(labels []mimirpb.LabelAdapter, histograms ...mimirpb.SampleHistogramPair) *PrometheusResponse {
+func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.SampleHistogramPair) *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
@@ -781,6 +781,7 @@ func mockPrometheusResponseHistogram(labels []mimirpb.LabelAdapter, histograms .
 			Result: []SampleStream{
 				{
 					Labels:     labels,
+					Samples:    samples,
 					Histograms: histograms,
 				},
 			},

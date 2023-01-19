@@ -40,22 +40,81 @@ import (
 
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	var (
-		startTime    = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
-		endTime      = parseTimeRFC3339(t, "2021-10-15T23:59:59Z")
-		queryURL     = mockQueryRangeURL(startTime, endTime, `{__name__=~".+"}`)
-		seriesLabels = []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+		dayOneStartTime   = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
+		dayTwoEndTime     = parseTimeRFC3339(t, "2021-10-15T23:59:59Z")
+		dayThreeStartTime = parseTimeRFC3339(t, "2021-10-16T00:00:00Z")
+		dayFourEndTime    = parseTimeRFC3339(t, "2021-10-17T23:59:59Z")
+		queryURL          = mockQueryRangeURL(dayOneStartTime, dayFourEndTime, `{__name__=~".+"}`)
+		seriesLabels      = []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
 
 		// Mock the downstream responses.
 		firstDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: startTime.Unix() * 1000, Value: 10}))
+			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10}))
 
 		secondDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: endTime.Unix() * 1000, Value: 20}))
+			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20}))
+
+		thirdDayDownstreamResponse = encodePrometheusResponse(t,
+			mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.SampleHistogramPair{
+				{
+					Timestamp: dayThreeStartTime.Unix() * 1000,
+					Histogram: &mimirpb.SampleHistogram{
+						Count: 10,
+						Sum:   20,
+						Buckets: []*mimirpb.HistogramBucket{
+							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+						},
+					},
+				},
+			}))
+
+		fourthDayDownstreamResponse = encodePrometheusResponse(t,
+			mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.SampleHistogramPair{
+				{
+					Timestamp: dayFourEndTime.Unix() * 1000,
+					Histogram: &mimirpb.SampleHistogram{
+						Count: 10,
+						Sum:   15,
+						Buckets: []*mimirpb.HistogramBucket{
+							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+						},
+					},
+				},
+			}))
 
 		// Build the expected response (which is the merge of the two downstream responses).
-		expectedResponse = encodePrometheusResponse(t, mockPrometheusResponseSingleSeries(seriesLabels,
-			mimirpb.Sample{TimestampMs: startTime.Unix() * 1000, Value: 10},
-			mimirpb.Sample{TimestampMs: endTime.Unix() * 1000, Value: 20}))
+		expectedResponse = encodePrometheusResponse(t, mockPrometheusResponseWithSamplesAndHistograms(seriesLabels,
+			[]mimirpb.Sample{
+				{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10},
+				{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20},
+			},
+			[]mimirpb.SampleHistogramPair{
+				{
+					Timestamp: dayThreeStartTime.Unix() * 1000,
+					Histogram: &mimirpb.SampleHistogram{
+						Count: 10,
+						Sum:   20,
+						Buckets: []*mimirpb.HistogramBucket{
+							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+						},
+					},
+				},
+				{
+					Timestamp: dayFourEndTime.Unix() * 1000,
+					Histogram: &mimirpb.SampleHistogram{
+						Count: 10,
+						Sum:   15,
+						Buckets: []*mimirpb.HistogramBucket{
+							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+						},
+					},
+				},
+			},
+		))
 	)
 
 	var actualCount atomic.Int32
@@ -67,10 +126,14 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 				req, err := prometheusCodec{}.DecodeRequest(r.Context(), r)
 				require.NoError(t, err)
 
-				if req.GetStart() == startTime.Unix()*1000 {
+				if req.GetStart() == dayOneStartTime.Unix()*1000 {
 					_, _ = w.Write([]byte(firstDayDownstreamResponse))
-				} else if req.GetStart() == startTime.Add(24*time.Hour).Unix()*1000 {
+				} else if req.GetStart() == dayOneStartTime.Add(24*time.Hour).Unix()*1000 {
 					_, _ = w.Write([]byte(secondDayDownstreamResponse))
+				} else if req.GetStart() == dayThreeStartTime.Unix()*1000 {
+					_, _ = w.Write([]byte(thirdDayDownstreamResponse))
+				} else if req.GetStart() == dayThreeStartTime.Add(24*time.Hour).Unix()*1000 {
+					_, _ = w.Write([]byte(fourthDayDownstreamResponse))
 				} else {
 					_, _ = w.Write([]byte("unexpected request"))
 				}
@@ -102,7 +165,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	middlewares := []Middleware{
 		newLimitsMiddleware(mockLimits{}, log.NewNopLogger()),
 		splitCacheMiddleware,
-		newAssertHintsMiddleware(t, &Hints{TotalQueries: 2}),
+		newAssertHintsMiddleware(t, &Hints{TotalQueries: 4}),
 	}
 
 	roundtripper := newRoundTripper(singleHostRoundTripper{
@@ -123,7 +186,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	actualBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, expectedResponse, string(actualBody))
-	require.Equal(t, int32(2), actualCount.Load())
+	require.Equal(t, int32(4), actualCount.Load())
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -137,12 +200,12 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
-		cortex_frontend_split_queries_total 2
+		cortex_frontend_split_queries_total 4
 	`)))
 
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
-	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
+	assert.Equal(t, uint32(4), queryStats.LoadSplitQueries())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
@@ -175,6 +238,30 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 					Samples: []mimirpb.Sample{
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
+					},
+					Histograms: []mimirpb.SampleHistogramPair{
+						{
+							Timestamp: 1634292000000,
+							Histogram: &mimirpb.SampleHistogram{
+								Count: 10,
+								Sum:   20,
+								Buckets: []*mimirpb.HistogramBucket{
+									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								},
+							},
+						},
+						{
+							Timestamp: 1634292120000,
+							Histogram: &mimirpb.SampleHistogram{
+								Count: 10,
+								Sum:   20,
+								Buckets: []*mimirpb.HistogramBucket{
+									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
+									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -1600,149 +1687,4 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		require.Greater(t, actualTTL, c.expTTL-(50*time.Millisecond))
 		require.Less(t, actualTTL, c.expTTL+(50*time.Millisecond))
 	}
-}
-
-func TestSplitAndCacheMiddleware_NativeHistograms_SplitByTime(t *testing.T) {
-	var (
-		startTime  = parseTimeRFC3339(t, "2022-01-15T00:00:00Z")
-		endTime    = parseTimeRFC3339(t, "2022-01-16T23:59:59Z")
-		queryURL   = mockQueryRangeURL(startTime, endTime, `{__name__=~".+"}`)
-		histLabels = []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_histogram_metric"}}
-
-		firstDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseHistogram(histLabels, mimirpb.SampleHistogramPair{
-				Timestamp: startTime.Unix() * 1000,
-				Histogram: &mimirpb.SampleHistogram{
-					Count: 10,
-					Sum:   20,
-					Buckets: []*mimirpb.HistogramBucket{
-						{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-						{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-					},
-				},
-			}))
-
-		secondDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseHistogram(histLabels, mimirpb.SampleHistogramPair{
-				Timestamp: endTime.Unix() * 1000,
-				Histogram: &mimirpb.SampleHistogram{
-					Count: 10,
-					Sum:   15,
-					Buckets: []*mimirpb.HistogramBucket{
-						{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-						{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-					},
-				},
-			}))
-
-		// Build the expected response (which is the merge of the two downstream responses).
-		expectedResponse = encodePrometheusResponse(t, mockPrometheusResponseHistogram(histLabels,
-			mimirpb.SampleHistogramPair{
-				Timestamp: startTime.Unix() * 1000,
-				Histogram: &mimirpb.SampleHistogram{
-					Count: 10,
-					Sum:   20,
-					Buckets: []*mimirpb.HistogramBucket{
-						{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-						{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-					},
-				},
-			},
-			mimirpb.SampleHistogramPair{
-				Timestamp: endTime.Unix() * 1000,
-				Histogram: &mimirpb.SampleHistogram{
-					Count: 10,
-					Sum:   15,
-					Buckets: []*mimirpb.HistogramBucket{
-						{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-						{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-					},
-				},
-			}))
-	)
-
-	var actualCount atomic.Int32
-	downstreamServer := httptest.NewServer(
-		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				actualCount.Inc()
-
-				req, err := prometheusCodec{}.DecodeRequest(r.Context(), r)
-				require.NoError(t, err)
-
-				if req.GetStart() == startTime.Unix()*1000 {
-					_, _ = w.Write([]byte(firstDayDownstreamResponse))
-				} else if req.GetStart() == startTime.Add(24*time.Hour).Unix()*1000 {
-					_, _ = w.Write([]byte(secondDayDownstreamResponse))
-				} else {
-					_, _ = w.Write([]byte("unexpected request"))
-				}
-			}),
-		),
-	)
-	defer downstreamServer.Close()
-
-	downstreamURL, err := url.Parse(downstreamServer.URL)
-	require.NoError(t, err)
-
-	reg := prometheus.NewPedanticRegistry()
-	splitCacheMiddleware := newSplitAndCacheMiddleware(
-		true,
-		false, // Cache disabled.
-		24*time.Hour,
-		false,
-		mockLimits{},
-		PrometheusCodec,
-		nil,
-		nil,
-		nil,
-		nil,
-		log.NewNopLogger(),
-		reg,
-	)
-
-	middlewares := []Middleware{
-		newLimitsMiddleware(mockLimits{}, log.NewNopLogger()),
-		splitCacheMiddleware,
-		newAssertHintsMiddleware(t, &Hints{TotalQueries: 2}),
-	}
-
-	roundtripper := newRoundTripper(singleHostRoundTripper{
-		host: downstreamURL.Host,
-		next: http.DefaultTransport,
-	}, PrometheusCodec, log.NewNopLogger(), middlewares...)
-
-	// Execute a query range request.
-	req, err := http.NewRequest("GET", queryURL, http.NoBody)
-	require.NoError(t, err)
-	_, ctx := stats.ContextWithEmptyStats(context.Background())
-	req = req.WithContext(user.InjectOrgID(ctx, "user-1"))
-
-	resp, err := roundtripper.RoundTrip(req)
-	require.NoError(t, err)
-	require.Equal(t, 200, resp.StatusCode)
-
-	actualBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, expectedResponse, string(actualBody))
-	require.Equal(t, int32(2), actualCount.Load())
-
-	// Assert metrics
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
-		# TYPE cortex_frontend_query_result_cache_attempted_total counter
-		cortex_frontend_query_result_cache_attempted_total 0
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
-		# TYPE cortex_frontend_query_result_cache_skipped_total counter
-		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
-		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
-		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
-		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
-		# TYPE cortex_frontend_split_queries_total counter
-		cortex_frontend_split_queries_total 2
-    `)))
-
-	// Assert query stats from context
-	queryStats := stats.FromContext(ctx)
-	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
 }
