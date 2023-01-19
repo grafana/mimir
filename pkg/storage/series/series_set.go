@@ -111,6 +111,9 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	}
 	if c.curFloat >= len(c.series.samples) {
 		c.atHisto = true
+		if c.series.histograms[c.curHisto].IsFloatHistogram() {
+			return chunkenc.ValFloatHistogram
+		}
 		return chunkenc.ValHistogram
 	}
 	if c.curHisto >= len(c.series.histograms) {
@@ -122,6 +125,9 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		return chunkenc.ValFloat
 	}
 	c.atHisto = true
+	if c.series.histograms[c.curHisto].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
 	return chunkenc.ValHistogram
 }
 
@@ -142,6 +148,9 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	if c.curFloat+1 >= len(c.series.samples) {
 		c.curHisto++
 		c.atHisto = true
+		if c.series.histograms[c.curHisto].IsFloatHistogram() {
+			return chunkenc.ValFloatHistogram
+		}
 		return chunkenc.ValHistogram
 	}
 	if c.curHisto+1 >= len(c.series.histograms) {
@@ -156,6 +165,9 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	}
 	c.curHisto++
 	c.atHisto = true
+	if c.series.histograms[c.curHisto].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
 	return chunkenc.ValHistogram
 }
 
@@ -164,6 +176,9 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
 	}
 	h := c.series.histograms[c.curHisto]
+	if h.IsFloatHistogram() {
+		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
+	}
 	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(h)
 }
 
@@ -172,7 +187,10 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}
 	h := c.series.histograms[c.curHisto]
-	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(h).ToFloat()
+	if !h.IsFloatHistogram() {
+		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
+	}
+	return int64(h.Timestamp), mimirpb.FromHistogramProtoToFloatHistogram(h)
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
