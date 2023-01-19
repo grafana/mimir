@@ -262,7 +262,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		return ri.labelName < rj.labelName
 	})
 
-	filteredPostingGroups := make([]postingGroup, 0, len(rawPostingGroups))
+	postingGroups := make([]postingGroup, 0, len(rawPostingGroups))
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
@@ -272,7 +272,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "filtering posting group")
 		}
-		filteredPostingGroups = append(filteredPostingGroups, pg)
+		postingGroups = append(postingGroups, pg)
 
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
@@ -296,7 +296,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 		name, value := index.AllPostingsKey()
 		allPostingsLabel := labels.Label{Name: name, Value: value}
 
-		filteredPostingGroups = append(filteredPostingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
+		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
 		numKeys++
 	}
 
@@ -309,11 +309,11 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	}
 
 	keys := make([]labels.Label, 0, numKeys)
-	for _, pg := range filteredPostingGroups {
+	for _, pg := range postingGroups {
 		keys = append(keys, pg.keys...)
 	}
 
-	return filteredPostingGroups, keys, nil
+	return postingGroups, keys, nil
 }
 
 // FetchPostings fills postings requested by posting groups.
