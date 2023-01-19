@@ -750,6 +750,8 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	reg := t.Registerer
 	t.Cfg.MemberlistKV.MetricsRegisterer = reg
+
+	// Only append to the list of codecs, to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
 
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
