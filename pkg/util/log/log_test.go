@@ -21,7 +21,7 @@ func ExampleInitLogger() {
 	os.Stderr = os.Stdout
 	saveTimestamp := gokitlog.DefaultTimestampUTC
 	gokitlog.DefaultTimestampUTC = gokitlog.TimestampFormat(
-		func() time.Time { return time.Unix(0, 0) },
+		func() time.Time { return time.Unix(0, 0).UTC() },
 		time.RFC3339Nano,
 	)
 
