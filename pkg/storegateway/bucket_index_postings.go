@@ -51,10 +51,19 @@ func newRawSubtractingPostingGroup(labelName string, keys []labels.Label) rawPos
 	}
 }
 
-func newLazyPostingGroup(isSubtract bool, labelName string, matcher func(string) bool) rawPostingGroup {
+func newLazyIntersectingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
 	return rawPostingGroup{
 		isLazy:      true,
-		isSubtract:  isSubtract,
+		isSubtract:  false,
+		labelName:   labelName,
+		lazyMatcher: matcher,
+	}
+}
+
+func newLazySubtractingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
+	return rawPostingGroup{
+		isLazy:      true,
+		isSubtract:  true,
 		labelName:   labelName,
 		lazyMatcher: matcher,
 	}
@@ -141,12 +150,12 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		return newLazyPostingGroup(true, m.Name, not(m.Matches))
+		return newLazySubtractingPostingGroup(m.Name, not(m.Matches))
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	return newLazyPostingGroup(false, m.Name, m.Matches)
+	return newLazyIntersectingPostingGroup(m.Name, m.Matches)
 }
 
 func not(filter func(string) bool) func(string) bool {
