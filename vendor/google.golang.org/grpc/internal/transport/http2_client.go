@@ -1001,7 +1001,7 @@ func (t *http2Client) updateWindow(s *Stream, n uint32) {
 // for the transport and the stream based on the current bdp
 // estimation.
 func (t *http2Client) updateFlowControl(n uint32) {
-	fmt.Println("updateFlowControl() n:", n)
+	fmt.Println("BDP estimator updating window size to", n, "bytes")
 
 	t.mu.Lock()
 	for _, s := range t.activeStreams {
