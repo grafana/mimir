@@ -34,6 +34,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
+var (
+	generateTestHistogram = e2e.GenerateTestHistogram
+)
+
 func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	const numBlocks = 2
 
@@ -73,16 +77,16 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(10, 0, e2e.GenerateTestHistogram(1), nil),
-					newSample(20, 0, e2e.GenerateTestHistogram(2), nil),
+					newSample(10, 0, generateTestHistogram(1), nil),
+					newSample(20, 0, generateTestHistogram(2), nil),
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(30, 0, e2e.GenerateTestHistogram(3), nil),
-					newSample(40, 0, e2e.GenerateTestHistogram(4), nil),
+					newSample(30, 0, generateTestHistogram(3), nil),
+					newSample(40, 0, generateTestHistogram(4), nil),
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(50, 0, e2e.GenerateTestHistogram(5), nil),
-					newSample(2*time.Hour.Milliseconds()-1, 0, e2e.GenerateTestHistogram(6), nil),
+					newSample(50, 0, generateTestHistogram(5), nil),
+					newSample(2*time.Hour.Milliseconds()-1, 0, generateTestHistogram(6), nil),
 				}),
 			},
 		}

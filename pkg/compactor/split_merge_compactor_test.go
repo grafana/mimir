@@ -30,6 +30,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
+var (
+	generateTestHistogram = e2e.GenerateTestHistogram
+)
+
 func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) {
 	const (
 		userID     = "user-1"
@@ -618,7 +622,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
 						app := db.Appender(context.Background())
-						_, err := app.AppendHistogram(0, lbls, ts, e2e.GenerateTestHistogram(seriesID), nil)
+						_, err := app.AppendHistogram(0, lbls, ts, generateTestHistogram(seriesID), nil)
 						require.NoError(t, err)
 
 						err = app.Commit()

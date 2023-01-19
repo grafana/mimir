@@ -16,6 +16,10 @@ import (
 	"github.com/grafana/e2e"
 )
 
+var (
+	generateTestHistogram = e2e.GenerateTestHistogram
+)
+
 func TestLabelAdapter_Marshal(t *testing.T) {
 	tests := []struct {
 		bs *LabelAdapter
@@ -122,7 +126,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
-			Histograms: []Histogram{FromHistogramToHistogramProto(2, e2e.GenerateTestHistogram(0))},
+			Histograms: []Histogram{FromHistogramToHistogramProto(2, generateTestHistogram(0))},
 		},
 	}
 	dst := PreallocTimeseries{}
