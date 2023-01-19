@@ -2,6 +2,14 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
+* [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
+
+### Mixin
+
+* [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
+
 ## 2.6.0-rc.0
 
 ### Grafana Mimir
