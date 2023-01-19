@@ -37,6 +37,12 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
 	AddHistogram(timestamp int64, histogram *histogram.Histogram) (EncodedChunk, error)
 
+	// AddFloatHistogram adds a float histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddFloatHistogram(timestamp int64, histogram *histogram.FloatHistogram) (EncodedChunk, error)
+
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
 	// the iterator can be re-used or a new iterator can be allocated.
@@ -68,8 +74,8 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
-	Histogram() mimirpb.Histogram
-	FloatHistogram() mimirpb.Histogram
+	AtHistogram() (int64, *histogram.Histogram)
+	AtFloatHistogram() (int64, *histogram.FloatHistogram)
 	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
@@ -133,9 +139,11 @@ func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]mo
 		case chunkenc.ValFloat:
 			resultFloat = append(resultFloat, it.Value())
 		case chunkenc.ValHistogram:
-			resultHist = append(resultHist, it.Histogram())
+			t, h := it.AtHistogram()
+			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
 		case chunkenc.ValFloatHistogram:
-			resultHist = append(resultHist, it.FloatHistogram())
+			t, h := it.AtFloatHistogram()
+			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
 		default:
 			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
 		}

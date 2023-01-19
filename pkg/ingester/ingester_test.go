@@ -6803,6 +6803,27 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
+	tests := map[string]struct {
+		sampleHistograms []mimirpb.Histogram
+		expectHistogram  model.SampleHistogram
+	}{
+		"integer histogram": {
+			sampleHistograms: makeWriteRequestHistograms(1, tsdb.GenerateTestHistograms(1)[0]),
+			expectHistogram:  mimirpb.FromHistogramToPromCommonHistogram(*(tsdb.GenerateTestHistograms(1)[0])),
+		},
+		"float histogram": {
+			sampleHistograms: makeWriteRequestFloatHistograms(1, tsdb.GenerateTestFloatHistograms(1)[0]),
+			expectHistogram:  mimirpb.FromFloatHistogramToPromCommonHistogram(*(tsdb.GenerateTestFloatHistograms(1)[0])),
+		},
+	}
+	for testName, testCfg := range tests {
+		t.Run(testName, func(t *testing.T) {
+			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
+		})
+	}
+}
+
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram model.SampleHistogram) {
 	limits := defaultLimitsTestConfig()
 	limits.AcceptNativeHistograms = false
 
@@ -6850,9 +6871,6 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		TimestampMs: 0,
 		Value:       1,
 	}
-
-	histogram := tsdb.GenerateTestHistograms(1)[0]
-	sampleHistograms := makeWriteRequestHistograms(1, histogram)
 
 	// Metadata
 	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
@@ -6943,7 +6961,7 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		}},
 		Histograms: []model.SampleHistogramPair{{
 			Timestamp: 2,
-			Histogram: mimirpb.FromHistogramToPromCommonHistogram(*histogram.ToFloat()),
+			Histogram: expectHistogram,
 		}},
 	}}
 
@@ -6956,6 +6974,16 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 
 func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
 	h := remote.HistogramToHistogramProto(ts, histogram)
+	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
+	// histogram protobuf representation but we need the Mimir one here.
+	d, _ := h.Marshal()
+	h2 := mimirpb.Histogram{}
+	h2.Unmarshal(d) // nolint:errcheck
+	return []mimirpb.Histogram{h2}
+}
+
+func makeWriteRequestFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
+	h := remote.FloatHistogramToHistogramProto(ts, histogram)
 	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
 	// histogram protobuf representation but we need the Mimir one here.
 	d, _ := h.Marshal()

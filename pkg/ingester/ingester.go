@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/common/model"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -1029,16 +1030,25 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		if len(ts.Histograms) > 0 {
 			if i.limits.AcceptNativeHistograms(userID) {
 				for _, h := range ts.Histograms {
-					var err error
+					var (
+						err error
+						ih  *histogram.Histogram
+						fh  *histogram.FloatHistogram
+					)
 
+					if h.GetCountFloat() > 0 || h.GetZeroCountFloat() > 0 { // It is a float histogram.
+						fh = mimirpb.FromHistogramProtoToFloatHistogram(h)
+					} else {
+						ih = mimirpb.FromHistogramProtoToHistogram(h)
+					}
 					if ref != 0 {
-						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
+						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
 							stats.succeededHistogramsCount++
 							continue
 						}
 					} else {
 						copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
-						if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h), nil); err == nil {
+						if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
 							stats.succeededHistogramsCount++
 							continue
 						}
@@ -1540,13 +1550,11 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 			} else if valType == chunkenc.ValHistogram {
 				t, v := it.AtHistogram()
 				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
+			} else if valType == chunkenc.ValFloatHistogram {
+				t, v := it.AtFloatHistogram()
+				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			} else {
 				return 0, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
-				// TODO(zenador): figure out if we need to implement chunkenc.ValFloatHistogram here
-				// tricky as we need to change our histogram proto to accept floats in delta, but those
-				// cannot be converted back to histogram.Histogram which is needed in AppendHistogram
-				// t, v := it.AtFloatHistogram()
-				// ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			}
 		}
 		numSamples += len(ts.Samples)
@@ -1649,6 +1657,8 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 				ch.Encoding = int32(chunk.PrometheusXorChunk)
 			case chunkenc.EncHistogram:
 				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
+			case chunkenc.EncFloatHistogram:
+				ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
 			default:
 				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 			}

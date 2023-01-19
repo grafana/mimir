@@ -20,8 +20,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 var (
@@ -125,9 +123,9 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
 		case PrometheusHistogramChunk:
 			require.True(t, iter.Scan() == chunkenc.ValHistogram)
-			sample := iter.Histogram()
-			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-			require.EqualValues(t, *generateTestHistogram(i), *mimirpb.FromHistogramProtoToHistogram(sample))
+			ts, h := iter.AtHistogram()
+			require.EqualValues(t, model.Time(i*step), ts)
+			require.EqualValues(t, *generateTestHistogram(i), *h)
 		default:
 			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
@@ -167,9 +165,9 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 				require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(i), sample.Value)
 			case PrometheusHistogramChunk:
-				sample := iter.Histogram()
-				require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-				require.EqualValues(t, *generateTestHistogram(i), *mimirpb.FromHistogramProtoToHistogram(sample))
+				ts, h := iter.AtHistogram()
+				require.EqualValues(t, model.Time(i*step), ts)
+				require.EqualValues(t, *generateTestHistogram(i), *h)
 			default:
 				require.FailNow(t, "Unexpected encoding: %x", encoding)
 			}
@@ -182,9 +180,9 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
 		case PrometheusHistogramChunk:
-			sample := iter.Histogram()
-			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-			require.EqualValues(t, *generateTestHistogram(i), *mimirpb.FromHistogramProtoToHistogram(sample))
+			ts, h := iter.AtHistogram()
+			require.EqualValues(t, model.Time(i*step), ts)
+			require.EqualValues(t, *generateTestHistogram(i), *h)
 		default:
 			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
@@ -198,9 +196,9 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(j), sample.Value)
 			case PrometheusHistogramChunk:
-				sample := iter.Histogram()
-				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
-				require.EqualValues(t, *generateTestHistogram(j), *mimirpb.FromHistogramProtoToHistogram(sample))
+				ts, h := iter.AtHistogram()
+				require.EqualValues(t, model.Time(j*step), ts)
+				require.EqualValues(t, *generateTestHistogram(j), *h)
 			default:
 				require.FailNow(t, "Unexpected encoding: %x", encoding)
 			}
@@ -224,9 +222,9 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
 		case PrometheusHistogramChunk:
-			sample := iter.Histogram()
-			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
-			require.EqualValues(t, *generateTestHistogram(i), *mimirpb.FromHistogramProtoToHistogram(sample))
+			ts, h := iter.AtHistogram()
+			require.EqualValues(t, model.Time(i*step), ts)
+			require.EqualValues(t, *generateTestHistogram(i), *h)
 		default:
 			require.FailNow(t, "Unexpected encoding: %x", encoding)
 		}
@@ -240,9 +238,9 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(j), sample.Value)
 			case PrometheusHistogramChunk:
-				sample := iter.Histogram()
-				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
-				require.EqualValues(t, *generateTestHistogram(j), *mimirpb.FromHistogramProtoToHistogram(sample))
+				ts, h := iter.AtHistogram()
+				require.EqualValues(t, model.Time(j*step), ts)
+				require.EqualValues(t, *generateTestHistogram(j), *h)
 			default:
 				require.FailNow(t, "Unexpected encoding: %x", encoding)
 			}

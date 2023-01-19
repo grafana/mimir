@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -125,8 +125,12 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) Histogram() mimirpb.Histogram {
-	return mimirpb.Histogram{}
+func (i *mockIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, &histogram.Histogram{}
+}
+
+func (i *mockIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, &histogram.FloatHistogram{}
 }
 
 func (i *mockIterator) Timestamp() int64 {

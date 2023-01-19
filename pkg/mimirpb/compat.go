@@ -190,6 +190,20 @@ func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
 	}
 }
 
+func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Schema:          hp.Schema,
+		ZeroThreshold:   hp.ZeroThreshold,
+		ZeroCount:       hp.GetZeroCountFloat(),
+		Count:           hp.GetCountFloat(),
+		Sum:             hp.Sum,
+		PositiveSpans:   fromSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets: hp.GetPositiveCounts(),
+		NegativeSpans:   fromSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets: hp.GetNegativeCounts(),
+	}
+}
+
 func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
@@ -339,8 +353,8 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 	return samples
 }
 
-// FromHistogramToPromCommonHistogram converts histogram.FloatHistogram to model.SampleHistogram.
-func FromHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.SampleHistogram {
+// FromFloatHistogramToPromCommonHistogram converts histogram.FloatHistogram to model.SampleHistogram.
+func FromFloatHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.SampleHistogram {
 	buckets := make([]*model.HistogramBucket, 0)
 	it := h.AllBucketIterator()
 	for it.Next() {
@@ -360,6 +374,10 @@ func FromHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.Sample
 		Sum:     model.FloatString(h.Sum),
 		Buckets: buckets,
 	}
+}
+
+func FromHistogramToPromCommonHistogram(h histogram.Histogram) model.SampleHistogram {
+	return FromFloatHistogramToPromCommonHistogram(*h.ToFloat())
 }
 
 type byLabel []LabelAdapter
