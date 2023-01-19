@@ -228,25 +228,25 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 		{
 			mint: 0,
 			maxt: 50,
-			enc:  chunkenc.ValHistogram,
+			enc:  chunkenc.ValFloat,
 		},
 		{
-			mint: 75,
-			maxt: 125,
-			enc:  chunkenc.ValFloat,
+			mint: 50,
+			maxt: 150,
+			enc:  chunkenc.ValHistogram,
 		},
 		{
 			mint: 150,
 			maxt: 200,
-			enc:  chunkenc.ValHistogram,
+			enc:  chunkenc.ValFloat,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			for i := int64(tc.mint); i < tc.maxt; i += 10 {
 				iter := NewChunkMergeIterator([]chunk.Chunk{
-					mkChunk(t, 0, 75, 1*time.Millisecond, chunk.PrometheusHistogramChunk),
-					mkChunk(t, 50, 150, 1*time.Millisecond, chunk.PrometheusXorChunk),
-					mkChunk(t, 125, 200, 1*time.Millisecond, chunk.PrometheusHistogramChunk),
+					mkChunk(t, 0, 75, 1*time.Millisecond, chunk.PrometheusXorChunk),
+					mkChunk(t, 50, 150, 1*time.Millisecond, chunk.PrometheusHistogramChunk),
+					mkChunk(t, 125, 200, 1*time.Millisecond, chunk.PrometheusXorChunk),
 				}, 0, 0)
 
 				require.Equal(t, tc.enc, iter.Seek(i))

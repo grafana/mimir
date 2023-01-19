@@ -200,6 +200,11 @@ func (h *seriesIteratorHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i
 func (h *seriesIteratorHeap) Less(i, j int) bool {
 	iT := (*h)[i].AtTime()
 	jT := (*h)[j].AtTime()
+	if iT == jT {
+		iTyp := (*h)[i].AtType()
+		jTyp := (*h)[j].AtType()
+		return iTyp > jTyp
+	}
 	return iT < jT
 }
 
