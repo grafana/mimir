@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 2.6.0-rc.0
+
 ### Grafana Mimir
 
 * [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825 #4017
