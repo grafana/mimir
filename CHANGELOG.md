@@ -12,7 +12,16 @@
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
 * [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to establish a leader replica for the export of limit override metrics. #3908 #3953
-* [FEATURE] Distributor: Added the `-distributor.ephemeral-series-enabled` flag, this functionality allows the user to specify matchers and if an ingested samples matches them then it gets marked as ephemeral. #3897
+* [FEATURE] Ephemeral storage (experimental): Mimir can now accept samples into "ephemeral storage". Such samples are available for querying for a short amount of time (`-blocks-storage.ephemeral-tsdb.retention-period`, defaults to 10 minutes), and then removed from memory. To use ephemeral storage, distributor must be configured with `-distributor.ephemeral-series-enabled` option. Series matching `-distributor.ephemeral-series-matchers` will be marked for storing into ephemeral storage in ingesters. Each tenant needs to have ephemeral storage enabled by using `-ingester.max-ephemeral-series-per-user` limit, which defaults to 0 (no ephemeral storage). Ingesters have new `-ingester.instance-limits.max-ephemeral-series` limit for total number of series in ephemeral storage across all tenants. If ingestion of samples into ephemeral storage fails, `cortex_discarded_samples_total` metric will use values prefixed with `ephemeral-` for `reason` label. Querying of ephemeral storage is possible by using `{__mimir_storage__="ephemeral"}` as metric selector. Following new metrics related to ephemeral storage are introduced: #3897 #3922 #3961 #3997 #4004
+  * `cortex_ingester_ephemeral_series`
+  * `cortex_ingester_ephemeral_series_created_total`
+  * `cortex_ingester_ephemeral_series_removed_total`
+  * `cortex_ingester_ingested_ephemeral_samples_total`
+  * `cortex_ingester_ingested_ephemeral_samples_failures_total`
+  * `cortex_ingester_memory_ephemeral_users`
+  * `cortex_ingester_queries_ephemeral_total`
+  * `cortex_ingester_queried_ephemeral_samples`
+  * `cortex_ingester_queried_ephemeral_series`
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
