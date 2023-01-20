@@ -751,7 +751,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	reg := t.Registerer
 	t.Cfg.MemberlistKV.MetricsRegisterer = reg
 
-	// Only append to the list of codecs, to allow third parties to inject their own codecs.
+	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
 
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
