@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
@@ -92,6 +93,7 @@ type BucketStore struct {
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
+	chunksCache     chunkscache.ChunksCache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
@@ -129,6 +131,14 @@ type BucketStore struct {
 }
 
 type noopCache struct{}
+
+func (noopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Key, chunksPool *pool.SafeSlabPool[storepb.AggrChunk], bytesPool *pool.SafeSlabPool[byte]) (hits map[chunkscache.Key][]storepb.AggrChunk) {
+	return nil
+}
+
+func (noopCache) StoreChunks(ctx context.Context, userID string, r chunkscache.Key, v []storepb.AggrChunk) {
+
+}
 
 func (noopCache) StorePostings(context.Context, string, ulid.ULID, labels.Label, []byte) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
@@ -188,6 +198,13 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	}
 }
 
+// WithChunksCache sets a chunksCache to use instead of a noopCache.
+func WithChunksCache(cache chunkscache.ChunksCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.chunksCache = cache
+	}
+}
+
 // WithQueryGate sets a queryGate to use instead of a noopGate.
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -240,6 +257,7 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
+		chunksCache:                 noopCache{},
 		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),
@@ -1169,7 +1187,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats)
+		set = newSeriesSetWithChunks(ctx, s.userID, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats, s.chunksCache, req.MinTime, req.MaxTime)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedBatches, stats)
 	}
@@ -1938,6 +1956,58 @@ func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta,
 				MaxTime: maxt,
 			})
 		}
+
+		mint = maxt
+	}
+	return len(*chks) > 0, d.Err()
+}
+
+// decodeSeries decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.
+// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
+// decodeSeries returns false, when there are no series data for given time range.
+func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
+	*lset = (*lset)[:0]
+	*chks = (*chks)[:0]
+
+	d := encoding.Decbuf{B: b}
+
+	// Read labels without looking up symbols.
+	k := d.Uvarint()
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+		*lset = append(*lset, symbolizedLabel{name: lno, value: lvo})
+	}
+	// Read the chunks meta data.
+	k = d.Uvarint()
+	if k == 0 {
+		return false, d.Err()
+	}
+
+	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
+	mint := d.Varint64()
+	maxt := int64(d.Uvarint64()) + mint
+	// Similar for first ref.
+	ref := int64(d.Uvarint64())
+
+	for i := 0; i < k; i++ {
+		if i > 0 {
+			mint += int64(d.Uvarint64())
+			maxt = int64(d.Uvarint64()) + mint
+			ref += d.Varint64()
+		}
+
+		// Found a chunk.
+		if skipChunks {
+			// We are not interested in chunks and we know there is at least one, that's enough to return series.
+			return true, nil
+		}
+
+		*chks = append(*chks, chunks.Meta{
+			Ref:     chunks.ChunkRef(ref),
+			MinTime: mint,
+			MaxTime: maxt,
+		})
 
 		mint = maxt
 	}

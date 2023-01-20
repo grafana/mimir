@@ -616,7 +616,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	skipChunks          bool
-	minTime, maxTime    int64
+	minTime, maxTime    int64 // TODO dimitarvdimitrov remove
 	tenantID            string
 	logger              log.Logger
 
@@ -814,7 +814,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) loadSeriesForTime(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []seriesChunkRef, error) {
-	ok, err := loadedSeries.unsafeLoadSeriesForTime(ref, &s.symbolizedLsetBuffer, &s.chksBuffer, s.skipChunks, s.minTime, s.maxTime, stats)
+	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chksBuffer, s.skipChunks, stats)
 	if !ok || err != nil {
 		return labels.EmptyLabels(), nil, errors.Wrap(err, "inflateSeriesForTime")
 	}

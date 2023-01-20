@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -591,7 +592,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingSeriesChunksSetIterator(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
+			// TODO dimitarvdimitrov make this run with different min/max and on warm and on cold cache
+			set := newLoadingSeriesChunksSetIterator(context.Background(), "tenant", *readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats(), newInmemoryChunksCache(), 0, 1000000)
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
@@ -680,7 +682,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(*chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
+				it := newLoadingSeriesChunksSetIterator(context.Background(), "tenant", *chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats, newInmemoryChunksCache(), 0, 1000000)
 
 				actualSeries := 0
 				actualChunks := 0
@@ -918,4 +920,47 @@ func readAllSeriesLabels(it storepb.SeriesSet) []labels.Labels {
 		out = append(out, lbls)
 	}
 	return out
+}
+
+type inMemChunksCache struct {
+	cached map[string]map[chunkscache.Key][]storepb.AggrChunk
+}
+
+func newInmemoryChunksCache() chunkscache.ChunksCache {
+	return &inMemChunksCache{
+		cached: map[string]map[chunkscache.Key][]storepb.AggrChunk{},
+	}
+}
+
+func (c *inMemChunksCache) FetchMultiChunks(ctx context.Context, userID string, keys []chunkscache.Key, chunksPool *pool.SafeSlabPool[storepb.AggrChunk], bytesPool *pool.SafeSlabPool[byte]) (hits map[chunkscache.Key][]storepb.AggrChunk) {
+	hits = make(map[chunkscache.Key][]storepb.AggrChunk, len(keys))
+	for _, r := range keys {
+		if cached, ok := c.cached[userID][r]; ok {
+			pooled := chunksPool.Get(len(cached))
+			copy(pooled, cached)
+			for i, cachedChk := range cached {
+				pooled[i].Raw = &storepb.Chunk{
+					Data: bytesPool.Get(len(cachedChk.Raw.Data)),
+				}
+				copy(pooled[i].Raw.Data, cachedChk.Raw.Data)
+			}
+			hits[r] = pooled
+		}
+	}
+	return
+}
+
+func (c *inMemChunksCache) StoreChunks(_ context.Context, userID string, r chunkscache.Key, v []storepb.AggrChunk) {
+	if c.cached[userID] == nil {
+		c.cached[userID] = make(map[chunkscache.Key][]storepb.AggrChunk)
+	}
+	copied := make([]storepb.AggrChunk, len(v))
+	copy(copied, v)
+	for i, orig := range v {
+		copied[i].Raw = &storepb.Chunk{
+			Data: make([]byte, len(orig.Raw.Data)),
+		}
+		copy(copied[i].Raw.Data, orig.Raw.Data)
+	}
+	c.cached[userID][r] = copied
 }

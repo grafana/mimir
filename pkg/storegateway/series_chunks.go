@@ -4,12 +4,15 @@ package storegateway
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -168,9 +171,18 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats) storepb.SeriesSet {
+func newSeriesSetWithChunks(
+	ctx context.Context,
+	userID string,
+	chunkReaders bucketChunkReaders,
+	refsIterator seriesChunkRefsSetIterator,
+	refsIteratorBatchSize int,
+	stats *safeQueryStats,
+	cache chunkscache.ChunksCache,
+	minT, maxT int64,
+) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats, cache, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -305,21 +317,43 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 }
 
 type loadingSeriesChunksSetIterator struct {
+	ctx    context.Context
+	userID string
+
 	chunkReaders  bucketChunkReaders
 	from          seriesChunkRefsSetIterator
 	fromBatchSize int
 	stats         *safeQueryStats
 
+	cache chunkscache.ChunksCache
+
 	current seriesChunksSet
 	err     error
+	minTime int64
+	maxTime int64
 }
 
-func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(
+	ctx context.Context,
+	userID string,
+	chunkReaders bucketChunkReaders,
+	from seriesChunkRefsSetIterator,
+	fromBatchSize int,
+	stats *safeQueryStats,
+	cache chunkscache.ChunksCache,
+	minT int64,
+	maxT int64,
+) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
+		ctx:           ctx,
+		userID:        userID,
 		chunkReaders:  chunkReaders,
 		from:          from,
 		fromBatchSize: fromBatchSize,
 		stats:         stats,
+		cache:         cache,
+		minTime:       minT,
+		maxTime:       maxT,
 	}
 }
 
@@ -338,9 +372,37 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	// This data structure doesn't retain the seriesChunkRefsSet so it can be released once done.
 	defer nextUnloaded.release()
 
+	for _, s := range nextUnloaded.series {
+		// TODO dimitarvdimitrov instead of sorting here, we can change the mergedSeriesChunkRefsSet to merged like we need it
+		// Sort the chunks by block, then by ref , so we can find the smallest chunkref for each block.
+		// We need the chunk ref for the cache key.
+		// We don't need to send them to the querier in any particular order, so this sorting is safe to do.
+		sort.Slice(s.chunks, func(i, j int) bool {
+			this := s.chunks[i]
+			other := s.chunks[j]
+			// First compare block ULIDs
+			switch this.blockID.Compare(other.blockID) {
+			case -1:
+				return true
+			case 1:
+				return false
+			}
+			return this.ref < other.ref
+		})
+	}
+
 	// Pre-allocate the series slice using the expected batchSize even if nextUnloaded has less elements,
 	// so that there's a higher chance the slice will be reused once released.
 	nextSet := newSeriesChunksSet(util_math.Max(c.fromBatchSize, nextUnloaded.len()), true)
+	// The series slice is guaranteed to have at least the requested capacity,
+	// so can safely expand it.
+	nextSet.series = nextSet.series[:nextUnloaded.len()]
+
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
+	nextSet.chunksReleaser = chunksPool
+	// TODO consider doing this in newSeriesChunksSet; not sure why it has to be lazy
+	nextSet.seriesChunksPool = pool.NewSlabPool[storepb.AggrChunk](seriesChunksSlicePool, seriesChunksSlabSize)
 
 	// Release the set if an error occurred.
 	defer func() {
@@ -349,21 +411,57 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		}
 	}()
 
-	// The series slice is guaranteed to have at least the requested capacity,
-	// so can safely expand it.
-	nextSet.series = nextSet.series[:nextUnloaded.len()]
+	var cachedChunks map[chunkscache.Key][]storepb.AggrChunk
+	if c.cache != nil {
+
+		// Look up the cache for chunks
+		// TODO move this into a function, maybe extract the minT/maxT setting to a different loop
+		cachedChunks = c.cache.FetchMultiChunks(c.ctx, c.userID, toChunksCacheKeys(nextUnloaded.series), nextSet.seriesChunksPool.AsSafe(), chunksPool)
+
+		for sIdx, s := range nextUnloaded.series {
+			var currentBlock ulid.ULID
+			nextSet.series[sIdx].lset = s.lset
+			nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(len(s.chunks))
+			for cIdx := 0; cIdx < len(s.chunks); {
+				chkRef := s.chunks[cIdx]
+				if currentBlock.Compare(chkRef.blockID) != 0 {
+					currentBlock = chkRef.blockID
+					if cachedAggrChks, ok := cachedChunks[toChunksCacheKey(chkRef)]; ok {
+						copy(nextSet.series[sIdx].chks[cIdx:cIdx+len(cachedAggrChks)], cachedAggrChks)
+						cIdx += len(cachedAggrChks) // jump to the chunks from the next block
+					}
+				} else {
+					// same block; means that we also didn't find a cache hit for the chunks of this block, so we're just iterating all the chunks for this block
+					// min and max times are also stored in the cache, but if we have a cache miss, we don't have them in the bucket
+					nextSet.series[sIdx].chks[cIdx].MinTime = chkRef.minTime
+					nextSet.series[sIdx].chks[cIdx].MaxTime = chkRef.maxTime
+					cIdx++
+				}
+			}
+		}
+	} else {
+		for sIdx, s := range nextUnloaded.series {
+			nextSet.series[sIdx].lset = s.lset
+			nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(len(s.chunks))
+			for cIdx, chkRef := range s.chunks {
+				// min and max times are also stored in the cache, but if we have a cache miss, we don't have them in the bucket
+				nextSet.series[sIdx].chks[cIdx].MinTime = chkRef.minTime
+				nextSet.series[sIdx].chks[cIdx].MaxTime = chkRef.maxTime
+			}
+		}
+	}
 
 	c.chunkReaders.reset()
 
-	for i, s := range nextUnloaded.series {
-		nextSet.series[i].lset = s.lset
-		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(len(s.chunks))
-
-		for j, chunk := range s.chunks {
-			nextSet.series[i].chks[j].MinTime = chunk.minTime
-			nextSet.series[i].chks[j].MaxTime = chunk.maxTime
-
-			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
+	// Add to bucket loader all chunks that we had a cache miss on
+	for sIdx, s := range nextUnloaded.series {
+		for cIdx, chunkRef := range s.chunks {
+			if nextSet.series[sIdx].chks[cIdx].Raw != nil {
+				// This chunk was fetched from the cache
+				continue
+			}
+			// This chunk wasn't retried from the cache, add it for fetching from the bucket
+			err := c.chunkReaders.addLoad(chunkRef.blockID, chunkRef.ref, sIdx, cIdx)
 			if err != nil {
 				c.err = errors.Wrap(err, "preloading chunks")
 				return false
@@ -371,18 +469,87 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		}
 	}
 
-	// Create a batched memory pool that can be released all at once.
-	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
-
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
 
-	nextSet.chunksReleaser = chunksPool
+	if c.cache != nil {
+		// Store cache misses in the cache
+		for sIdx, s := range nextSet.series {
+			var (
+				currentBlock            ulid.ULID
+				currentBlockFirstChkIdx int
+			)
+
+			for cIdx := range s.chks {
+				chkRef := nextUnloaded.series[sIdx].chunks[cIdx]
+				if chkRef.blockID.Compare(currentBlock) != 0 {
+					if currentBlockFirstChkIdx != cIdx {
+						firstBlockChunk := nextUnloaded.series[sIdx].chunks[currentBlockFirstChkIdx]
+						cacheKey := toChunksCacheKey(firstBlockChunk)
+						if _, ok := cachedChunks[cacheKey]; !ok {
+							c.cache.StoreChunks(c.ctx, c.userID, cacheKey, s.chks[currentBlockFirstChkIdx:cIdx])
+						}
+					}
+
+					currentBlockFirstChkIdx = cIdx
+					currentBlock = chkRef.blockID
+				}
+			}
+			firstBlockChunk := nextUnloaded.series[sIdx].chunks[currentBlockFirstChkIdx]
+			cacheKey := toChunksCacheKey(firstBlockChunk)
+			if _, ok := cachedChunks[cacheKey]; !ok {
+				c.cache.StoreChunks(c.ctx, c.userID, cacheKey, s.chks[currentBlockFirstChkIdx:])
+			}
+		}
+	}
+
+	// Filter out chunks that don't fit in the request's min/max time
+	for sIdx, s := range nextSet.series {
+		nextSet.series[sIdx].chks = removeNonRequestedChunks(s.chks, c.minTime, c.maxTime)
+	}
+
 	c.current = nextSet
 	return true
+}
+
+func toChunksCacheKey(ref seriesChunkRef) chunkscache.Key {
+	return chunkscache.Key{
+		BlockID:    ref.blockID,
+		FirstChunk: ref.ref,
+	}
+}
+
+func toChunksCacheKeys(series []seriesChunkRefs) (result []chunkscache.Key) {
+	// TODO consider counting and pre-allocating the result
+
+	// Series' chunks are already sorted by block and ref. We can reliably take the first ref.
+	for _, s := range series {
+		var currentBlock ulid.ULID
+		for _, c := range s.chunks {
+			if c.blockID.Compare(currentBlock) != 0 {
+				result = append(result, toChunksCacheKey(c))
+			}
+		}
+	}
+	return
+}
+
+func removeNonRequestedChunks(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
+	writeIdx := 0
+	for i, chk := range chks {
+		if chk.MaxTime < minT || chk.MinTime > maxT {
+			continue
+		}
+		if writeIdx != i {
+			chks[i], chks[writeIdx] = chks[writeIdx], chks[i]
+		}
+		writeIdx++
+	}
+
+	return chks[:writeIdx]
 }
 
 func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {

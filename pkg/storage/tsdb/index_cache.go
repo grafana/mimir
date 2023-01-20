@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -37,7 +38,8 @@ const (
 var (
 	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
-	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
+	errUnsupportedIndexCacheBackend  = errors.New("unsupported index cache backend")
+	errUnsupportedChunksCacheBackend = errors.New("unsupported chunks cache backend")
 )
 
 type IndexCacheConfig struct {
@@ -118,4 +120,19 @@ func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, regist
 	}
 
 	return indexcache.NewTracingIndexCache(cache, logger), nil
+}
+
+func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Registerer) (chunkscache.ChunksCache, error) {
+	switch cfg.Backend {
+	case "":
+		return nil, nil
+	case cache.BackendMemcached:
+		client, err := cache.NewMemcachedClientWithConfig(logger, "chunks-cache", cfg.Memcached.ToMemcachedClientConfig(), prometheus.WrapRegistererWithPrefix("thanos_", reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create index cache memcached client")
+		}
+		return chunkscache.NewMemcachedChunksCache(logger, client, reg)
+	default:
+		return nil, errUnsupportedChunksCacheBackend
+	}
 }

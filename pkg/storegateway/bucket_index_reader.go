@@ -595,3 +595,22 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeriesForTime(ref storage.SeriesRef,
 	stats.seriesTouchedSizeSum += len(b)
 	return decodeSeriesForTime(b, lset, chks, skipChunks, mint, maxt)
 }
+
+// unsafeLoadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
+// time selection.
+// unsafeLoadSeriesForTime also populates chunk metas slices if skipChunks is set to false. Chunks are also limited by the given time selection.
+// unsafeLoadSeriesForTime returns false, when there are no series data for given time range.
+//
+// Error is returned on decoding error or if the reference does not resolve to a known series.
+//
+// It's NOT safe to call this function concurrently with addSeries().
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, stats *queryStats) (ok bool, err error) {
+	b, ok := l.series[ref]
+	if !ok {
+		return false, errors.Errorf("series %d not found", ref)
+	}
+
+	stats.seriesTouched++
+	stats.seriesTouchedSizeSum += len(b)
+	return decodeSeries(b, lset, chks, skipChunks)
+}

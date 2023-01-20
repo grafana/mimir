@@ -212,6 +212,10 @@ func (b *SlabPool[T]) Get(size int) []T {
 	return (*slab)[len(*slab)-size : len(*slab) : len(*slab)]
 }
 
+func (b *SlabPool[T]) AsSafe() *SafeSlabPool[T] {
+	return &SafeSlabPool[T]{wrapped: b}
+}
+
 // SafeSlabPool wraps SlabPool to make it safe for concurrent use from multiple goroutines
 type SafeSlabPool[T any] struct {
 	wrappedMx sync.Mutex

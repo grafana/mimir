@@ -91,14 +91,9 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func CreateCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
-
-	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
-	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
-	}
 
 	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
@@ -120,27 +115,6 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
 	}
 
-	if chunksCache != nil {
-		cachingConfigured = true
-		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
-
-		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
-		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
-		attributesCache := chunksCache
-		if metadataCache != nil {
-			attributesCache = metadataCache
-		}
-		if chunksConfig.AttributesInMemoryMaxItems > 0 {
-			var err error
-			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
-			if err != nil {
-				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
-			}
-		}
-
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
-	}
-
 	if !cachingConfigured {
 		// No caching is configured.
 		return bkt, nil
@@ -148,10 +122,6 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 
 	return bucketcache.NewCachingBucket(bkt, cfg, logger, reg)
 }
-
-var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
-
-func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
 
 func isMetaFile(name string) bool {
 	return strings.HasSuffix(name, "/"+metadata.MetaFilename) || strings.HasSuffix(name, "/"+metadata.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)

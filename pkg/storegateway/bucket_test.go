@@ -1186,10 +1186,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	for testName, bucketStoreOpts := range map[string][]BucketStoreOption{
-		"with default options":                                 {WithLogger(logger), WithChunkPool(chunkPool)},
-		"with series streaming (1K per batch)":                 {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
-		"with series streaming (10K per batch)":                {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
-		"with series streaming and index cache (1K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000), WithIndexCache(newInMemoryIndexCache(t))},
+		"with default options":                            {WithLogger(logger), WithChunkPool(chunkPool)},
+		"with series streaming (1K per batch)":            {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
+		"with series streaming (10K per batch)":           {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
+		"with series streaming and caches (1K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInmemoryChunksCache())},
 	} {
 		reg := prometheus.NewPedanticRegistry()
 		st, err := NewBucketStore(
@@ -1658,6 +1658,8 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
+	chunksCache := newInmemoryChunksCache()
+
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
@@ -1675,6 +1677,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
+		WithChunksCache(chunksCache),
 	)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
@@ -1748,6 +1751,8 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
+	chunksCache := newInmemoryChunksCache()
+
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
@@ -1765,6 +1770,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
+		WithChunksCache(chunksCache),
 	)
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -1913,7 +1919,9 @@ func setupStoreForHintsTest(t *testing.T, opts ...BucketStoreOption) (test.TB, *
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(tb, err)
 
-	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)
+	chunksCache := newInmemoryChunksCache()
+
+	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache), WithChunksCache(chunksCache)}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
@@ -2588,7 +2596,7 @@ func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {
-						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
+						// For bucketStoreAPI chunks are not sorted within response.
 						sort.Slice(srv.SeriesSet[0].Chunks, func(i, j int) bool {
 							return srv.SeriesSet[0].Chunks[i].MinTime < srv.SeriesSet[0].Chunks[j].MinTime
 						})
@@ -2608,7 +2616,9 @@ func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 							}
 						}
 					} else {
-						assert.Equal(t, c.ExpectedSeries, srv.SeriesSet)
+						if !assert.Equal(t, c.ExpectedSeries, srv.SeriesSet) {
+							t.Log("not equal")
+						}
 					}
 
 					assert.Equal(t, c.ExpectedHints, srv.Hints)

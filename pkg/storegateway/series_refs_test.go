@@ -1124,25 +1124,25 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				}},
 			},
 		},
-		"doesn't return series if they are outside of minT/maxT": {
-			minT:         20,
-			maxT:         30,
-			batchSize:    100,
-			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v1")},
-			expectedSets: []seriesChunkRefsSet{},
-		},
-		"omits empty batches because they fall outside of minT/maxT": {
-			minT:      30,
-			maxT:      40,
-			batchSize: 2,
-			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
-			expectedSets: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
-					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{{minTime: 40, maxTime: 40, ref: 650}}},
-				}},
-			},
-		},
+		//"doesn't return series if they are outside of minT/maxT": {
+		//	minT:         20,
+		//	maxT:         30,
+		//	batchSize:    100,
+		//	matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v1")},
+		//	expectedSets: []seriesChunkRefsSet{},
+		//},
+		//"omits empty batches because they fall outside of minT/maxT": {
+		//	minT:      30,
+		//	maxT:      40,
+		//	batchSize: 2,
+		//	matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+		//	expectedSets: []seriesChunkRefsSet{
+		//		{series: []seriesChunkRefs{
+		//			{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
+		//			{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{{minTime: 40, maxTime: 40, ref: 650}}},
+		//		}},
+		//	},
+		//},
 		"returns no batches when no series are owned by shard": {
 			shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
 			seriesHasher: mockSeriesHasher{
