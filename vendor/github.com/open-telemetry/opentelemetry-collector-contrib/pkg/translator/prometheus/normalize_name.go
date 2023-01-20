@@ -18,8 +18,8 @@ import (
 	"strings"
 	"unicode"
 
+	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/service/featuregate"
 )
 
 // The map to translate OTLP units to Prometheus units
@@ -82,15 +82,16 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-var normalizeNameGate = featuregate.Gate{
-	ID:          "pkg.translator.prometheus.NormalizeName",
-	Enabled:     false,
-	Description: "Controls whether metrics names are automatically normalized to follow Prometheus naming convention",
-}
+const normalizeNameGateID = "pkg.translator.prometheus.NormalizeName"
 
 func init() {
 	// Register the feature gates
-	featuregate.GetRegistry().MustRegister(normalizeNameGate)
+	featuregate.GetRegistry().MustRegisterID(
+		normalizeNameGateID,
+		featuregate.StageAlpha,
+		featuregate.WithRegisterDescription("Controls whether metrics names are automatically normalized to follow Prometheus naming convention"),
+		featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
+	)
 }
 
 // Build a Prometheus-compliant metric name for the specified metric
@@ -105,12 +106,12 @@ func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
-	if featuregate.GetRegistry().IsEnabled(normalizeNameGate.ID) {
+	if featuregate.GetRegistry().IsEnabled(normalizeNameGateID) {
 		return normalizeName(metric, namespace)
 	}
 
 	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
-	metricName = CleanUpString(metric.Name())
+	metricName = RemovePromForbiddenRunes(metric.Name())
 
 	// Namespace?
 	if namespace != "" {
@@ -163,7 +164,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	}
 
 	// Append _total for Counters
-	if metric.DataType() == pmetric.MetricDataTypeSum && metric.Sum().IsMonotonic() {
+	if metric.Type() == pmetric.MetricTypeSum && metric.Sum().IsMonotonic() {
 		nameTokens = append(removeItem(nameTokens, "total"), "total")
 	}
 
@@ -172,7 +173,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	// See https://github.com/open-telemetry/opentelemetry-collector-contrib/issues?q=is%3Aissue+some+metric+units+don%27t+follow+otel+semantic+conventions
 	// Until these issues have been fixed, we're appending `_ratio` for gauges ONLY
 	// Theoretically, counters could be ratios as well, but it's absurd (for mathematical reasons)
-	if metric.Unit() == "1" && metric.DataType() == pmetric.MetricDataTypeGauge {
+	if metric.Unit() == "1" && metric.Type() == pmetric.MetricTypeGauge {
 		nameTokens = append(removeItem(nameTokens, "ratio"), "ratio")
 	}
 
@@ -192,9 +193,87 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	return normalizedName
 }
 
+type Normalizer struct {
+	registry *featuregate.Registry
+}
+
+func NewNormalizer(registry *featuregate.Registry) *Normalizer {
+	return &Normalizer{
+		registry: registry,
+	}
+}
+
+// TrimPromSuffixes trims type and unit prometheus suffixes from a metric name.
+// Following the [OpenTelemetry specs] for converting Prometheus Metric points to OTLP.
+//
+// [OpenTelemetry specs]: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/data-model.md#metric-metadata
+func (n *Normalizer) TrimPromSuffixes(promName string, metricType pmetric.MetricType, unit string) string {
+	if !n.registry.IsEnabled(normalizeNameGateID) {
+		return promName
+	}
+
+	nameTokens := strings.Split(promName, "_")
+	if len(nameTokens) == 1 {
+		return promName
+	}
+
+	nameTokens = removeTypeSuffixes(nameTokens, metricType)
+	nameTokens = removeUnitSuffixes(nameTokens, unit)
+
+	return strings.Join(nameTokens, "_")
+}
+
+func removeTypeSuffixes(tokens []string, metricType pmetric.MetricType) []string {
+	switch metricType {
+	case pmetric.MetricTypeSum:
+		// Only counters are expected to have a type suffix at this point.
+		// for other types, suffixes are removed during scrape.
+		return removeSuffix(tokens, "total")
+	default:
+		return tokens
+	}
+}
+
+func removeUnitSuffixes(nameTokens []string, unit string) []string {
+	l := len(nameTokens)
+	unitTokens := strings.Split(unit, "_")
+	lu := len(unitTokens)
+
+	if lu == 0 || l <= lu {
+		return nameTokens
+	}
+
+	suffixed := true
+	for i := range unitTokens {
+		if nameTokens[l-i-1] != unitTokens[lu-i-1] {
+			suffixed = false
+			break
+		}
+	}
+
+	if suffixed {
+		return nameTokens[:l-lu]
+	}
+
+	return nameTokens
+}
+
+func removeSuffix(tokens []string, suffix string) []string {
+	l := len(tokens)
+	if tokens[l-1] == suffix {
+		return tokens[:l-1]
+	}
+
+	return tokens
+}
+
 // Clean up specified string so it's Prometheus compliant
 func CleanUpString(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
+}
+
+func RemovePromForbiddenRunes(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
 }
 
 // Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
