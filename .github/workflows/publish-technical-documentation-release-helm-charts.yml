@@ -72,7 +72,7 @@ jobs:
       id: "publish-release"
       with:
         repository: "grafana/website"
-        branch: "nbwalters/docs-helm-landing-page" # Change to "master" once this branch is merged.
+        branch: "master"
         host: "github.com"
         # PUBLISH_TO_WEBSITE_MIMIR is a fine-grained GitHub Personal Access Token that expires.
         # It must be updated in the grafanabot GitHub account.
