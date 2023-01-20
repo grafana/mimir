@@ -483,6 +483,59 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 	))
 }
 
+func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCancelled(t *testing.T) {
+	t.Parallel()
+
+	userID := "test-user"
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{userID}, nil)
+	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D", userID + "/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
+	bucketClient.MockIter(userID+"/markers/", nil, nil)
+	bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSON("01DTVP434PA9VFXSW2JKB3392D"), nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json", mockBlockMetaJSON("01DTW0ZCPDDNV4BV83Q2SV4QAZ"), nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/no-compact-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
+	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
+
+	c, _, tsdbPlannerMock, logs, registry := prepare(t, prepareConfig(t), bucketClient)
+	t.Cleanup(func() {
+		t.Log(logs.String())
+	})
+	// Mock the planner as if a shutdown was triggered and the service was terminated.
+	tsdbPlannerMock.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, context.Canceled)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Wait until the error is recorded.
+	test.Poll(t, time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsShutdown)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 0
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 1
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+	))
+}
+
 func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
 	t.Parallel()
 
