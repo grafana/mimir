@@ -78,7 +78,7 @@ std.manifestYamlDoc({
         httpPort: 8007,
         jaegerApp: 'query-frontend',
         extraArguments:
-          '-store.max-query-length=8760h' +
+          '-query-frontend.max-total-query-length=8760h' +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
           (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
       }),
@@ -87,7 +87,7 @@ std.manifestYamlDoc({
         'query-scheduler': mimirService({
           target: 'query-scheduler',
           httpPort: 8011,
-          extraArguments: '-store.max-query-length=8760h',
+          extraArguments: '-query-frontend.max-total-query-length=8760h',
         }),
       } else {}
     ),

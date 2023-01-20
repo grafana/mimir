@@ -105,7 +105,7 @@ func New(cfg Config) (*MimirClient, error) {
 func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, error) {
 	req := fmt.Sprintf("/prometheus/api/v1/query?query=%s&time=%d", url.QueryEscape(query), time.Now().Unix())
 
-	res, err := r.doRequest(req, "GET", nil, -1)
+	res, err := r.doRequest(ctx, req, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +113,8 @@ func (r *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 	return res, nil
 }
 
-func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, err := buildRequest(path, method, *r.endpoint, payload, contentLength)
+func (r *MimirClient) doRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
+	req, err := buildRequest(ctx, path, method, *r.endpoint, payload, contentLength)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func joinPath(baseURLPath, targetPath string) string {
 	return strings.TrimSuffix(baseURLPath, "/") + targetPath
 }
 
-func buildRequest(p, m string, endpoint url.URL, payload io.Reader, contentLength int64) (*http.Request, error) {
+func buildRequest(ctx context.Context, p, m string, endpoint url.URL, payload io.Reader, contentLength int64) (*http.Request, error) {
 	// parse path parameter again (as it already contains escaped path information
 	pURL, err := url.Parse(p)
 	if err != nil {
@@ -228,7 +228,7 @@ func buildRequest(p, m string, endpoint url.URL, payload io.Reader, contentLengt
 	}
 	endpoint.Path = joinPath(endpoint.Path, pURL.Path)
 	endpoint.RawQuery = pURL.RawQuery
-	r, err := http.NewRequest(m, endpoint.String(), payload)
+	r, err := http.NewRequestWithContext(ctx, m, endpoint.String(), payload)
 	if err != nil {
 		return nil, err
 	}

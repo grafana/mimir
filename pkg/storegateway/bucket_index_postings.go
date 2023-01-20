@@ -19,51 +19,119 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
-// postingGroup keeps posting keys for single matcher. Logical result of the group is:
-// If addAll is set: special All postings minus postings for removeKeys labels. No need to merge postings for addKeys in this case.
-// If addAll is not set: Merge of postings for "addKeys" labels minus postings for removeKeys labels
-// This computation happens in ExpandedPostings.
-type postingGroup struct {
-	addAll     bool
-	addKeys    []labels.Label
-	removeKeys []labels.Label
+// rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
+// that the keys in the group have a corresponding postings list in the index.
+// Logical result of the group is:
+// If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call toPostingGroup() to populate the keys.
+// If isSubtract == true: special All postings minus postings for keys labels.
+// If isSubtract == false: merge of postings for keys labels.
+// This computation happens in toPostingGroups.
+type rawPostingGroup struct {
+	isSubtract bool
+	labelName  string
+	keys       []labels.Label
+
+	isLazy      bool
+	lazyMatcher func(string) bool
 }
 
-func newPostingGroup(addAll bool, addKeys, removeKeys []labels.Label) *postingGroup {
-	return &postingGroup{
-		addAll:     addAll,
-		addKeys:    addKeys,
-		removeKeys: removeKeys,
+func newRawIntersectingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+	return rawPostingGroup{
+		isSubtract: false,
+		labelName:  labelName,
+		keys:       keys,
 	}
 }
 
-// NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
-func toPostingGroup(lvr indexheader.Reader, m *labels.Matcher) (*postingGroup, error) {
+func newRawSubtractingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+	return rawPostingGroup{
+		isSubtract: true,
+		labelName:  labelName,
+		keys:       keys,
+	}
+}
+
+func newLazyIntersectingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
+	return rawPostingGroup{
+		isLazy:      true,
+		isSubtract:  false,
+		labelName:   labelName,
+		lazyMatcher: matcher,
+	}
+}
+
+func newLazySubtractingPostingGroup(labelName string, matcher func(string) bool) rawPostingGroup {
+	return rawPostingGroup{
+		isLazy:      true,
+		isSubtract:  true,
+		labelName:   labelName,
+		lazyMatcher: matcher,
+	}
+}
+
+// toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
+// This means that after calling toPostingGroup g.keys will be modified.
+func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
+	var keys []labels.Label
+	if g.isLazy {
+		vals, err := r.LabelValues(g.labelName, g.lazyMatcher)
+		if err != nil {
+			return postingGroup{}, err
+		}
+		keys = make([]labels.Label, len(vals))
+		for i := range vals {
+			keys[i] = labels.Label{Name: g.labelName, Value: vals[i]}
+		}
+	} else {
+		var err error
+		keys, err = g.filterNonExistingKeys(r)
+		if err != nil {
+			return postingGroup{}, errors.Wrap(err, "filter posting keys")
+		}
+	}
+
+	return postingGroup{
+		isSubtract: g.isSubtract,
+		keys:       keys,
+	}, nil
+}
+
+// filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
+// modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
+func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, error) {
+	writeIdx := 0
+	for _, l := range g.keys {
+		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
+			// Try with the rest of the set matchers, maybe they can match some series.
+			// Continue so we overwrite it next time there's an existing value.
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		g.keys[writeIdx] = l
+		writeIdx++
+	}
+	return g.keys[:writeIdx], nil
+}
+
+func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
-			if _, err := lvr.PostingsOffset(m.Name, val); errors.Is(err, indexheader.NotFoundRangeErr) {
-				// This label name and value doesn't exist in this block, so there are 0 postings we can match.
-				// Try with the rest of the set matchers, maybe they can match some series.
-				continue
-			}
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newPostingGroup(true, nil, keys), nil
+			return newRawSubtractingPostingGroup(m.Name, keys)
 		}
-		return newPostingGroup(false, keys, nil), nil
+		return newRawIntersectingPostingGroup(m.Name, keys)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			if _, err := lvr.PostingsOffset(m.Name, m.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
-				// This label name or value doesn't exist in this block, so there are 0 postings we can match.
-				return newPostingGroup(false, nil, nil), nil
-			}
-			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil
+			return newRawIntersectingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -71,12 +139,7 @@ func toPostingGroup(lvr indexheader.Reader, m *labels.Matcher) (*postingGroup, e
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			if _, err := lvr.PostingsOffset(m.Name, m.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
-				// This label name or value doesn't exist in this block, so we should include all postings
-				// because all series match m.
-				return newPostingGroup(true, nil, nil), nil
-			}
-			return newPostingGroup(true, nil, []labels.Label{{Name: m.Name, Value: m.Value}}), nil
+			return newRawSubtractingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 	}
 
@@ -87,26 +150,26 @@ func toPostingGroup(lvr indexheader.Reader, m *labels.Matcher) (*postingGroup, e
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		vals, err := lvr.LabelValues(m.Name, not(m.Matches))
-		toRemove := make([]labels.Label, len(vals))
-		for i := range vals {
-			toRemove[i] = labels.Label{Name: m.Name, Value: vals[i]}
-		}
-		return newPostingGroup(true, nil, toRemove), err
+		return newLazySubtractingPostingGroup(m.Name, not(m.Matches))
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	vals, err := lvr.LabelValues(m.Name, m.Matches)
-	toAdd := make([]labels.Label, len(vals))
-	for i := range vals {
-		toAdd[i] = labels.Label{Name: m.Name, Value: vals[i]}
-	}
-	return newPostingGroup(false, toAdd, nil), err
+	return newLazyIntersectingPostingGroup(m.Name, m.Matches)
 }
 
 func not(filter func(string) bool) func(string) bool {
 	return func(s string) bool { return !filter(s) }
+}
+
+// rawPostingGroup keeps posting keys for single matcher. Logical result of the group is:
+// If isSubtract == true: special All postings minus postings for keys labels.
+// If isSubtract == false: merge of postings for keys labels.
+// All the labels in keys should have a corresponding postings list in the index.
+// This computation happens in expandedPostings.
+type postingGroup struct {
+	isSubtract bool
+	keys       []labels.Label
 }
 
 type postingPtr struct {

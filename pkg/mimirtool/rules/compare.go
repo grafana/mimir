@@ -30,14 +30,27 @@ var (
 // and active namespace for the mimir tenant
 type NamespaceState int
 
+func (s NamespaceState) String() string {
+	switch s {
+	case Created:
+		return "created"
+	case Updated:
+		return "updated"
+	case Deleted:
+		return "deleted"
+	default:
+		return "unknown"
+	}
+}
+
 const (
 	// Unchanged denotes the active namespace is identical to the staged namespace
 	Unchanged NamespaceState = iota
-	// Created denotes their is not active namespace for the staged namespace
+	// Created denotes there is no active namespace for the staged namespace
 	Created
 	// Updated denotes the active namespace is different than the staged namespace
 	Updated
-	// Deleted denotes their is no staged namespace for the active namespace
+	// Deleted denotes there is no staged namespace for the active namespace
 	Deleted
 )
 
@@ -49,6 +62,33 @@ type NamespaceChange struct {
 	GroupsUpdated []UpdatedRuleGroup
 	GroupsCreated []rwrulefmt.RuleGroup
 	GroupsDeleted []rwrulefmt.RuleGroup
+}
+
+// ToOperations returns a list of operations to run to apply the given change.
+// Each operation addresses a single rule group.
+func (c NamespaceChange) ToOperations() []NamespaceChangeOperation {
+	ops := make([]NamespaceChangeOperation, 0, len(c.GroupsCreated)+len(c.GroupsUpdated)+len(c.GroupsDeleted))
+
+	for _, g := range c.GroupsCreated {
+		ops = append(ops, NamespaceChangeOperation{State: Created, Namespace: c.Namespace, RuleGroup: g})
+	}
+
+	for _, g := range c.GroupsUpdated {
+		ops = append(ops, NamespaceChangeOperation{State: Updated, Namespace: c.Namespace, RuleGroup: g.New})
+	}
+
+	for _, g := range c.GroupsDeleted {
+		ops = append(ops, NamespaceChangeOperation{State: Deleted, Namespace: c.Namespace, RuleGroup: g})
+	}
+
+	return ops
+}
+
+// NamespaceChangeOperation holds an operation on a single rule group.
+type NamespaceChangeOperation struct {
+	Namespace string
+	State     NamespaceState
+	RuleGroup rwrulefmt.RuleGroup
 }
 
 // SummarizeChanges returns the number of each type of change in a set of changes

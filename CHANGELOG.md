@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825
+* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825 #4017
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [CHANGE] Ingester: If shipping is enabled block retention will now be relative to the upload time to cloud storage. If shipping is disabled block retention will be relative to the creation time of the block instead of the mintime of the last block created. #3816
 * [CHANGE] Query-frontend: Deprecated CLI flag `-query-frontend.align-querier-with-step` has been removed. #3982
@@ -33,6 +33,8 @@
 * [ENHANCEMENT] Reduce overhead of debug logging when filtered out. #3875
 * [ENHANCEMENT] Update Docker base images from `alpine:3.16.2` to `alpine:3.17.1`. #3898
 * [ENHANCEMENT] Ingester: Add new `/ingester/tsdb_metrics` endpoint to return tenant-specific TSDB metrics. #3923
+* [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.max-total-query-length` and its associated YAML configuration is now stable. #3882
+* [ENHANCEMENT] Ruler: rule groups now support optional and experimental `align_evaluation_time_on_interval` field, which causes all evaluations to happen on interval-aligned timestamp. #4013
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
@@ -44,7 +46,9 @@
 * [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 * [BUGFIX] Querier: canceled requests are no longer reported as "consistency check" failures. #3837 #3927
 * [BUGFIX] Distributor: don't panic when `metric_relabel_configs` in overrides contains null element. #3868
+* [BUGFIX] Distributor: don't panic when OTLP histograms don't have any buckets. #3853
 * [BUGFIX] Ingester, Compactor: fix panic that can occur when compaction fails. #3955
+* [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` error when the calling querier cancels the request. #4007
 
 ### Mixin
 
@@ -80,7 +84,9 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Update `mimirtool config convert` to work with Mimir 2.4, 2.5, 2.6 changes. #3952
 * [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+* [ENHANCEMENT] Added `--concurrency` to `mimirtool rules sync` command. #3996
 * [BUGFIX] Fix summary output from `mimirtool rules sync` to display correct number of groups created and updated. #3918
 
 ### Documentation

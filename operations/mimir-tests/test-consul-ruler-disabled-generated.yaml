@@ -844,6 +844,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -853,7 +854,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.max-query-length=768h
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:

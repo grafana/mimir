@@ -27,25 +27,27 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag     = "validation.max-length-label-name"
-	maxLabelValueLengthFlag    = "validation.max-length-label-value"
-	maxMetadataLengthFlag      = "validation.max-metadata-length"
-	creationGracePeriodFlag    = "validation.create-grace-period"
-	maxQueryLengthFlag         = "store.max-query-length"
-	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
-	requestRateFlag            = "distributor.request-rate-limit"
-	requestBurstSizeFlag       = "distributor.request-burst-size"
-	ingestionRateFlag          = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
+	MaxSeriesPerMetricFlag        = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag      = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag          = "ingester.max-global-series-per-user"
+	MaxEphemeralSeriesPerUserFlag = "ingester.max-ephemeral-series-per-user"
+	MaxMetadataPerUserFlag        = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag         = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag     = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag         = "querier.max-fetched-series-per-query"
+	maxLabelNamesPerSeriesFlag    = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag        = "validation.max-length-label-name"
+	maxLabelValueLengthFlag       = "validation.max-length-label-value"
+	maxMetadataLengthFlag         = "validation.max-metadata-length"
+	creationGracePeriodFlag       = "validation.create-grace-period"
+	maxQueryLengthFlag            = "store.max-query-length"
+	maxPartialQueryLengthFlag     = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag       = "query-frontend.max-total-query-length"
+	requestRateFlag               = "distributor.request-rate-limit"
+	requestBurstSizeFlag          = "distributor.request-burst-size"
+	ingestionRateFlag             = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag        = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag      = "distributor.ha-tracker.max-clusters"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -92,6 +94,8 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	// Ephemeral series
+	MaxEphemeralSeriesPerUser int `yaml:"max_ephemeral_series_per_user" json:"max_ephemeral_series_per_user" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -198,6 +202,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -211,8 +216,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, "Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
-	f.Var(&l.MaxPartialQueryLength, "querier.max-partial-query-length", fmt.Sprintf("Limit the time range for partial queries at the querier level. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
+	// TODO: Deprecated in Mimir 2.6, remove in Mimir 2.8
+	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, fmt.Sprintf("Deprecated: Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable. This option is deprecated, use -%s or -%s instead.", maxPartialQueryLengthFlag, maxTotalQueryLengthFlag))
+	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, fmt.Sprintf("Limit the time range for partial queries at the querier level. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
@@ -455,6 +461,11 @@ func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
+}
+
+// MaxEphemeralSeriesPerUser returns the maximum number of ephemeral series a user is allowed to store across the cluster.
+func (o *Overrides) MaxEphemeralSeriesPerUser(userID string) int {
+	return o.getOverridesForUser(userID).MaxEphemeralSeriesPerUser
 }
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
