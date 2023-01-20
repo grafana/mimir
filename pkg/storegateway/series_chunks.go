@@ -428,6 +428,10 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 					currentBlock = chkRef.blockID
 					if cachedAggrChks, ok := cachedChunks[toChunksCacheKey(chkRef)]; ok {
 						copy(nextSet.series[sIdx].chks[cIdx:cIdx+len(cachedAggrChks)], cachedAggrChks)
+						for i := cIdx; i < cIdx+len(cachedAggrChks); i++ {
+							nextSet.series[sIdx].chks[i].MinTime = s.chunks[i].minTime
+							nextSet.series[sIdx].chks[i].MaxTime = s.chunks[i].maxTime
+						}
 						cIdx += len(cachedAggrChks) // jump to the chunks from the next block
 					}
 				} else {

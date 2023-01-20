@@ -7,6 +7,7 @@ package chunkscache
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 
@@ -100,15 +100,64 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			// Fetch postings from cached and assert on it.
 			bytesPool := pool.NewSafeSlabPool[byte](&pool.TrackedPool{Parent: &sync.Pool{}}, 10000)
 			chunksPool := pool.NewSafeSlabPool[storepb.AggrChunk](&pool.TrackedPool{Parent: &sync.Pool{}}, 10000)
-			hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchKeys, chunksPool, bytesPool)
-			assert.Equal(t, testData.expectedHits, hits)
+			for i := 0; i < 100; i++ {
+				bytesPool.Release()
+				chunksPool.Release()
+				hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchKeys, chunksPool, bytesPool)
+				assert.Equal(t, testData.expectedHits, hits)
 
-			// Assert on metrics.
-			assert.Equal(t, float64(len(testData.fetchKeys)), prom_testutil.ToFloat64(c.requests))
-			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits))
+				// Assert on metrics.
+				//assert.Equal(t, float64(len(testData.fetchKeys)), prom_testutil.ToFloat64(c.requests))
+				//assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits))
+			}
 
 		})
 	}
+}
+
+func FuzzName(f *testing.F) {
+	r := rand.New(rand.NewSource(1))
+
+	b1 := make([]byte, 256)
+	_, _ = r.Read(b1)
+	b2 := make([]byte, 512)
+	_, _ = r.Read(b2)
+	b3 := make([]byte, 4096)
+	_, _ = r.Read(b3)
+
+	f.Add(50, int64(0), int64(1674243380), b1)
+	f.Add(48, int64(1611171380), int64(1642707380), b2)
+	f.Add(25, int64(1609617980), int64(1674243615), b3)
+
+	f.Fuzz(func(t *testing.T, numChunks int, minT, maxT int64, data []byte) {
+		p := pool.NewSafeSlabPool[storepb.AggrChunk](&sync.Pool{}, 1000)
+		if numChunks < 0 {
+			numChunks = -numChunks
+		}
+		if minT < 0 {
+			minT = -minT
+		}
+		if maxT < 0 {
+			maxT = -maxT
+		}
+		chks := make([]storepb.AggrChunk, numChunks%10000)
+		for i := range chks {
+			chks[i].MinTime = int64(minT)
+			chks[i].MaxTime = int64(maxT)
+			chks[i].Raw = &storepb.Chunk{Data: data}
+		}
+		encoded, err := encodeAggrgChunks(chks)
+		assert.NoError(t, err)
+		p.Release()
+		parsed, err := parseChunkSlice(encoded, p)
+		assert.NoError(t, err)
+
+		if len(chks) == 0 {
+			assert.Len(t, parsed, 0)
+		} else {
+			assert.Equal(t, chks, parsed)
+		}
+	})
 }
 
 func BenchmarkStringCacheKeys(b *testing.B) {

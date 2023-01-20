@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
@@ -91,19 +90,13 @@ func parseChunkSlice(buff []byte, chunksPool *pool.SafeSlabPool[storepb.AggrChun
 	parsed := chunksPool.Get(int(numChunks))
 
 	for cIdx := range parsed {
-		protoSize, uvarIntSize := binary.Uvarint(buff[read:])
-		read += uvarIntSize
-
-		err := parsed[cIdx].Unmarshal(buff[read : read+int(protoSize)])
-		if err != nil {
-			return nil, errors.Wrap(err, "parsing cached chunk")
-		}
-		read += int(protoSize)
-
 		dataSize, uvarIntSize := binary.Uvarint(buff[read:])
 		read += uvarIntSize
 
-		parsed[cIdx].Raw.Data = buff[read : read+int(dataSize)]
+		b := make([]byte, dataSize)
+		copy(b, buff[read:read+int(dataSize)])
+
+		parsed[cIdx].Raw = &storepb.Chunk{Data: b}
 		read += int(dataSize)
 	}
 	return parsed, nil
@@ -127,46 +120,26 @@ func (c *MemcachedChunksCache) StoreChunks(ctx context.Context, userID string, r
 
 // Format:
 // | num_chunks (uvarint) | chunk (chunk) ... |
-// chunk: | proto_size (uvarint) | proto_marshalled (bytes) | data_size (uvarint) | data (bytes) |
+// chunk: | data_size (uvarint) | data (bytes) |
 func encodeAggrgChunks(v []storepb.AggrChunk) ([]byte, error) {
 	// We have to allocate a new slice since we still don't use pooling with SETs,
 
 	// Count the number of bytes we will encode
 	tempVarIntBuf := make([]byte, 0, 10)
-	totalEncodedSize := 0
+	totalEncodedSize := uvarIntSize(uint64(len(v)), tempVarIntBuf)
 
-	var swapData []byte
 	for _, chk := range v {
 		// Calculate protobuf encoding without encoding actual chunk data
-		chk.Raw.Data, swapData = nil, chk.Raw.Data
-		chkSize := chk.Size()
-		totalEncodedSize += chkSize
-		totalEncodedSize += uvarIntSize(uint64(chkSize), tempVarIntBuf)
-		chk.Raw.Data = swapData
-
-		totalEncodedSize += len(chk.Raw.Data)
 		totalEncodedSize += uvarIntSize(uint64(len(chk.Raw.Data)), tempVarIntBuf)
+		totalEncodedSize += len(chk.Raw.Data)
 	}
-	totalEncodedSize += uvarIntSize(uint64(len(v)), tempVarIntBuf)
 
 	encoded := make([]byte, totalEncodedSize)
 	written := binary.PutUvarint(encoded, uint64(len(v)))
 
 	for _, chk := range v {
-		chk.Raw.Data, swapData = nil, chk.Raw.Data
-
-		chkSize := chk.Size()
-		written += binary.PutUvarint(encoded[written:], uint64(chkSize))
-
-		protoWritten, err := chk.MarshalToSizedBuffer(encoded[written : written+chkSize])
-		if err != nil {
-			return nil, errors.Wrap(err, "encoding chunks cache item")
-		}
-		written += protoWritten
-
-		written += binary.PutUvarint(encoded[written:], uint64(len(swapData)))
-		written += copy(encoded[written:], swapData)
-		chk.Raw.Data = swapData
+		written += binary.PutUvarint(encoded[written:], uint64(len(chk.Raw.Data)))
+		written += copy(encoded[written:], chk.Raw.Data)
 	}
 
 	if written != len(encoded) {
