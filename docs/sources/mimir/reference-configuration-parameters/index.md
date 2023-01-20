@@ -945,10 +945,7 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 30000]
 
-# (advanced) Comma-separated list of metric names, for which the
-# -ingester.max-global-series-per-metric limit will be ignored. Does not affect
-# the -ingester.max-global-series-per-user limit.
-# CLI flag: -ingester.ignore-series-limit-for-metric-names
+# (advanced)
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 ```
 
@@ -2540,10 +2537,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-series-per-user
 [max_global_series_per_user: <int> | default = 150000]
 
-# The maximum number of in-memory series per metric name, across the cluster
-# before replication. 0 to disable.
-# CLI flag: -ingester.max-global-series-per-metric
-[max_global_series_per_metric: <int> | default = 0]
+[max_global_series_per_metric: <int> | default = ]
 
 # (experimental) The maximum number of in-memory ephemeral series per tenant,
 # across the cluster before replication. 0 to disable ephemeral storage.

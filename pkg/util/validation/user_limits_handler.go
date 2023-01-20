@@ -18,7 +18,7 @@ type UserLimitsResponse struct {
 	IngestionRate             float64 `json:"ingestion_rate"`
 	IngestionBurstSize        int     `json:"ingestion_burst_size"`
 	MaxGlobalSeriesPerUser    int     `json:"max_global_series_per_user"`
-	MaxGlobalSeriesPerMetric  int     `json:"max_global_series_per_metric"`
+	MaxGlobalSeriesPerMetric  int     `json:"max_global_series_per_metric"` // TODO: Deprecated in Mimir 2.6, to be removed in Mimir 2.8.
 	MaxGlobalExemplarsPerUser int     `json:"max_global_exemplars_per_user"`
 
 	// Read path limits
@@ -52,7 +52,7 @@ func UserLimitsHandler(defaultLimits Limits, tenantLimits TenantLimits) http.Han
 			IngestionRate:             userLimits.IngestionRate,
 			IngestionBurstSize:        userLimits.IngestionBurstSize,
 			MaxGlobalSeriesPerUser:    userLimits.MaxGlobalSeriesPerUser,
-			MaxGlobalSeriesPerMetric:  userLimits.MaxGlobalSeriesPerMetric,
+			MaxGlobalSeriesPerMetric:  0,
 			MaxGlobalExemplarsPerUser: userLimits.MaxGlobalExemplarsPerUser,
 
 			// Read path limits

@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -171,7 +171,8 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+	// TODO: Deprecated in Mimir 2.6, remove in Mimir 2.8.
+	UnusedIgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -190,28 +191,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	cfg.DefaultLimits.RegisterFlags(f)
 
-	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-}
-
-func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
-	if cfg.IgnoreSeriesLimitForMetricNames == "" {
-		return nil
-	}
-
-	result := map[string]struct{}{}
-
-	for _, s := range strings.Split(cfg.IgnoreSeriesLimitForMetricNames, ",") {
-		tr := strings.TrimSpace(s)
-		if tr != "" {
-			result[tr] = struct{}{}
-		}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-
-	return result
+	flagext.DeprecatedFlag(f, "ingester.ignore-series-limit-for-metric-names", "Deprecated, this option is no longer supported and will be removed.", logger)
 }
 
 // Ingester deals with "in flight" chunks.  Based on Prometheus 1.x
@@ -1031,14 +1011,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					return makeLimitError(i.limiter.FormatError(userID, cause))
 				})
 				continue
-
-			case errMaxSeriesPerMetricLimitExceeded:
-				stats.perMetricSeriesLimitCount++
-				updateFirstPartial(func() error {
-					// Ephemeral storage doesn't have this limit.
-					return makeMetricLimitError(copiedLabels, i.limiter.FormatError(userID, cause))
-				})
-				continue
 			}
 
 			return wrapWithUser(err, userID)
@@ -1742,7 +1714,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	userDB := &userTSDB{
 		userID:                       userID,
 		activeSeries:                 activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
-		seriesInMetric:               newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:           util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:          util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		instanceLimitsFn:             i.getInstanceLimits,

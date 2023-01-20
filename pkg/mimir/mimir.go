@@ -160,7 +160,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
-	c.LimitsConfig.RegisterFlags(f)
+	c.LimitsConfig.RegisterFlags(f, logger)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.BlocksStorage.RegisterFlags(f, logger)

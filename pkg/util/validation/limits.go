@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -27,7 +28,6 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag        = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag      = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag          = "ingester.max-global-series-per-user"
 	MaxEphemeralSeriesPerUserFlag = "ingester.max-ephemeral-series-per-user"
@@ -92,8 +92,9 @@ type Limits struct {
 
 	// Ingester enforced limits.
 	// Series
-	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
-	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	MaxGlobalSeriesPerUser int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
+	// TODO: Deprecated in Mimir 2.6, remove in Mimir 2.8.
+	UnusedMaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
 	// Ephemeral series
 	MaxEphemeralSeriesPerUser int `yaml:"max_ephemeral_series_per_user" json:"max_ephemeral_series_per_user" category:"experimental"`
 	// Metadata
@@ -179,7 +180,7 @@ type Limits struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (l *Limits) RegisterFlags(f *flag.FlagSet) {
+func (l *Limits) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, requestRateFlag, 0, "Per-tenant request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, requestBurstSizeFlag, 0, "Per-tenant allowed request burst size. 0 to disable.")
@@ -199,7 +200,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	// TODO: Deprecated in Mimir 2.6, remove in Mimir 2.8.
+	flagext.DeprecatedFlag(f, "ingester.max-global-series-per-metric", "Deprecated: This option is no longer supported and will be removed.", logger)
 	f.IntVar(&l.MaxEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
@@ -453,11 +455,6 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
-}
-
-// MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
-func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
-	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
 }
 
 // MaxEphemeralSeriesPerUser returns the maximum number of ephemeral series a user is allowed to store across the cluster.

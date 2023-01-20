@@ -1023,8 +1023,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ingester.ignore-series-limit-for-metric-names string
-    	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-ephemeral-series int
     	[experimental] Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1043,8 +1041,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
     	The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.
-  -ingester.max-global-series-per-metric int
-    	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration

@@ -19,7 +19,6 @@ import (
 
 var (
 	// These errors are only internal, to change the API error messages, see Limiter's methods below.
-	errMaxSeriesPerMetricLimitExceeded        = errors.New("per-metric series limit exceeded")
 	errMaxMetadataPerMetricLimitExceeded      = errors.New("per-metric metadata limit exceeded")
 	errMaxSeriesPerUserLimitExceeded          = errors.New("per-user series limit exceeded")
 	errMaxEphemeralSeriesPerUserLimitExceeded = errors.New("per-user ephemeral series limit exceeded")
@@ -55,16 +54,6 @@ func NewLimiter(
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
 	}
-}
-
-// AssertMaxSeriesPerMetric limit has not been reached compared to the current
-// number of series in input and returns an error if so.
-func (l *Limiter) AssertMaxSeriesPerMetric(userID string, series int) error {
-	if actualLimit := l.maxSeriesPerMetric(userID); series < actualLimit {
-		return nil
-	}
-
-	return errMaxSeriesPerMetricLimitExceeded
 }
 
 // AssertMaxMetadataPerMetric limit has not been reached compared to the current
@@ -114,8 +103,6 @@ func (l *Limiter) FormatError(userID string, err error) error {
 	switch err {
 	case errMaxSeriesPerUserLimitExceeded:
 		return l.formatMaxSeriesPerUserError(userID)
-	case errMaxSeriesPerMetricLimitExceeded:
-		return l.formatMaxSeriesPerMetricError(userID)
 	case errMaxMetadataPerUserLimitExceeded:
 		return l.formatMaxMetadataPerUserError(userID)
 	case errMaxEphemeralSeriesPerUserLimitExceeded:
@@ -133,15 +120,6 @@ func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	return errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
 		validation.MaxSeriesPerUserFlag,
-	))
-}
-
-func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
-	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
-
-	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerMetricFlag,
 	))
 }
 
@@ -170,10 +148,6 @@ func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
 		validation.MaxMetadataPerMetricFlag,
 	))
-}
-
-func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {

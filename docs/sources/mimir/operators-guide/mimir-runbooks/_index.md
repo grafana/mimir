@@ -1420,23 +1420,6 @@ How to **fix** it:
 - Ensure the actual number of ephemeral series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-ephemeral-series-per-user` option (or `max_ephemeral_series_per_user` in the runtime configuration).
 
-### err-mimir-max-series-per-metric
-
-This error occurs when the number of in-memory series for a given tenant and metric name exceeds the configured limit.
-
-The limit is primarily used to protect a tenant from potential mistakes on their metrics instrumentation.
-For example, if an instrumented application exposes a metric with a label value including very dynamic data (e.g. a timestamp) the ingestion of that metric would quickly lead to hit the per-tenant series limit, causing other metrics to be rejected too.
-This limit introduces a cap on the maximum number of series each metric name can have, rejecting exceeding series only for that metric name, before the per-tenant series limit is reached.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_series_per_metric` in the runtime configuration).
-
-How to **fix** it:
-
-- Check the details in the error message to find out which is the affected metric name.
-- Investigate if the high number of series exposed for the affected metric name is legit.
-- Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
-- Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
-
 ### err-mimir-max-metadata-per-user
 
 This non-critical error occurs when the number of in-memory metrics with metadata for a given tenant exceeds the configured limit.

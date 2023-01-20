@@ -1171,31 +1171,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 		},
-		"per-metric series limit reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
-				limits.MaxGlobalSeriesPerMetric = 1
-				return true
-			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				// Push a series with the same metric name but different labels than the one used during the benchmark.
-				currTimeReq := mimirpb.ToWriteRequest(
-					[]labels.Labels{labels.FromStrings(labels.MetricName, metricName, "cardinality", "another")},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
-					nil,
-					nil,
-					mimirpb.API,
-				)
-				_, err := ingester.Push(ctx, currTimeReq)
-				require.NoError(b, err)
-			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
-				// Push series with different labels than the one already pushed.
-				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
-					verifyErrorString(b, err, "per-metric series limit")
-				}
-			},
-		},
 		"very low ingestion rate limit": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
 				if instanceLimits == nil {
@@ -2686,7 +2661,6 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 
 	cfg := defaultIngesterTestConfig(b)
 	limits := defaultLimitsTestConfig()
-	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
 
 	// Change stream type in runtime.
@@ -2909,7 +2883,6 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 func prepareHealthyIngester(b testing.TB) *Ingester {
 	cfg := defaultIngesterTestConfig(b)
 	limits := defaultLimitsTestConfig()
-	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
 
 	// Create ingester.
@@ -5180,111 +5153,6 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 }
 
-func TestIngesterMetricLimitExceeded(t *testing.T) {
-	limits := defaultLimitsTestConfig()
-	limits.MaxGlobalSeriesPerMetric = 1
-	limits.MaxGlobalMetadataPerMetric = 1
-
-	// create a data dir that survives an ingester restart
-	dataDir := t.TempDir()
-
-	newIngester := func() *Ingester {
-		cfg := defaultIngesterTestConfig(t)
-		// Global Ingester limits are computed based on replication factor
-		// Set RF=1 here to ensure the series and metadata limits
-		// are actually set to 1 instead of 3.
-		cfg.IngesterRing.ReplicationFactor = 1
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
-		require.NoError(t, err)
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-
-		// Wait until it's healthy
-		test.Poll(t, time.Second, 1, func() interface{} {
-			return ing.lifecycler.HealthyInstancesCount()
-		})
-
-		return ing
-	}
-
-	ing := newIngester()
-	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-	userID := "1"
-	labels1 := labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")
-	sample1 := mimirpb.Sample{
-		TimestampMs: 0,
-		Value:       1,
-	}
-	sample2 := mimirpb.Sample{
-		TimestampMs: 1,
-		Value:       2,
-	}
-	labels3 := labels.FromStrings(labels.MetricName, "testmetric", "foo", "biz")
-	sample3 := mimirpb.Sample{
-		TimestampMs: 1,
-		Value:       3,
-	}
-
-	// Metadata
-	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
-	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
-
-	// Append only one series and one metadata first, expect no error.
-	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
-	require.NoError(t, err)
-
-	testLimits := func() {
-		// Append two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-		require.True(t, ok, "returned error is not an httpgrpc response")
-		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
-		assert.Equal(t, wrapWithUser(makeMetricLimitError(labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
-
-		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
-		require.NoError(t, err)
-
-		// Read samples back via ingester queries.
-		res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
-		require.NoError(t, err)
-
-		// Verify Series
-		expected := model.Matrix{
-			{
-				Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
-				Values: []model.SamplePair{
-					{
-						Timestamp: model.Time(sample1.TimestampMs),
-						Value:     model.SampleValue(sample1.Value),
-					},
-					{
-						Timestamp: model.Time(sample2.TimestampMs),
-						Value:     model.SampleValue(sample2.Value),
-					},
-				},
-			},
-		}
-
-		assert.Equal(t, expected, res)
-
-		// Verify metadata
-		m, err := ing.MetricsMetadata(ctx, nil)
-		require.NoError(t, err)
-		assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
-	}
-
-	testLimits()
-
-	// Limits should hold after restart.
-	services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-	ing = newIngester()
-	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-	testLimits()
-}
-
 // Construct a set of realistic-looking samples, all with slightly different label sets
 func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb.Sample) {
 	// Real example from Kubernetes' embedded cAdvisor metrics, lightly obfuscated.
@@ -5877,18 +5745,6 @@ func pushWithUser(t *testing.T, ingester *Ingester, labelsToPush []labels.Labels
 		_, err := ingester.Push(ctx, req(label, time.Now()))
 		require.NoError(t, err)
 	}
-}
-
-func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
-	cfg := Config{}
-
-	require.Nil(t, cfg.getIgnoreSeriesLimitForMetricNamesMap())
-
-	cfg.IgnoreSeriesLimitForMetricNames = ", ,,,"
-	require.Nil(t, cfg.getIgnoreSeriesLimitForMetricNamesMap())
-
-	cfg.IgnoreSeriesLimitForMetricNames = "foo, bar, ,"
-	require.Equal(t, map[string]struct{}{"foo": {}, "bar": {}}, cfg.getIgnoreSeriesLimitForMetricNamesMap())
 }
 
 // Test_Ingester_OutOfOrder tests basic ingestion and query of out-of-order samples.

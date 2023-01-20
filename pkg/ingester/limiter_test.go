@@ -17,18 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestLimiter_maxSeriesPerMetric(t *testing.T) {
-	applyLimits := func(limits *validation.Limits, globalLimit int) {
-		limits.MaxGlobalSeriesPerMetric = globalLimit
-	}
-
-	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxSeriesPerMetric("test")
-	}
-
-	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
-}
-
 func TestLimiter_maxMetadataPerMetric(t *testing.T) {
 	applyLimits := func(limits *validation.Limits, globalLimit int) {
 		limits.MaxGlobalMetadataPerMetric = globalLimit
@@ -179,59 +167,6 @@ func runLimiterMaxFunctionTest(
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
-	tests := map[string]struct {
-		maxGlobalSeriesPerMetric int
-		ringReplicationFactor    int
-		ringIngesterCount        int
-		series                   int
-		expected                 error
-	}{
-		"limit is disabled": {
-			maxGlobalSeriesPerMetric: 0,
-			ringReplicationFactor:    1,
-			ringIngesterCount:        1,
-			series:                   100,
-			expected:                 nil,
-		},
-		"current number of series is below the limit": {
-			maxGlobalSeriesPerMetric: 1000,
-			ringReplicationFactor:    3,
-			ringIngesterCount:        10,
-			series:                   299,
-			expected:                 nil,
-		},
-		"current number of series is above the limit": {
-			maxGlobalSeriesPerMetric: 1000,
-			ringReplicationFactor:    3,
-			ringIngesterCount:        10,
-			series:                   300,
-			expected:                 errMaxSeriesPerMetricLimitExceeded,
-		},
-	}
-
-	for testName, testData := range tests {
-		testData := testData
-
-		t.Run(testName, func(t *testing.T) {
-			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
-			ring.On("ZonesCount").Return(1)
-
-			// Mock limits
-			limits, err := validation.NewOverrides(validation.Limits{
-				MaxGlobalSeriesPerMetric: testData.maxGlobalSeriesPerMetric,
-			}, nil)
-			require.NoError(t, err)
-
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.AssertMaxSeriesPerMetric("test", testData.series)
-
-			assert.Equal(t, testData.expected, actual)
-		})
-	}
-}
 func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerMetric int
@@ -403,7 +338,6 @@ func TestLimiter_FormatError(t *testing.T) {
 	// Mock limits
 	limits, err := validation.NewOverrides(validation.Limits{
 		MaxGlobalSeriesPerUser:              100,
-		MaxGlobalSeriesPerMetric:            20,
 		MaxGlobalMetricsWithMetadataPerUser: 10,
 		MaxGlobalMetadataPerMetric:          3,
 	}, nil)
@@ -413,9 +347,6 @@ func TestLimiter_FormatError(t *testing.T) {
 
 	actual := limiter.FormatError("user-1", errMaxSeriesPerUserLimitExceeded)
 	assert.ErrorContains(t, actual, "per-user series limit of 100 exceeded")
-
-	actual = limiter.FormatError("user-1", errMaxSeriesPerMetricLimitExceeded)
-	assert.ErrorContains(t, actual, "per-metric series limit of 20 exceeded")
 
 	actual = limiter.FormatError("user-1", errMaxMetadataPerUserLimitExceeded)
 	assert.ErrorContains(t, actual, "per-user metric metadata limit of 10 exceeded")

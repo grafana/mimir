@@ -2810,10 +2810,9 @@
           "kind": "field",
           "name": "ignore_series_limit_for_metric_names",
           "required": false,
-          "desc": "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.",
+          "desc": "",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
         }
@@ -3037,10 +3036,9 @@
           "kind": "field",
           "name": "max_global_series_per_metric",
           "required": false,
-          "desc": "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.",
+          "desc": "",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "ingester.max-global-series-per-metric",
           "fieldType": "int"
         },
         {

@@ -19,7 +19,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -55,11 +54,10 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 type userTSDB struct {
-	db             *tsdb.DB
-	userID         string
-	activeSeries   *activeseries.ActiveSeries
-	seriesInMetric *metricCounter
-	limiter        *Limiter
+	db           *tsdb.DB
+	userID       string
+	activeSeries *activeseries.ActiveSeries
+	limiter      *Limiter
 
 	// Function that creates ephemeral storage (*tsdb.Head) for the user.
 	ephemeralFactory               func() (*tsdb.Head, error)
@@ -294,40 +292,15 @@ func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 		return err
 	}
 
-	// Series per metric name limit.
-	metricName, err := extract.MetricNameFromLabels(metric)
-	if err != nil {
-		return err
-	}
-	if err := u.seriesInMetric.canAddSeriesFor(u.userID, metricName); err != nil {
-		return err
-	}
-
 	return nil
 }
 
 func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
-
-	metricName, err := extract.MetricNameFromLabels(metric)
-	if err != nil {
-		// This should never happen because it has already been checked in PreCreation().
-		return
-	}
-	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
 func (u *userTSDB) persistentPostDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
-
-	for _, metric := range metrics {
-		metricName, err := extract.MetricNameFromLabels(metric)
-		if err != nil {
-			// This should never happen because it has already been checked in PreCreation().
-			continue
-		}
-		u.seriesInMetric.decreaseSeriesForMetric(metricName)
-	}
 }
 
 func (u *userTSDB) ephemeralSeriesCallback() tsdb.SeriesLifecycleCallback {
