@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1435,7 +1434,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				block.meta.MinTime,
 				block.meta.MaxTime,
 				newSafeQueryStats(),
-				NewBucketStoreMetrics(prometheus.NewRegistry()),
 				nil,
 			)
 			require.NoError(t, err)
@@ -1676,7 +1674,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
-						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
 					)
 
@@ -1709,7 +1706,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsWarnCache,
-						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)

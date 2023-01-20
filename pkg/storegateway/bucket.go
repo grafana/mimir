@@ -1142,7 +1142,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
 				stats,
-				s.metrics,
 				s.logger,
 			)
 			if err != nil {
