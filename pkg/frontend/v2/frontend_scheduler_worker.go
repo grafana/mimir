@@ -47,7 +47,7 @@ type frontendSchedulerWorkers struct {
 	log             log.Logger
 	frontendAddress string
 
-	// Channel with requests that should be forwarded to the scheduler.
+	// Channel with requests that should be forwarded to schedulers.
 	requestsCh         <-chan *frontendRequest
 	toSchedulerAdapter frontendToSchedulerAdapter
 
@@ -138,7 +138,7 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	w := f.workers[address]
 	f.mu.Unlock()
 
-	// Already stopped or we already have worker for this address.
+	// Already stopped or we already have a worker for this address.
 	if ws == nil || w != nil {
 		return
 	}
@@ -231,8 +231,8 @@ func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, addre
 	return conn, nil
 }
 
-// Worker managing single gRPC connection to Scheduler. Each worker starts multiple goroutines for forwarding
-// requests and cancellations to Scheduler.
+// Worker managing single a gRPC connection to a Scheduler. Each worker starts multiple goroutines for forwarding
+// requests and cancellations to its Scheduler.
 type frontendSchedulerWorker struct {
 	log log.Logger
 

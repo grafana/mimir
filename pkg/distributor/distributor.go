@@ -2807,7 +2807,7 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// HealthyInstancesCount implements the ReadLifecycler interface
+// HealthyInstancesCount implements the ReadLifecycler interface.
 //
 // We use a ring lifecycler delegate to count the number of members of the
 // ring. The count is then used to enforce rate limiting correctly for each
