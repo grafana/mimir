@@ -9,6 +9,7 @@ var KnownCodecs = map[string]Codec{
 	"uninterned protobuf": UninternedProtobufCodec{},
 	"interned protobuf":   InternedProtobufCodec{},
 	"interned protobuf with single string symbol table": InternedProtobufWithSingleStringCodec{},
+	"packed interned protobuf":                          PackedInternedProtobufCodec{},
 	"gzipped uninterned protobuf":                       GzipWrapperCodec{UninternedProtobufCodec{}},
 	"snappy compressed uninterned protobuf":             SnappyWrapperCodec{UninternedProtobufCodec{}},
 	"Arrow":                                             NewArrowCodec(),

@@ -10,6 +10,7 @@ codecs=(
   "uninterned protobuf"
   "interned protobuf"
   "interned protobuf with single string symbol table"
+  "packed interned protobuf"
   "gzipped uninterned protobuf"
   "snappy compressed uninterned protobuf"
   "Arrow"
