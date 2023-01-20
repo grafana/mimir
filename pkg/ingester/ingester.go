@@ -101,8 +101,6 @@ const (
 	// Prefix for discard reasons when ingesting ephemeral series.
 	ephemeralDiscardPrefix = "ephemeral-"
 
-	ephemeralPerUserSeriesLimit = "ephemeral_per_user_series_limit"
-
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
@@ -1028,9 +1026,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				stats.perUserSeriesLimitCount++
 				updateFirstPartial(func() error {
 					if ephemeral {
-						return makeLimitError(ephemeralPerUserSeriesLimit, i.limiter.FormatError(userID, cause))
+						return makeLimitError(i.limiter.FormatError(userID, cause))
 					}
-					return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause))
+					return makeLimitError(i.limiter.FormatError(userID, cause))
 				})
 				continue
 
@@ -1038,7 +1036,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				stats.perMetricSeriesLimitCount++
 				updateFirstPartial(func() error {
 					// Ephemeral storage doesn't have this limit.
-					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
+					return makeMetricLimitError(copiedLabels, i.limiter.FormatError(userID, cause))
 				})
 				continue
 			}
