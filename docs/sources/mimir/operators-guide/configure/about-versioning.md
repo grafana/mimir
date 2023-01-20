@@ -95,7 +95,6 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
-  - Ring-based service discovery (`-query-scheduler.service-discovery-mode` and `-query-scheduler.ring.*`)
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header.map-populate-enabled`

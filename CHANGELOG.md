@@ -44,6 +44,7 @@
 * [ENHANCEMENT] Ingester: Add new `/ingester/tsdb_metrics` endpoint to return tenant-specific TSDB metrics. #3923
 * [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.max-total-query-length` and its associated YAML configuration is now stable. #3882
 * [ENHANCEMENT] Ruler: rule groups now support optional and experimental `align_evaluation_time_on_interval` field, which causes all evaluations to happen on interval-aligned timestamp. #4013
+* [ENHANCEMENT] Query-scheduler: ring-based service discovery is now stable. #4028
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
@@ -102,6 +103,7 @@
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
 * [ENHANCEMENT] Update migration from cortex documentation. #3662
+* [ENHANCEMENT] Query-scheduler: documented how to migrate from DNS-based to ring-based service discovery. #4028
 
 ### Tools
 
