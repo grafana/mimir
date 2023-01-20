@@ -656,8 +656,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	var iterator seriesChunkRefsSetIterator
-	iterator = newLoadingSeriesChunkRefsSetIterator(
+	iterator := newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
