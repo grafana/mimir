@@ -40,7 +40,7 @@ overrides:
 		IngestionRate:                       1500,
 		IngestionBurstSize:                  15000,
 		MaxGlobalSeriesPerUser:              15000,
-		MaxGlobalSeriesPerMetric:            7000,
+		UnusedMaxGlobalSeriesPerMetric:      7000,
 		RulerMaxRulesPerRuleGroup:           20,
 		RulerMaxRuleGroupsPerTenant:         20,
 		NotificationRateLimitPerIntegration: validation.NotificationRateLimitMap{},
