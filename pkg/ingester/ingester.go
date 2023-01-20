@@ -331,12 +331,16 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_series",
 			Help: "The current number of series in memory.",
-		}, i.getMemorySeriesMetric)
+		}, func() float64 {
+			return float64(i.persistentSeriesCount.Load())
+		})
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_ephemeral_series",
 			Help: "The current number of ephemeral series in memory.",
-		}, i.getEphemeralSeriesMetric)
+		}, func() float64 {
+			return float64(i.ephemeralSeriesCount.Load())
+		})
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
@@ -2009,43 +2013,6 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
-}
-
-// getMemorySeriesMetric returns the total number of in-memory series across all open TSDBs.
-func (i *Ingester) getMemorySeriesMetric() float64 {
-	if err := i.checkRunning(); err != nil {
-		return 0
-	}
-
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	count := uint64(0)
-	for _, db := range i.tsdbs {
-		count += db.Head().NumSeries()
-	}
-
-	return float64(count)
-}
-
-// getEphemeralSeriesMetric returns the total number of in-memory series in ephemeral storage across all tenants.
-func (i *Ingester) getEphemeralSeriesMetric() float64 {
-	if err := i.checkRunning(); err != nil {
-		return 0
-	}
-
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	count := uint64(0)
-	for _, db := range i.tsdbs {
-		eph := db.getEphemeralStorage()
-		if eph != nil {
-			count += eph.NumSeries()
-		}
-	}
-
-	return float64(count)
 }
 
 // getOldestUnshippedBlockMetric returns the unix timestamp of the oldest unshipped block or
