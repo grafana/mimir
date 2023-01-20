@@ -34,7 +34,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/weaveworks/common/logging"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -73,7 +72,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -150,7 +149,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
@@ -211,7 +210,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
@@ -296,7 +295,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
@@ -341,7 +340,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	require.NoError(t, stores.InitialSync(ctx))
@@ -428,7 +427,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, stores.InitialSync(ctx))
 
@@ -558,16 +557,6 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 	return srv.SeriesSet, srv.Warnings, err
 }
 
-func mockLoggingLevel() logging.Level {
-	level := logging.Level{}
-	err := level.Set("info")
-	if err != nil {
-		panic(err)
-	}
-
-	return level
-}
-
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
@@ -602,7 +591,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 	sharding := userShardingStrategy{}
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.

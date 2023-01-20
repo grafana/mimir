@@ -36,7 +36,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	// TODO: are the number of name and value symbols representative?
 	nameSymbols := generateSymbols("name", 20)
 	valueSymbols := generateSymbols("value", 1000)
-	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
@@ -117,7 +117,7 @@ func BenchmarkLabelNames(b *testing.B) {
 		for _, valueCount := range []int{100, 500, 1000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
 			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
@@ -156,9 +156,8 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
 
 	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), metadata.Thanos{
-		Labels:     labels.FromStrings("ext1", "1").Map(),
-		Downsample: metadata.ThanosDownsample{Resolution: 0},
-		Source:     metadata.TestSource,
+		Labels: labels.FromStrings("ext1", "1").Map(),
+		Source: metadata.TestSource,
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(b, err)
@@ -202,7 +201,7 @@ func BenchmarkLabelValuesIndexV2(b *testing.B) {
 
 	nameSymbols := generateSymbols("name", 10)
 	valueSymbols := generateSymbols("value", 100)
-	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
@@ -249,7 +248,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 	for _, valueCount := range []int{100, 500, 1000} {
 		nameSymbols := generateSymbols("name", nameCount)
 		valueSymbols := generateSymbols("value", valueCount)
-		idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+		idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 		require.NoError(b, err)
 		require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
@@ -316,7 +315,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 		for _, valueCount := range []int{1, 10, 100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
+			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
 			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 

@@ -15,7 +15,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -101,8 +100,6 @@ type BucketStore struct {
 	blocks   map[ulid.ULID]*bucketBlock
 	blockSet *bucketBlockSet
 
-	// Verbose enabled additional logging.
-	debugLogging bool
 	// Number of goroutines to use when syncing blocks from object storage.
 	blockSyncConcurrency int
 
@@ -199,13 +196,6 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.chunkPool = chunkPool
-	}
-}
-
-// WithDebugLogging enables debug logging.
-func WithDebugLogging() BucketStoreOption {
-	return func(s *BucketStore) {
-		s.debugLogging = true
 	}
 }
 
@@ -773,41 +763,6 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
 }
 
-// debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of
-// labels and resolution. This is important because we allow mixed resolution results, so it is quite crucial
-// to be aware what exactly resolution we see on query.
-// TODO(bplotka): Consider adding resolution label to all results to propagate that info to UI and Query API.
-func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMillis int64, bs []*bucketBlock) {
-	if len(bs) == 0 {
-		level.Debug(logger).Log("msg", "No block found", "mint", mint, "maxt", maxt)
-		return
-	}
-
-	var (
-		parts            []string
-		currRes          = int64(-1)
-		currMin, currMax int64
-	)
-	for _, b := range bs {
-		if currRes == b.meta.Thanos.Downsample.Resolution {
-			currMax = b.meta.MaxTime
-			continue
-		}
-
-		if currRes != -1 {
-			parts = append(parts, fmt.Sprintf("Range: %d-%d Resolution: %d", currMin, currMax, currRes))
-		}
-
-		currRes = b.meta.Thanos.Downsample.Resolution
-		currMin = b.meta.MinTime
-		currMax = b.meta.MaxTime
-	}
-
-	parts = append(parts, fmt.Sprintf("Range: %d-%d Resolution: %d", currMin, currMax, currRes))
-
-	level.Debug(logger).Log("msg", "Blocks source resolutions", "blocks", len(bs), "Maximum Resolution", maxResolutionMillis, "mint", mint, "maxt", maxt, "spans", strings.Join(parts, "\n"))
-}
-
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
 	defer func() {
@@ -877,7 +832,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
@@ -1226,15 +1181,12 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	}
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
 	// Find all blocks owned by this store-gateway instance and matching the request.
-	blocks := s.blockSet.getFor(minT, maxT, maxResolutionMillis, blockMatchers)
-	if s.debugLogging {
-		debugFoundBlockSetOverview(s.logger, minT, maxT, maxResolutionMillis, blocks)
-	}
+	blocks := s.blockSet.getFor(minT, maxT, blockMatchers)
 
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
@@ -1594,41 +1546,31 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 	indexCache.StoreLabelValues(ctx, userID, blockID, labelName, entry.MatchersKey, data)
 }
 
-// bucketBlockSet holds all blocks of an equal label set. It internally splits
-// them up by downsampling resolution and allows querying.
+// bucketBlockSet holds all blocks.
 type bucketBlockSet struct {
-	mtx         sync.RWMutex
-	resolutions []int64          // Available resolution, high to low (in milliseconds).
-	blocks      [][]*bucketBlock // Ordered buckets for the existing resolutions.
+	mtx    sync.RWMutex
+	blocks []*bucketBlock // Blocks sorted by mint, then maxt.
 }
 
 // newBucketBlockSet initializes a new set with the known downsampling windows hard-configured.
 // (Mimir only supports no-downsampling)
 // The set currently does not support arbitrary ranges.
 func newBucketBlockSet() *bucketBlockSet {
-	return &bucketBlockSet{
-		resolutions: []int64{0},
-		blocks:      make([][]*bucketBlock, 3),
-	}
+	return &bucketBlockSet{}
 }
 
 func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	i := int64index(s.resolutions, b.meta.Thanos.Downsample.Resolution)
-	if i < 0 {
-		return errors.Errorf("unsupported downsampling resolution %d", b.meta.Thanos.Downsample.Resolution)
-	}
-	bs := append(s.blocks[i], b)
-	s.blocks[i] = bs
+	s.blocks = append(s.blocks, b)
 
 	// Always sort blocks by min time, then max time.
-	sort.Slice(bs, func(j, k int) bool {
-		if bs[j].meta.MinTime == bs[k].meta.MinTime {
-			return bs[j].meta.MaxTime < bs[k].meta.MaxTime
+	sort.Slice(s.blocks, func(j, k int) bool {
+		if s.blocks[j].meta.MinTime == s.blocks[k].meta.MinTime {
+			return s.blocks[j].meta.MaxTime < s.blocks[k].meta.MaxTime
 		}
-		return bs[j].meta.MinTime < bs[k].meta.MinTime
+		return s.blocks[j].meta.MinTime < s.blocks[k].meta.MinTime
 	})
 	return nil
 }
@@ -1637,32 +1579,20 @@ func (s *bucketBlockSet) remove(id ulid.ULID) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	for i, bs := range s.blocks {
-		for j, b := range bs {
-			if b.meta.ULID != id {
-				continue
-			}
-			s.blocks[i] = append(bs[:j], bs[j+1:]...)
-			return
+	for i, b := range s.blocks {
+		if b.meta.ULID != id {
+			continue
 		}
+		s.blocks = append(s.blocks[:i], s.blocks[i+1:]...)
+		return
 	}
-}
-
-func int64index(s []int64, x int64) int {
-	for i, v := range s {
-		if v == x {
-			return i
-		}
-	}
-	return -1
 }
 
 // getFor returns a time-ordered list of blocks that cover date between mint and maxt.
-// Blocks with the biggest resolution possible but not bigger than the given max resolution are returned.
 // It supports overlapping blocks.
 //
 // NOTE: s.blocks are expected to be sorted in minTime order.
-func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatchers []*labels.Matcher) (bs []*bucketBlock) {
+func (s *bucketBlockSet) getFor(mint, maxt int64, blockMatchers []*labels.Matcher) (bs []*bucketBlock) {
 	if mint > maxt {
 		return nil
 	}
@@ -1670,16 +1600,8 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	// Find first matching resolution.
-	i := 0
-	for ; i < len(s.resolutions) && s.resolutions[i] > maxResolutionMillis; i++ {
-	}
-
-	// Fill the given interval with the blocks for the current resolution.
-	// Our current resolution might not cover all data, so recursively fill the gaps with higher resolution blocks
-	// if there is any.
-	start := mint
-	for _, b := range s.blocks[i] {
+	// Fill the given interval with the blocks within the request mint and maxt.
+	for _, b := range s.blocks {
 		if b.meta.MaxTime <= mint {
 			continue
 		}
@@ -1688,22 +1610,13 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 			break
 		}
 
-		if i+1 < len(s.resolutions) {
-			bs = append(bs, s.getFor(start, b.meta.MinTime-1, s.resolutions[i+1], blockMatchers)...)
-		}
-
 		// Include the block in the list of matching ones only if there are no block-level matchers
 		// or they actually match.
 		if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
 			bs = append(bs, b)
 		}
-
-		start = b.meta.MaxTime
 	}
 
-	if i+1 < len(s.resolutions) {
-		bs = append(bs, s.getFor(start, maxt, s.resolutions[i+1], blockMatchers)...)
-	}
 	return bs
 }
 
