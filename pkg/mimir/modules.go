@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
-	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
@@ -751,9 +750,10 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	reg := t.Registerer
 	t.Cfg.MemberlistKV.MetricsRegisterer = reg
-	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
-		ring.GetCodec(),
-	}
+
+	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
+	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
+
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
 		prometheus.WrapRegistererWith(
