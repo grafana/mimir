@@ -3,6 +3,9 @@
 
 set -e
 
+# Use GNU sed on MacOS falling back to `sed` everywhere else
+SED=$(which gsed || which sed)
+
 # Load common lib.
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
@@ -20,7 +23,7 @@ CHANGELOG_PATH="${CURR_DIR}/../../CHANGELOG.md"
 # We use the 2-dots notation to diff because in this context we only want to get the new commits in the last release.
 NUM_PRS=$(git log --pretty=format:"%s" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | grep -cE '#[0-9]+')
 NUM_AUTHORS=$(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
-NEW_AUTHORS=$(diff <(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}" | sort | uniq -i) <(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}" | sort | uniq -i) | grep -E '^>' | cut -c 3- | gsed -z 's/\n/, /g;s/, $//')
+NEW_AUTHORS=$(diff <(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}" | sort | uniq -i) <(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}" | sort | uniq -i) | grep -E '^>' | cut -c 3- | $SED -z 's/\n/, /g;s/, $//')
 
 if [ -z "${NEW_AUTHORS}" ]; then
   printf "This release contains %s PRs from %s authors. Thank you!\n\n" "${NUM_PRS}" "${NUM_AUTHORS}"
