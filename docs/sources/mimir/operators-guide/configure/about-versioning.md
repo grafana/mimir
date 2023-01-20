@@ -88,6 +88,7 @@ The following features are currently experimental:
     - `-ingester.max-ephemeral-series-per-user`
     - `-ingester.instance-limits.max-ephemeral-series`
     - Use of `__mimir_storage__` label matcher.
+    - All `-blocks-storage.ephemeral-tsdb.*` options.
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
