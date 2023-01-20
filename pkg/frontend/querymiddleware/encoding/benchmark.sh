@@ -9,6 +9,7 @@ codecs=(
   "original JSON"
   "uninterned protobuf"
   "interned protobuf"
+  "interned protobuf with single string symbol table"
   "gzipped uninterned protobuf"
   "snappy compressed uninterned protobuf"
   "Arrow"
