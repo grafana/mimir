@@ -1027,6 +1027,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
+  -ingester.instance-limits.max-ephemeral-series int
+    	[experimental] Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
@@ -1035,6 +1037,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.max-ephemeral-series-per-user int
+    	[experimental] The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -2062,7 +2066,7 @@ Usage of ./cmd/mimir/mimir:
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -store.max-query-length duration
-    	Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
+    	Deprecated: Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable. This option is deprecated, use -querier.max-partial-query-length or -query-frontend.max-total-query-length instead.
   -target comma-separated-list-of-strings
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled

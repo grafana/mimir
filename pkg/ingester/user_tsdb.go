@@ -68,8 +68,9 @@ type userTSDB struct {
 	ephemeralMtx     sync.RWMutex
 	ephemeralStorage *tsdb.Head
 
-	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
-	instanceLimitsFn    func() *InstanceLimits
+	instanceSeriesCount          *atomic.Int64 // Shared across all userTSDB instances created by ingester.
+	instanceEphemeralSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
+	instanceLimitsFn             func() *InstanceLimits
 
 	stateMtx       sync.RWMutex
 	state          tsdbState
@@ -267,8 +268,15 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 	return u.db.CompactHead(tsdb.NewRangeHead(h, minTime, maxTime))
 }
 
-// PreCreation implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PreCreation(metric labels.Labels) error {
+func (u *userTSDB) persistentSeriesCallback() tsdb.SeriesLifecycleCallback {
+	return seriesLifecycleCallback{
+		preCreation:  u.persistentPreCreation,
+		postCreation: u.persistentPostCreation,
+		postDeletion: u.persistentPostDeletion,
+	}
+}
+
+func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 	if u.limiter == nil {
 		return nil
 	}
@@ -298,8 +306,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	return nil
 }
 
-// PostCreation implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PostCreation(metric labels.Labels) {
+func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
@@ -310,8 +317,7 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-// PostDeletion implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) persistentPostDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
 	for _, metric := range metrics {
@@ -322,6 +328,49 @@ func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
+}
+
+func (u *userTSDB) ephemeralSeriesCallback() tsdb.SeriesLifecycleCallback {
+	return seriesLifecycleCallback{
+		preCreation:  u.ephemeralPreCreation,
+		postCreation: u.ephemeralPostCreation,
+		postDeletion: u.ephemeralPostDeletion,
+	}
+}
+
+func (u *userTSDB) ephemeralPreCreation(_ labels.Labels) error {
+	if u.limiter == nil {
+		return nil
+	}
+
+	// Verify ingester's global limit
+	gl := u.instanceLimitsFn()
+	if gl != nil && gl.MaxInMemoryEphemeralSeries > 0 {
+		if series := u.instanceEphemeralSeriesCount.Load(); series >= gl.MaxInMemoryEphemeralSeries {
+			return errMaxInMemoryEphemeralSeriesReached
+		}
+	}
+
+	eph := u.getEphemeralStorage()
+	if eph == nil {
+		// if ephemeralPreCreation is called, ephemeral storage should exist, but check here is better than panic.
+		return errors.New("ephemeral storage not created")
+	}
+
+	// Total series limit.
+	if err := u.limiter.AssertMaxEphemeralSeriesPerUser(u.userID, int(eph.NumSeries())); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (u *userTSDB) ephemeralPostCreation(_ labels.Labels) {
+	u.instanceEphemeralSeriesCount.Inc()
+}
+
+func (u *userTSDB) ephemeralPostDeletion(metrics ...labels.Labels) {
+	u.instanceEphemeralSeriesCount.Sub(int64(len(metrics)))
 }
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
@@ -456,3 +505,13 @@ func (u *userTSDB) acquireAppendLock() error {
 func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
+
+type seriesLifecycleCallback struct {
+	preCreation  func(metric labels.Labels) error
+	postCreation func(metric labels.Labels)
+	postDeletion func(metric ...labels.Labels)
+}
+
+func (s seriesLifecycleCallback) PreCreation(l labels.Labels) error { return s.preCreation(l) }
+func (s seriesLifecycleCallback) PostCreation(l labels.Labels)      { s.postCreation(l) }
+func (s seriesLifecycleCallback) PostDeletion(l ...labels.Labels)   { s.postDeletion(l...) }

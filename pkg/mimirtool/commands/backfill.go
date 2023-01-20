@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -99,5 +100,5 @@ func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	return cli.Backfill(c.blocks, c.sleepTime)
+	return cli.Backfill(context.Background(), c.blocks, c.sleepTime)
 }

@@ -29,16 +29,15 @@ mimir {
   // At that point there will likely be less deviation between components.
   // See the tracking issue: https://github.com/grafana/mimir/issues/2749
   querier_args+:: {
-    'store.max-query-length': null,
+    'querier.max-partial-query-length': null,
   },
 
   query_frontend_args+:: {
     'server.grpc-max-recv-msg-size-bytes': null,
-    'store.max-query-length': null,
     'query-frontend.query-sharding-total-shards': null,
   },
 
   ruler_args+:: {
-    'store.max-query-length': null,
+    'querier.max-partial-query-length': null,
   },
 }

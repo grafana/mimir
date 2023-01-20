@@ -28,7 +28,7 @@ func TestNewMetadataUnitTooLongError(t *testing.T) {
 
 func TestNewMaxQueryLengthError(t *testing.T) {
 	err := NewMaxQueryLengthError(time.Hour, time.Minute)
-	assert.Equal(t, "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). To adjust the related per-tenant limit, configure -store.max-query-length, or contact your service administrator.", err.Error())
+	assert.Equal(t, "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). To adjust the related per-tenant limit, configure -querier.max-partial-query-length, or contact your service administrator.", err.Error())
 }
 
 func TestNewTotalMaxQueryLengthError(t *testing.T) {
