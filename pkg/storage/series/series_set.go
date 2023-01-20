@@ -100,12 +100,22 @@ func NewConcreteSeriesIterator(series *ConcreteSeries) chunkenc.Iterator {
 }
 
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	c.curFloat = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[n].Timestamp >= model.Time(t)
-	})
-	c.curHisto = sort.Search(len(c.series.histograms), func(n int) bool {
-		return c.series.histograms[n].Timestamp >= t
-	})
+	offsetFloat := 0
+	if c.curFloat > 0 {
+		offsetFloat = c.curFloat // only advance via Seek
+	}
+	offsetHisto := 0
+	if c.curHisto > 0 {
+		offsetHisto = c.curHisto // only advance via Seek
+	}
+
+	c.curFloat = sort.Search(len(c.series.samples[offsetFloat:]), func(n int) bool {
+		return c.series.samples[offsetFloat+n].Timestamp >= model.Time(t)
+	}) + offsetFloat
+	c.curHisto = sort.Search(len(c.series.histograms[offsetHisto:]), func(n int) bool {
+		return c.series.histograms[offsetHisto+n].Timestamp >= t
+	}) + offsetHisto
+
 	if c.curFloat >= len(c.series.samples) && c.curHisto >= len(c.series.histograms) {
 		return chunkenc.ValNone
 	}
