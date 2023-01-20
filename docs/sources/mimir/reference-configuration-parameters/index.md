@@ -934,6 +934,12 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-series
   [max_series: <int> | default = 0]
 
+  # (experimental) Max ephemeral series that this ingester can hold (across all
+  # tenants). Requests to create additional ephemeral series will be rejected. 0
+  # = unlimited.
+  # CLI flag: -ingester.instance-limits.max-ephemeral-series
+  [max_ephemeral_series: <int> | default = 0]
+
   # (advanced) Max inflight push requests that this ingester can handle (across
   # all tenants). Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
@@ -2538,6 +2544,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # before replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
+
+# (experimental) The maximum number of in-memory ephemeral series per tenant,
+# across the cluster before replication. 0 to disable ephemeral storage.
+# CLI flag: -ingester.max-ephemeral-series-per-user
+[max_ephemeral_series_per_user: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.

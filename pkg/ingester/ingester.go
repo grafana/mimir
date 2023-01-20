@@ -90,10 +90,18 @@ const (
 
 	instanceIngestionRateTickInterval = time.Second
 
+	// Reasons for discarding samples
 	sampleOutOfOrder     = "sample-out-of-order"
 	sampleTooOld         = "sample-too-old"
 	newValueForTimestamp = "new-value-for-timestamp"
 	sampleOutOfBounds    = "sample-out-of-bounds"
+	perUserSeriesLimit   = "per_user_series_limit"
+	perMetricSeriesLimit = "per_metric_series_limit"
+
+	// Prefix for discard reasons when ingesting ephemeral series.
+	ephemeralDiscardPrefix = "ephemeral-"
+
+	ephemeralPerUserSeriesLimit = "ephemeral_per_user_series_limit"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
@@ -120,6 +128,8 @@ var (
 	errInvalidStorageMatcherType    = fmt.Errorf("invalid matcher used together with %s label, only equality check supported", StorageLabelName)
 	errMultipleStorageMatchersFound = fmt.Errorf("multiple matchers for %s label found, only one matcher supported", StorageLabelName)
 )
+
+var errEphemeralStorageDisabledForUser = errors.New("ephemeral storage is not enabled for user")
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
 type BlocksUploader interface {
@@ -245,7 +255,8 @@ type Ingester struct {
 	compactionIdleTimeout time.Duration
 
 	// Number of series in memory, across all tenants.
-	seriesCount atomic.Int64
+	persistentSeriesCount atomic.Int64
+	ephemeralSeriesCount  atomic.Int64
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -760,7 +771,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &persistentStats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, true)
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &persistentStats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, false)
 		if err != nil {
 			rollback()
 			return nil, err
@@ -769,22 +780,35 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if len(req.EphemeralTimeseries) > 0 {
 		a, err := db.EphemeralAppender(ctx)
-		if err != nil {
-			// TODO: handle error caused by limit (ephemeral storage disabled), and report it via firstPartialErr instead.
+
+		switch {
+		case err != nil && !errors.Is(err, errEphemeralStorageDisabledForUser):
 			rollback()
 			return nil, err
-		}
 
-		ephemeralApp = a.(extendedAppender)
+		case err != nil && errors.Is(err, errEphemeralStorageDisabledForUser):
+			// Add all samples for ephemeral series as "failed".
+			for _, ts := range req.EphemeralTimeseries {
+				ephemeralStats.failedSamplesCount += len(ts.Samples)
+			}
 
-		level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
+			updateFirstPartial(func() error {
+				return fmt.Errorf(globalerror.EphemeralStorageNotEnabledForUser.Message(errEphemeralStorageDisabledForUser.Error()))
+			})
+			// No rollback, we will append persistent samples.
 
-		minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+		default:
+			ephemeralApp = a.(extendedAppender)
 
-		err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, false)
-		if err != nil {
-			rollback()
-			return nil, err
+			level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
+
+			minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
+
+			err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, true)
+			if err != nil {
+				rollback()
+				return nil, err
+			}
 		}
 	}
 
@@ -852,8 +876,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &persistentStats, req.Source, db)
-	i.updateMetricsFromPushStats(userID, group, &ephemeralStats, req.Source, db)
+	i.updateMetricsFromPushStats(userID, group, &persistentStats, req.Source, db, i.metrics.discardedPersistent)
+	i.updateMetricsFromPushStats(userID, group, &ephemeralStats, req.Source, db, i.metrics.discardedEphemeral)
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
@@ -867,24 +891,24 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	return &mimirpb.WriteResponse{}, nil
 }
 
-func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB) {
+func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
 	if stats.sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
+		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
 	}
 	if stats.sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
+		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
 	}
 	if stats.sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
+		discarded.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
 	}
 	if stats.newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
+		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
 	}
 	if stats.perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
+		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
 	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
@@ -901,7 +925,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, appendExemplars bool) error {
+	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -916,6 +940,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.sampleOutOfBoundsCount += len(ts.Samples)
 
 			updateFirstPartial(func() error {
+				if ephemeral {
+					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+				}
 				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
 			})
 			continue
@@ -957,17 +984,28 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				stats.sampleOutOfBoundsCount++
-				updateFirstPartial(func() error { return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels) })
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels)
+					}
+					return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels)
+				})
 				continue
 
 			case storage.ErrOutOfOrderSample:
 				stats.sampleOutOfOrderCount++
-				updateFirstPartial(func() error { return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels) })
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels)
+					}
+					return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels)
+				})
 				continue
 
 			case storage.ErrTooOldSample:
 				stats.sampleTooOldCount++
 				updateFirstPartial(func() error {
+					// OOO is not enabled for ephemeral storage, so we can't get this error.
 					return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(s.TimestampMs), ts.Labels, outOfOrderWindow)
 				})
 				continue
@@ -975,18 +1013,27 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			case storage.ErrDuplicateSampleForTimestamp:
 				stats.newValueForTimestampCount++
 				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
+					}
 					return newIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
 				})
 				continue
 
-			case errMaxSeriesPerUserLimitExceeded:
+			case errMaxSeriesPerUserLimitExceeded, errMaxEphemeralSeriesPerUserLimitExceeded: // we have special error for this, as we want different help message from FormatError.
 				stats.perUserSeriesLimitCount++
-				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return makeLimitError(ephemeralPerUserSeriesLimit, i.limiter.FormatError(userID, cause))
+					}
+					return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause))
+				})
 				continue
 
 			case errMaxSeriesPerMetricLimitExceeded:
 				stats.perMetricSeriesLimitCount++
 				updateFirstPartial(func() error {
+					// Ephemeral storage doesn't have this limit.
 					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
 				})
 				continue
@@ -1002,7 +1049,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 		}
 
-		if appendExemplars && len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+		if !ephemeral && len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
@@ -1691,14 +1738,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
 	userDB := &userTSDB{
-		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
-		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
-		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		instanceLimitsFn:    i.getInstanceLimits,
-		instanceSeriesCount: &i.seriesCount,
-		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
+		userID:                       userID,
+		activeSeries:                 activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
+		seriesInMetric:               newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
+		ingestedAPISamples:           util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		ingestedRuleSamples:          util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		instanceLimitsFn:             i.getInstanceLimits,
+		instanceSeriesCount:          &i.persistentSeriesCount,
+		instanceEphemeralSeriesCount: &i.ephemeralSeriesCount,
+		blockMinRetention:            i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
@@ -1715,7 +1763,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:           userDB,
+		SeriesLifecycleCallback:           userDB.persistentSeriesCallback(),
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                      int64(maxExemplars),
@@ -1778,7 +1826,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB.ephemeralSeriesRetentionPeriod = i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention
 	userDB.ephemeralFactory = func() (*tsdb.Head, error) {
-		// TODO: check user limit for ephemeral series. If it's 0, don't create head and return error.
+		if i.limits.MaxEphemeralSeriesPerUser(userID) <= 0 {
+			return nil, errEphemeralStorageDisabledForUser
+		}
 
 		headOptions := &tsdb.HeadOptions{
 			ChunkRange:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention.Milliseconds(),
@@ -1788,7 +1838,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			ChunkEndTimeVariance:           i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksEndTimeVariance,
 			ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.EphemeralTSDB.HeadChunksWriteQueueSize,
 			StripeSize:                     i.cfg.BlocksStorageConfig.EphemeralTSDB.StripeSize,
-			SeriesCallback:                 nil, // TODO: handle limits.
+			SeriesCallback:                 userDB.ephemeralSeriesCallback(),
 			EnableExemplarStorage:          false,
 			EnableMemorySnapshotOnShutdown: false,
 			IsolationDisabled:              true,
@@ -2239,11 +2289,13 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// At this point there are no more pushes to TSDB, and no possible compaction. Normally TSDB is empty,
 	// but if we're closing TSDB because of tenant deletion mark, then it may still contain some series.
 	// We need to remove these series from series count.
-	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
+	i.persistentSeriesCount.Sub(int64(userDB.Head().NumSeries()))
+	eph := userDB.getEphemeralStorage()
+	if eph != nil {
+		i.ephemeralSeriesCount.Sub(int64(eph.NumSeries()))
+	}
 
 	dir := userDB.db.Dir()
-
-	ephemeral := userDB.hasEphemeralStorage()
 
 	if err := userDB.Close(); err != nil {
 		level.Error(i.logger).Log("msg", "failed to close idle TSDB", "user", userID, "err", err)
@@ -2267,7 +2319,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
-	if ephemeral {
+	if eph != nil {
 		i.metrics.memEphemeralUsers.Dec()
 	}
 	i.tsdbMetrics.removeRegistryForUser(userID)
@@ -2407,6 +2459,10 @@ func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.La
 	return newIngestErr(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
+func newEphemeralIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return newIngestErr(globalerror.EphemeralSampleTimestampTooOld, "the sample for ephemeral series has been rejected because its timestamp is too old", timestamp, labels)
+}
+
 func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow model.Duration) error {
 	return newIngestErr(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", oooTimeWindow.String()), timestamp, labels)
 }
@@ -2415,8 +2471,16 @@ func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAd
 	return newIngestErr(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
+func newEphemeralIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return newIngestErr(globalerror.EphemeralSampleOutOfOrder, "the sample for ephemeral series has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
+}
+
 func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
 	return newIngestErr(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+}
+
+func newEphemeralIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
+	return newIngestErr(globalerror.EphemeralSampleDuplicateTimestamp, "the sample for ephemeral series has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
 func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {

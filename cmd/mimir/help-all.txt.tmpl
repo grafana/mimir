@@ -1025,6 +1025,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
+  -ingester.instance-limits.max-ephemeral-series int
+    	[experimental] Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
@@ -1033,6 +1035,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.max-ephemeral-series-per-user int
+    	[experimental] The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

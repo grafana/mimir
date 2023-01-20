@@ -12,12 +12,6 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
-// DiscardedSamples metric labels
-const (
-	perUserSeriesLimit   = "per_user_series_limit"
-	perMetricSeriesLimit = "per_metric_series_limit"
-)
-
 const numMetricCounterShards = 128
 
 type metricCounterShard struct {

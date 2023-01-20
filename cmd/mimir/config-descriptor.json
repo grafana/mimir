@@ -2782,6 +2782,17 @@
             },
             {
               "kind": "field",
+              "name": "max_ephemeral_series",
+              "required": false,
+              "desc": "Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.instance-limits.max-ephemeral-series",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "max_inflight_push_requests",
               "required": false,
               "desc": "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.",
@@ -3031,6 +3042,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.max-global-series-per-metric",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_ephemeral_series_per_user",
+          "required": false,
+          "desc": "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.max-ephemeral-series-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
