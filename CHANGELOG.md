@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
+* [ENHANCEMENT] Helm Chart: Enable users to specify additional Kubernetes resource manifests using the `extraObjects` variable.
+
 ## 2.6.0-rc.0
 
 ### Grafana Mimir
