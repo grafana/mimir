@@ -149,16 +149,67 @@ func (*QueryResponse) XXX_OneofWrappers() []interface{} {
 	}
 }
 
-type VectorData struct {
+type SymbolTable struct {
 	// Null-byte separated list of symbols.
-	SymbolTable string         `protobuf:"bytes,1,opt,name=SymbolTable,proto3" json:"SymbolTable,omitempty"`
+	Symbols     string `protobuf:"bytes,1,opt,name=Symbols,proto3" json:"Symbols,omitempty"`
+	SymbolCount int64  `protobuf:"varint,2,opt,name=SymbolCount,proto3" json:"SymbolCount,omitempty"`
+}
+
+func (m *SymbolTable) Reset()      { *m = SymbolTable{} }
+func (*SymbolTable) ProtoMessage() {}
+func (*SymbolTable) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{1}
+}
+func (m *SymbolTable) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SymbolTable) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SymbolTable.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SymbolTable) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SymbolTable.Merge(m, src)
+}
+func (m *SymbolTable) XXX_Size() int {
+	return m.Size()
+}
+func (m *SymbolTable) XXX_DiscardUnknown() {
+	xxx_messageInfo_SymbolTable.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SymbolTable proto.InternalMessageInfo
+
+func (m *SymbolTable) GetSymbols() string {
+	if m != nil {
+		return m.Symbols
+	}
+	return ""
+}
+
+func (m *SymbolTable) GetSymbolCount() int64 {
+	if m != nil {
+		return m.SymbolCount
+	}
+	return 0
+}
+
+type VectorData struct {
+	SymbolTable SymbolTable    `protobuf:"bytes,1,opt,name=SymbolTable,proto3" json:"SymbolTable"`
 	Samples     []VectorSample `protobuf:"bytes,2,rep,name=Samples,proto3" json:"Samples"`
 }
 
 func (m *VectorData) Reset()      { *m = VectorData{} }
 func (*VectorData) ProtoMessage() {}
 func (*VectorData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{1}
+	return fileDescriptor_8ab2c8ecc140befb, []int{2}
 }
 func (m *VectorData) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -187,11 +238,11 @@ func (m *VectorData) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_VectorData proto.InternalMessageInfo
 
-func (m *VectorData) GetSymbolTable() string {
+func (m *VectorData) GetSymbolTable() SymbolTable {
 	if m != nil {
 		return m.SymbolTable
 	}
-	return ""
+	return SymbolTable{}
 }
 
 func (m *VectorData) GetSamples() []VectorSample {
@@ -212,7 +263,7 @@ type VectorSample struct {
 func (m *VectorSample) Reset()      { *m = VectorSample{} }
 func (*VectorSample) ProtoMessage() {}
 func (*VectorSample) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{2}
+	return fileDescriptor_8ab2c8ecc140befb, []int{3}
 }
 func (m *VectorSample) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -271,7 +322,7 @@ type ScalarData struct {
 func (m *ScalarData) Reset()      { *m = ScalarData{} }
 func (*ScalarData) ProtoMessage() {}
 func (*ScalarData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{3}
+	return fileDescriptor_8ab2c8ecc140befb, []int{4}
 }
 func (m *ScalarData) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -315,15 +366,14 @@ func (m *ScalarData) GetTimestamp() int64 {
 }
 
 type MatrixData struct {
-	// Null-byte separated list of symbols.
-	SymbolTable string         `protobuf:"bytes,1,opt,name=SymbolTable,proto3" json:"SymbolTable,omitempty"`
+	SymbolTable SymbolTable    `protobuf:"bytes,1,opt,name=SymbolTable,proto3" json:"SymbolTable"`
 	Series      []MatrixSeries `protobuf:"bytes,2,rep,name=Series,proto3" json:"Series"`
 }
 
 func (m *MatrixData) Reset()      { *m = MatrixData{} }
 func (*MatrixData) ProtoMessage() {}
 func (*MatrixData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{4}
+	return fileDescriptor_8ab2c8ecc140befb, []int{5}
 }
 func (m *MatrixData) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -352,11 +402,11 @@ func (m *MatrixData) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MatrixData proto.InternalMessageInfo
 
-func (m *MatrixData) GetSymbolTable() string {
+func (m *MatrixData) GetSymbolTable() SymbolTable {
 	if m != nil {
 		return m.SymbolTable
 	}
-	return ""
+	return SymbolTable{}
 }
 
 func (m *MatrixData) GetSeries() []MatrixSeries {
@@ -375,7 +425,7 @@ type MatrixSeries struct {
 func (m *MatrixSeries) Reset()      { *m = MatrixSeries{} }
 func (*MatrixSeries) ProtoMessage() {}
 func (*MatrixSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{5}
+	return fileDescriptor_8ab2c8ecc140befb, []int{6}
 }
 func (m *MatrixSeries) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -427,7 +477,7 @@ type MatrixSample struct {
 func (m *MatrixSample) Reset()      { *m = MatrixSample{} }
 func (*MatrixSample) ProtoMessage() {}
 func (*MatrixSample) Descriptor() ([]byte, []int) {
-	return fileDescriptor_8ab2c8ecc140befb, []int{6}
+	return fileDescriptor_8ab2c8ecc140befb, []int{7}
 }
 func (m *MatrixSample) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -472,6 +522,7 @@ func (m *MatrixSample) GetTimestamp() int64 {
 
 func init() {
 	proto.RegisterType((*QueryResponse)(nil), "internedsinglestringquerypb.QueryResponse")
+	proto.RegisterType((*SymbolTable)(nil), "internedsinglestringquerypb.SymbolTable")
 	proto.RegisterType((*VectorData)(nil), "internedsinglestringquerypb.VectorData")
 	proto.RegisterType((*VectorSample)(nil), "internedsinglestringquerypb.VectorSample")
 	proto.RegisterType((*ScalarData)(nil), "internedsinglestringquerypb.ScalarData")
@@ -483,36 +534,39 @@ func init() {
 func init() { proto.RegisterFile("query_response.proto", fileDescriptor_8ab2c8ecc140befb) }
 
 var fileDescriptor_8ab2c8ecc140befb = []byte{
-	// 463 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x53, 0xb1, 0x8e, 0xd3, 0x40,
-	0x14, 0xdc, 0x4d, 0x72, 0x46, 0xf7, 0x72, 0xd7, 0xac, 0x4e, 0xc8, 0x02, 0xb4, 0x44, 0x16, 0x12,
-	0xa1, 0x20, 0x27, 0x1d, 0x7c, 0x00, 0x44, 0x20, 0xa0, 0xb8, 0x02, 0x3b, 0xba, 0x16, 0xad, 0xcd,
-	0xe2, 0x5b, 0xc9, 0xf6, 0x9a, 0xf5, 0x5a, 0xe0, 0x0a, 0x3e, 0x81, 0xcf, 0xa0, 0xe0, 0x43, 0xae,
-	0x4c, 0x79, 0x15, 0x22, 0x4e, 0x43, 0x99, 0x4f, 0x40, 0xde, 0x75, 0x70, 0x40, 0x80, 0xcc, 0x75,
-	0x9e, 0x79, 0x6f, 0x66, 0x9f, 0x66, 0x64, 0x38, 0x7a, 0x5b, 0x72, 0x55, 0xbd, 0x52, 0xbc, 0xc8,
-	0x65, 0x56, 0xf0, 0x59, 0xae, 0xa4, 0x96, 0xe4, 0xa6, 0xc8, 0x34, 0x57, 0x19, 0x7f, 0x5d, 0x88,
-	0x2c, 0x4e, 0x78, 0xa1, 0x95, 0xc8, 0x62, 0xb3, 0x99, 0x87, 0x37, 0xee, 0xc7, 0x42, 0x9f, 0x97,
-	0xe1, 0x2c, 0x92, 0xe9, 0x71, 0x2c, 0x63, 0x79, 0x6c, 0x34, 0x61, 0xf9, 0xc6, 0x20, 0x03, 0xcc,
-	0x97, 0xf5, 0xf2, 0xbe, 0x0c, 0xe0, 0xf0, 0x65, 0x23, 0xf5, 0xdb, 0x37, 0xc8, 0x75, 0x70, 0x02,
-	0xcd, 0x74, 0x59, 0xb8, 0x78, 0x82, 0xa7, 0xfb, 0x7e, 0x8b, 0xc8, 0x2d, 0xd8, 0x7f, 0xaa, 0x94,
-	0x54, 0x8b, 0x2a, 0xe7, 0xee, 0xc0, 0x8c, 0x3a, 0x82, 0x1c, 0xc1, 0x9e, 0x01, 0xee, 0xd0, 0x4c,
-	0x2c, 0x20, 0x8f, 0xc1, 0x39, 0xe3, 0x91, 0x96, 0xca, 0x1d, 0x4d, 0xf0, 0x74, 0x7c, 0x72, 0x77,
-	0xf6, 0x8f, 0xd3, 0x67, 0x76, 0xf5, 0x09, 0xd3, 0xec, 0x39, 0xf2, 0x5b, 0x61, 0x63, 0x11, 0x44,
-	0x2c, 0x61, 0xca, 0xdd, 0xeb, 0x61, 0x61, 0x57, 0xb7, 0x16, 0x16, 0x35, 0x16, 0xa7, 0x4c, 0x2b,
-	0xf1, 0xde, 0x75, 0x7a, 0x58, 0xd8, 0xd5, 0xad, 0x85, 0x45, 0x73, 0x07, 0x46, 0x0d, 0xe3, 0x55,
-	0x00, 0xdd, 0x95, 0x64, 0x02, 0xe3, 0xa0, 0x4a, 0x43, 0x99, 0x2c, 0x58, 0x98, 0xf0, 0x36, 0xaf,
-	0x5d, 0x8a, 0xbc, 0x80, 0x6b, 0x01, 0x4b, 0xf3, 0x84, 0x17, 0xee, 0x60, 0x32, 0x9c, 0x8e, 0x4f,
-	0xee, 0xf5, 0x48, 0xc0, 0x2a, 0xe6, 0xa3, 0x8b, 0xaf, 0xb7, 0x91, 0xbf, 0xd5, 0x7b, 0xe7, 0x70,
-	0xb0, 0x3b, 0x26, 0x77, 0xe0, 0xf0, 0x94, 0x6b, 0x25, 0x22, 0xfb, 0x5e, 0x53, 0xd7, 0x70, 0x3a,
-	0xf2, 0x7f, 0x25, 0x9b, 0x5e, 0xce, 0x58, 0x52, 0xda, 0xc6, 0xb0, 0x6f, 0x41, 0xd3, 0xe5, 0x42,
-	0xa4, 0xbc, 0xd0, 0x2c, 0xcd, 0x4d, 0x63, 0x43, 0xbf, 0x23, 0xbc, 0x47, 0x00, 0x5d, 0x8e, 0x9d,
-	0x03, 0xfe, 0xab, 0xc3, 0xe0, 0x77, 0x87, 0x77, 0x00, 0x5d, 0x8c, 0x3d, 0x62, 0x7a, 0x06, 0x4e,
-	0xc0, 0x95, 0xe8, 0x99, 0x92, 0xb5, 0xb6, 0x82, 0x36, 0xa5, 0x56, 0xee, 0x7d, 0x80, 0x83, 0xdd,
-	0x69, 0xcf, 0x90, 0xfe, 0xb3, 0xa5, 0xf6, 0x85, 0x3f, 0xb6, 0x34, 0xff, 0x79, 0x80, 0x6d, 0xe9,
-	0x0a, 0xe9, 0xcd, 0x1f, 0x2e, 0x57, 0x14, 0x5d, 0xae, 0x28, 0xda, 0xac, 0x28, 0xfe, 0x58, 0x53,
-	0xfc, 0xb9, 0xa6, 0xf8, 0xa2, 0xa6, 0x78, 0x59, 0x53, 0xfc, 0xad, 0xa6, 0xf8, 0x7b, 0x4d, 0xd1,
-	0xa6, 0xa6, 0xf8, 0xd3, 0x9a, 0xa2, 0xe5, 0x9a, 0xa2, 0xcb, 0x35, 0x45, 0xa1, 0x63, 0x7e, 0xe8,
-	0x07, 0x3f, 0x02, 0x00, 0x00, 0xff, 0xff, 0x91, 0x22, 0x2c, 0x03, 0x34, 0x04, 0x00, 0x00,
+	// 501 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x94, 0x4f, 0x8b, 0xd3, 0x40,
+	0x18, 0xc6, 0x33, 0x4d, 0x37, 0xcb, 0xbe, 0xdd, 0xbd, 0x0c, 0x8b, 0x04, 0x95, 0xb1, 0x04, 0xc1,
+	0x78, 0xb0, 0x0b, 0xd5, 0x0f, 0xa0, 0x55, 0xd1, 0x3d, 0x2c, 0x68, 0x52, 0xf6, 0x2a, 0x93, 0x3a,
+	0x66, 0x03, 0x49, 0x26, 0x4e, 0x26, 0x60, 0x4f, 0xfa, 0x11, 0xfc, 0x16, 0x2a, 0xf8, 0x41, 0xf6,
+	0xd8, 0xe3, 0x9e, 0xc4, 0xa6, 0x17, 0x8f, 0xfb, 0x11, 0x24, 0x33, 0x89, 0x69, 0x45, 0x4b, 0x14,
+	0xf6, 0xd6, 0xe7, 0xfd, 0xf3, 0xcb, 0x3b, 0xcf, 0xfb, 0x52, 0x38, 0x7c, 0x5b, 0x30, 0x31, 0x7f,
+	0x25, 0x58, 0x9e, 0xf1, 0x34, 0x67, 0xa3, 0x4c, 0x70, 0xc9, 0xf1, 0x8d, 0x28, 0x95, 0x4c, 0xa4,
+	0xec, 0x75, 0x1e, 0xa5, 0x61, 0xcc, 0x72, 0x29, 0xa2, 0x34, 0x54, 0x95, 0x59, 0x70, 0xfd, 0x5e,
+	0x18, 0xc9, 0xb3, 0x22, 0x18, 0xcd, 0x78, 0x72, 0x14, 0xf2, 0x90, 0x1f, 0xa9, 0x9e, 0xa0, 0x78,
+	0xa3, 0x94, 0x12, 0xea, 0x97, 0x66, 0x39, 0x5f, 0x7b, 0x70, 0xf0, 0xb2, 0x6a, 0xf5, 0xea, 0x6f,
+	0xe0, 0x6b, 0x60, 0xf9, 0x92, 0xca, 0x22, 0xb7, 0xd1, 0x10, 0xb9, 0x7b, 0x5e, 0xad, 0xf0, 0x4d,
+	0xd8, 0x7b, 0x2a, 0x04, 0x17, 0xd3, 0x79, 0xc6, 0xec, 0x9e, 0x4a, 0xb5, 0x01, 0x7c, 0x08, 0x3b,
+	0x4a, 0xd8, 0xa6, 0xca, 0x68, 0x81, 0x1f, 0x81, 0x75, 0xca, 0x66, 0x92, 0x0b, 0xbb, 0x3f, 0x44,
+	0xee, 0x60, 0x7c, 0x67, 0xb4, 0x65, 0xf4, 0x91, 0x2e, 0x7d, 0x42, 0x25, 0x7d, 0x6e, 0x78, 0x75,
+	0x63, 0x85, 0xf0, 0x67, 0x34, 0xa6, 0xc2, 0xde, 0xe9, 0x80, 0xd0, 0xa5, 0x0d, 0x42, 0xab, 0x0a,
+	0x71, 0x42, 0xa5, 0x88, 0xde, 0xd9, 0x56, 0x07, 0x84, 0x2e, 0x6d, 0x10, 0x5a, 0x4d, 0x2c, 0xe8,
+	0x57, 0x11, 0xe7, 0x18, 0x06, 0xfe, 0x3c, 0x09, 0x78, 0x3c, 0xa5, 0x41, 0xcc, 0xb0, 0x0d, 0xbb,
+	0x5a, 0x36, 0x66, 0x35, 0x12, 0x0f, 0x9b, 0xc2, 0xc7, 0xbc, 0x48, 0xa5, 0xf2, 0xcb, 0xf4, 0xd6,
+	0x43, 0xce, 0x17, 0x04, 0xd0, 0xbe, 0x18, 0xbf, 0xd8, 0x20, 0x2b, 0xdc, 0x60, 0xec, 0x6e, 0x7f,
+	0x6c, 0x5b, 0x3f, 0xe9, 0x9f, 0x7f, 0xbb, 0x65, 0x78, 0x1b, 0xc3, 0x1d, 0xc3, 0xae, 0x4f, 0x93,
+	0x2c, 0x66, 0xb9, 0xdd, 0x1b, 0x9a, 0xee, 0x60, 0x7c, 0xb7, 0x83, 0xfb, 0xba, 0xa3, 0xc6, 0x35,
+	0xfd, 0xce, 0x19, 0xec, 0xaf, 0xa7, 0xf1, 0x6d, 0x38, 0x38, 0x61, 0x52, 0x44, 0xb3, 0xf6, 0xf5,
+	0xa6, 0xdb, 0xf7, 0x36, 0x83, 0xd5, 0x4d, 0x9c, 0xd2, 0xb8, 0xd0, 0xd7, 0x82, 0x3c, 0x2d, 0xaa,
+	0x3b, 0x9a, 0x46, 0x09, 0xcb, 0x25, 0x4d, 0x32, 0x75, 0x2d, 0xa6, 0xd7, 0x06, 0x9c, 0x87, 0x00,
+	0xed, 0x0e, 0x5b, 0x02, 0xfa, 0x2b, 0xa1, 0xf7, 0x3b, 0xe1, 0x13, 0x02, 0x68, 0x77, 0x78, 0x05,
+	0xbe, 0x3e, 0x03, 0xcb, 0x67, 0x22, 0xea, 0x68, 0xab, 0x1e, 0x45, 0x37, 0xd4, 0xb4, 0xba, 0xdd,
+	0x79, 0x0f, 0xfb, 0xeb, 0xd9, 0x8e, 0xae, 0xfe, 0xe3, 0x5a, 0xeb, 0x2f, 0xfc, 0x71, 0xad, 0x93,
+	0x5f, 0x03, 0xe8, 0xb5, 0xfe, 0x87, 0xdd, 0x93, 0x07, 0x8b, 0x25, 0x31, 0x2e, 0x96, 0xc4, 0xb8,
+	0x5c, 0x12, 0xf4, 0xa1, 0x24, 0xe8, 0x73, 0x49, 0xd0, 0x79, 0x49, 0xd0, 0xa2, 0x24, 0xe8, 0x7b,
+	0x49, 0xd0, 0x8f, 0x92, 0x18, 0x97, 0x25, 0x41, 0x1f, 0x57, 0xc4, 0x58, 0xac, 0x88, 0x71, 0xb1,
+	0x22, 0x46, 0x60, 0xa9, 0x7f, 0x9f, 0xfb, 0x3f, 0x03, 0x00, 0x00, 0xff, 0xff, 0xb0, 0x56, 0x64,
+	0xe7, 0xe1, 0x04, 0x00, 0x00,
 }
 
 func (this *QueryResponse) Equal(that interface{}) bool {
@@ -626,6 +680,33 @@ func (this *QueryResponse_Matrix) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SymbolTable) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SymbolTable)
+	if !ok {
+		that2, ok := that.(SymbolTable)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Symbols != that1.Symbols {
+		return false
+	}
+	if this.SymbolCount != that1.SymbolCount {
+		return false
+	}
+	return true
+}
 func (this *VectorData) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -645,7 +726,7 @@ func (this *VectorData) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.SymbolTable != that1.SymbolTable {
+	if !this.SymbolTable.Equal(&that1.SymbolTable) {
 		return false
 	}
 	if len(this.Samples) != len(that1.Samples) {
@@ -739,7 +820,7 @@ func (this *MatrixData) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.SymbolTable != that1.SymbolTable {
+	if !this.SymbolTable.Equal(&that1.SymbolTable) {
 		return false
 	}
 	if len(this.Series) != len(that1.Series) {
@@ -855,13 +936,24 @@ func (this *QueryResponse_Matrix) GoString() string {
 		`Matrix:` + fmt.Sprintf("%#v", this.Matrix) + `}`}, ", ")
 	return s
 }
+func (this *SymbolTable) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&internedsinglestringquerypb.SymbolTable{")
+	s = append(s, "Symbols: "+fmt.Sprintf("%#v", this.Symbols)+",\n")
+	s = append(s, "SymbolCount: "+fmt.Sprintf("%#v", this.SymbolCount)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *VectorData) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
 	s = append(s, "&internedsinglestringquerypb.VectorData{")
-	s = append(s, "SymbolTable: "+fmt.Sprintf("%#v", this.SymbolTable)+",\n")
+	s = append(s, "SymbolTable: "+strings.Replace(this.SymbolTable.GoString(), `&`, ``, 1)+",\n")
 	if this.Samples != nil {
 		vs := make([]*VectorSample, len(this.Samples))
 		for i := range vs {
@@ -901,7 +993,7 @@ func (this *MatrixData) GoString() string {
 	}
 	s := make([]string, 0, 6)
 	s = append(s, "&internedsinglestringquerypb.MatrixData{")
-	s = append(s, "SymbolTable: "+fmt.Sprintf("%#v", this.SymbolTable)+",\n")
+	s = append(s, "SymbolTable: "+strings.Replace(this.SymbolTable.GoString(), `&`, ``, 1)+",\n")
 	if this.Series != nil {
 		vs := make([]*MatrixSeries, len(this.Series))
 		for i := range vs {
@@ -1061,6 +1153,41 @@ func (m *QueryResponse_Matrix) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	return len(dAtA) - i, nil
 }
+func (m *SymbolTable) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SymbolTable) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SymbolTable) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SymbolCount != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.SymbolCount))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Symbols) > 0 {
+		i -= len(m.Symbols)
+		copy(dAtA[i:], m.Symbols)
+		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.Symbols)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *VectorData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1095,13 +1222,16 @@ func (m *VectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			dAtA[i] = 0x12
 		}
 	}
-	if len(m.SymbolTable) > 0 {
-		i -= len(m.SymbolTable)
-		copy(dAtA[i:], m.SymbolTable)
-		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.SymbolTable)))
-		i--
-		dAtA[i] = 0xa
+	{
+		size, err := m.SymbolTable.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintQueryResponse(dAtA, i, uint64(size))
 	}
+	i--
+	dAtA[i] = 0xa
 	return len(dAtA) - i, nil
 }
 
@@ -1137,20 +1267,20 @@ func (m *VectorSample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x11
 	}
 	if len(m.MetricSymbols) > 0 {
-		dAtA5 := make([]byte, len(m.MetricSymbols)*10)
-		var j4 int
+		dAtA6 := make([]byte, len(m.MetricSymbols)*10)
+		var j5 int
 		for _, num := range m.MetricSymbols {
 			for num >= 1<<7 {
-				dAtA5[j4] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j4++
+				j5++
 			}
-			dAtA5[j4] = uint8(num)
-			j4++
+			dAtA6[j5] = uint8(num)
+			j5++
 		}
-		i -= j4
-		copy(dAtA[i:], dAtA5[:j4])
-		i = encodeVarintQueryResponse(dAtA, i, uint64(j4))
+		i -= j5
+		copy(dAtA[i:], dAtA6[:j5])
+		i = encodeVarintQueryResponse(dAtA, i, uint64(j5))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1225,13 +1355,16 @@ func (m *MatrixData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			dAtA[i] = 0x12
 		}
 	}
-	if len(m.SymbolTable) > 0 {
-		i -= len(m.SymbolTable)
-		copy(dAtA[i:], m.SymbolTable)
-		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.SymbolTable)))
-		i--
-		dAtA[i] = 0xa
+	{
+		size, err := m.SymbolTable.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintQueryResponse(dAtA, i, uint64(size))
 	}
+	i--
+	dAtA[i] = 0xa
 	return len(dAtA) - i, nil
 }
 
@@ -1270,20 +1403,20 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.MetricSymbols) > 0 {
-		dAtA7 := make([]byte, len(m.MetricSymbols)*10)
-		var j6 int
+		dAtA9 := make([]byte, len(m.MetricSymbols)*10)
+		var j8 int
 		for _, num := range m.MetricSymbols {
 			for num >= 1<<7 {
-				dAtA7[j6] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA9[j8] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j6++
+				j8++
 			}
-			dAtA7[j6] = uint8(num)
-			j6++
+			dAtA9[j8] = uint8(num)
+			j8++
 		}
-		i -= j6
-		copy(dAtA[i:], dAtA7[:j6])
-		i = encodeVarintQueryResponse(dAtA, i, uint64(j6))
+		i -= j8
+		copy(dAtA[i:], dAtA9[:j8])
+		i = encodeVarintQueryResponse(dAtA, i, uint64(j8))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1395,16 +1528,30 @@ func (m *QueryResponse_Matrix) Size() (n int) {
 	}
 	return n
 }
+func (m *SymbolTable) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Symbols)
+	if l > 0 {
+		n += 1 + l + sovQueryResponse(uint64(l))
+	}
+	if m.SymbolCount != 0 {
+		n += 1 + sovQueryResponse(uint64(m.SymbolCount))
+	}
+	return n
+}
+
 func (m *VectorData) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	l = len(m.SymbolTable)
-	if l > 0 {
-		n += 1 + l + sovQueryResponse(uint64(l))
-	}
+	l = m.SymbolTable.Size()
+	n += 1 + l + sovQueryResponse(uint64(l))
 	if len(m.Samples) > 0 {
 		for _, e := range m.Samples {
 			l = e.Size()
@@ -1457,10 +1604,8 @@ func (m *MatrixData) Size() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.SymbolTable)
-	if l > 0 {
-		n += 1 + l + sovQueryResponse(uint64(l))
-	}
+	l = m.SymbolTable.Size()
+	n += 1 + l + sovQueryResponse(uint64(l))
 	if len(m.Series) > 0 {
 		for _, e := range m.Series {
 			l = e.Size()
@@ -1556,6 +1701,17 @@ func (this *QueryResponse_Matrix) String() string {
 	}, "")
 	return s
 }
+func (this *SymbolTable) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SymbolTable{`,
+		`Symbols:` + fmt.Sprintf("%v", this.Symbols) + `,`,
+		`SymbolCount:` + fmt.Sprintf("%v", this.SymbolCount) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *VectorData) String() string {
 	if this == nil {
 		return "nil"
@@ -1566,7 +1722,7 @@ func (this *VectorData) String() string {
 	}
 	repeatedStringForSamples += "}"
 	s := strings.Join([]string{`&VectorData{`,
-		`SymbolTable:` + fmt.Sprintf("%v", this.SymbolTable) + `,`,
+		`SymbolTable:` + strings.Replace(strings.Replace(this.SymbolTable.String(), "SymbolTable", "SymbolTable", 1), `&`, ``, 1) + `,`,
 		`Samples:` + repeatedStringForSamples + `,`,
 		`}`,
 	}, "")
@@ -1605,7 +1761,7 @@ func (this *MatrixData) String() string {
 	}
 	repeatedStringForSeries += "}"
 	s := strings.Join([]string{`&MatrixData{`,
-		`SymbolTable:` + fmt.Sprintf("%v", this.SymbolTable) + `,`,
+		`SymbolTable:` + strings.Replace(strings.Replace(this.SymbolTable.String(), "SymbolTable", "SymbolTable", 1), `&`, ``, 1) + `,`,
 		`Series:` + repeatedStringForSeries + `,`,
 		`}`,
 	}, "")
@@ -1900,6 +2056,110 @@ func (m *QueryResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *SymbolTable) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryResponse
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SymbolTable: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SymbolTable: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Symbols = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SymbolCount", wireType)
+			}
+			m.SymbolCount = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SymbolCount |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryResponse(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *VectorData) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1933,7 +2193,7 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field SymbolTable", wireType)
 			}
-			var stringLen uint64
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowQueryResponse
@@ -1943,23 +2203,24 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
+			if msglen < 0 {
 				return ErrInvalidLengthQueryResponse
 			}
-			postIndex := iNdEx + intStringLen
+			postIndex := iNdEx + msglen
 			if postIndex < 0 {
 				return ErrInvalidLengthQueryResponse
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.SymbolTable = string(dAtA[iNdEx:postIndex])
+			if err := m.SymbolTable.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -2294,7 +2555,7 @@ func (m *MatrixData) Unmarshal(dAtA []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field SymbolTable", wireType)
 			}
-			var stringLen uint64
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowQueryResponse
@@ -2304,23 +2565,24 @@ func (m *MatrixData) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
+			if msglen < 0 {
 				return ErrInvalidLengthQueryResponse
 			}
-			postIndex := iNdEx + intStringLen
+			postIndex := iNdEx + msglen
 			if postIndex < 0 {
 				return ErrInvalidLengthQueryResponse
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.SymbolTable = string(dAtA[iNdEx:postIndex])
+			if err := m.SymbolTable.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {

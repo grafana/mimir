@@ -260,7 +260,7 @@ func (c InternedProtobufWithSingleStringCodec) encodeMatrix(data *querymiddlewar
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) encodeSymbols(symbols []string) string {
+func (c InternedProtobufWithSingleStringCodec) encodeSymbols(symbols []string) internedsinglestringquerypb.SymbolTable {
 	b := strings.Builder{}
 	sizeRequired := 0
 
@@ -282,26 +282,28 @@ func (c InternedProtobufWithSingleStringCodec) encodeSymbols(symbols []string) s
 		b.WriteString(s)
 	}
 
-	return b.String()
+	return internedsinglestringquerypb.SymbolTable{
+		Symbols:     b.String(),
+		SymbolCount: int64(len(symbols)),
+	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) decodeSymbols(symbolTable string) []string {
-	if symbolTable == "" {
+func (c InternedProtobufWithSingleStringCodec) decodeSymbols(table internedsinglestringquerypb.SymbolTable) []string {
+	if table.SymbolCount == 0 {
 		return nil
 	}
 
-	symbolCount := 1 + strings.Count(symbolTable, "\x00")
-	symbols := make([]string, symbolCount)
+	symbols := make([]string, table.SymbolCount)
 	startOfSymbol := 0
 
-	for i := 0; i < symbolCount; i++ {
-		symbolLength := strings.IndexByte(symbolTable[startOfSymbol:], 0)
+	for i := 0; i < int(table.SymbolCount); i++ {
+		symbolLength := strings.IndexByte(table.Symbols[startOfSymbol:], 0)
 
 		if symbolLength == -1 {
-			symbolLength = len(symbolTable) - startOfSymbol
+			symbolLength = len(table.Symbols) - startOfSymbol
 		}
 
-		symbols[i] = symbolTable[startOfSymbol : startOfSymbol+symbolLength]
+		symbols[i] = table.Symbols[startOfSymbol : startOfSymbol+symbolLength]
 		startOfSymbol += symbolLength + 1
 	}
 

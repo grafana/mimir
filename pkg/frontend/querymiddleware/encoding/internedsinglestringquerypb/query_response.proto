@@ -29,15 +29,21 @@ message QueryResponse {
   }
 }
 
-message VectorData {
+message SymbolTable {
   // Null-byte separated list of symbols.
-  string SymbolTable = 1;
+  string Symbols = 1;
+  int64 SymbolCount = 2;
+}
+
+message VectorData {
+  SymbolTable SymbolTable = 1 [(gogoproto.nullable) = false];
   repeated VectorSample Samples = 2 [(gogoproto.nullable) = false];
 }
 
 message VectorSample {
   // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
   repeated uint64 MetricSymbols = 1;
+
   double Value = 2;
 
   // TODO: is there a better type to use here?
@@ -52,8 +58,7 @@ message ScalarData {
 }
 
 message MatrixData {
-  // Null-byte separated list of symbols.
-  string SymbolTable = 1;
+  SymbolTable SymbolTable = 1 [(gogoproto.nullable) = false];
   repeated MatrixSeries Series = 2 [(gogoproto.nullable) = false];
 }
 
