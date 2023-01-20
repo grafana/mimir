@@ -201,8 +201,8 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 				t, h := it.AtHistogram()
 				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 			} else if valType == chunkenc.ValFloatHistogram {
-				// What should be the correct behavior here?
-				break
+				t, h := it.AtFloatHistogram()
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
 			}
 		}
 

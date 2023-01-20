@@ -29,6 +29,14 @@ import (
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
+	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateFloatSeries)
+}
+
+func TestQuerierWithBlocksStorageRunningInMicroservicesModeWithHistograms(t *testing.T) {
+	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateHistogramSeries)
+}
+
+func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
 	tests := map[string]struct {
 		tenantShardSize      int
 		indexCacheBackend    string
@@ -99,8 +107,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := seriesGenerator("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2, _ := seriesGenerator("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 	res, err := writeClient.Push(series1)
 	require.NoError(t, err)
@@ -120,7 +128,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := seriesGenerator("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
 	res, err = writeClient.Push(series3)
 	require.NoError(t, err)
@@ -516,14 +524,25 @@ func testMetadataQueriesWithBlocksStorage(
 	firstSeriesInIngesterHead prompb.TimeSeries,
 	blockRangePeriod time.Duration,
 ) {
+	// This is hacky, don't use for anything serious
+	timeStampFromSeries := func(ts prompb.TimeSeries) time.Time {
+		if len(ts.Samples) > 0 {
+			return util.TimeFromMillis(ts.Samples[0].Timestamp)
+		}
+		if len(ts.Histograms) > 0 {
+			return util.TimeFromMillis(ts.Histograms[0].Timestamp)
+		}
+		panic("No samples or histograms")
+	}
+
 	var (
 		lastSeriesInIngesterBlocksName = getMetricName(lastSeriesInIngesterBlocks.Labels)
 		firstSeriesInIngesterHeadName  = getMetricName(firstSeriesInIngesterHead.Labels)
 		lastSeriesInStorageName        = getMetricName(lastSeriesInStorage.Labels)
 
-		lastSeriesInStorageTs        = util.TimeFromMillis(lastSeriesInStorage.Samples[0].Timestamp)
-		lastSeriesInIngesterBlocksTs = util.TimeFromMillis(lastSeriesInIngesterBlocks.Samples[0].Timestamp)
-		firstSeriesInIngesterHeadTs  = util.TimeFromMillis(firstSeriesInIngesterHead.Samples[0].Timestamp)
+		lastSeriesInStorageTs        = timeStampFromSeries(lastSeriesInStorage)
+		lastSeriesInIngesterBlocksTs = timeStampFromSeries(lastSeriesInIngesterBlocks)
+		firstSeriesInIngesterHeadTs  = timeStampFromSeries(firstSeriesInIngesterHead)
 	)
 
 	type seriesTest struct {

@@ -12,6 +12,7 @@
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
 * [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to establish a leader replica for the export of limit override metrics. #3908 #3953
+* [FEATURE] Distributor: Added the `-distributor.ephemeral-series-enabled` flag, this functionality allows the user to specify matchers and if an ingested samples matches them then it gets marked as ephemeral. #3897
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
@@ -52,6 +53,7 @@
 * [ENHANCEMENT] Alerts: Added `MimirAlertmanagerInstanceHasNoTenants` alert that fires when an alertmanager instance ows no tenants. #3826
 * [ENHANCEMENT] Alerts: Added `MimirRulerInstanceHasNoRuleGroups` alert that fires when a ruler replica is not assigned any rule group to evaluate. #3723
 * [ENHANCEMENT] Support for baremetal deployment for alerts and scaling recording rules. #3719
+* [ENHANCEMENT] Dashboards: querier autoscaling now supports multiple scaled objects (configurable via `$._config.autoscale.querier.hpa_name`). #3962
 * [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
@@ -59,6 +61,7 @@
 * [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 * [BUGFIX] Tenants dashboard: Make it compatible with all deployment types. #3754
 * [BUGFIX] Alerts: Fixed `MimirCompactorHasNotUploadedBlocks` to not fire if compactor has nothing to do. #3793
+* [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric is 0, to avoid false positives on scaled objects with 0 min replicas. #3999
 
 ### Jsonnet
 
@@ -123,7 +126,7 @@
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
 * [ENHANCEMENT] Query-frontend: added "fetched index bytes" to query statistics, so that the statistics contain the total bytes read by store-gateways from TSDB block indexes. #3206
 * [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
-* [ENHANCEMENT] Added the `/api/v1/status/config` API to maintain API compatibility with prometheus. #3596
+* [ENHANCEMENT] Added `/api/v1/status/config` and `/api/v1/status/flags` APIs to maintain compatibility with prometheus. #3596 #3983
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302

@@ -280,6 +280,28 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 	}
 }
 
+// based on GenerateTestFloatHistograms in github.com/prometheus/prometheus/tsdb
+func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Count:         10 + float64(i*8),
+		ZeroCount:     2 + float64(i),
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * float64(i+1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+	}
+}
+
+// explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
 func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	return &model.SampleHistogram{
 		Count: model.FloatString(10 + i*8),
@@ -346,6 +368,8 @@ func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := TimeToMilliseconds(ts)
 
+	value := rand.Intn(1000)
+
 	lbls := append(
 		[]prompb.Label{
 			{Name: labels.MetricName, Value: name},
@@ -355,8 +379,13 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 
 	// Generate the series
 	series = append(series, prompb.TimeSeries{
-		Labels:     lbls,
-		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, GenerateTestHistogram(0))},
+		Labels: lbls,
+		Exemplars: []prompb.Exemplar{
+			{Value: float64(value), Timestamp: tsMillis, Labels: []prompb.Label{
+				{Name: "trace_id", Value: "1234"},
+			}},
+		},
+		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, GenerateTestHistogram(value))},
 	})
 
 	// Generate the expected vector and matrix when querying it
@@ -369,7 +398,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 	vector = append(vector, &model.Sample{
 		Metric:    metric,
 		Timestamp: model.Time(tsMillis),
-		Histogram: GenerateTestSampleHistogram(0),
+		Histogram: GenerateTestSampleHistogram(value),
 	})
 
 	matrix = append(matrix, &model.SampleStream{
@@ -377,7 +406,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 		Histograms: []model.SampleHistogramPair{
 			{
 				Timestamp: model.Time(tsMillis),
-				Histogram: *GenerateTestSampleHistogram(0),
+				Histogram: *GenerateTestSampleHistogram(value),
 			},
 		},
 	})
@@ -397,9 +426,17 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 			lbls = append(lbls, additionalLabels()...)
 		}
 
+		exemplars := []prompb.Exemplar{}
+		if i < nExemplars {
+			exemplars = []prompb.Exemplar{
+				{Value: float64(i), Timestamp: tsMillis, Labels: []prompb.Label{{Name: "trace_id", Value: "1234"}}},
+			}
+		}
+
 		series = append(series, prompb.TimeSeries{
 			Labels:     lbls,
 			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, GenerateTestHistogram(i))},
+			Exemplars:  exemplars,
 		})
 	}
 

@@ -15,7 +15,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/grafana/e2e"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -112,7 +115,7 @@ func TestQuerier(t *testing.T) {
 	}
 
 	// Generate TSDB head used to simulate querying the long-term storage.
-	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
+	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), chunkenc.ValFloat)
 
 	for _, query := range queries {
 		for _, iterators := range []bool{false, true} {
@@ -129,7 +132,53 @@ func TestQuerier(t *testing.T) {
 
 				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
-				testRangeQuery(t, queryable, through, query)
+				testRangeQuery(t, queryable, through, query, chunkenc.ValFloat)
+			})
+		}
+	}
+}
+
+func TestQueryHistogram(t *testing.T) {
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	const chunks = 24
+
+	queries := []query{
+		// Very simple single-point gets, with low step.  Performance should be
+		// similar to above.
+		{
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			expected: func(t int64) (int64, float64) {
+				return t, float64(10 + 8*t)
+			},
+		},
+	}
+
+	// Generate TSDB head used to simulate querying the long-term storage.
+	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), chunkenc.ValHistogram)
+
+	for _, query := range queries {
+		for _, iterators := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				cfg.Iterators = iterators
+
+				// No samples returned by ingesters.
+				distributor := &mockDistributor{}
+				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
+
+				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+				require.NoError(t, err)
+
+				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
+				testRangeQuery(t, queryable, through, query, chunkenc.ValHistogram)
 			})
 		}
 	}
@@ -303,10 +352,11 @@ func TestBatchMergeChunks(t *testing.T) {
 	}
 }
 
-func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) (storage.Queryable, model.Time) {
+func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType chunkenc.ValueType) (storage.Queryable, model.Time) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
+	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
@@ -323,8 +373,17 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	chunkStartTs := mint
 	ts := chunkStartTs
 	for i := 0; i < samples; i++ {
-		_, err := app.Append(0, l, int64(ts), float64(ts))
-		require.NoError(t, err)
+		switch valueType {
+		case chunkenc.ValFloat:
+			_, err := app.Append(0, l, int64(ts), float64(ts))
+			require.NoError(t, err)
+		case chunkenc.ValHistogram:
+			_, err := app.AppendHistogram(0, l, int64(ts), e2e.GenerateTestHistogram(int(ts)), nil)
+			require.NoError(t, err)
+		default:
+			panic("Unknown chunk type")
+		}
+
 		cnt++
 
 		ts = ts.Add(step)
@@ -873,7 +932,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 	}
 }
 
-func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
+func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query, valueType chunkenc.ValueType) *promql.Result {
 	dir := t.TempDir()
 	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
 
@@ -900,7 +959,15 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 	for i, point := range series.Points {
 		expectedTime, expectedValue := q.expected(ts)
 		require.Equal(t, expectedTime, point.T, strconv.Itoa(i))
-		require.Equal(t, expectedValue, point.V, strconv.Itoa(i))
+		switch valueType {
+		case chunkenc.ValFloat:
+			require.Equal(t, expectedValue, point.V, strconv.Itoa(i))
+		case chunkenc.ValHistogram:
+			require.Equal(t, expectedValue, point.H.Count, strconv.Itoa(i))
+		default:
+			panic("Unknown value type")
+		}
+
 		ts += int64(step / time.Millisecond)
 	}
 	return r

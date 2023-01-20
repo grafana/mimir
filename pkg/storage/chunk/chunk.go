@@ -6,6 +6,7 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
 	"unsafe"
 
@@ -35,6 +36,12 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
 	AddHistogram(timestamp int64, histogram *histogram.Histogram) (EncodedChunk, error)
+
+	// AddFloatHistogram adds a float histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddFloatHistogram(timestamp int64, histogram *histogram.FloatHistogram) (EncodedChunk, error)
 
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
@@ -67,7 +74,8 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
-	Histogram() mimirpb.Histogram
+	AtHistogram() (int64, *histogram.Histogram)
+	AtFloatHistogram() (int64, *histogram.FloatHistogram)
 	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
@@ -127,10 +135,17 @@ func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]mo
 		return resultFloat, resultHist, it.Err()
 	}
 	for !model.Time(it.Timestamp()).After(newestInclusive) {
-		if currValType == chunkenc.ValFloat {
+		switch currValType {
+		case chunkenc.ValFloat:
 			resultFloat = append(resultFloat, it.Value())
-		} else if currValType == chunkenc.ValHistogram || currValType == chunkenc.ValFloatHistogram {
-			resultHist = append(resultHist, it.Histogram())
+		case chunkenc.ValHistogram:
+			t, h := it.AtHistogram()
+			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
+		case chunkenc.ValFloatHistogram:
+			t, h := it.AtFloatHistogram()
+			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+		default:
+			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
 		}
 		currValType = it.Scan()
 		if currValType == chunkenc.ValNone {

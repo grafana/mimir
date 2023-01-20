@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/e2e"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,6 +66,12 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+var (
+	generateTestHistogram       = e2e.GenerateTestHistogram
+	generateTestFloatHistogram  = e2e.GenerateTestFloatHistogram
+	generateTestSampleHistogram = e2e.GenerateTestSampleHistogram
 )
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
@@ -4345,7 +4352,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		# HELP cortex_ingester_oldest_unshipped_block_timestamp_seconds Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.
 		# TYPE cortex_ingester_oldest_unshipped_block_timestamp_seconds gauge
 		cortex_ingester_oldest_unshipped_block_timestamp_seconds %d
-	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
+	`, newBlocks[1].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds")) // Note it has to be newBlocks[1] because newBlocks[0] was already shipped, it is just kept due to the retention.
 }
 
 func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *testing.T) {
@@ -6803,6 +6810,27 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
+	tests := map[string]struct {
+		sampleHistograms []mimirpb.Histogram
+		expectHistogram  model.SampleHistogram
+	}{
+		"integer histogram": {
+			sampleHistograms: makeWriteRequestHistograms(1, generateTestHistogram(0)),
+			expectHistogram:  *generateTestSampleHistogram(0),
+		},
+		"float histogram": {
+			sampleHistograms: makeWriteRequestFloatHistograms(1, generateTestFloatHistogram(0)),
+			expectHistogram:  *generateTestSampleHistogram(0),
+		},
+	}
+	for testName, testCfg := range tests {
+		t.Run(testName, func(t *testing.T) {
+			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
+		})
+	}
+}
+
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram model.SampleHistogram) {
 	limits := defaultLimitsTestConfig()
 	limits.AcceptNativeHistograms = false
 
@@ -6850,9 +6878,6 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		TimestampMs: 0,
 		Value:       1,
 	}
-
-	histogram := tsdb.GenerateTestHistograms(1)[0]
-	sampleHistograms := makeWriteRequestHistograms(1, histogram)
 
 	// Metadata
 	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
@@ -6943,7 +6968,7 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		}},
 		Histograms: []model.SampleHistogramPair{{
 			Timestamp: 2,
-			Histogram: mimirpb.FromHistogramToPromCommonHistogram(*histogram.ToFloat()),
+			Histogram: expectHistogram,
 		}},
 	}}
 
@@ -6956,6 +6981,16 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 
 func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
 	h := remote.HistogramToHistogramProto(ts, histogram)
+	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
+	// histogram protobuf representation but we need the Mimir one here.
+	d, _ := h.Marshal()
+	h2 := mimirpb.Histogram{}
+	h2.Unmarshal(d) // nolint:errcheck
+	return []mimirpb.Histogram{h2}
+}
+
+func makeWriteRequestFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
+	h := remote.FloatHistogramToHistogramProto(ts, histogram)
 	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
 	// histogram protobuf representation but we need the Mimir one here.
 	d, _ := h.Marshal()

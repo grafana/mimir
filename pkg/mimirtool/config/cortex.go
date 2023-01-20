@@ -150,6 +150,9 @@ var cortexRenameMappings = map[string]Mapping{
 	notInYaml + ".ingester-lifecycler-id":                            RenameMapping("ingester.ring.instance_id"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
+
+	// limits.max_query_length replaced with limits.max_partial_query_length in 2.5
+	"limits.max_query_length": RenameMapping("limits.max_partial_query_length"),
 }
 
 func updateKVStoreValue(source, target Parameters) error {
@@ -1074,6 +1077,9 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 
 	// Removed in 2.4
 	"ingester.lifecycler.join_after", // -ingester.join-after
+
+	// Removed in 2.5
+	"blocks_storage.tsdb.block_ranges_period", // -blocks-storage.tsdb.block-ranges-period
 }...)
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.

@@ -108,6 +108,9 @@ func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
 	}
 	if t.iF >= len(t.ts.series.Samples) {
 		t.atH = true
+		if t.ts.series.Histograms[t.iH].IsFloatHistogram() {
+			return chunkenc.ValFloatHistogram
+		}
 		return chunkenc.ValHistogram
 	}
 	if t.iH >= len(t.ts.series.Histograms) {
@@ -119,6 +122,9 @@ func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
 		return chunkenc.ValFloat
 	}
 	t.atH = true
+	if t.ts.series.Histograms[t.iH].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
 	return chunkenc.ValHistogram
 }
 
@@ -142,6 +148,9 @@ func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return 0, nil
 	}
 	h := t.ts.series.Histograms[t.iH]
+	if h.IsFloatHistogram() {
+		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
+	}
 	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)
 }
 
@@ -154,7 +163,10 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 		return 0, nil
 	}
 	h := t.ts.series.Histograms[t.iH]
-	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h).ToFloat()
+	if !h.IsFloatHistogram() {
+		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
+	}
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(h)
 }
 
 // AtT implements implements chunkenc.Iterator.
@@ -181,6 +193,9 @@ func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
 	if t.iF+1 >= len(t.ts.series.Samples) {
 		t.iH++
 		t.atH = true
+		if t.ts.series.Histograms[t.iH].IsFloatHistogram() {
+			return chunkenc.ValFloatHistogram
+		}
 		return chunkenc.ValHistogram
 	}
 	if t.iH+1 >= len(t.ts.series.Histograms) {
@@ -195,6 +210,9 @@ func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
 	}
 	t.iH++
 	t.atH = true
+	if t.ts.series.Histograms[t.iH].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
 	return chunkenc.ValHistogram
 }
 

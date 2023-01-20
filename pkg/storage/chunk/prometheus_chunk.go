@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // Wrapper around a generic Prometheus chunk.
@@ -82,6 +80,10 @@ func (p *prometheusXorChunk) AddHistogram(timestamp int64, h *histogram.Histogra
 	return nil, fmt.Errorf("cannot add histogram to sample chunk")
 }
 
+func (p *prometheusXorChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to sample chunk")
+}
+
 func (p *prometheusXorChunk) UnmarshalFromBuf(bytes []byte) error {
 	c, err := chunkenc.FromData(chunkenc.EncXOR, bytes)
 	if err != nil {
@@ -107,6 +109,10 @@ func newPrometheusHistogramChunk() *prometheusHistogramChunk {
 
 func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
+}
+
+func (p *prometheusHistogramChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to histogram chunk")
 }
 
 // AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
@@ -140,6 +146,54 @@ func (p *prometheusHistogramChunk) Encoding() Encoding {
 	return PrometheusHistogramChunk
 }
 
+// Wrapper around a Prometheus histogram chunk.
+type prometheusFloatHistogramChunk struct {
+	prometheusChunk
+}
+
+func newPrometheusFloatHistogramChunk() *prometheusFloatHistogramChunk {
+	return &prometheusFloatHistogramChunk{}
+}
+
+func (p *prometheusFloatHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
+}
+
+func (p *prometheusFloatHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram sample to float histogram chunk")
+}
+
+// AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
+// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
+// Appender for each invocation.
+func (p *prometheusFloatHistogramChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewFloatHistogramChunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	app.AppendFloatHistogram(timestamp, h)
+	return nil, nil
+}
+
+func (p *prometheusFloatHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncFloatHistogram, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusFloatHistogramChunk) Encoding() Encoding {
+	return PrometheusFloatHistogramChunk
+}
+
 type prometheusChunkIterator struct {
 	c  chunkenc.Chunk // we need chunk, because FindAtOrAfter needs to start with fresh iterator.
 	it chunkenc.Iterator
@@ -164,9 +218,12 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-func (p *prometheusChunkIterator) Histogram() mimirpb.Histogram {
-	ts, val := p.it.AtHistogram() // TODO(zenador): what about float histogram
-	return mimirpb.FromHistogramToHistogramProto(ts, val)
+func (p *prometheusChunkIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return p.it.AtHistogram()
+}
+
+func (p *prometheusChunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return p.it.AtFloatHistogram()
 }
 
 func (p *prometheusChunkIterator) Timestamp() int64 {
@@ -225,10 +282,13 @@ func (p *prometheusChunkIterator) Err() error {
 
 type errorIterator string
 
-func (e errorIterator) Scan() chunkenc.ValueType                           { return chunkenc.ValNone }
-func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType   { return chunkenc.ValNone }
-func (e errorIterator) Value() model.SamplePair                            { panic("no values") }
-func (e errorIterator) Histogram() mimirpb.Histogram                       { panic("no histograms") }
+func (e errorIterator) Scan() chunkenc.ValueType                         { return chunkenc.ValNone }
+func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e errorIterator) Value() model.SamplePair                          { panic("no values") }
+func (e errorIterator) AtHistogram() (int64, *histogram.Histogram)       { panic("no integer histograms") }
+func (e errorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic("no float histograms")
+}
 func (e errorIterator) Timestamp() int64                                   { panic("no samples") }
 func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
 func (e errorIterator) Err() error                                         { return errors.New(string(e)) }
