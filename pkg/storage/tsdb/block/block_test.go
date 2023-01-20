@@ -210,7 +210,7 @@ func TestUpload(t *testing.T) {
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 
 		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, "test", b1.String()))
 		require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestUpload(t *testing.T) {
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 	})
 
 	t.Run("upload with no external labels works just fine", func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
-		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
+		require.Equal(t, 547, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
 
 		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b2.String()))
 		require.NoError(t, err)
