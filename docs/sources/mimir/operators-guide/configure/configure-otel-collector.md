@@ -105,20 +105,18 @@ service:
 
 ## Format considerations
 
-We currently follow the official specification described here: [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus).
+We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
 
 You might experience the following common issues:
 
-#### Dots (.) are converted to \_
+* Dots (.) are converted to \_
+   Prometheus metrics do not support `.` and `-` characters in metric or label names. Prometheus converts these characters to `_`. For example:
 
-Because Prometheus metrics do not support `.` and `-` characters in metric or label names, they get converted to `_` in Prometheus.
+   `requests.duration{http.status_code=500, cloud.region=us-central1}` in OTLP becomes 
+   `requests_duration{http_status_code=”500”, cloud_region=”us-central1”}` in Prometheus.
 
-For example:
+* Resource attributes are added to the `target_info` metric.
 
-`requests.duration{http.status_code=500, cloud.region=us-central1}` in OTLP becomes `requests_duration{http_status_code=”500”, cloud_region=”us-central1”}` in Prometheus.
+   For details, see the [OpenTelemetry Resource Attributes](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#resource-attributes) specification.
 
-#### Resource attributes are added to the `target_info` metric.
-
-For details, see the [OpenTelemetry Spec](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#resource-attributes).
-
-However, `<service.namespace>/<service.name>` or `<service.name>` (if the namespace is empty), is added as the label `job`, and `service.instance.id` is added as the label `instance` to every metric.
+  However, `<service.namespace>/<service.name>` or `<service.name>` (if the namespace is empty), is added as the label `job`, and `service.instance.id` is added as the label `instance` to every metric.
