@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package internedsinglestringquerypb;
+package packedinternedsinglestringquerypb;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
@@ -37,17 +37,21 @@ message SymbolTable {
 
 message VectorData {
   SymbolTable SymbolTable = 1 [(gogoproto.nullable) = false];
-  repeated VectorSample Samples = 2 [(gogoproto.nullable) = false];
+
+  // Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
+  // both smaller in encoded form and more efficient to decode (as the length is known upfront).
+  // See https://protobuf.dev/programming-guides/encoding/#packed.
+  // Each metric in Metrics has the corresponding value in Values for the corresponding timestamp in Timestamps.
+  //
+  // TODO: will this make it more difficult to support native histograms?
+  // (particularly for cases where some points have values and others are histograms)
+  repeated Metric Metrics = 2 [(gogoproto.nullable) = false];
+  repeated double Values = 3;
+  repeated int64 Timestamps = 4;
 }
 
-message VectorSample {
-  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+message Metric {
   repeated uint64 MetricSymbols = 1;
-
-  double Value = 2;
-
-  // TODO: is there a better type to use here?
-  int64 Timestamp = 3; // milliseconds
 }
 
 message ScalarData {
@@ -64,14 +68,16 @@ message MatrixData {
 
 message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
+  // TODO: replace with Metric?
   repeated uint64 MetricSymbols = 1;
 
-  repeated MatrixSample Samples = 2 [(gogoproto.nullable) = false];
-}
-
-message MatrixSample {
-  double Value = 1;
-
-  // TODO: is there a better type to use here?
-  int64 Timestamp = 2; // milliseconds
+  // Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
+  // both smaller in encoded form and more efficient to decode (as the length is known upfront).
+  // See https://protobuf.dev/programming-guides/encoding/#packed.
+  // Each value in Values is for the corresponding timestamp in Timestamps.
+  //
+  // TODO: will this make it more difficult to support native histograms?
+  // (particularly for cases where some points have values and others are histograms)
+  repeated double Values = 2;
+  repeated int64 Timestamps = 3;
 }

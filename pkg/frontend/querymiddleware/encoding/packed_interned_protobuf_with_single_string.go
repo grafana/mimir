@@ -9,14 +9,14 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/internedsinglestringquerypb"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/packedinternedsinglestringquerypb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type InternedProtobufWithSingleStringCodec struct{}
+type PackedInternedProtobufWithSingleStringCodec struct{}
 
-func (c InternedProtobufWithSingleStringCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
-	var resp internedsinglestringquerypb.QueryResponse
+func (c PackedInternedProtobufWithSingleStringCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
+	var resp packedinternedsinglestringquerypb.QueryResponse
 
 	if err := resp.Unmarshal(b); err != nil {
 		return querymiddleware.PrometheusResponse{}, err
@@ -25,11 +25,11 @@ func (c InternedProtobufWithSingleStringCodec) Decode(b []byte) (querymiddleware
 	var prometheusData querymiddleware.PrometheusData
 
 	switch d := resp.Data.(type) {
-	case *internedsinglestringquerypb.QueryResponse_Scalar:
+	case *packedinternedsinglestringquerypb.QueryResponse_Scalar:
 		prometheusData = c.decodeScalar(d.Scalar)
-	case *internedsinglestringquerypb.QueryResponse_Vector:
+	case *packedinternedsinglestringquerypb.QueryResponse_Vector:
 		prometheusData = c.decodeVector(d.Vector)
-	case *internedsinglestringquerypb.QueryResponse_Matrix:
+	case *packedinternedsinglestringquerypb.QueryResponse_Matrix:
 		prometheusData = c.decodeMatrix(d.Matrix)
 	default:
 		return querymiddleware.PrometheusResponse{}, fmt.Errorf("unknown data type %T", resp.Data)
@@ -43,7 +43,7 @@ func (c InternedProtobufWithSingleStringCodec) Decode(b []byte) (querymiddleware
 	}, nil
 }
 
-func (c InternedProtobufWithSingleStringCodec) decodeScalar(d *internedsinglestringquerypb.ScalarData) querymiddleware.PrometheusData {
+func (c PackedInternedProtobufWithSingleStringCodec) decodeScalar(d *packedinternedsinglestringquerypb.ScalarData) querymiddleware.PrometheusData {
 	return querymiddleware.PrometheusData{
 		ResultType: model.ValScalar.String(),
 		Result: []querymiddleware.SampleStream{
@@ -59,18 +59,21 @@ func (c InternedProtobufWithSingleStringCodec) decodeScalar(d *internedsinglestr
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) decodeVector(d *internedsinglestringquerypb.VectorData) querymiddleware.PrometheusData {
-	result := make([]querymiddleware.SampleStream, len(d.Samples))
+func (c PackedInternedProtobufWithSingleStringCodec) decodeVector(d *packedinternedsinglestringquerypb.VectorData) querymiddleware.PrometheusData {
+	// TODO: check that the number of metrics, timestamps and values is the same
+	sampleCount := len(d.Metrics)
+	result := make([]querymiddleware.SampleStream, sampleCount)
 	symbols := c.decodeSymbols(d.SymbolTable)
 
-	for sampleIdx, sample := range d.Samples {
-		labelCount := len(sample.MetricSymbols) / 2
+	for sampleIdx := 0; sampleIdx < sampleCount; sampleIdx++ {
+		metricSymbols := d.Metrics[sampleIdx].MetricSymbols
+		labelCount := len(metricSymbols) / 2
 		labels := make([]mimirpb.LabelAdapter, labelCount)
 
 		for labelIdx := 0; labelIdx < labelCount; labelIdx++ {
 			labels[labelIdx] = mimirpb.LabelAdapter{
-				Name:  symbols[sample.MetricSymbols[2*labelIdx]],
-				Value: symbols[sample.MetricSymbols[2*labelIdx+1]],
+				Name:  symbols[metricSymbols[2*labelIdx]],
+				Value: symbols[metricSymbols[2*labelIdx+1]],
 			}
 		}
 
@@ -78,8 +81,8 @@ func (c InternedProtobufWithSingleStringCodec) decodeVector(d *internedsinglestr
 			Labels: labels,
 			Samples: []mimirpb.Sample{
 				{
-					Value:       sample.Value,
-					TimestampMs: sample.Timestamp,
+					Value:       d.Values[sampleIdx],
+					TimestampMs: d.Timestamps[sampleIdx],
 				},
 			},
 		}
@@ -91,7 +94,7 @@ func (c InternedProtobufWithSingleStringCodec) decodeVector(d *internedsinglestr
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) decodeMatrix(d *internedsinglestringquerypb.MatrixData) querymiddleware.PrometheusData {
+func (c PackedInternedProtobufWithSingleStringCodec) decodeMatrix(d *packedinternedsinglestringquerypb.MatrixData) querymiddleware.PrometheusData {
 	result := make([]querymiddleware.SampleStream, len(d.Series))
 	symbols := c.decodeSymbols(d.SymbolTable)
 
@@ -106,12 +109,14 @@ func (c InternedProtobufWithSingleStringCodec) decodeMatrix(d *internedsinglestr
 			}
 		}
 
-		samples := make([]mimirpb.Sample, len(series.Samples))
+		// TODO: check that number of timestamps == number of values
+		sampleCount := len(series.Timestamps)
+		samples := make([]mimirpb.Sample, sampleCount)
 
-		for sampleIdx, sample := range series.Samples {
+		for sampleIdx := 0; sampleIdx < sampleCount; sampleIdx++ {
 			samples[sampleIdx] = mimirpb.Sample{
-				Value:       sample.Value,
-				TimestampMs: sample.Timestamp,
+				Value:       series.Values[sampleIdx],
+				TimestampMs: series.Timestamps[sampleIdx],
 			}
 		}
 
@@ -127,8 +132,8 @@ func (c InternedProtobufWithSingleStringCodec) decodeMatrix(d *internedsinglestr
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
-	resp := internedsinglestringquerypb.QueryResponse{
+func (c PackedInternedProtobufWithSingleStringCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
+	resp := packedinternedsinglestringquerypb.QueryResponse{
 		Status:    prometheusResponse.Status,
 		ErrorType: prometheusResponse.ErrorType,
 		Error:     prometheusResponse.Error,
@@ -137,13 +142,13 @@ func (c InternedProtobufWithSingleStringCodec) Encode(prometheusResponse querymi
 	switch prometheusResponse.Data.ResultType {
 	case model.ValScalar.String():
 		scalar := c.encodeScalar(prometheusResponse.Data)
-		resp.Data = &internedsinglestringquerypb.QueryResponse_Scalar{Scalar: &scalar}
+		resp.Data = &packedinternedsinglestringquerypb.QueryResponse_Scalar{Scalar: &scalar}
 	case model.ValVector.String():
 		vector := c.encodeVector(prometheusResponse.Data)
-		resp.Data = &internedsinglestringquerypb.QueryResponse_Vector{Vector: &vector}
+		resp.Data = &packedinternedsinglestringquerypb.QueryResponse_Vector{Vector: &vector}
 	case model.ValMatrix.String():
 		matrix := c.encodeMatrix(prometheusResponse.Data)
-		resp.Data = &internedsinglestringquerypb.QueryResponse_Matrix{Matrix: &matrix}
+		resp.Data = &packedinternedsinglestringquerypb.QueryResponse_Matrix{Matrix: &matrix}
 	default:
 		return nil, fmt.Errorf("unknown result type %v", prometheusResponse.Data.ResultType)
 	}
@@ -151,7 +156,7 @@ func (c InternedProtobufWithSingleStringCodec) Encode(prometheusResponse querymi
 	return resp.Marshal()
 }
 
-func (c InternedProtobufWithSingleStringCodec) encodeScalar(data *querymiddleware.PrometheusData) internedsinglestringquerypb.ScalarData {
+func (c PackedInternedProtobufWithSingleStringCodec) encodeScalar(data *querymiddleware.PrometheusData) packedinternedsinglestringquerypb.ScalarData {
 	if len(data.Result) != 1 {
 		panic(fmt.Sprintf("scalar data should have 1 stream, but has %v", len(data.Result)))
 	}
@@ -164,14 +169,16 @@ func (c InternedProtobufWithSingleStringCodec) encodeScalar(data *querymiddlewar
 
 	sample := stream.Samples[0]
 
-	return internedsinglestringquerypb.ScalarData{
+	return packedinternedsinglestringquerypb.ScalarData{
 		Value:     sample.Value,
 		Timestamp: sample.TimestampMs,
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) encodeVector(data *querymiddleware.PrometheusData) internedsinglestringquerypb.VectorData {
-	samples := make([]internedsinglestringquerypb.VectorSample, len(data.Result))
+func (c PackedInternedProtobufWithSingleStringCodec) encodeVector(data *querymiddleware.PrometheusData) packedinternedsinglestringquerypb.VectorData {
+	metrics := make([]packedinternedsinglestringquerypb.Metric, len(data.Result))
+	values := make([]float64, len(data.Result))
+	timestamps := make([]int64, len(data.Result))
 	symbolTableBuilder := newSymbolTableBuilder()
 
 	for sampleIdx, stream := range data.Result {
@@ -186,26 +193,26 @@ func (c InternedProtobufWithSingleStringCodec) encodeVector(data *querymiddlewar
 			metricSymbols[2*labelIdx+1] = symbolTableBuilder.GetOrPutSymbol(label.Value)
 		}
 
-		samples[sampleIdx] = internedsinglestringquerypb.VectorSample{
-			MetricSymbols: metricSymbols,
-			Value:         stream.Samples[0].Value,
-			Timestamp:     stream.Samples[0].TimestampMs,
-		}
+		metrics[sampleIdx].MetricSymbols = metricSymbols
+		values[sampleIdx] = stream.Samples[0].Value
+		timestamps[sampleIdx] = stream.Samples[0].TimestampMs
 	}
 
 	symbols, symbolCount := symbolTableBuilder.Build()
 
-	return internedsinglestringquerypb.VectorData{
-		SymbolTable: internedsinglestringquerypb.SymbolTable{
+	return packedinternedsinglestringquerypb.VectorData{
+		SymbolTable: packedinternedsinglestringquerypb.SymbolTable{
 			Symbols:     symbols,
 			SymbolCount: symbolCount,
 		},
-		Samples: samples,
+		Metrics:    metrics,
+		Values:     values,
+		Timestamps: timestamps,
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) encodeMatrix(data *querymiddleware.PrometheusData) internedsinglestringquerypb.MatrixData {
-	series := make([]internedsinglestringquerypb.MatrixSeries, len(data.Result))
+func (c PackedInternedProtobufWithSingleStringCodec) encodeMatrix(data *querymiddleware.PrometheusData) packedinternedsinglestringquerypb.MatrixData {
+	series := make([]packedinternedsinglestringquerypb.MatrixSeries, len(data.Result))
 	symbolTableBuilder := newSymbolTableBuilder()
 
 	for seriesIdx, stream := range data.Result {
@@ -216,25 +223,25 @@ func (c InternedProtobufWithSingleStringCodec) encodeMatrix(data *querymiddlewar
 			metricSymbols[2*labelIdx+1] = symbolTableBuilder.GetOrPutSymbol(label.Value)
 		}
 
-		samples := make([]internedsinglestringquerypb.MatrixSample, len(stream.Samples))
+		values := make([]float64, len(stream.Samples))
+		timestamps := make([]int64, len(stream.Samples))
 
 		for sampleIdx, sample := range stream.Samples {
-			samples[sampleIdx] = internedsinglestringquerypb.MatrixSample{
-				Value:     sample.Value,
-				Timestamp: sample.TimestampMs,
-			}
+			values[sampleIdx] = sample.Value
+			timestamps[sampleIdx] = sample.TimestampMs
 		}
 
-		series[seriesIdx] = internedsinglestringquerypb.MatrixSeries{
+		series[seriesIdx] = packedinternedsinglestringquerypb.MatrixSeries{
 			MetricSymbols: metricSymbols,
-			Samples:       samples,
+			Values:        values,
+			Timestamps:    timestamps,
 		}
 	}
 
 	symbols, symbolCount := symbolTableBuilder.Build()
 
-	return internedsinglestringquerypb.MatrixData{
-		SymbolTable: internedsinglestringquerypb.SymbolTable{
+	return packedinternedsinglestringquerypb.MatrixData{
+		SymbolTable: packedinternedsinglestringquerypb.SymbolTable{
 			Symbols:     symbols,
 			SymbolCount: symbolCount,
 		},
@@ -242,7 +249,7 @@ func (c InternedProtobufWithSingleStringCodec) encodeMatrix(data *querymiddlewar
 	}
 }
 
-func (c InternedProtobufWithSingleStringCodec) decodeSymbols(table internedsinglestringquerypb.SymbolTable) []string {
+func (c PackedInternedProtobufWithSingleStringCodec) decodeSymbols(table packedinternedsinglestringquerypb.SymbolTable) []string {
 	if table.SymbolCount == 0 {
 		return nil
 	}
