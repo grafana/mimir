@@ -63,6 +63,7 @@ To use the query-scheduler with ring-based service discovery, configure the quer
 To migrate the query-scheduler from [DNS-based service discovery](#dns-based-service-discovery) to [ring-based service discovery](#ring-based-service-discovery) you can follow these steps:
 
 1. Configure the **query-scheduler** instances to join a ring:
+
    ```
    -query-scheduler.service-discovery-mode=ring
 
@@ -77,10 +78,12 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    # - Consul: -query-scheduler.ring.consul.*
    # - Ecd:    -query-scheduler.ring.etcd.*
    ```
+
 1. Wait until query-scheduler instances rolled out. Then ensure the changes have been successfully applied:
    - Open the [query-scheduler ring status]({{< relref "../../../reference-http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
    - At this point, queriers and query-frontend are still discovering query-schedulers via DNS.
 1. Configure **query-frontend** and **querier** instances to discover query-schedulers via the ring:
+
    ```
    -query-scheduler.service-discovery-mode=ring
 
