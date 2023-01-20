@@ -1,6 +1,6 @@
 ---
 description: Learn how to migrate query-scheduler from DNS-based to ring-based service discovery
-menuTitle: Migrate query-scheduler from DNS-based to ring-based service discovery
+menuTitle: Migrate query-scheduler to ring-based service discovery
 title: Migrate query-scheduler from DNS-based to ring-based service discovery
 weight: 50
 ---
