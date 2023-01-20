@@ -36,6 +36,7 @@ import (
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
 // This is required because the prometheus api implementation does not allow us to return errors
 // on rule lookups, which might fail in Mimir's case.
+// Test another change
 
 type response struct {
 	Status    string       `json:"status"`
