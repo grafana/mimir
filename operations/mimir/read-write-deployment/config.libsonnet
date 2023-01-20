@@ -18,6 +18,7 @@
 
     // Overrides-exporter is part of the backend component in the Mimir read-write deployment mode.
     overrides_exporter_enabled: if $._config.is_read_write_deployment_mode then false else super.overrides_exporter_enabled,
+    overrides_exporter_ring_enabled: if $._config.is_read_write_deployment_mode then true else super.overrides_exporter_enabled,
   },
 
   // Mimir read-write deployment mode makes some strong assumptions about what must enabled enabled and disabled.

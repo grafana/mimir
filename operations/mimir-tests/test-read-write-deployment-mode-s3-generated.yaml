@@ -866,6 +866,10 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -overrides-exporter.ring.enabled=true
+        - -overrides-exporter.ring.prefix=
+        - -overrides-exporter.ring.store=memberlist
+        - -overrides-exporter.ring.wait-stability-min-duration=1m
         - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2
@@ -1039,6 +1043,10 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -overrides-exporter.ring.enabled=true
+        - -overrides-exporter.ring.prefix=
+        - -overrides-exporter.ring.store=memberlist
+        - -overrides-exporter.ring.wait-stability-min-duration=1m
         - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2
@@ -1212,6 +1220,10 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -overrides-exporter.ring.enabled=true
+        - -overrides-exporter.ring.prefix=
+        - -overrides-exporter.ring.store=memberlist
+        - -overrides-exporter.ring.wait-stability-min-duration=1m
         - -querier.max-partial-query-length=768h
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -query-scheduler.max-used-instances=2

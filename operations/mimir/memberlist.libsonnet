@@ -46,6 +46,9 @@
 
     queryBlocksStorageConfig+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('store-gateway.sharding-ring.store', 'store-gateway.sharding-ring.consul.hostname', 'store-gateway.sharding-ring.multi') + $._config.memberlistConfig),
 
+    overridesExporterRingConfig+: if !$._config.memberlist_ring_enabled || !$._config.overrides_exporter_ring_enabled then {}
+    else (setupGossipRing('overrides-exporter.ring.store', 'overrides-exporter.ring.consul.hostname', 'overrides-exporter.ring.multi') + $._config.memberlistConfig),
+
     querySchedulerRingClientConfig+: if !queryFrontendMemberlistEnabled then {} else (setupGossipRing('query-scheduler.ring.store', 'query-scheduler.ring.consul.hostname', 'query-scheduler.ring.multi') + $._config.memberlistConfig),
     querySchedulerRingLifecyclerConfig+: if !querySchedulerMemberlistEnabled then {} else (setupGossipRing('query-scheduler.ring.store', 'query-scheduler.ring.consul.hostname', 'query-scheduler.ring.multi') + $._config.memberlistConfig),
 
