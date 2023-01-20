@@ -1494,7 +1494,7 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-querier.max-partial-query-length` option (or `max_partial_query_length` in the runtime configuration).
 
 ### err-mimir-max-total-query-length
 
