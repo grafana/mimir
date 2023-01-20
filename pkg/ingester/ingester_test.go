@@ -5135,7 +5135,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
-		assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
+		assert.Equal(t, wrapWithUser(makeLimitError(ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
@@ -5240,7 +5240,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
-		assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
+		assert.Equal(t, wrapWithUser(makeMetricLimitError(labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
