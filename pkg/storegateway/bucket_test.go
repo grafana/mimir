@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1002,21 +1003,21 @@ func benchmarkExpandedPostings(
 	}
 }
 
-func TestBucket_Series(t *testing.T) {
+func TestBucketStore_Series(t *testing.T) {
 	tb := test.NewTB(t)
 	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1)
 	})
 }
 
-func TestBucket_Series_WithSkipChunks(t *testing.T) {
+func TestBucketStore_Series_WithSkipChunks(t *testing.T) {
 	tb := test.NewTB(t)
 	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
 
-func BenchmarkBucket_Series(b *testing.B) {
+func BenchmarkBucketStore_Series(b *testing.B) {
 	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
 	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
@@ -1024,7 +1025,7 @@ func BenchmarkBucket_Series(b *testing.B) {
 	})
 }
 
-func BenchmarkBucket_Series_WithSkipChunks(b *testing.B) {
+func BenchmarkBucketStore_Series_WithSkipChunks(b *testing.B) {
 	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
 	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
@@ -1219,7 +1220,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 }
 
-func TestBucket_Series_Concurrency(t *testing.T) {
+func TestBucketStore_Series_Concurrency(t *testing.T) {
 	const (
 		numWorkers           = 10
 		numRequestsPerWorker = 100
@@ -1389,7 +1390,7 @@ func (m *trackedBytesPool) Put(b *[]byte) {
 }
 
 // Regression test against: https://github.com/thanos-io/thanos/issues/2147.
-func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
+func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -1569,7 +1570,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	})
 }
 
-func TestSeries_RequestAndResponseHints(t *testing.T) {
+func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	newTestCases := func(seriesSet1 []*storepb.Series, seriesSet2 []*storepb.Series, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
 		return []*seriesCase{
 			{
@@ -1640,7 +1641,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 	})
 }
 
-func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
+func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
@@ -1699,7 +1700,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
 }
 
-func TestSeries_CanceledRequest(t *testing.T) {
+func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	tmpDir := t.TempDir()
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
@@ -1751,7 +1752,7 @@ func TestSeries_CanceledRequest(t *testing.T) {
 	assert.Equal(t, codes.Canceled, s.Code())
 }
 
-func TestSeries_InvalidRequest(t *testing.T) {
+func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 	tmpDir := t.TempDir()
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
@@ -1801,7 +1802,7 @@ func TestSeries_InvalidRequest(t *testing.T) {
 	assert.ErrorContains(t, s.Err(), "error parsing regexp: missing closing )")
 }
 
-func TestSeries_BlockWithMultipleChunks(t *testing.T) {
+func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a block with 1 series but an high number of samples,
@@ -1925,6 +1926,125 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 			}
 
 			assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
+		})
+	}
+}
+
+func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		tmpDir = t.TempDir()
+		bktDir = filepath.Join(tmpDir, "bucket")
+		logger = log.NewNopLogger()
+	)
+
+	const (
+		numSamplesPerSeries = 10 // A low number so that all samples fit in a single chunk.
+		minTime             = 0
+		maxTime             = 1000
+	)
+
+	// Create two blocks. Some series exists in both blocks, some don't.
+	// Samples for the overlapping series are equal between the two blocks
+	// (simulate the case of uncompacted blocks from ingesters).
+	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+		labels.FromStrings(labels.MetricName, "series_1"),
+		labels.FromStrings(labels.MetricName, "series_2"),
+	}, numSamplesPerSeries, minTime, maxTime, nil, 0)
+	require.NoError(t, err)
+
+	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+		labels.FromStrings(labels.MetricName, "series_1"),
+		labels.FromStrings(labels.MetricName, "series_2"),
+	}, numSamplesPerSeries, minTime, maxTime, nil, 0)
+	require.NoError(t, err)
+
+	// Create a bucket and upload the block there.
+	bkt, err := filesystem.NewBucket(bktDir)
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, bkt.Close()) }()
+
+	instrBkt := objstore.WithNoopInstr(bkt)
+
+	// Instance a real bucket store we'll use to query the series.
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	assert.NoError(t, err)
+
+	tests := map[string]struct {
+		reqMatchers    []storepb.LabelMatcher
+		seriesLimit    uint64
+		chunksLimit    uint64
+		expectedErr    string
+		expectedSeries int
+	}{
+		"should fail if the number of unique series queried is less than the configured series limit": {
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			seriesLimit: 1,
+			expectedErr: errSeriesLimitMessage,
+		},
+		"should pass if the number of unique series queried is equal or greater than the configured series limit": {
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			seriesLimit:    2,
+			expectedSeries: 2,
+		},
+		"should fail if the number of chunks queried is less than the configured chunks limit": {
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			chunksLimit: 3,
+			expectedErr: errChunksLimitMessage,
+		},
+		"should pass if the number of chunks queried is equal or greater than the configured chunks limit": {
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			chunksLimit:    4,
+			expectedSeries: 2,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, batchSize := range []int{1, 2} {
+				t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
+					store, err := NewBucketStore(
+						"tenant",
+						instrBkt,
+						fetcher,
+						tmpDir,
+						NewChunksLimiterFactory(testData.seriesLimit),
+						NewSeriesLimiterFactory(testData.chunksLimit),
+						newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						10,
+						mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+						indexheader.Config{},
+						false,
+						0,
+						hashcache.NewSeriesHashCache(1024*1024),
+						NewBucketStoreMetrics(nil),
+						WithStreamingSeriesPerBatch(batchSize),
+					)
+					assert.NoError(t, err)
+					assert.NoError(t, store.SyncBlocks(ctx))
+
+					// Override the limiters based on the configured limits in the test case.
+					store.seriesLimiterFactory = NewSeriesLimiterFactory(testData.seriesLimit)
+					store.chunksLimiterFactory = NewChunksLimiterFactory(testData.chunksLimit)
+
+					req := &storepb.SeriesRequest{
+						MinTime:  minTime,
+						MaxTime:  maxTime,
+						Matchers: testData.reqMatchers,
+					}
+
+					srv := newBucketStoreSeriesServer(ctx)
+					err = store.Series(req, srv)
+
+					if testData.expectedErr != "" {
+						require.Error(t, err)
+						assert.ErrorContains(t, err, testData.expectedErr)
+					} else {
+						require.NoError(t, err)
+						assert.Len(t, srv.SeriesSet, testData.expectedSeries)
+					}
+				})
+			}
 		})
 	}
 }
