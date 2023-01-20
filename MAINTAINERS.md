@@ -10,7 +10,6 @@ The following are the main/default maintainers:
 - Nick Pillitteri — [@56quarters](https://github.com/56quarters) ([Grafana Labs](https://grafana.com/))
 - Oleg Zaytsev — [@colega](https://github.com/colega) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
-- Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 - Patrick Oyarzun — [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 
@@ -21,7 +20,9 @@ Some parts of the codebase have other maintainers, the package paths also includ
   - Ursula Kallio — [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
 - `pkg/alertmanager`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+  - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - `pkg/frontend`:
   - Cyril Tovena — [@cyriltovena](https://github.com/cyriltovena) ([Grafana Labs](https://grafana.com/)) # limited to reviews
 - `pkg/ruler`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+  - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
