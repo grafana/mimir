@@ -116,7 +116,6 @@ func TestIngester_Push(t *testing.T) {
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					nil,
 					[]*mimirpb.MetricMetadata{
 						{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 					},
@@ -124,7 +123,6 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-					nil,
 					nil,
 					[]*mimirpb.MetricMetadata{
 						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
@@ -191,13 +189,11 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-					nil,
 					[]*mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -285,12 +281,10 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-					nil,
 					nil,
 					nil,
 					mimirpb.API),
@@ -327,13 +321,11 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
-					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -375,7 +367,6 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
-					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -428,7 +419,6 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
-					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -486,13 +476,11 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
-					nil,
 					nil,
 					nil,
 					mimirpb.API,
@@ -883,13 +871,11 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
 				nil,
-				nil,
 				mimirpb.API,
 			),
 			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
 				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-				nil,
 				nil,
 				nil,
 				mimirpb.API,
@@ -973,13 +959,11 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
 				nil,
-				nil,
 				mimirpb.API,
 			),
 			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
 				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-				nil,
 				nil,
 				nil,
 				mimirpb.API,
@@ -1045,7 +1029,6 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
 		nil,
 		nil,
-		nil,
 		mimirpb.API,
 	)
 	_, err = ingester.Push(ctx, currTimeReq)
@@ -1065,7 +1048,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 			for i := range allSamples {
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
-			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, nil, mimirpb.API))
+			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
 			if !errorsExpected {
 				require.NoError(b, err)
 			}
@@ -1129,7 +1112,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1140,7 +1122,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -1156,7 +1138,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
 						nil,
-						nil,
 						mimirpb.API)
 
 					_, err := ingester.Push(ctx, currTimeReq)
@@ -1168,7 +1149,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -1186,7 +1167,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1195,7 +1175,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-user series limit")
 				}
 			},
@@ -1212,7 +1192,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API,
 				)
 				_, err := ingester.Push(ctx, currTimeReq)
@@ -1221,7 +1200,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-metric series limit")
 				}
 			},
@@ -1244,7 +1223,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "push rate limit reached")
 				}
 			},
@@ -1266,7 +1245,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "max tenants limit reached")
 				}
 			},
@@ -1285,7 +1264,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
 				}
 			},
@@ -1303,7 +1282,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "too many inflight push requests")
 				}
 			},
@@ -2267,7 +2246,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			}
 
 			// Send metrics to the ingester.
-			req := mimirpb.ToWriteRequest(metrics, samples, nil, nil, nil, mimirpb.API)
+			req := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
 			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
@@ -2890,7 +2869,7 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 		},
 	}
 
-	req := mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, nil, mimirpb.API)
+	req := mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, mimirpb.API)
 
 	// Generate the expected response
 	expectedQueryRes := &client.QueryResponse{
@@ -4527,7 +4506,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}})},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
-						nil,
 						[]*mimirpb.MetricMetadata{
 							{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 						},
@@ -4548,14 +4526,12 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
-						nil,
 						mimirpb.API,
 					),
 
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4576,7 +4552,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
-						nil,
 						mimirpb.API,
 					),
 				},
@@ -4585,7 +4560,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4605,14 +4579,12 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
-						nil,
 						mimirpb.API,
 					),
 
 					mimirpb.ToWriteRequest(
 						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
 						nil,
 						nil,
 						mimirpb.API,
@@ -4821,7 +4793,7 @@ func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mim
 		}
 	}
 
-	return mimirpb.ToWriteRequest(lbls, ss, nil, nil, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest(lbls, ss, nil, nil, mimirpb.API)
 }
 
 func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matrix {
@@ -4914,7 +4886,7 @@ func pushTestMetadata(t *testing.T, ing *Ingester, numMetadata, metadataPerMetri
 	// Append metadata.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, testData[userID], mimirpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, testData[userID], mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -4933,7 +4905,7 @@ func pushTestSamples(t testing.TB, ing *Ingester, numSeries, samplesPerSeries, o
 	// Append samples.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, nil, nil, mimirpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, nil, mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -5093,7 +5065,6 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 		[]mimirpb.Sample{{TimestampMs: 1, Value: 0}},
 		nil,
 		nil,
-		nil,
 		mimirpb.API,
 	))
 	require.NoError(t, err)
@@ -5164,19 +5135,19 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append to two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 		assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 		require.NoError(t, err)
 
 		// Read samples back via ingester queries.
@@ -5269,19 +5240,19 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		require.True(t, ok, "returned error is not an httpgrpc response")
 		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 		assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 		require.NoError(t, err)
 
 		// Read samples back via ingester queries.
@@ -5384,7 +5355,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 		return mimirpb.ToWriteRequest(
 			[]labels.Labels{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
-			nil,
 			nil,
 			nil,
 			mimirpb.API,
@@ -5583,7 +5553,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		return mimirpb.ToWriteRequest(
 			[]labels.Labels{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
-			nil,
 			nil,
 			nil,
 			mimirpb.API,
@@ -5981,7 +5950,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 			lbls = append(lbls, s)
 		}
 
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, nil, mimirpb.API)
+		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
@@ -6601,7 +6570,6 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli() - 10}},
 					nil,
 					nil,
-					nil,
 					mimirpb.API),
 			},
 			expectedErr: nil,
@@ -6908,7 +6876,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 }
 
 func ToWriteRequestEphemeral(lbls []labels.Labels, samples []mimirpb.Sample, exemplars []*mimirpb.Exemplar, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) *mimirpb.WriteRequest {
-	req := mimirpb.ToWriteRequest(lbls, samples, nil, exemplars, metadata, source)
+	req := mimirpb.ToWriteRequest(lbls, samples, exemplars, metadata, source)
 	req.EphemeralTimeseries = req.Timeseries
 	req.Timeseries = nil
 	return req
@@ -7094,7 +7062,9 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels1}, []mimirpb.Sample{sample1}, sampleHistograms, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
+		AddFloatSeries([]labels.Labels{labels1, labels1}, []mimirpb.Sample{sample1}, nil).
+		AddHistogramSeries([]labels.Labels{labels1, labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics := `
@@ -7151,7 +7121,8 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.HISTOGRAM}
 
 	// Append only one series and one metadata first, expect no error.
-	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels1}, nil, sampleHistograms, nil, []*mimirpb.MetricMetadata{metadata2}, mimirpb.API))
+	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata2}, mimirpb.API).
+		AddHistogramSeries([]labels.Labels{labels1, labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics = `
