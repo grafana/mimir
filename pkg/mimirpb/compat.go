@@ -32,29 +32,7 @@ import (
 //
 // For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
 func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
-	req := &WriteRequest{
-		Timeseries: PreallocTimeseriesSliceFromPool(),
-		Metadata:   metadata,
-		Source:     source,
-	}
-
-	for i, s := range samples {
-		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
-		ts.Samples = append(ts.Samples, s)
-
-		if exemplars != nil {
-			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
-			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
-			if e := exemplars[i]; e != nil {
-				ts.Exemplars = append(ts.Exemplars, *e)
-			}
-		}
-
-		req.Timeseries = append(req.Timeseries, PreallocTimeseries{TimeSeries: ts})
-	}
-
-	return req
+	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
 }
 
 // NewWriteRequest creates a new empty WriteRequest with metadata
