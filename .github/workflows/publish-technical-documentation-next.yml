@@ -38,7 +38,7 @@ jobs:
 
     - name: "Publish to website repository mimir (next)"
       uses: "./.github/actions/website-sync"
-      id: "publish-next"
+      id: "publish-next-mimir"
       with:
         repository: "grafana/website"
         branch: "master"
@@ -51,10 +51,10 @@ jobs:
 
     - name: "Publish to website repository helm-charts/mimir-distributed (next)"
       uses: "./.github/actions/website-sync"
-      id: "publish-next"
+      id: "publish-next-mimir-distributed"
       with:
         repository: "grafana/website"
-        branch: "nbwalters/docs-helm-landing-page" # Change to "master" once this branch is merged.
+        branch: "master"
         host: "github.com"
         # PUBLISH_TO_WEBSITE_MIMIR is a fine-grained GitHub Personal Access Token that expires.
         # It must be updated in the grafanabot GitHub account.

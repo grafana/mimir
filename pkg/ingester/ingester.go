@@ -102,8 +102,6 @@ const (
 	// Prefix for discard reasons when ingesting ephemeral series.
 	ephemeralDiscardPrefix = "ephemeral-"
 
-	ephemeralPerUserSeriesLimit = "ephemeral_per_user_series_limit"
-
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
@@ -335,12 +333,16 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_series",
 			Help: "The current number of series in memory.",
-		}, i.getMemorySeriesMetric)
+		}, func() float64 {
+			return float64(i.persistentSeriesCount.Load())
+		})
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_ephemeral_series",
 			Help: "The current number of ephemeral series in memory.",
-		}, i.getEphemeralSeriesMetric)
+		}, func() float64 {
+			return float64(i.ephemeralSeriesCount.Load())
+		})
 
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
@@ -942,6 +944,8 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
+
+	// Return true if handled as soft error
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
@@ -991,9 +995,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
 				if ephemeral {
-					return makeLimitError(ephemeralPerUserSeriesLimit, i.limiter.FormatError(userID, cause))
+					return makeLimitError(i.limiter.FormatError(userID, cause))
 				}
-				return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause))
+				return makeLimitError(i.limiter.FormatError(userID, cause))
 			})
 			return true
 
@@ -1001,16 +1005,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
 				// Ephemeral storage doesn't have this limit.
-				return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
+				return makeMetricLimitError(copiedLabels, i.limiter.FormatError(userID, cause))
 			})
 			return true
 		}
-
-		// The error looks an issue on our side, so we should rollback.
-		if rollbackErr := app.Rollback(); rollbackErr != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
-		}
-
 		return false
 	}
 
@@ -2101,43 +2099,6 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
-}
-
-// getMemorySeriesMetric returns the total number of in-memory series across all open TSDBs.
-func (i *Ingester) getMemorySeriesMetric() float64 {
-	if err := i.checkRunning(); err != nil {
-		return 0
-	}
-
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	count := uint64(0)
-	for _, db := range i.tsdbs {
-		count += db.Head().NumSeries()
-	}
-
-	return float64(count)
-}
-
-// getEphemeralSeriesMetric returns the total number of in-memory series in ephemeral storage across all tenants.
-func (i *Ingester) getEphemeralSeriesMetric() float64 {
-	if err := i.checkRunning(); err != nil {
-		return 0
-	}
-
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	count := uint64(0)
-	for _, db := range i.tsdbs {
-		eph := db.getEphemeralStorage()
-		if eph != nil {
-			count += eph.NumSeries()
-		}
-	}
-
-	return float64(count)
 }
 
 // getOldestUnshippedBlockMetric returns the unix timestamp of the oldest unshipped block or

@@ -63,7 +63,9 @@ jobs:
 
     - name: "Clone website-sync Action"
       if: "steps.has-matching-release-tag.outputs.bool == 'true'"
-      run: "git clone --single-branch --no-tags --depth 1 -b master https://grafanabot:${{ secrets.GH_BOT_ACCESS_TOKEN }}@github.com/grafana/website-sync ./.github/actions/website-sync"
+      # WEBSITE_SYNC_MIMIR is a fine-grained GitHub Personal Access Token that expires.
+      # It must be updated in the grafanabot GitHub account.
+      run: "git clone --single-branch --no-tags --depth 1 -b master https://grafanabot:${{ secrets.WEBSITE_SYNC_MIMIR }}@github.com/grafana/website-sync ./.github/actions/website-sync"
 
     - name: "Publish to website repository (release)"
       if: "steps.has-matching-release-tag.outputs.bool == 'true'"

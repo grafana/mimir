@@ -6,6 +6,7 @@
 
   _config+: {
     overrides_exporter_enabled: false,
+    overrides_exporter_ring_enabled: false,
 
     // overrides exporter can also make the configured presets available, this
     // list references entries within $._config.overrides
@@ -24,11 +25,15 @@
   local containerPort = $.core.v1.containerPort,
   overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
-  overrides_exporter_args:: {
-    target: 'overrides-exporter',
+  overrides_exporter_args::
+    $._config.limitsConfig +
+    $._config.overridesExporterRingConfig +
+    $.mimirRuntimeConfigFile +
+    {
+      target: 'overrides-exporter',
 
-    'server.http-listen-port': $._config.server_http_port,
-  } + $._config.limitsConfig + $.mimirRuntimeConfigFile,
+      'server.http-listen-port': $._config.server_http_port,
+    },
 
   local container = $.core.v1.container,
   overrides_exporter_container::
