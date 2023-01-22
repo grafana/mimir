@@ -11,10 +11,10 @@ codecs=(
   "interned protobuf"
   "interned protobuf with single string symbol table"
   "packed interned protobuf"
-  "snappy compressed packed interned protobuf"
+#  "snappy compressed packed interned protobuf"
   "packed interned protobuf with single string symbol table"
-  "gzipped uninterned protobuf"
-  "snappy compressed uninterned protobuf"
+#  "gzipped uninterned protobuf"
+#  "snappy compressed uninterned protobuf"
   "Arrow"
 )
 
