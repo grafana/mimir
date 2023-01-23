@@ -15,6 +15,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -231,4 +234,63 @@ func TestPreallocatingMetric(t *testing.T) {
 
 		assert.Equal(t, metricBytes, preallocBytes)
 	})
+}
+
+func TestRemoteWriteContainsHistogram(t *testing.T) {
+	// Prometheus
+	remoteWrite := prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Histograms: []prompb.Histogram{
+					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+				},
+			},
+		},
+	}
+	data, err := remoteWrite.Marshal()
+	assert.NoError(t, err, "marshal to protbuf")
+
+	// Mimir
+	receivedRemoteWrite := &WriteRequest{}
+	err = receivedRemoteWrite.Unmarshal(data)
+	assert.NoError(t, err, "marshal to protbuf")
+
+	assert.NotEmpty(t, receivedRemoteWrite.Timeseries)
+	assert.NotEmpty(t, receivedRemoteWrite.Timeseries[0].Histograms)
+}
+
+func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
+	// Prometheus
+	tsdbHistogram := tsdb.GenerateTestHistograms(1)[0]
+	remoteWriteHistogram := remote.HistogramToHistogramProto(1337, tsdbHistogram)
+	data, err := remoteWriteHistogram.Marshal()
+	assert.NoError(t, err, "marshal to protbuf")
+
+	// Mimir
+	receivedHistogram := &Histogram{}
+	err = receivedHistogram.Unmarshal(data)
+	assert.NoError(t, err, "unmarshal from protobuf")
+	assert.False(t, receivedHistogram.IsFloatHistogram())
+	mimirHistogram := FromHistogramProtoToHistogram(*receivedHistogram)
+
+	// Is equal
+	assert.Equal(t, tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
+}
+
+func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
+	// Prometheus
+	tsdbHistogram := tsdb.GenerateTestFloatHistograms(1)[0]
+	remoteWriteHistogram := remote.FloatHistogramToHistogramProto(1337, tsdbHistogram)
+	data, err := remoteWriteHistogram.Marshal()
+	assert.NoError(t, err, "marshal to protbuf")
+
+	// Mimir
+	receivedHistogram := &Histogram{}
+	err = receivedHistogram.Unmarshal(data)
+	assert.NoError(t, err, "unmarshal from protobuf")
+	assert.True(t, receivedHistogram.IsFloatHistogram())
+	mimirHistogram := FromHistogramProtoToFloatHistogram(*receivedHistogram)
+
+	// Is equal
+	assert.Equal(t, tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
 }
