@@ -924,6 +924,22 @@ spec:
       for: 1h
       labels:
         severity: critical
+    - alert: MimirAutoscalerKedaFailing
+      annotations:
+        message: The Keda ScaledObject {{ $labels.scaledObject }} in {{ $labels.namespace
+          }} is experiencing errors.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirautoscalerkedafailing
+      expr: |
+        (
+            # Find KEDA scalers reporting errors.
+            label_replace(rate(keda_metrics_adapter_scaler_errors[5m]), "namespace", "$1", "exported_namespace", "(.*)")
+            # Match only Mimir namespaces.
+            * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+        )
+        > 0
+      for: 1h
+      labels:
+        severity: critical
   - name: mimir_continuous_test
     rules:
     - alert: MimirContinuousTestNotRunningOnWrites

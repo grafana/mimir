@@ -1079,7 +1079,33 @@ How to **investigate**:
   ```
 
 For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
-When `keda_metrics_adapter_scaler_metrics_value` value is 0, the alert should not be firing.
+When `keda_metrics_adapter_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
+
+### MimirAutoscalerKedaFailing
+
+This alert fires when KEDA is reporting errors for any ScaledObject defined in the same Kubernetes namespace where Mimir is deployed.
+
+How it **works**:
+
+- _See [`MimirAutoscalerNotActive`](#MimirAutoscalerNotActive)_
+
+How to **investigate**:
+
+- Check KEDA custom metrics API server logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+- Check KEDA operator logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator
+  ```
+- Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
+  ```
+  # Assuming Prometheus is running in namespace "default":
+  kubectl -n default get pod -lname=prometheus
+  ```
 
 ### MimirContinuousTestNotRunningOnWrites
 

@@ -30,6 +30,27 @@
             message: 'The Horizontal Pod Autoscaler (HPA) {{ $labels.horizontalpodautoscaler }} in {{ $labels.namespace }} is not active.' % $._config,
           },
         },
+        {
+          alert: $.alertName('AutoscalerKedaFailing'),
+          'for': '1h',
+          expr: |||
+            (
+                # Find KEDA scalers reporting errors.
+                label_replace(rate(keda_metrics_adapter_scaler_errors[5m]), "namespace", "$1", "exported_namespace", "(.*)")
+                # Match only Mimir namespaces.
+                * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+            )
+            > 0
+          ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'The Keda ScaledObject {{ $labels.scaledObject }} in {{ $labels.namespace }} is experiencing errors.',
+          },
+        },
       ],
     },
   ],
