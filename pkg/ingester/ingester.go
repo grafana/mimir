@@ -1861,7 +1861,11 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 		i.metrics.memEphemeralUsers.Inc()
 
-		// Don't allow ingestion of old samples into ephemeral storage. (Call to Truncate updates min time and min valid time).
+		// Don't allow ingestion of old samples into ephemeral storage. We use Truncate here on empty head, which is pointless,
+		// but we do it for its side effects: it sets both minTime and minValidTime to specified timestamp.
+		//
+		// We could have used h.SetMinValidTime() instead, but that only sets minValidTime and not minTime,
+		// and calling h.AppendableMinValidTime() then doesn't return set value. There is no such problem with Truncate.
 		if err := h.Truncate(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli()); err != nil {
 			return nil, err
 		}
