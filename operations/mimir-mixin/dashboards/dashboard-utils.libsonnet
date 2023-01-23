@@ -487,6 +487,96 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
+  cpuAndMemoryBasedAutoScalingRow(componentTitle)::
+    local component = std.asciiLower(componentTitle);
+    super.row('%s - autoscaling' % [componentTitle])
+    .addPanel(
+      local title = 'Replicas';
+      $.panel(title) +
+      $.queryPanel(
+        [
+          'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+        ],
+        [
+          'Min',
+          'Max',
+          'Current',
+        ],
+      ) +
+      $.panelDescription(
+        title,
+        |||
+          The minimum, maximum, and current number of replicas.
+        |||
+      ),
+    )
+    .addPanel(
+      local title = 'Scaling metric (CPU)';
+      $.panel(title) +
+      $.queryPanel(
+        [
+          $.filterKedaMetricByHPA('(keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"} / 1000)', $._config.autoscaling[component].hpa_name),
+          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s", metric_name=~".*cpu.*"} / 1000' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+        ], [
+          'Scaling metric',
+          'Target per replica',
+        ]
+      ) +
+      $.panelDescription(
+        title,
+        |||
+          This panel shows the result of the query used as scaling metric and target/threshold used.
+          The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+        |||
+      ) +
+      $.panelAxisPlacement('Target per replica', 'right'),
+    )
+    .addPanel(
+      local title = 'Scaling metric (Memory)';
+      $.panel(title) +
+      $.queryPanel(
+        [
+          $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}', $._config.autoscaling[component].hpa_name),
+          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s", metric_name=~".*memory.*"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+        ], [
+          'Scaling metric',
+          'Target per replica',
+        ]
+      ) +
+      $.panelDescription(
+        title,
+        |||
+          This panel shows the result of the query used as scaling metric and target/threshold used.
+          The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+        |||
+      ) +
+      $.panelAxisPlacement('Target per replica', 'right') +
+      {
+        yaxes: std.mapWithIndex(
+          // Set the "bytes" unit to the right axis.
+          function(idx, axis) axis + (if idx == 1 then { format: 'bytes' } else {}),
+          $.yaxes('bytes')
+        ),
+      },
+    )
+    .addPanel(
+      local title = 'Autoscaler failures rate';
+      $.panel(title) +
+      $.queryPanel(
+        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[component].hpa_name),
+        '{{metric}} failures'
+      ) +
+      $.panelDescription(
+        title,
+        |||
+          The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
+          metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+        |||
+      ),
+    ),
+
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {
       type: 'stat',

@@ -9,8 +9,13 @@
 ### Mixin
 
 * [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
+* [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
+
+### Jsonnet
+
+* [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 
 ## 2.6.0-rc.0
 
