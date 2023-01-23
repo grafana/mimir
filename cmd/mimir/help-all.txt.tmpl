@@ -1270,7 +1270,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. (default 1m0s)
+    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-id string

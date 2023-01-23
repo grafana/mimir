@@ -364,7 +364,15 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
 	}
 
-	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
+	am.ring, err = ring.NewWithStoreClientAndStrategy(
+		am.cfg.ShardingRing.ToRingConfig(am.cfg.ShardingRing.ringOptions()...),
+		RingNameForServer,
+		RingKey,
+		ringStore,
+		ring.NewIgnoreUnhealthyInstancesReplicationStrategy(),
+		prometheus.WrapRegistererWithPrefix("cortex_", am.registry),
+		am.logger,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
 	}

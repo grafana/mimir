@@ -477,7 +477,7 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
 	}
 
-	distributorsRing, err := ring.New(cfg.ToRingConfig(), "distributor", distributorRingKey, logger, reg)
+	distributorsRing, err := ring.New(cfg.ToRingConfig(cfg.ringOptions()...), "distributor", distributorRingKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' ring client")
 	}
