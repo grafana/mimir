@@ -872,10 +872,7 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 	if prefix != "" {
 		// Find the first offset that is greater or equal to the prefix.
 		offsetIdx = sort.Search(len(e.offsets), func(i int) bool {
-			if prefix <= e.offsets[i].value {
-				return true
-			}
-			return false
+			return prefix <= e.offsets[i].value
 		})
 
 		// We always include the last value in the offsets,
