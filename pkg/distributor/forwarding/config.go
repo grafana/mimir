@@ -5,9 +5,8 @@ package forwarding
 import (
 	"errors"
 	"flag"
+	"strings"
 	"time"
-
-	"github.com/grafana/dskit/grpcclient"
 )
 
 type Config struct {
@@ -16,7 +15,9 @@ type Config struct {
 	RequestTimeout     time.Duration `yaml:"request_timeout" category:"experimental"`
 	PropagateErrors    bool          `yaml:"propagate_errors" category:"experimental"`
 
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client" doc:"description=Configures the gRPC client used to communicate between the distributors and the configured remote write endpoints used by the metrics forwarding feature."`
+	KafkaTopic   string `yaml:"kafka_topic" category:"experimental"`
+	KafkaBrokers string `yaml:"kafka_brokers" category:"experimental"`
+	kafkaBrokers []string
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -24,12 +25,23 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&c.RequestConcurrency, "distributor.forwarding.request-concurrency", 10, "Maximum concurrency at which forwarding requests get performed.")
 	f.DurationVar(&c.RequestTimeout, "distributor.forwarding.request-timeout", 2*time.Second, "Timeout for requests to ingestion endpoints to which we forward metrics.")
 	f.BoolVar(&c.PropagateErrors, "distributor.forwarding.propagate-errors", true, "If disabled then forwarding requests are always considered to be successful, errors are ignored.")
-	c.GRPCClientConfig.RegisterFlagsWithPrefix("distributor.forwarding.grpc-client", f)
+	f.StringVar(&c.KafkaTopic, "distributor.forwarding.kafka-topic", "", "Kafka topic to which metrics are forwarded.")
+	f.StringVar(&c.KafkaBrokers, "distributor.forwarding.kafka-brokers", "", "Kafka brokers to which metrics are forwarded, separated by \",\".")
 }
 
 func (c *Config) Validate() error {
 	if c.RequestConcurrency < 1 {
 		return errors.New("distributor.forwarding.request-concurrency must be greater than 0")
 	}
+
+	if len(c.KafkaTopic) == 0 {
+		return errors.New("distributor.forwarding.kafka-topic must be set")
+	}
+
+	c.kafkaBrokers = strings.Split(c.KafkaBrokers, ",")
+	if len(c.kafkaBrokers) == 0 {
+		return errors.New("distributor.forwarding.kafka-brokers must be set")
+	}
+
 	return nil
 }

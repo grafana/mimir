@@ -63,6 +63,8 @@ func (e LimitError) Error() string {
 type ForwardingRule struct {
 	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
 	Ingest bool `yaml:"ingest" json:"ingest"`
+
+	DropLabels []string `yaml:"drop_labels" json:"drop_labels"`
 }
 
 // ForwardingRules are keyed by metric names, excluding labels.

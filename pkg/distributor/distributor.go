@@ -1194,8 +1194,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
 	forwardingErrCh := make(chan error)
 	forwardingRules := d.limits.ForwardingRules(userID)
-	endpoint := d.limits.ForwardingEndpoint(userID)
-	if endpoint == "" || len(forwardingRules) == 0 {
+	if len(forwardingRules) == 0 {
 		close(forwardingErrCh)
 		return ts, forwardingErrCh
 	}
@@ -1209,7 +1208,7 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts, userID)
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, dropSamplesBeforeTimestamp, forwardingRules, ts, userID)
 
 	return ts, forwardingErrCh
 }

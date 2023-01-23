@@ -3,67 +3,48 @@
 package forwarding
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"fmt"
-	"io"
 	"net/http"
-	"net/textproto"
-	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
-	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/segmentio/kafka-go"
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
+	util_kafka "github.com/grafana/mimir/pkg/util/kafka"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, targetEndpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error)
 	DeleteMetricsForUser(user string)
 }
-
-// httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
-// Full URL is in the form: httpgrpc://hostname:port/some/path, where "hostname:port" will be used to establish gRPC connection
-// (by adding "dns:///" prefix before passing it to grpc client, to enable client-side load balancing), and "/some/path" will be included in the "url"
-// part of the message for "httpgrpc.HTTP/Handle" method.
-const httpGrpcPrefix = "httpgrpc://"
 
 var errSamplesTooOld = httpgrpc.Errorf(http.StatusBadRequest, "dropped sample(s) because too old to forward")
 
 type forwarder struct {
 	services.Service
 
-	cfg                Config
-	pools              *pools
-	client             http.Client
-	log                log.Logger
-	limits             *validation.Overrides
-	workerWg           sync.WaitGroup
-	reqCh              chan *request
-	httpGrpcClientPool *client.Pool
-	activeGroups       *util.ActiveGroupsCleanupService
+	cfg          Config
+	pools        *pools
+	kafkaWriter  *kafka.Writer
+	log          log.Logger
+	limits       *validation.Overrides
+	workerWg     sync.WaitGroup
+	reqCh        chan *request
+	activeGroups *util.ActiveGroupsCleanupService
 
 	requestsTotal           prometheus.Counter
 	errorsTotal             *prometheus.CounterVec
@@ -82,19 +63,11 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 	}
 
 	f := &forwarder{
-		cfg:    cfg,
-		pools:  newPools(),
-		log:    log,
-		limits: limits,
-		reqCh:  make(chan *request, cfg.RequestConcurrency),
-		client: http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        0,                      // no limit
-				MaxIdleConnsPerHost: cfg.RequestConcurrency, // if MaxIdleConnsPerHost is left as 0, default value of 2 is used.
-				MaxConnsPerHost:     0,                      // no limit
-				IdleConnTimeout:     10 * time.Second,       // don't keep unused connections for too long
-			},
-		},
+		cfg:          cfg,
+		pools:        newPools(),
+		log:          log,
+		limits:       limits,
+		reqCh:        make(chan *request, cfg.RequestConcurrency),
 		activeGroups: activeGroupsCleanupService,
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -122,16 +95,20 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 			Help:      "The client-side latency of requests to forward metrics made by the Distributor.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}),
-
 		grpcClientsGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
-
 		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
 	}
 
-	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
+	f.kafkaWriter = &kafka.Writer{
+		Addr:        kafka.TCP(cfg.kafkaBrokers...),
+		Topic:       cfg.KafkaTopic,
+		Compression: kafka.Snappy,
+		Balancer:    kafka.Murmur2Balancer{},
+	}
+
 	f.Service = services.NewIdleService(f.start, f.stop)
 
 	return f
@@ -141,56 +118,7 @@ func (f *forwarder) DeleteMetricsForUser(user string) {
 	f.discardedSamplesTooOld.DeleteLabelValues(user)
 }
 
-func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
-	poolConfig := client.PoolConfig{
-		CheckInterval: 5 * time.Second,
-
-		// There may be multiple hosts behind single PoolClient, we don't want to close entire client if one of hosts
-		// is unhealthy.
-		HealthCheckEnabled: false,
-	}
-
-	return client.NewPool("forwarding-httpgrpc", poolConfig, nil, f.createHTTPGrpcClient, f.grpcClientsGauge, f.log)
-}
-
-func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error) {
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
-
-	if err != nil {
-		return nil, err
-	}
-
-	const grpcServiceConfig = `{"loadBalancingPolicy":"round_robin"}`
-
-	opts = append(opts,
-		grpc.WithBlock(),
-		grpc.WithDefaultServiceConfig(grpcServiceConfig),
-
-		// These settings are quite low, and require server to be tolerant to them.
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                time.Second * 10,
-			Timeout:             time.Second * 5,
-			PermitWithoutStream: true,
-		}),
-	)
-
-	conn, err := grpc.Dial(addr, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return &grpcHTTPClient{
-		HTTPClient:   httpgrpc.NewHTTPClient(conn),
-		HealthClient: grpc_health_v1.NewHealthClient(conn),
-		conn:         conn,
-	}, nil
-}
-
 func (f *forwarder) start(ctx context.Context) error {
-	if err := services.StartAndAwaitRunning(ctx, f.httpGrpcClientPool); err != nil {
-		return errors.Wrap(err, "failed to start grpc client pool")
-	}
-
 	f.workerWg.Add(f.cfg.RequestConcurrency)
 
 	for i := 0; i < f.cfg.RequestConcurrency; i++ {
@@ -204,9 +132,6 @@ func (f *forwarder) stop(_ error) error {
 	close(f.reqCh)
 	f.workerWg.Wait()
 
-	if err := services.StopAndAwaitTerminated(context.Background(), f.httpGrpcClientPool); err != nil {
-		return errors.Wrap(err, "failed to stop grpc client pool")
-	}
 	return nil
 }
 
@@ -234,8 +159,8 @@ func (f *forwarder) worker() {
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
-	if !f.cfg.Enabled || endpoint == "" {
+func (f *forwarder) Forward(ctx context.Context, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
+	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
@@ -259,7 +184,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 		var requestWg sync.WaitGroup
 		requestWg.Add(1)
 
-		f.submitForwardingRequest(ctx, user, endpoint, toForward, counts, &requestWg, errCh)
+		f.submitForwardingRequest(ctx, user, rules, toForward, counts, &requestWg, errCh)
 
 		// keep span running until goroutine finishes.
 		finishSpanlogInDefer = false
@@ -401,10 +326,9 @@ func shouldForwardAndIngest(labels []mimirpb.LabelAdapter, rules validation.Forw
 }
 
 type request struct {
-	pools              *pools
-	client             *http.Client
-	httpGrpcClientPool *client.Pool
-	log                log.Logger
+	pools       *pools
+	kafkaWriter *kafka.Writer
+	log         log.Logger
 
 	ctx             context.Context
 	timeout         time.Duration
@@ -413,8 +337,9 @@ type request struct {
 	requestWg       *sync.WaitGroup
 
 	user     string
-	endpoint string
+	rules    validation.ForwardingRules
 	ts       []mimirpb.PreallocTimeseries
+	messages []kafka.Message
 	counts   TimeseriesCounts
 
 	requests  prometheus.Counter
@@ -426,12 +351,11 @@ type request struct {
 
 // submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
 // It might block if all the workers are busy.
-func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, endpoint string, ts []mimirpb.PreallocTimeseries, counts TimeseriesCounts, requestWg *sync.WaitGroup, errCh chan error) {
+func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, rules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, counts TimeseriesCounts, requestWg *sync.WaitGroup, errCh chan error) {
 	req := f.pools.getReq()
 
 	req.pools = f.pools
-	req.client = &f.client // http client should be re-used so open connections get re-used.
-	req.httpGrpcClientPool = f.httpGrpcClientPool
+	req.kafkaWriter = f.kafkaWriter
 	req.log = f.log
 	req.ctx = ctx
 	req.timeout = f.cfg.RequestTimeout
@@ -441,9 +365,9 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, en
 
 	// Request parameters.
 	req.user = user
-	req.endpoint = endpoint
 	req.ts = ts
 	req.counts = counts
+	req.rules = rules
 
 	// Metrics.
 	req.requests = f.requestsTotal
@@ -465,157 +389,44 @@ func (r *request) do() {
 
 	defer r.cleanup()
 
-	protoBufBytesRef := r.pools.getProtobuf()
-	protoBufBytes := (*protoBufBytesRef)[:0]
-	defer func() {
-		*protoBufBytesRef = protoBufBytes // just in case we increased its capacity
-		r.pools.putProtobuf(protoBufBytesRef)
-	}()
-
-	protoBuf := proto.NewBuffer(protoBufBytes)
-	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts})
-	if err != nil {
-		r.handleError(ctx, http.StatusBadRequest, errors.Wrap(err, "failed to marshal write request for forwarding"))
-		return
-	}
-
-	snappyBuf := *r.pools.getSnappy()
-	defer r.pools.putSnappy(&snappyBuf)
-
-	protoBufBytes = protoBuf.Bytes()
-	snappyBuf = snappy.Encode(snappyBuf[:cap(snappyBuf)], protoBufBytes)
-
-	ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
-	defer cancel()
-
-	if strings.HasPrefix(r.endpoint, httpGrpcPrefix) {
-		err = r.doHTTPGrpc(ctx, snappyBuf)
-	} else {
-		err = r.doHTTP(ctx, snappyBuf)
-	}
-
+	err := r.buildKafkaMessages()
 	if err != nil {
 		r.errors.WithLabelValues("failed").Inc()
 
 		r.handleError(ctx, http.StatusInternalServerError, err)
 	}
-}
-
-func (r *request) doHTTP(ctx context.Context, body []byte) error {
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", r.endpoint, bytes.NewReader(body))
-	if err != nil {
-		// Errors from NewRequest are from unparsable URLs being configured, so this is an internal server error.
-		return errors.Wrap(err, "failed to create HTTP request for forwarding")
-	}
-
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	// Mark request as idempotent, so that http client can retry them on (some) errors.
-	httpReq.Header.Set("Idempotency-Key", "true")
-	httpReq.Header.Set(user.OrgIDHeaderName, r.user)
 
 	r.requests.Inc()
 	r.samples.Add(float64(r.counts.SampleCount))
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
-	httpResp, err := r.client.Do(httpReq)
+	err = r.kafkaWriter.WriteMessages(ctx, r.messages...)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
-		// Errors from Client.Do are from (for example) network errors, so we want the client to retry.
-		return errors.Wrap(err, "failed to send HTTP request for forwarding")
-	}
-	defer func() {
-		io.Copy(io.Discard, httpResp.Body)
-		httpResp.Body.Close()
-	}()
-
-	if httpResp.StatusCode/100 != 2 {
-		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, 1024))
-		line := ""
-		if scanner.Scan() {
-			line = scanner.Text()
-		}
-
-		r.processHTTPResponse(ctx, httpResp.StatusCode, line)
-	}
-	return nil
-}
-
-func (r *request) processHTTPResponse(ctx context.Context, code int, message string) {
-	r.errors.WithLabelValues(strconv.Itoa(code)).Inc()
-
-	err := errors.Errorf("server returned HTTP status %d: %s", code, message)
-	if code/100 == 5 || code == http.StatusTooManyRequests {
-		// The forwarding endpoint has returned a retriable error, so we want the client to retry.
 		r.handleError(ctx, http.StatusInternalServerError, err)
-		return
 	}
-	r.handleError(ctx, http.StatusBadRequest, err)
 }
 
-var headers = []*httpgrpc.Header{
-	{
-		Key:    "Content-Encoding",
-		Values: []string{"snappy"},
-	},
-	{
-		Key:    "Content-Type",
-		Values: []string{"application/x-protobuf"},
-	},
-}
-
-func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
-	u, err := url.Parse(r.endpoint)
-	if err != nil {
-		return errors.Wrapf(err, "failed to parse URL for HTTP GRPC request forwarding: %s", r.endpoint)
+func (r *request) buildKafkaMessages() error {
+	if cap(r.messages) < len(r.ts) {
+		r.messages = make([]kafka.Message, len(r.ts))
+	} else {
+		r.messages = r.messages[:len(r.ts)]
 	}
 
-	req := &httpgrpc.HTTPRequest{
-		Method: "POST",
-		Url:    u.Path,
-		Body:   body,
-		Headers: append(headers, &httpgrpc.Header{
-			Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
-			Values: []string{r.user},
-		}),
-	}
-
-	// Use dns:/// prefix to enable client-side load balancing inside gRPC client.
-	// gRPC client interprets the address as "[scheme]://[authority]/endpoint, so technically we pass the host:port part to the endpoint.
-	// Authority for "dns" would be DNS server.
-	c, err := r.httpGrpcClientPool.GetClientFor(fmt.Sprintf("dns:///%s", u.Host))
-	if err != nil {
-		return errors.Wrap(err, "failed to get client for HTTP GRPC request forwarding")
-	}
-
-	h := c.(httpgrpc.HTTPClient)
-
-	r.requests.Inc()
-	r.samples.Add(float64(r.counts.SampleCount))
-	r.exemplars.Add(float64(r.counts.ExemplarCount))
-
-	beforeTs := time.Now()
-	resp, err := h.Handle(ctx, req)
-	r.latency.Observe(time.Since(beforeTs).Seconds())
-
-	if err != nil {
-		if r, ok := httpgrpc.HTTPResponseFromError(err); ok {
-			resp = r
-		} else {
-			return errors.Wrap(err, "failed to send HTTP GRPC request for forwarding")
+	for i, t := range r.ts {
+		protoBuf := proto.NewBuffer(r.messages[i].Value[:0])
+		err := protoBuf.Marshal(t)
+		if err != nil {
+			return errors.Wrap(err, "failed to marshal time series for submitting to Kafka")
+		}
+		r.messages[i].Key, err = util_kafka.ComposeKafkaKey(r.messages[i].Key, []byte(r.user), t.Labels, r.rules)
+		if err != nil {
+			return errors.Wrap(err, "failed to compose kafka key")
 		}
 	}
 
-	if resp.Code/100 != 2 {
-		scanner := bufio.NewScanner(io.LimitReader(bytes.NewReader(resp.Body), 1024))
-		line := ""
-		if scanner.Scan() {
-			line = scanner.Text()
-		}
-
-		r.processHTTPResponse(ctx, int(resp.Code), line)
-	}
 	return nil
 }
 
@@ -634,19 +445,21 @@ func (r *request) cleanup() {
 	wg := r.requestWg
 	r.requestWg = nil
 
+	for i := range r.messages {
+		r.messages[i].Topic = ""
+		r.messages[i].Partition = 0
+		r.messages[i].Offset = 0
+		r.messages[i].HighWaterMark = 0
+		r.messages[i].Key = r.messages[i].Key[:0]
+		r.messages[i].Value = r.messages[i].Value[:0]
+		r.messages[i].Headers = r.messages[i].Headers[:0]
+		r.messages[i].Time = time.Time{}
+	}
+	r.messages = r.messages[:0]
+
 	// Return request to the pool before calling wg.Done() because otherwise the tests can't wait for the request to
 	// be completely done in order to validate the pool usage.
 	r.pools.putReq(r)
 
 	wg.Done()
-}
-
-type grpcHTTPClient struct {
-	httpgrpc.HTTPClient
-	grpc_health_v1.HealthClient
-	conn *grpc.ClientConn
-}
-
-func (fc *grpcHTTPClient) Close() error {
-	return fc.conn.Close()
 }
