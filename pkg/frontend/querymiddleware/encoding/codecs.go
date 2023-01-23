@@ -5,9 +5,10 @@ package encoding
 // This is in the production package (rather than the test package) so that we can use it in
 // tools/payload-size-stats.
 var KnownCodecs = map[string]Codec{
-	"original JSON":       OriginalJsonCodec{},
-	"uninterned protobuf": UninternedProtobufCodec{},
-	"interned protobuf":   InternedProtobufCodec{},
+	"original JSON":                                                       OriginalJsonCodec{},
+	"original query middleware protobuf":                                  OriginalQueryMiddlewareProtobufCodec{},
+	"uninterned protobuf":                                                 UninternedProtobufCodec{},
+	"interned protobuf":                                                   InternedProtobufCodec{},
 	"interned protobuf with single string symbol table":                   InternedProtobufWithSingleStringCodec{},
 	"packed interned protobuf":                                            PackedInternedProtobufCodec{},
 	"packed interned protobuf with relative timestamps":                   PackedInternedProtobufWithRelativeTimestampsCodec{},

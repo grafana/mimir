@@ -7,6 +7,7 @@ OUTPUT_DIR="$SCRIPT_DIR/benchmark-results"
 
 codecs=(
   "original JSON"
+  "original query middleware protobuf"
   "uninterned protobuf"
   "interned protobuf"
   "interned protobuf with single string symbol table"
