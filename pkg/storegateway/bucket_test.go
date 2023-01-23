@@ -1946,13 +1946,13 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
-	}, numSamplesPerSeries, minTime, maxTime, nil, 0)
+	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
-	}, numSamplesPerSeries, minTime, maxTime, nil, 0)
+	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
 	// Create a bucket and upload the block there.
