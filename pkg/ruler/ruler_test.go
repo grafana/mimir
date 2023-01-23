@@ -384,10 +384,12 @@ func TestGetRules(t *testing.T) {
 				cfg := defaultRulerConfig(t)
 
 				cfg.Ring = RingConfig{
-					InstanceID:   id,
-					InstanceAddr: id,
-					KVStore: kv.Config{
-						Mock: kvStore,
+					RingConfig: util.RingConfig{
+						InstanceID:   id,
+						InstanceAddr: id,
+						KVStore: kv.Config{
+							Mock: kvStore,
+						},
 					},
 				}
 
@@ -822,13 +824,15 @@ func TestSharding(t *testing.T) {
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
 					Ring: RingConfig{
-						InstanceID:   id,
-						InstanceAddr: host,
-						InstancePort: port,
-						KVStore: kv.Config{
-							Mock: kvStore,
+						RingConfig: util.RingConfig{
+							InstanceID:   id,
+							InstanceAddr: host,
+							InstancePort: port,
+							KVStore: kv.Config{
+								Mock: kvStore,
+							},
+							HeartbeatTimeout: 1 * time.Minute,
 						},
-						HeartbeatTimeout: 1 * time.Minute,
 					},
 					EnabledTenants:  tc.enabledUsers,
 					DisabledTenants: tc.disabledUsers,

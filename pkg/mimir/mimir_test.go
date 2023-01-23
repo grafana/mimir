@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/util"
 	"io"
 	"net"
 	"net/http"
@@ -95,10 +96,12 @@ func TestMimir(t *testing.T) {
 		},
 		Ruler: ruler.Config{
 			Ring: ruler.RingConfig{
-				KVStore: kv.Config{
-					Store: "memberlist",
+				RingConfig: util.RingConfig{
+					KVStore: kv.Config{
+						Store: "memberlist",
+					},
+					InstanceAddr: "test:8080",
 				},
-				InstanceAddr: "test:8080",
 			},
 		},
 		RulerStorage: rulestore.Config{
@@ -120,9 +123,11 @@ func TestMimir(t *testing.T) {
 				return v
 			}(),
 			ShardingRing: alertmanager.RingConfig{
-				KVStore:                kv.Config{Store: "memberlist"},
-				ReplicationFactor:      1,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				RingConfig: util.RingConfig{
+					KVStore:                kv.Config{Store: "memberlist"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				},
+				ReplicationFactor: 1,
 			},
 		},
 		AlertmanagerStorage: alertstore.Config{
@@ -137,10 +142,12 @@ func TestMimir(t *testing.T) {
 		},
 		Distributor: distributor.Config{
 			DistributorRing: distributor.RingConfig{
-				KVStore: kv.Config{
-					Store: "inmemory",
+				RingConfig: util.RingConfig{
+					KVStore: kv.Config{
+						Store: "inmemory",
+					},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 				},
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
