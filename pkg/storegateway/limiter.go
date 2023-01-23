@@ -58,7 +58,7 @@ func (l *Limiter) Reserve(num uint64) error {
 		// We need to protect from the counter being incremented twice due to concurrency
 		// while calling Reserve().
 		l.failedOnce.Do(l.failedCounter.Inc)
-		return errors.Errorf("limit %v violated (got %v)", l.limit, reserved)
+		return errors.Errorf("limit %v exceeded", l.limit)
 	}
 	return nil
 }

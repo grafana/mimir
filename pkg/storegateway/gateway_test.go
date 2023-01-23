@@ -1297,7 +1297,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 		},
 		"should return error if the actual number of queried chunks is > limit": {
 			limit:       chunksQueried - 1,
-			expectedErr: status.Error(http.StatusUnprocessableEntity, fmt.Sprintf("exceeded chunks limit: rpc error: code = Code(422) desc = limit %d violated (got %d)", chunksQueried-1, chunksQueried)),
+			expectedErr: status.Error(http.StatusUnprocessableEntity, fmt.Sprintf("exceeded chunks limit: rpc error: code = Code(422) desc = limit %d exceeded", chunksQueried-1)),
 		},
 	}
 

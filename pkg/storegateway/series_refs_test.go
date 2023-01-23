@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1287,34 +1286,16 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	})
 
 	testCases := map[string]struct {
-		matcher     *labels.Matcher
-		batchSize   int
-		chunksLimit int
-		seriesLimit int
-		skipChunks  bool
+		matcher    *labels.Matcher
+		batchSize  int
+		skipChunks bool
 
 		expectedErr    string
 		expectedSeries []seriesChunkRefsSet
 	}{
-		"chunks limits reached": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   100,
-			chunksLimit: 1,
-			seriesLimit: 100,
-			expectedErr: "test limit exceeded",
-		},
-		"series limits reached": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   100,
-			chunksLimit: 100,
-			seriesLimit: 1,
-			expectedErr: "test limit exceeded",
-		},
 		"selects all series in a single batch": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   100,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
@@ -1325,10 +1306,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			},
 		},
 		"selects all series in multiple batches": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   1,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize: 1,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
@@ -1345,10 +1324,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			},
 		},
 		"selects some series in single batch": {
-			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
-			batchSize:   100,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:   labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
@@ -1357,10 +1334,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			},
 		},
 		"selects some series in multiple batches": {
-			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
-			batchSize:   1,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:   labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize: 1,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
@@ -1371,11 +1346,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			},
 		},
 		"selects all series in a single batch with skipChunks": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   100,
-			skipChunks:  true,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:    labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:  100,
+			skipChunks: true,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1")},
@@ -1386,11 +1359,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			},
 		},
 		"selects all series in multiple batches with skipChunks": {
-			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-			batchSize:   1,
-			skipChunks:  true,
-			chunksLimit: 100,
-			seriesLimit: 100,
+			matcher:    labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:  1,
+			skipChunks: true,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "1", "b", "1")},
@@ -1429,13 +1400,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				[]*labels.Matcher{testCase.matcher},
 				nil,
 				cachedSeriesHasher{hashCache},
-				&limiter{limit: testCase.chunksLimit},
-				&limiter{limit: testCase.seriesLimit},
 				testCase.skipChunks,
 				block.meta.MinTime,
 				block.meta.MaxTime,
 				newSafeQueryStats(),
-				NewBucketStoreMetrics(prometheus.NewRegistry()),
 				nil,
 			)
 			require.NoError(t, err)
@@ -1670,13 +1638,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						&limiter{limit: 1000},
-						&limiter{limit: 1000},
 						true,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsColdCache,
-						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
 					)
 
@@ -1703,13 +1668,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						&limiter{limit: 1000},
-						&limiter{limit: 1000},
 						true,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						statsWarnCache,
-						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)

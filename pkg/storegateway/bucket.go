@@ -1096,8 +1096,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	chunkReaders *bucketChunkReaders,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter,
-	seriesLimiter SeriesLimiter,
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, *hintspb.SeriesResponseHints, error) {
 	var (
@@ -1137,12 +1137,9 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				matchers,
 				shardSelector,
 				cachedSeriesHasher{blockSeriesHashCache},
-				chunksLimiter,
-				seriesLimiter,
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
 				stats,
-				s.metrics,
 				s.logger,
 			)
 			if err != nil {
@@ -1168,12 +1165,17 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	})
 	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
-	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
+	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
+
+	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
+	// counted once towards the limit.
+	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
+
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, s.maxSeriesPerBatch, stats)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats)
 	} else {
-		set = newSeriesSetWithoutChunks(ctx, mergedBatches, stats)
+		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
 	return set, resHints, nil
 }
