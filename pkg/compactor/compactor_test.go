@@ -190,7 +190,8 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# HELP cortex_compactor_garbage_collection_duration_seconds Time it took to perform garbage collection iteration.
 		# TYPE cortex_compactor_garbage_collection_duration_seconds histogram
@@ -301,10 +302,13 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 
 	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
 	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+	t.Cleanup(func() {
+		t.Log(logs.String())
+	})
 
 	// Wait until all retry attempts have completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
-		return prom_testutil.ToFloat64(c.compactionRunsFailed)
+		return prom_testutil.ToFloat64(c.compactionRunsErred)
 	})
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
@@ -330,7 +334,8 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 1
+		cortex_compactor_runs_failed_total{reason="error"} 1
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# HELP cortex_compactor_garbage_collection_duration_seconds Time it took to perform garbage collection iteration.
 		# TYPE cortex_compactor_garbage_collection_duration_seconds histogram
@@ -453,7 +458,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 
 	// Wait until all retry attempts have completed.
 	test.Poll(t, time.Minute, 1.0, func() interface{} {
-		return prom_testutil.ToFloat64(c.compactionRunsFailed)
+		return prom_testutil.ToFloat64(c.compactionRunsErred)
 	})
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
@@ -469,7 +474,61 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 1
+		cortex_compactor_runs_failed_total{reason="error"} 1
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+	))
+}
+
+func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCancelled(t *testing.T) {
+	t.Parallel()
+
+	userID := "test-user"
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{userID}, nil)
+	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D", userID + "/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
+	bucketClient.MockIter(userID+"/markers/", nil, nil)
+	bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSON("01DTVP434PA9VFXSW2JKB3392D"), nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json", mockBlockMetaJSON("01DTW0ZCPDDNV4BV83Q2SV4QAZ"), nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/no-compact-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
+	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
+
+	c, _, tsdbPlannerMock, logs, registry := prepare(t, prepareConfig(t), bucketClient)
+	t.Cleanup(func() {
+		t.Log(logs.String())
+	})
+	// Mock the planner as if a shutdown was triggered and the service was terminated.
+	tsdbPlannerMock.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, context.Canceled)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Wait until the error is recorded.
+	test.Poll(t, time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsShutdown)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 0
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 1
 	`),
 		"cortex_compactor_runs_started_total",
 		"cortex_compactor_runs_completed_total",
@@ -573,7 +632,8 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
 		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
@@ -774,7 +834,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
@@ -931,7 +992,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
@@ -1054,7 +1116,8 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
 		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
@@ -1265,7 +1328,8 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total 0
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
 
 		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
 		# TYPE cortex_compactor_group_compaction_runs_completed_total counter

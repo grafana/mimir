@@ -856,7 +856,7 @@ spec:
           }} failed to run 2 consecutive compactions.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotsuccessfullyruncompaction
       expr: |
-        increase(cortex_compactor_runs_failed_total[2h]) >= 2
+        increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
       labels:
         reason: consecutive-failures
         severity: critical
