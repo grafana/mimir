@@ -1973,22 +1973,22 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 		expectedErr    string
 		expectedSeries int
 	}{
-		"should fail if the number of unique series queried is less than the configured series limit": {
+		"should fail if the number of unique series queried is greater than the configured series limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
 			seriesLimit: 1,
 			expectedErr: errSeriesLimitMessage,
 		},
-		"should pass if the number of unique series queried is equal or greater than the configured series limit": {
+		"should pass if the number of unique series queried is equal or less than the configured series limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
 			seriesLimit:    2,
 			expectedSeries: 2,
 		},
-		"should fail if the number of chunks queried is less than the configured chunks limit": {
+		"should fail if the number of chunks queried is greater than the configured chunks limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
 			chunksLimit: 3,
 			expectedErr: errChunksLimitMessage,
 		},
-		"should pass if the number of chunks queried is equal or greater than the configured chunks limit": {
+		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
 			chunksLimit:    4,
 			expectedSeries: 2,
@@ -2004,8 +2004,8 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 						instrBkt,
 						fetcher,
 						tmpDir,
-						NewChunksLimiterFactory(testData.seriesLimit),
-						NewSeriesLimiterFactory(testData.chunksLimit),
+						NewChunksLimiterFactory(testData.chunksLimit),
+						NewSeriesLimiterFactory(testData.seriesLimit),
 						newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 						10,
 						mimir_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -2018,10 +2018,6 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 					)
 					assert.NoError(t, err)
 					assert.NoError(t, store.SyncBlocks(ctx))
-
-					// Override the limiters based on the configured limits in the test case.
-					store.seriesLimiterFactory = NewSeriesLimiterFactory(testData.seriesLimit)
-					store.chunksLimiterFactory = NewChunksLimiterFactory(testData.chunksLimit)
 
 					req := &storepb.SeriesRequest{
 						MinTime:  minTime,
