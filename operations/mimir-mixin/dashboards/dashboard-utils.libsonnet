@@ -508,8 +508,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panelDescription(
         title,
         |||
-          The minimum, maximum, and current number of replicas.
-        |||
+          The minimum, maximum, and current number of %s replicas.
+        ||| % [component]
       ),
     )
     .addPanel(
