@@ -120,6 +120,10 @@ local filename = 'mimir-writes.json';
         )
       )
     )
+    .addRowIf(
+      $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+    )
     .addRow(
       $.row('Distributor')
       .addPanel(
