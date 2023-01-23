@@ -4,7 +4,6 @@ package encoding
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -198,12 +197,12 @@ func (c PackedInternedProtobufWithSingleStringCodec) encodeVector(data *querymid
 		timestamps[sampleIdx] = stream.Samples[0].TimestampMs
 	}
 
-	symbols, symbolCount := symbolTableBuilder.Build()
+	symbols, symbolLengths := symbolTableBuilder.Build()
 
 	return packedinternedsinglestringquerypb.VectorData{
 		SymbolTable: packedinternedsinglestringquerypb.SymbolTable{
-			Symbols:     symbols,
-			SymbolCount: symbolCount,
+			Symbols:       symbols,
+			SymbolLengths: symbolLengths,
 		},
 		Metrics:    metrics,
 		Values:     values,
@@ -238,34 +237,29 @@ func (c PackedInternedProtobufWithSingleStringCodec) encodeMatrix(data *querymid
 		}
 	}
 
-	symbols, symbolCount := symbolTableBuilder.Build()
+	symbols, symbolLengths := symbolTableBuilder.Build()
 
 	return packedinternedsinglestringquerypb.MatrixData{
 		SymbolTable: packedinternedsinglestringquerypb.SymbolTable{
-			Symbols:     symbols,
-			SymbolCount: symbolCount,
+			Symbols:       symbols,
+			SymbolLengths: symbolLengths,
 		},
 		Series: series,
 	}
 }
 
 func (c PackedInternedProtobufWithSingleStringCodec) decodeSymbols(table packedinternedsinglestringquerypb.SymbolTable) []string {
-	if table.SymbolCount == 0 {
+	if len(table.SymbolLengths) == 0 {
 		return nil
 	}
 
-	symbols := make([]string, table.SymbolCount)
+	symbols := make([]string, len(table.SymbolLengths))
 	startOfSymbol := 0
 
-	for i := 0; i < int(table.SymbolCount); i++ {
-		symbolLength := strings.IndexByte(table.Symbols[startOfSymbol:], 0)
-
-		if symbolLength == -1 {
-			symbolLength = len(table.Symbols) - startOfSymbol
-		}
-
+	for i := 0; i < len(table.SymbolLengths); i++ {
+		symbolLength := int(table.SymbolLengths[i])
 		symbols[i] = table.Symbols[startOfSymbol : startOfSymbol+symbolLength]
-		startOfSymbol += symbolLength + 1
+		startOfSymbol += symbolLength
 	}
 
 	return symbols

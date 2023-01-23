@@ -30,9 +30,8 @@ message QueryResponse {
 }
 
 message SymbolTable {
-  // Null-byte separated list of symbols.
   string Symbols = 1;
-  uint64 SymbolCount = 2;
+  repeated uint64 SymbolLengths = 2;
 }
 
 message VectorData {

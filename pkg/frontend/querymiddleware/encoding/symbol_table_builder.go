@@ -2,19 +2,32 @@
 
 package encoding
 
-import "strings"
+import (
+	"bytes"
+	"sync"
+)
 
-// TODO: might be able to make this better if we can use a pool of buffers rather than creating a new one each time
-// (strings.Builder.Reset() discards the underlying buffer)
+// TODO: ditto for symbolLengths: pooling might help here as well
 type symbolTableBuilder struct {
-	b               *strings.Builder
+	buf             *bytes.Buffer
 	invertedSymbols map[string]uint64 // TODO: might be able to save resizing this by scanning through response once and allocating a map big enough to hold all symbols (ie. not just unique symbols)
+	symbolLengths   []uint64
 }
 
+var bufferPool = sync.Pool{New: func() any { return &bytes.Buffer{} }}
+var symbolLengthPool = sync.Pool{New: func() any { return []uint64{} }}
+
 func newSymbolTableBuilder() symbolTableBuilder {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	symbolLengths := symbolLengthPool.Get().([]uint64)
+	symbolLengths = symbolLengths[:0]
+
 	return symbolTableBuilder{
-		b:               &strings.Builder{},
+		buf:             buf,
 		invertedSymbols: map[string]uint64{},
+		symbolLengths:   symbolLengths,
 	}
 }
 
@@ -25,18 +38,19 @@ func (b *symbolTableBuilder) GetOrPutSymbol(symbol string) uint64 {
 
 	i := uint64(len(b.invertedSymbols))
 	b.invertedSymbols[symbol] = i
-
-	if i > 0 {
-		b.b.Grow(len(symbol) + 1)
-		b.b.WriteByte(0)
-		b.b.WriteString(symbol)
-	} else {
-		b.b.WriteString(symbol)
-	}
+	b.buf.WriteString(symbol)
+	b.symbolLengths = append(b.symbolLengths, uint64(len(symbol)))
 
 	return i
 }
 
-func (b *symbolTableBuilder) Build() (string, uint64) {
-	return b.b.String(), uint64(len(b.invertedSymbols))
+// Build returns the final representation of this symbol table, ready for transmission.
+// It is not valid to call GetOrPutSymbol after calling Build.
+func (b *symbolTableBuilder) Build() (string, []uint64) {
+	s := b.buf.String()
+
+	bufferPool.Put(b.buf)
+	symbolLengthPool.Put(b.symbolLengths)
+
+	return s, b.symbolLengths
 }
