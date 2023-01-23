@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/logging"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -49,7 +48,6 @@ type BucketStores struct {
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
 	bucket             objstore.Bucket
-	logLevel           logging.Level
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
@@ -83,7 +81,7 @@ type BucketStores struct {
 }
 
 // NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	cachingBucket, err := tsdb.CreateCachingBucket(cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
@@ -101,7 +99,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
 		stores:             map[string]*BucketStore{},
-		logLevel:           logLevel,
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
@@ -459,9 +456,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
 		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
-	}
-	if u.logLevel.String() == "debug" {
-		bucketStoreOpts = append(bucketStoreOpts, WithDebugLogging())
 	}
 
 	bs, err := NewBucketStore(
