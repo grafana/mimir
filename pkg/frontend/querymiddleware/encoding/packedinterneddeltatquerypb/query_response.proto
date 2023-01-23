@@ -75,6 +75,7 @@ message MatrixSeries {
   // (particularly for cases where some points have values and others are histograms)
   repeated double Values = 2;
 
-  // Timestamp relative to MatrixData.BaseTimestamp.
+  // First value: timestamp delta relative to MatrixData.BaseTimestamp.
+  // Subsequent values: delta-of-deltas
   repeated int64 TimestampDeltas = 3;
 }

@@ -109,11 +109,16 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeMatrix(d *packe
 		// TODO: check that number of timestamps == number of values
 		sampleCount := len(series.TimestampDeltas)
 		samples := make([]mimirpb.Sample, sampleCount)
+		timestamp := d.BaseTimestamp
+		currentDelta := int64(0)
 
 		for sampleIdx := 0; sampleIdx < sampleCount; sampleIdx++ {
+			currentDelta += series.TimestampDeltas[sampleIdx]
+			timestamp += currentDelta
+
 			samples[sampleIdx] = mimirpb.Sample{
 				Value:       series.Values[sampleIdx],
-				TimestampMs: d.BaseTimestamp + series.TimestampDeltas[sampleIdx],
+				TimestampMs: timestamp,
 			}
 		}
 
@@ -251,6 +256,7 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) encodeMatrix(data *qu
 
 		values := make([]float64, len(stream.Samples))
 		timestampDeltas := make([]int64, len(stream.Samples))
+		currentDelta := int64(0)
 
 		for sampleIdx, sample := range stream.Samples {
 			if !haveBaseTimestamp {
@@ -259,7 +265,14 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) encodeMatrix(data *qu
 			}
 
 			values[sampleIdx] = sample.Value
-			timestampDeltas[sampleIdx] = sample.TimestampMs - baseTimestamp
+
+			if sampleIdx == 0 {
+				timestampDeltas[sampleIdx] = sample.TimestampMs - baseTimestamp
+				currentDelta = timestampDeltas[sampleIdx]
+			} else {
+				timestampDeltas[sampleIdx] = sample.TimestampMs - stream.Samples[sampleIdx-1].TimestampMs - currentDelta
+				currentDelta += timestampDeltas[sampleIdx]
+			}
 		}
 
 		series[seriesIdx] = packedinterneddeltatquerypb.MatrixSeries{
