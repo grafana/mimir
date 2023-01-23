@@ -45,8 +45,8 @@ message VectorData {
   // TODO: will this make it more difficult to support native histograms?
   // (particularly for cases where some points have values and others are histograms)
   repeated Metric Metrics = 2 [(gogoproto.nullable) = false];
-  repeated double Values = 3;
-  repeated int64 Timestamps = 4;
+  repeated double Values = 3 [packed = true];
+  repeated int64 Timestamps = 4 [packed = true];
 }
 
 message Metric {
@@ -68,7 +68,7 @@ message MatrixData {
 message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   // TODO: replace with Metric?
-  repeated uint64 MetricSymbols = 1;
+  repeated uint64 MetricSymbols = 1 [packed = true];
 
   // Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
   // both smaller in encoded form and more efficient to decode (as the length is known upfront).
@@ -77,6 +77,6 @@ message MatrixSeries {
   //
   // TODO: will this make it more difficult to support native histograms?
   // (particularly for cases where some points have values and others are histograms)
-  repeated double Values = 2;
-  repeated int64 Timestamps = 3;
+  repeated double Values = 2 [packed = true];
+  repeated int64 Timestamps = 3 [packed = true];
 }
