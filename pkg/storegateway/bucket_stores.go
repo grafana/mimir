@@ -470,6 +470,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
 		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
+		WithIgnoreNativeHistogramChunks(u.limits),
 	}
 
 	bs, err := NewBucketStore(

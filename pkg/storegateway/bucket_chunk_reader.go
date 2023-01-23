@@ -94,6 +94,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPoo
 			})
 		}
 	}
+
 	return g.Wait()
 }
 
@@ -170,8 +171,14 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		// Chunk length is n (number of bytes used to encode chunk data), 1 for chunk encoding and chunkDataLen for actual chunk data.
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
+
+		rc := rawChunk(cb[n:chunkLen])
+		if enc := rc.Encoding(); r.block.shouldIgnoreNativeHistogramChunks() && (enc == chunkenc.EncHistogram || enc == chunkenc.EncFloatHistogram) {
+			continue
+		}
+
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rc, chunksPool)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}

@@ -41,6 +41,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/util/validation"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -127,6 +129,8 @@ type BucketStore struct {
 
 	// Additional configuration for experimental indexheader.BinaryReader behaviour.
 	indexHeaderCfg indexheader.Config
+
+	shouldIgnoreNativeHistogramChunks func() bool
 }
 
 type noopCache struct{}
@@ -213,6 +217,14 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.maxSeriesPerBatch = seriesPerBatch
+	}
+}
+
+func WithIgnoreNativeHistogramChunks(overrides *validation.Overrides) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.shouldIgnoreNativeHistogramChunks = func() bool {
+			return overrides.IgnoreNativeHistogramsOnRead(s.userID)
+		}
 	}
 }
 
@@ -435,6 +447,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.chunkPool,
 		indexHeaderReader,
 		s.partitioners,
+		s.shouldIgnoreNativeHistogramChunks,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -580,6 +593,7 @@ func blockSeries(
 	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	logger log.Logger,
+	ignoreNativeHistograms bool,
 ) (storepb.SeriesSet, *safeQueryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
 	span.LogKV(
@@ -719,6 +733,34 @@ func blockSeries(
 
 	if err := chunkr.load(res, chunksPool, reqStats); err != nil {
 		return nil, nil, errors.Wrap(err, "load chunks")
+	}
+
+	if ignoreNativeHistograms {
+		seriesWriteIdx := 0
+		for _, series := range res {
+			chksWriteIdx := 0
+			for i := range series.chks {
+				ref := series.refs[i]
+				chk := series.chks[i]
+
+				if chk.Raw == nil {
+					continue
+				}
+
+				series.refs[chksWriteIdx] = ref
+				series.chks[chksWriteIdx] = chk
+				chksWriteIdx++
+			}
+			series.refs = series.refs[:chksWriteIdx]
+			series.chks = series.chks[:chksWriteIdx]
+
+			if len(series.chks) == 0 {
+				continue
+			}
+			res[seriesWriteIdx] = series
+			seriesWriteIdx++
+		}
+		res = res[:seriesWriteIdx]
 	}
 
 	reqStats.merge(&seriesCacheStats)
@@ -1045,6 +1087,7 @@ func (s *BucketStore) synchronousSeriesSet(
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
 				s.logger,
+				s.shouldIgnoreNativeHistogramChunks(),
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
@@ -1159,7 +1202,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime, s.shouldIgnoreNativeHistogramChunks())
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
@@ -1339,7 +1382,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 
 	// We ignore request's min/max time and query the entire block to make the result cacheable.
 	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
-	seriesSet, _, err := blockSeries(ctx, indexr, nil, nil, matchers, nil, nil, nil, seriesLimiter, true, minTime, maxTime, logger)
+	seriesSet, _, err := blockSeries(ctx, indexr, nil, nil, matchers, nil, nil, nil, seriesLimiter, true, minTime, maxTime, logger, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch series")
 	}
@@ -1686,6 +1729,8 @@ type bucketBlock struct {
 	blockLabels labels.Labels
 
 	expandedPostingsPromises sync.Map
+
+	shouldIgnoreNativeHistogramChunks func() bool
 }
 
 func newBucketBlock(
@@ -1700,18 +1745,20 @@ func newBucketBlock(
 	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
+	shouldIgnoreNativeHistogramChunks func() bool,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
-		userID:            userID,
-		logger:            logger,
-		metrics:           metrics,
-		bkt:               bkt,
-		indexCache:        indexCache,
-		chunkPool:         chunkPool,
-		dir:               dir,
-		partitioners:      p,
-		meta:              meta,
-		indexHeaderReader: indexHeadReader,
+		userID:                            userID,
+		logger:                            logger,
+		metrics:                           metrics,
+		bkt:                               bkt,
+		indexCache:                        indexCache,
+		chunkPool:                         chunkPool,
+		dir:                               dir,
+		partitioners:                      p,
+		meta:                              meta,
+		shouldIgnoreNativeHistogramChunks: shouldIgnoreNativeHistogramChunks,
+		indexHeaderReader:                 indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}

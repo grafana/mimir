@@ -175,9 +175,10 @@ func newSeriesSetWithChunks(
 	refsIteratorBatchSize int,
 	stats *safeQueryStats,
 	minT, maxT int64,
+	ignoreNativeHistograms bool,
 ) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT, ignoreNativeHistograms)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -312,10 +313,11 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 }
 
 type loadingSeriesChunksSetIterator struct {
-	chunkReaders  bucketChunkReaders
-	from          seriesChunkRefsSetIterator
-	fromBatchSize int
-	stats         *safeQueryStats
+	chunkReaders           bucketChunkReaders
+	from                   seriesChunkRefsSetIterator
+	fromBatchSize          int
+	stats                  *safeQueryStats
+	ignoreNativeHistograms bool
 
 	current          seriesChunksSet
 	err              error
@@ -329,14 +331,16 @@ func newLoadingSeriesChunksSetIterator(
 	stats *safeQueryStats,
 	minT int64,
 	maxT int64,
+	ignoreNativeHistograms bool,
 ) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
-		chunkReaders:  chunkReaders,
-		from:          from,
-		fromBatchSize: fromBatchSize,
-		stats:         stats,
-		minTime:       minT,
-		maxTime:       maxT,
+		chunkReaders:           chunkReaders,
+		from:                   from,
+		fromBatchSize:          fromBatchSize,
+		stats:                  stats,
+		minTime:                minT,
+		maxTime:                maxT,
+		ignoreNativeHistograms: ignoreNativeHistograms,
 	}
 }
 
@@ -405,6 +409,34 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	}
 
 	nextSet.chunksReleaser = chunksPool
+
+	if c.ignoreNativeHistograms {
+		seriesWriteIdx := 0
+		for _, series := range nextSet.series {
+			chksWriteIdx := 0
+			for _, chk := range series.chks {
+				if chk.Raw == nil {
+					continue
+				}
+				series.chks[chksWriteIdx] = chk
+				chksWriteIdx++
+			}
+			series.chks = series.chks[:chksWriteIdx]
+
+			if len(series.chks) == 0 {
+				continue
+			}
+			nextSet.series[seriesWriteIdx] = series
+			seriesWriteIdx++
+		}
+		nextSet.series = nextSet.series[:seriesWriteIdx]
+
+		if len(nextSet.series) == 0 {
+			nextSet.release()
+			return c.Next()
+		}
+	}
+
 	c.current = nextSet
 	return true
 }

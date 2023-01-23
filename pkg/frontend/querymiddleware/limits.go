@@ -70,6 +70,9 @@ type Limits interface {
 
 	// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 	NativeHistogramsIngestionEnabled(userID string) bool
+
+	// IgnoreNativeHistogramsOnRead returns whether to ignore native histograms in the ingester and store gateway.
+	IgnoreNativeHistogramsOnRead(userID string) bool
 }
 
 type limitsMiddleware struct {
