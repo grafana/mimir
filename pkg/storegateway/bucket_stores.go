@@ -464,7 +464,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		fetcher,
 		u.syncDirForUser(userID),
 		newChunksLimiterFactory(u.limits, userID),
-		NewSeriesLimiterFactory(0), // No series limiter.
+		newSeriesLimiterFactory(u.limits, userID), // No series limiter.
 		u.partitioner,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
@@ -561,11 +561,11 @@ func (s spanSeriesServer) Context() context.Context {
 	return s.ctx
 }
 
-type chunkLimiter struct {
+type limiterWithErrorStatusCode struct {
 	limiter *Limiter
 }
 
-func (c *chunkLimiter) Reserve(num uint64) error {
+func (c *limiterWithErrorStatusCode) Reserve(num uint64) error {
 	err := c.limiter.Reserve(num)
 	if err != nil {
 		return httpgrpc.Errorf(http.StatusUnprocessableEntity, err.Error())
@@ -578,8 +578,18 @@ func newChunksLimiterFactory(limits *validation.Overrides, userID string) Chunks
 	return func(failedCounter prometheus.Counter) ChunksLimiter {
 		// Since limit overrides could be live reloaded, we have to get the current user's limit
 		// each time a new limiter is instantiated.
-		return &chunkLimiter{
+		return &limiterWithErrorStatusCode{
 			limiter: NewLimiter(uint64(limits.MaxChunksPerQuery(userID)), failedCounter),
+		}
+	}
+}
+
+func newSeriesLimiterFactory(limits *validation.Overrides, userID string) SeriesLimiterFactory {
+	return func(failedCounter prometheus.Counter) SeriesLimiter {
+		// Since limit overrides could be live reloaded, we have to get the current user's limit
+		// each time a new limiter is instantiated.
+		return &limiterWithErrorStatusCode{
+			limiter: NewLimiter(uint64(limits.MaxFetchedSeriesPerQuery(userID)), failedCounter),
 		}
 	}
 }
