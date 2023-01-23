@@ -47,7 +47,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const kvStorePrefix = "rulers/"
 	const componentPlural = "rulers"
 	cfg.RingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
-	
+
 	f.IntVar(&cfg.NumTokens, flagNamePrefix+"num-tokens", 128, "Number of tokens for each ruler.")
 }
 

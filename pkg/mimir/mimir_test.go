@@ -11,7 +11,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/grafana/mimir/pkg/util"
 	"io"
 	"net"
 	"net/http"
@@ -51,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
