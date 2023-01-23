@@ -867,13 +867,40 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 	if len(e.offsets) == 0 {
 		return nil, nil
 	}
-	values := make([]string, 0, len(e.offsets)*r.postingOffsetsInMemSampling)
+
+	offsetIdx := 0
+	if prefix != "" {
+		// Find the first offset that is greater or equal to the prefix.
+		offsetIdx = sort.Search(len(e.offsets), func(i int) bool {
+			if prefix <= e.offsets[i].value {
+				return true
+			}
+			return false
+		})
+
+		// We always include the last value in the offsets,
+		// and given that prefix is always less or equal than the value,
+		// we can conclude that there are no values with this prefix.
+		if offsetIdx == len(e.offsets) {
+			return nil, nil
+		}
+
+		// If the value is not equal to the prefix, this value might have the prefix.
+		// But maybe the values in the previous offset also had the prefix,
+		// so we need to step back one offset to find all values with this prefix.
+		// Unless, of course, we are at the first offset.
+		if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
+			offsetIdx--
+		}
+	}
 
 	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
-	d.Skip(e.offsets[0].tableOff)
+	d.Skip(e.offsets[offsetIdx].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
+	seenPrefix := false
 	skip := 0
+	values := make([]string, 0, (len(e.offsets)-offsetIdx)*r.postingOffsetsInMemSampling)
 	for d.Err() == nil {
 		if skip == 0 {
 			// These are always the same number of bytes,
@@ -886,8 +913,14 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		if strings.HasPrefix(s, prefix) && (filter == nil || filter(s)) {
-			values = append(values, s)
+		if strings.HasPrefix(s, prefix) {
+			if filter == nil || filter(s) {
+				values = append(values, s)
+			}
+			seenPrefix = true
+		} else if seenPrefix {
+			// We have seen all values with the prefix.
+			break
 		}
 		if s == lastVal {
 			break
