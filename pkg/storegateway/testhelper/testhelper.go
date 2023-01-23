@@ -32,7 +32,6 @@ func CreateBlock(
 	numSamples int,
 	mint, maxt int64,
 	extLset labels.Labels,
-	resolution int64,
 ) (id ulid.ULID, err error) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
@@ -104,10 +103,9 @@ func CreateBlock(
 	blockDir := filepath.Join(dir, id.String())
 
 	if _, err = metadata.InjectThanos(log.NewNopLogger(), blockDir, metadata.Thanos{
-		Labels:     extLset.Map(),
-		Downsample: metadata.ThanosDownsample{Resolution: resolution},
-		Source:     metadata.TestSource,
-		Files:      []metadata.File{},
+		Labels: extLset.Map(),
+		Source: metadata.TestSource,
+		Files:  []metadata.File{},
 	}, nil); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}
