@@ -532,28 +532,45 @@ func (m *Exemplar) GetTimestampMs() int64 {
 	return 0
 }
 
+// This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
 type Histogram struct {
 	// Types that are valid to be assigned to Count:
 	//
 	//	*Histogram_CountInt
 	//	*Histogram_CountFloat
-	Count         isHistogram_Count `protobuf_oneof:"count"`
-	Sum           float64           `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
-	Schema        int32             `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
-	ZeroThreshold float64           `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
+	Count isHistogram_Count `protobuf_oneof:"count"`
+	Sum   float64           `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
+	// The schema defines the bucket schema. Currently, valid numbers
+	// are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+	// is a bucket boundary in each case, and then each power of two is
+	// divided into 2^n logarithmic buckets. Or in other words, each
+	// bucket boundary is the previous boundary times 2^(2^-n). In the
+	// future, more bucket schemas may be added using numbers < -4 or >
+	// 8.
+	Schema        int32   `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
+	ZeroThreshold float64 `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
 	// Types that are valid to be assigned to ZeroCount:
 	//
 	//	*Histogram_ZeroCountInt
 	//	*Histogram_ZeroCountFloat
-	ZeroCount      isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
-	NegativeSpans  []*BucketSpan         `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans,omitempty"`
-	NegativeDeltas []int64               `protobuf:"zigzag64,9,rep,packed,name=negative_deltas,json=negativeDeltas,proto3" json:"negative_deltas,omitempty"`
-	NegativeCounts []float64             `protobuf:"fixed64,10,rep,packed,name=negative_counts,json=negativeCounts,proto3" json:"negative_counts,omitempty"`
-	PositiveSpans  []*BucketSpan         `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans,omitempty"`
-	PositiveDeltas []int64               `protobuf:"zigzag64,12,rep,packed,name=positive_deltas,json=positiveDeltas,proto3" json:"positive_deltas,omitempty"`
-	PositiveCounts []float64             `protobuf:"fixed64,13,rep,packed,name=positive_counts,json=positiveCounts,proto3" json:"positive_counts,omitempty"`
-	ResetHint      Histogram_ResetHint   `protobuf:"varint,14,opt,name=reset_hint,json=resetHint,proto3,enum=cortexpb.Histogram_ResetHint" json:"reset_hint,omitempty"`
-	Timestamp      int64                 `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	ZeroCount isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
+	// Negative Buckets.
+	NegativeSpans []*BucketSpan `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans,omitempty"`
+	// Use either "negative_deltas" or "negative_counts", the former for
+	// regular histograms with integer counts, the latter for float
+	// histograms.
+	NegativeDeltas []int64   `protobuf:"zigzag64,9,rep,packed,name=negative_deltas,json=negativeDeltas,proto3" json:"negative_deltas,omitempty"`
+	NegativeCounts []float64 `protobuf:"fixed64,10,rep,packed,name=negative_counts,json=negativeCounts,proto3" json:"negative_counts,omitempty"`
+	// Positive Buckets.
+	PositiveSpans []*BucketSpan `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans,omitempty"`
+	// Use either "positive_deltas" or "positive_counts", the former for
+	// regular histograms with integer counts, the latter for float
+	// histograms.
+	PositiveDeltas []int64             `protobuf:"zigzag64,12,rep,packed,name=positive_deltas,json=positiveDeltas,proto3" json:"positive_deltas,omitempty"`
+	PositiveCounts []float64           `protobuf:"fixed64,13,rep,packed,name=positive_counts,json=positiveCounts,proto3" json:"positive_counts,omitempty"`
+	ResetHint      Histogram_ResetHint `protobuf:"varint,14,opt,name=reset_hint,json=resetHint,proto3,enum=cortexpb.Histogram_ResetHint" json:"reset_hint,omitempty"`
+	// timestamp is in ms format
+	Timestamp int64 `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 }
 
 func (m *Histogram) Reset()      { *m = Histogram{} }

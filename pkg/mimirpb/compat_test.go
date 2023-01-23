@@ -14,6 +14,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -240,6 +241,29 @@ func TestPreallocatingMetric(t *testing.T) {
 
 		assert.Equal(t, metricBytes, preallocBytes)
 	})
+}
+
+func TestRemoteWriteContainsHistogram(t *testing.T) {
+	// Prometheus
+	remoteWrite := prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Histograms: []prompb.Histogram{
+					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+				},
+			},
+		},
+	}
+	data, err := remoteWrite.Marshal()
+	assert.NoError(t, err, "marshal to protbuf")
+
+	// Mimir
+	receivedRemoteWrite := &WriteRequest{}
+	err = receivedRemoteWrite.Unmarshal(data)
+	assert.NoError(t, err, "marshal to protbuf")
+
+	assert.NotEmpty(t, receivedRemoteWrite.Timeseries)
+	assert.NotEmpty(t, receivedRemoteWrite.Timeseries[0].Histograms)
 }
 
 func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
