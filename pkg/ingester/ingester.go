@@ -2530,7 +2530,10 @@ func (i *Ingester) checkRunning() error {
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
-	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
+	pushReq.AddCleanup(func() {
+		mimirpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.EphemeralTimeseries)
+	})
 	return i.PushWithCleanup(ctx, pushReq)
 }
 
