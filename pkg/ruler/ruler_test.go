@@ -384,7 +384,7 @@ func TestGetRules(t *testing.T) {
 				cfg := defaultRulerConfig(t)
 
 				cfg.Ring = RingConfig{
-					RingConfig: util.RingConfig{
+					CommonRingConfig: util.CommonRingConfig{
 						InstanceID:   id,
 						InstanceAddr: id,
 						KVStore: kv.Config{
@@ -824,7 +824,7 @@ func TestSharding(t *testing.T) {
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
 					Ring: RingConfig{
-						RingConfig: util.RingConfig{
+						CommonRingConfig: util.CommonRingConfig{
 							InstanceID:   id,
 							InstanceAddr: host,
 							InstancePort: port,

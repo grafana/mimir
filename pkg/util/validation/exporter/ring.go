@@ -46,7 +46,7 @@ var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 // RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
 	// Use common config shared with other components' ring config.
-	util.RingConfig `yaml:",inline"`
+	util.CommonRingConfig `yaml:",inline"`
 
 	// Whether the ring is enabled for overrides-exporters.
 	Enabled bool `yaml:"enabled" category:"experimental"`
@@ -64,7 +64,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.Enabled, flagNamePrefix+"enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
 
-	c.RingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	c.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Ring stability flags.
 	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")

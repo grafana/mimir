@@ -27,11 +27,11 @@ const (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.RingConfig `yaml:",inline"`
+	util.CommonRingConfig `yaml:",inline"`
 }
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.RingConfig.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
+	cfg.CommonRingConfig.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
@@ -53,8 +53,8 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.Option {
-	return []util.Option{
+func (cfg *RingConfig) ringOptions() []util.RingOption {
+	return []util.RingOption{
 		util.WithReplicationFactor(1),
 	}
 }

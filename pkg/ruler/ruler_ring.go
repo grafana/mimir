@@ -33,7 +33,7 @@ var RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceS
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.RingConfig `yaml:",inline"`
+	util.CommonRingConfig `yaml:",inline"`
 
 	NumTokens int `yaml:"num_tokens" category:"advanced"`
 
@@ -46,7 +46,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const flagNamePrefix = "ruler.ring."
 	const kvStorePrefix = "rulers/"
 	const componentPlural = "rulers"
-	cfg.RingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	f.IntVar(&cfg.NumTokens, flagNamePrefix+"num-tokens", 128, "Number of tokens for each ruler.")
 }
@@ -71,8 +71,8 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.Option {
-	return []util.Option{
+func (cfg *RingConfig) ringOptions() []util.RingOption {
+	return []util.RingOption{
 		util.WithSubringCacheDisabled(true),
 		util.WithReplicationFactor(1),
 	}

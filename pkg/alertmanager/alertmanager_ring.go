@@ -45,7 +45,7 @@ var SyncRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.JOINING}, fun
 // to the user.
 type RingConfig struct {
 	// Common ring config used across components
-	util.RingConfig `yaml:",inline"`
+	util.CommonRingConfig `yaml:",inline"`
 
 	// Configuration specific to alertmanager rings
 	ReplicationFactor    int    `yaml:"replication_factor" category:"advanced"`
@@ -63,7 +63,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const kvStorePrefix = "alertmanagers/"
 	const componentPlural = "alertmanagers"
 
-	cfg.RingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Ring flags
 	f.IntVar(&cfg.ReplicationFactor, flagNamePrefix+"replication-factor", 3, "The replication factor to use when sharding the alertmanager.")
@@ -94,8 +94,8 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.Option {
-	return []util.Option{
+func (cfg *RingConfig) ringOptions() []util.RingOption {
+	return []util.RingOption{
 		util.WithReplicationFactor(cfg.ReplicationFactor),
 		util.WithZoneAwarenessEnabled(cfg.ZoneAwarenessEnabled),
 	}

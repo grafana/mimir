@@ -28,7 +28,7 @@ const (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.RingConfig `yaml:",inline"`
+	util.CommonRingConfig `yaml:",inline"`
 
 	// Wait ring stability.
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -44,7 +44,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const flagNamePrefix = "compactor.ring."
 	const kvStorePrefix = "collectors/"
 	const componentPlural = "compactors"
-	cfg.RingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Wait stability flags.
 	f.DurationVar(&cfg.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup. 0 to disable.")
@@ -73,8 +73,8 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.Option {
-	return []util.Option{
+func (cfg *RingConfig) ringOptions() []util.RingOption {
+	return []util.RingOption{
 		util.WithReplicationFactor(1),
 	}
 }

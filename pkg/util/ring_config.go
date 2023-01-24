@@ -16,9 +16,9 @@ import (
 	"github.com/grafana/dskit/ring"
 )
 
-// RingConfig is the configuration commonly used by components that use a ring
+// CommonRingConfig is the configuration commonly used by components that use a ring
 // for various coordination tasks such as sharding or service discovery.
-type RingConfig struct {
+type CommonRingConfig struct {
 	// KV store details
 	KVStore          kv.Config     `yaml:"kvstore"`
 	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
@@ -35,7 +35,7 @@ type RingConfig struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *RingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentPlural string, f *flag.FlagSet, logger log.Logger) {
+func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentPlural string, f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
@@ -56,7 +56,7 @@ func (cfg *RingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentPlural 
 	f.StringVar(&cfg.InstanceID, flagPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-func (cfg *RingConfig) ToRingConfig(opts ...Option) ring.Config {
+func (cfg *CommonRingConfig) ToRingConfig(opts ...RingOption) ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
 
@@ -69,21 +69,21 @@ func (cfg *RingConfig) ToRingConfig(opts ...Option) ring.Config {
 	return rc
 }
 
-type Option func(config *ring.Config)
+type RingOption func(config *ring.Config)
 
-func WithReplicationFactor(f int) Option {
+func WithReplicationFactor(f int) RingOption {
 	return func(rc *ring.Config) {
 		rc.ReplicationFactor = f
 	}
 }
 
-func WithSubringCacheDisabled(disabled bool) Option {
+func WithSubringCacheDisabled(disabled bool) RingOption {
 	return func(rc *ring.Config) {
 		rc.SubringCacheDisabled = disabled
 	}
 }
 
-func WithZoneAwarenessEnabled(enabled bool) Option {
+func WithZoneAwarenessEnabled(enabled bool) RingOption {
 	return func(rc *ring.Config) {
 		rc.ZoneAwarenessEnabled = enabled
 	}
