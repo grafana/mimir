@@ -12,6 +12,8 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -72,4 +74,20 @@ func TestOTLPIngestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+
+	// Push series with histograms to Mimir
+	series = []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "foo", Value: "bar"},
+			},
+			Histograms: []prompb.Histogram{
+				remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+			},
+		},
+	}
+	_, err = c.PushOTLP(series)
+	require.NoError(t, err)
+	// TODO query and assert series that contain native histogram once querying
+	// of native histograms is supported
 }

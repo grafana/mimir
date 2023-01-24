@@ -2,6 +2,9 @@
 
 ## main / unreleased
 
+* [ENHANCEMENT] OTLP: Add support for converting OTel Exponential Histograms to Prometheus Native Histograms. #4063
+* [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
+
 ### Grafana Mimir
 
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
