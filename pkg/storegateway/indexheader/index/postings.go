@@ -396,6 +396,12 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 			return nil, nil
 		}
 
+		// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
+		// Next values won't have the prefix, so we can return early.
+		if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
+			return nil, nil
+		}
+
 		// If the value is not equal to the prefix, this value might have the prefix.
 		// But maybe the values in the previous offset also had the prefix,
 		// so we need to step back one offset to find all values with this prefix.
