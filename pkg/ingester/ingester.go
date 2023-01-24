@@ -1861,9 +1861,15 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 		i.metrics.memEphemeralUsers.Inc()
 
-		// Don't allow ingestion of old samples into ephemeral storage.
-		h.SetMinValidTime(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli())
-		return h, nil
+		// Don't allow ingestion of old samples into ephemeral storage. We use Truncate here on empty head, which is pointless,
+		// but we do it for its side effects: it sets both minTime and minValidTime to specified timestamp.
+		//
+		// We could have used h.SetMinValidTime() instead, but that only sets minValidTime and not minTime,
+		// and calling h.AppendableMinValidTime() then doesn't return set value. There is no such problem with Truncate.
+		if err := h.Truncate(time.Now().Add(-i.cfg.BlocksStorageConfig.EphemeralTSDB.Retention).UnixMilli()); err != nil {
+			return nil, err
+		}
+		return h, err
 	}
 
 	return userDB, nil
@@ -2169,7 +2175,12 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 			return nil
 		}
 
-		// Don't do anything, if there is nothing to compact.
+		// Truncate ephemeral storage first.
+		if err := userDB.TruncateEphemeral(time.Now()); err != nil {
+			level.Warn(i.logger).Log("msg", "truncating ephemeral storage for user has failed", "user", userID, "err", err)
+		}
+
+		// Don't do anything, if there is nothing to compact (in persistent storage).
 		h := userDB.Head()
 		if h.NumSeries() == 0 {
 			return nil
@@ -2192,7 +2203,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		default:
 			reason = "regular"
-			err = userDB.Compact(time.Now())
+			err = userDB.Compact()
 		}
 
 		if err != nil {

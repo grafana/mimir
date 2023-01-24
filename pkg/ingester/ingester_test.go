@@ -4171,7 +4171,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4195,7 +4195,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -4227,7 +4227,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()
@@ -4284,7 +4284,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4311,7 +4311,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	// Only the last two old blocks plus the one containing the newly added samples should remain.
 	newBlocks := db.Blocks()
@@ -4365,7 +4365,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -4377,7 +4377,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
-	require.Nil(t, db.Compact(time.Now()))
+	require.Nil(t, db.Compact())
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -6955,7 +6955,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 	require.NotNil(t, db)
 
 	// Advance time for ephemeral storage
-	require.Nil(t, db.Compact(now.Add(5*time.Minute)))
+	require.Nil(t, db.TruncateEphemeral(now.Add(5*time.Minute)))
 
 	// Old sample is no longer available for querying.
 	verifySamples(t, nil)
@@ -6976,6 +6976,54 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestIngesterCompactionTruncatesEphemeralStorage(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.EphemeralTSDB.Retention = 10 * time.Minute
+	cfg.IngesterRing.ReplicationFactor = 1                                 // for computing limits.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 10 * time.Minute // to avoid running it from test.
+
+	limits := defaultLimitsTestConfig()
+	limits.MaxEphemeralSeriesPerUser = 1
+
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	db, err := i.getOrCreateTSDB(userID, false)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	eph, err := db.createEphemeralStorage()
+	require.NoError(t, err)
+	require.NotNil(t, eph)
+
+	oldMinT, ok := eph.AppendableMinValidTime()
+	require.True(t, ok)
+
+	// Wait a bit, just enough to make sure that truncation makes noticeable difference in min valid time.
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		n := time.Now().Add(-cfg.BlocksStorageConfig.EphemeralTSDB.Retention)
+		return n.UnixMilli() > oldMinT
+	})
+
+	// Compact TSDBs, which also truncates ephemeral storage.
+	i.compactBlocks(context.Background(), false, nil)
+
+	newMinT, ok := eph.AppendableMinValidTime()
+	require.True(t, ok)
+	require.Greater(t, newMinT, oldMinT)
 }
 
 func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {

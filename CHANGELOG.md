@@ -12,6 +12,7 @@
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
+* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 
 ### Jsonnet
 
