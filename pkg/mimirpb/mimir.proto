@@ -2,6 +2,9 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Prometheus Team.
 
 syntax = "proto3";
 
@@ -131,6 +134,11 @@ message Histogram {
   int64 timestamp = 15;
 }
 
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
 message BucketSpan {
   sint32 offset = 1;
   uint32 length = 2;
