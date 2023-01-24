@@ -418,6 +418,36 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
+func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
+	// Find the first offset that is greater or equal to the value.
+	offsetIdx := sort.Search(len(e.offsets), func(i int) bool {
+		return prefix <= e.offsets[i].value
+	})
+
+	// We always include the last value in the offsets,
+	// and given that value is always less or equal than the value,
+	// we can conclude that there are no values with this value.
+	if offsetIdx == len(e.offsets) {
+		return 0, false
+	}
+
+	// Prefix is lower than the first value in the offsets, and that first value doesn't have this value.
+	// Next values won't have the value, so we can return early.
+	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
+		return 0, false
+	}
+
+	// If the value is not equal to the value, this value might have the value.
+	// But maybe the values in the previous offset also had the value,
+	// so we need to step back one offset to find all values with this value.
+	// Unless, of course, we are at the first offset.
+	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
+		offsetIdx--
+	}
+
+	return offsetIdx, true
+}
+
 type postingOffset struct {
 	// label value.
 	value string
@@ -870,30 +900,9 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 
 	offsetIdx := 0
 	if prefix != "" {
-		// Find the first offset that is greater or equal to the prefix.
-		offsetIdx = sort.Search(len(e.offsets), func(i int) bool {
-			return prefix <= e.offsets[i].value
-		})
-
-		// We always include the last value in the offsets,
-		// and given that prefix is always less or equal than the value,
-		// we can conclude that there are no values with this prefix.
-		if offsetIdx == len(e.offsets) {
+		offsetIdx, ok = e.prefixOffset(prefix)
+		if !ok {
 			return nil, nil
-		}
-
-		// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
-		// Next values won't have the prefix, so we can return early.
-		if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
-			return nil, nil
-		}
-
-		// If the value is not equal to the prefix, this value might have the prefix.
-		// But maybe the values in the previous offset also had the prefix,
-		// so we need to step back one offset to find all values with this prefix.
-		// Unless, of course, we are at the first offset.
-		if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
-			offsetIdx--
 		}
 	}
 
@@ -901,7 +910,6 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 	d.Skip(e.offsets[offsetIdx].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
-	seenPrefix := false
 	skip := 0
 	values := make([]string, 0, (len(e.offsets)-offsetIdx)*r.postingOffsetsInMemSampling)
 	for d.Err() == nil {
@@ -915,19 +923,27 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 		} else {
 			d.Skip(skip)
 		}
-		s := yoloString(d.UvarintBytes()) // Label value.
-		if strings.HasPrefix(s, prefix) {
-			if filter == nil || filter(s) {
-				values = append(values, s)
+
+		value := yoloString(d.UvarintBytes())
+		if prefix == "" {
+			// Quick path for no prefix matching.
+			if filter == nil || filter(value) {
+				values = append(values, value)
 			}
-			seenPrefix = true
-		} else if seenPrefix {
-			// We have seen all values with the prefix.
+		} else {
+			if strings.HasPrefix(value, prefix) {
+				if filter == nil || filter(value) {
+					values = append(values, value)
+				}
+			} else if prefix < value {
+				// There will be no more values with the prefix.
+				break
+			}
+		}
+		if value == lastVal {
 			break
 		}
-		if s == lastVal {
-			break
-		}
+
 		d.Uvarint64() // Offset.
 	}
 	if d.Err() != nil {
