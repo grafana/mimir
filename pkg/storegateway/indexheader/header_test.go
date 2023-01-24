@@ -311,7 +311,7 @@ func TestReadersLabelValues(t *testing.T) {
 		series = append(series, labels.FromStrings(lblStrings...))
 
 		for idx := range lblValues {
-			lblValues[idx] += 1
+			lblValues[idx]++
 			if idx < 2 {
 				continue
 			}
