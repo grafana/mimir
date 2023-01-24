@@ -135,7 +135,7 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
-		requests:                newRequestsInProgress(),
+		requests:                newRequestsInProgress(log),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -176,6 +176,7 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
+	f.requests.waitUntilDone()
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
@@ -306,13 +307,18 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 }
 
 type requestsInProgress struct {
-	mu       sync.Mutex
-	requests map[uint64]*frontendRequest
+	mu          sync.Mutex
+	requests    map[uint64]*frontendRequest
+	terminating bool
+	done        chan struct{}
+	logger      log.Logger
 }
 
-func newRequestsInProgress() *requestsInProgress {
+func newRequestsInProgress(logger log.Logger) *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
+		done:     make(chan struct{}),
+		logger:   logger,
 	}
 }
 
@@ -321,6 +327,26 @@ func (r *requestsInProgress) count() int {
 	defer r.mu.Unlock()
 
 	return len(r.requests)
+}
+
+// waitUntilDone puts r in terminating mode and waits until there are no more requests.
+func (r *requestsInProgress) waitUntilDone() {
+	r.mu.Lock()
+	r.terminating = true
+
+	// If there are already no in-flight queries, just return
+	if len(r.requests) == 0 {
+		r.mu.Unlock()
+		level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
+		return
+	}
+
+	// Wait for remaining queries to finish
+	r.mu.Unlock()
+	level.Info(r.logger).Log("msg", "waiting for in-flight queries to finish...")
+	<-r.done
+
+	level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
 }
 
 func (r *requestsInProgress) put(req *frontendRequest) {
@@ -335,6 +361,10 @@ func (r *requestsInProgress) delete(queryID uint64) {
 	defer r.mu.Unlock()
 
 	delete(r.requests, queryID)
+	if r.terminating && len(r.requests) == 0 {
+		// Signal that termination phase can end
+		r.done <- struct{}{}
+	}
 }
 
 func (r *requestsInProgress) get(queryID uint64) *frontendRequest {
