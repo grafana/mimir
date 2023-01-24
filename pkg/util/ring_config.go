@@ -56,35 +56,11 @@ func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentP
 	f.StringVar(&cfg.InstanceID, flagPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 }
 
-func (cfg *CommonRingConfig) ToRingConfig(opts ...RingOption) ring.Config {
+func (cfg *CommonRingConfig) ToRingConfig() ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
 
 	rc.KVStore = cfg.KVStore
 	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
-	for _, opt := range opts {
-		opt(&rc)
-	}
-
 	return rc
-}
-
-type RingOption func(config *ring.Config)
-
-func WithReplicationFactor(f int) RingOption {
-	return func(rc *ring.Config) {
-		rc.ReplicationFactor = f
-	}
-}
-
-func WithSubringCacheDisabled(disabled bool) RingOption {
-	return func(rc *ring.Config) {
-		rc.SubringCacheDisabled = disabled
-	}
-}
-
-func WithZoneAwarenessEnabled(enabled bool) RingOption {
-	return func(rc *ring.Config) {
-		rc.ZoneAwarenessEnabled = enabled
-	}
 }

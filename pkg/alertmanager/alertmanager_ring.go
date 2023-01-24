@@ -94,9 +94,9 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.RingOption {
-	return []util.RingOption{
-		util.WithReplicationFactor(cfg.ReplicationFactor),
-		util.WithZoneAwarenessEnabled(cfg.ZoneAwarenessEnabled),
-	}
+func (cfg *RingConfig) toRingConfig() ring.Config {
+	c := cfg.CommonRingConfig.ToRingConfig()
+	c.ReplicationFactor = cfg.ReplicationFactor
+	c.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
+	return c
 }

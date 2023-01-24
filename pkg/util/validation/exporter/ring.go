@@ -91,6 +91,13 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 	}, nil
 }
 
+func (c *RingConfig) toRingConfig() ring.Config {
+	cfg := c.CommonRingConfig.ToRingConfig()
+	cfg.ReplicationFactor = 1
+	cfg.SubringCacheDisabled = true
+	return cfg
+}
+
 // Validate the Config.
 func (c *RingConfig) Validate() error {
 	if c.WaitStabilityMinDuration > 0 {
@@ -145,16 +152,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 		return nil, errors.Wrap(err, "failed to initialize overrides-exporter's lifecycler")
 	}
 
-	ringClient, err := ring.New(
-		config.ToRingConfig(
-			util.WithReplicationFactor(1),
-			util.WithSubringCacheDisabled(true),
-		),
-		ringName,
-		ringKey,
-		logger,
-		reg,
-	)
+	ringClient, err := ring.New(config.toRingConfig(), ringName, ringKey, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a overrides-exporter ring client")
 	}

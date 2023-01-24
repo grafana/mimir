@@ -486,7 +486,7 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' lifecycler")
 	}
 
-	compactorsRing, err := ring.New(cfg.ToRingConfig(cfg.ringOptions()...), "compactor", ringKey, logger, reg)
+	compactorsRing, err := ring.New(cfg.toRingConfig(), "compactor", ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' ring client")
 	}

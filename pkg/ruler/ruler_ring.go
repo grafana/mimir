@@ -71,9 +71,9 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 	}, nil
 }
 
-func (cfg *RingConfig) ringOptions() []util.RingOption {
-	return []util.RingOption{
-		util.WithSubringCacheDisabled(true),
-		util.WithReplicationFactor(1),
-	}
+func (cfg *RingConfig) toRingConfig() ring.Config {
+	c := cfg.CommonRingConfig.ToRingConfig()
+	c.SubringCacheDisabled = true
+	c.ReplicationFactor = 1
+	return c
 }

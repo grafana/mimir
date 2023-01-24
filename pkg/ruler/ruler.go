@@ -320,7 +320,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	}
 
 	r.ring, err = ring.NewWithStoreClientAndStrategy(
-		r.cfg.Ring.ToRingConfig(r.cfg.Ring.ringOptions()...),
+		r.cfg.Ring.toRingConfig(),
 		rulerRingName,
 		RulerRingKey,
 		ringStore,
