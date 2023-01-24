@@ -74,6 +74,8 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 func (cfg *RingConfig) toRingConfig() ring.Config {
 	rc := cfg.Common.ToRingConfig()
 	rc.SubringCacheDisabled = true
+
+	// Each rule group is loaded to *exactly* one ruler.
 	rc.ReplicationFactor = 1
 
 	return rc
