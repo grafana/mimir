@@ -7,37 +7,41 @@ weight: 10
 
 # Migrate from Cortex to Grafana Mimir
 
-This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-It includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#migrating-to-grafana-mimir-using-jsonnet) and [environments deployed with Helm](#migrating-to-grafana-mimir-using-helm).
+As an operator, you can migrate a Helm deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
+The overview includes the steps required for any environment. To migrate deployment environments with Helm, see [Migrate to Grafana Mimir using Helm]({{< relref "#migrate-to-grafana-mimir-using-helm" >}}).
 
-Grafana Mimir 2.0.0 includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
+> **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 
-The changes focus on making Grafana Mimir easier to run out of the box, including:
+To migrate a Jsonnet deployment of Cortex refer to [Migrate from Cortex](/docs/mimir/latest/migration-guides/migrate-from-cortex).
 
-- Removing configuration parameters that don't require tuning
-- Renaming some parameters so that they're more easily understood
-- Updating the default values of some existing parameters
+Grafana Mimir includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
+
+The changes make Grafana Mimir easier to run out of the box:
+
+- Removed configuration parameters that don't require tuning
+- Renamed some parameters so that they're more easily understood
+- Updated the default values of some existing parameters
 
 The `mimirtool` automates configuration conversion.
 It provides a simple migration by generating Mimir configuration from Cortex configuration.
 
-## Before you begin
+**Before you begin:**
 
 - Ensure that you are running either Cortex 1.10.X or Cortex 1.11.X.
 
-  If you are running an older version of Cortex, upgrade to [1.11.1](https://github.com/cortexproject/cortex/releases) before proceeding with the migration.
+  If you are running an older version of Cortex, upgrade to [Cortex 1.11.1](https://github.com/cortexproject/cortex/releases) before proceeding with the migration.
 
 - Ensure you have installed Cortex alerting and recording rules as well as Cortex dashboards.
 
-  The monitoring mixin has both alerting and recording rules to install in either Prometheus or Cortex as well as dashboards to install in Grafana.
+  Using the monitoring mixin, you need to install both alerting and recording rules in either Prometheus or Cortex. You also need to install dashboards in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
-  To upload rules to the ruler using mimirtool, refer to [mimirtool rules](/docs/mimir/v2.5.x/operators-guide/tools/mimirtool/#rules).
+  To upload rules to the ruler using mimirtool, refer to [mimirtool rules](/docs/mimir/latest/operators-guide/tools/mimirtool/#rules).
   To import the dashboards into Grafana, refer to [Import dashboard](/docs/grafana/latest/dashboards/export-import/#import-dashboard).
 
 ## Notable changes
 
-> **Note:** For full list of changes, refer to the project [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
+> **Note:** For the full list of changes, refer to Mimir’s [CHANGELOG](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
 
 - The Grafana Mimir HTTP server defaults to listening on port 8080; Cortex defaults to listening on port 80.
   To maintain port 80 as the listening port, set `-server.http-listen-port=80`.
@@ -100,9 +104,9 @@ It provides a simple migration by generating Mimir configuration from Cortex con
     | `/<legacy-http-prefix>` | `/alertmanager`                    |
     | `/status`               | `/multitenant_alertmanager/status` |
 
-## Generating configuration for Grafana Mimir
+## Generate the configuration for Grafana Mimir
 
-[`mimirtool`](/docs/mimir/v2.5.x/operators-guide/tools/mimirtool/) provides a command for converting Cortex configuration to Mimir configuration that you can use to update both flags and configuration files.
+The [`mimirtool config convert`](/docs/mimir/latest/operators-guide/tools/mimirtool/#convert) command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
 
 ### Install mimirtool
 
@@ -117,70 +121,13 @@ chmod +x mimirtool
 
 ### Use mimirtool
 
-The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir 2.3 configuration files.
+The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir configuration files.
 It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
 If you have explicitly set configuration parameters to a value matching the Cortex default, by default, `mimirtool config convert` doesn't update the value.
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
-Refer to [convert](/docs/mimir/v2.5.x/operators-guide/tools/mimirtool/#convert) for more information on using `mimirtool` for configuration conversion.
+Refer to [convert](/docs/mimir/latest/operators-guide/tools/mimirtool/#convert) for more information on using `mimirtool` for configuration conversion.
 
-## Migrating to Grafana Mimir using Jsonnet
-
-Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
-
-### Migrate to Grafana Mimir video
-
-The following video shows you how to migrate to Grafana Mimir using Jsonnet.
-
-{{< vimeo 691929138 >}}
-
-<br/>
-
-### Migrate to Grafana Mimir instructions
-
-The following instructions describe how to migrate to Grafana Mimir using Jsonnet.
-
-To install the updated libraries using `jsonnet-bundler`, run the following commands:
-
-```bash
-jb install github.com/grafana/mimir/operations/mimir@main
-jb install github.com/grafana/mimir/operations/mimir-mixin@main
-```
-
-**To deploy the updated Jsonnet:**
-
-1. Install the updated monitoring mixin.
-
-   a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
-
-   > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/requirements/#additional-resources-metrics).
-
-   b. Install the recording and alerting rules into the ruler or a Prometheus server.
-
-1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
-   For example:
-   ```jsonnet
-   import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet'
-   ```
-1. Remove the `cortex_` prefix from any member keys of the `<MIMIR>._config` object.
-   For example, `cortex_compactor_disk_data_size` becomes `compactor_disk_data_size`.
-1. If you are using the Cortex defaults, set the server HTTP port to 80.
-   The new Mimir default is 8080.
-   For example:
-   ```jsonnet
-   (import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet') {
-     _config+: {
-       server_http.port: 80,
-     },
-   }
-   ```
-1. For each component, use `mimirtool` to update the configured arguments.
-   To extract the flags for each component, refer to [Extracting flags from Jsonnet](/docs/mimir/v2.5.x/operators-guide/tools/mimirtool/#extracting-flags-from-jsonnet).
-1. Apply the updated Jsonnet
-
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/dashboards/).
-
-## Migrating to Grafana Mimir using Helm
+## Migrate to Grafana Mimir using Helm
 
 You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.1.0) from the Cortex Helm chart
 (`cortex-helm/cortex` v1.7.0).
