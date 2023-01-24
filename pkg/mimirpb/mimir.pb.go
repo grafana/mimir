@@ -765,6 +765,11 @@ func (*Histogram) XXX_OneofWrappers() []interface{} {
 	}
 }
 
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
 type BucketSpan struct {
 	Offset int32  `protobuf:"zigzag32,1,opt,name=offset,proto3" json:"offset,omitempty"`
 	Length uint32 `protobuf:"varint,2,opt,name=length,proto3" json:"length,omitempty"`
