@@ -49,7 +49,7 @@ type RingConfig struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
 	// Use common config shared with other components' ring config.
-	util.CommonRingConfig `yaml:",inline"`
+	Common util.CommonRingConfig `yaml:",inline"`
 
 	// Ring stability (used to decrease token reshuffling on scale-up)
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -64,7 +64,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.Enabled, flagNamePrefix+"enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
 
-	c.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	c.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Ring stability flags.
 	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")
@@ -73,18 +73,18 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 // toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(c.Common.InstanceAddr, c.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(c.InstancePort, c.ListenPort)
+	instancePort := ring.GetInstancePort(c.Common.InstancePort, c.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                              c.InstanceID,
+		ID:                              c.Common.InstanceID,
 		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:                 c.HeartbeatPeriod,
-		HeartbeatTimeout:                c.HeartbeatTimeout,
+		HeartbeatPeriod:                 c.Common.HeartbeatPeriod,
+		HeartbeatTimeout:                c.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: true,
@@ -92,10 +92,12 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 }
 
 func (c *RingConfig) toRingConfig() ring.Config {
-	cfg := c.CommonRingConfig.ToRingConfig()
-	cfg.ReplicationFactor = 1
-	cfg.SubringCacheDisabled = true
-	return cfg
+	rc := c.Common.ToRingConfig()
+
+	rc.ReplicationFactor = 1
+	rc.SubringCacheDisabled = true
+
+	return rc
 }
 
 // Validate the Config.
@@ -128,7 +130,7 @@ type overridesExporterRing struct {
 func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*overridesExporterRing, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(
-		config.KVStore,
+		config.Common.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(reg, "overrides-exporter-lifecycler"),
 		logger,
@@ -139,7 +141,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.HeartbeatTimeout, delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.Common.HeartbeatTimeout, delegate, logger)
 
 	lifecyclerConfig, err := config.toBasicLifecyclerConfig(logger)
 	if err != nil {

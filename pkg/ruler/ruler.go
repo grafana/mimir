@@ -284,7 +284,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 	}
 
 	ringStore, err := kv.NewClient(
-		cfg.Ring.KVStore,
+		cfg.Ring.Common.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "ruler"),
 		logger,
@@ -311,7 +311,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, r.cfg.Ring.NumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, r.logger)
-	delegate = ring.NewAutoForgetDelegate(r.cfg.Ring.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, r.logger)
+	delegate = ring.NewAutoForgetDelegate(r.cfg.Ring.Common.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, r.logger)
 
 	rulerRingName := "ruler"
 	r.lifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, rulerRingName, RulerRingKey, ringStore, delegate, r.logger, prometheus.WrapRegistererWithPrefix("cortex_", r.registry))

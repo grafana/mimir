@@ -27,26 +27,26 @@ const (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.CommonRingConfig `yaml:",inline"`
+	Common util.CommonRingConfig `yaml:",inline"`
 }
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.CommonRingConfig.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
+	cfg.Common.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+	instancePort := ring.GetInstancePort(cfg.Common.InstancePort, cfg.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                              cfg.InstanceID,
+		ID:                              cfg.Common.InstanceID,
 		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
-		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		HeartbeatPeriod:                 cfg.Common.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: false,
@@ -54,7 +54,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 }
 
 func (cfg *RingConfig) toRingConfig() ring.Config {
-	c := cfg.CommonRingConfig.ToRingConfig()
+	c := cfg.Common.ToRingConfig()
 	c.ReplicationFactor = 1
 	return c
 }

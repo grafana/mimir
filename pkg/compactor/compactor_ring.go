@@ -28,7 +28,7 @@ const (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.CommonRingConfig `yaml:",inline"`
+	Common util.CommonRingConfig `yaml:",inline"`
 
 	// Wait ring stability.
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -44,7 +44,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const flagNamePrefix = "compactor.ring."
 	const kvStorePrefix = "collectors/"
 	const componentPlural = "compactors"
-	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Wait stability flags.
 	f.DurationVar(&cfg.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup. 0 to disable.")
@@ -55,18 +55,18 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+	instancePort := ring.GetInstancePort(cfg.Common.InstancePort, cfg.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                              cfg.InstanceID,
+		ID:                              cfg.Common.InstanceID,
 		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
-		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		HeartbeatPeriod:                 cfg.Common.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod:             cfg.ObservePeriod,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: false,
@@ -74,7 +74,8 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 }
 
 func (cfg *RingConfig) toRingConfig() ring.Config {
-	c := cfg.CommonRingConfig.ToRingConfig()
-	c.ReplicationFactor = 1
-	return c
+	rc := cfg.Common.ToRingConfig()
+	rc.ReplicationFactor = 1
+
+	return rc
 }

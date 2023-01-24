@@ -45,7 +45,7 @@ var SyncRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.JOINING}, fun
 // to the user.
 type RingConfig struct {
 	// Common ring config used across components
-	util.CommonRingConfig `yaml:",inline"`
+	Common util.CommonRingConfig `yaml:",inline"`
 
 	// Configuration specific to alertmanager rings
 	ReplicationFactor    int    `yaml:"replication_factor" category:"advanced"`
@@ -63,7 +63,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const kvStorePrefix = "alertmanagers/"
 	const componentPlural = "alertmanagers"
 
-	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Ring flags
 	f.IntVar(&cfg.ReplicationFactor, flagNamePrefix+"replication-factor", 3, "The replication factor to use when sharding the alertmanager.")
@@ -76,18 +76,18 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // ToLifecyclerConfig returns a LifecyclerConfig based on the alertmanager
 // ring config.
 func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+	instancePort := ring.GetInstancePort(cfg.Common.InstancePort, cfg.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                  cfg.InstanceID,
+		ID:                  cfg.Common.InstanceID,
 		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:     cfg.HeartbeatPeriod,
-		HeartbeatTimeout:    cfg.HeartbeatTimeout,
+		HeartbeatPeriod:     cfg.Common.HeartbeatPeriod,
+		HeartbeatTimeout:    cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod: 0,
 		Zone:                cfg.InstanceZone,
 		NumTokens:           RingNumTokens,
@@ -95,8 +95,9 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 }
 
 func (cfg *RingConfig) toRingConfig() ring.Config {
-	c := cfg.CommonRingConfig.ToRingConfig()
-	c.ReplicationFactor = cfg.ReplicationFactor
-	c.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
-	return c
+	rc := cfg.Common.ToRingConfig()
+	rc.ReplicationFactor = cfg.ReplicationFactor
+	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
+
+	return rc
 }

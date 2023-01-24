@@ -33,7 +33,7 @@ var RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceS
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	util.CommonRingConfig `yaml:",inline"`
+	Common util.CommonRingConfig `yaml:",inline"`
 
 	NumTokens int `yaml:"num_tokens" category:"advanced"`
 
@@ -46,7 +46,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const flagNamePrefix = "ruler.ring."
 	const kvStorePrefix = "rulers/"
 	const componentPlural = "rulers"
-	cfg.CommonRingConfig.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	f.IntVar(&cfg.NumTokens, flagNamePrefix+"num-tokens", 128, "Number of tokens for each ruler.")
 }
@@ -54,26 +54,27 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // ToLifecyclerConfig returns a LifecyclerConfig based on the ruler
 // ring config.
 func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+	instancePort := ring.GetInstancePort(cfg.Common.InstancePort, cfg.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                  cfg.InstanceID,
+		ID:                  cfg.Common.InstanceID,
 		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:     cfg.HeartbeatPeriod,
-		HeartbeatTimeout:    cfg.HeartbeatTimeout,
+		HeartbeatPeriod:     cfg.Common.HeartbeatPeriod,
+		HeartbeatTimeout:    cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod: 0,
 		NumTokens:           cfg.NumTokens,
 	}, nil
 }
 
 func (cfg *RingConfig) toRingConfig() ring.Config {
-	c := cfg.CommonRingConfig.ToRingConfig()
-	c.SubringCacheDisabled = true
-	c.ReplicationFactor = 1
-	return c
+	rc := cfg.Common.ToRingConfig()
+	rc.SubringCacheDisabled = true
+	rc.ReplicationFactor = 1
+
+	return rc
 }
