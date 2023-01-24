@@ -51,7 +51,7 @@ type RingConfig struct {
 	// Use common config shared with other components' ring config.
 	Common util.CommonRingConfig `yaml:",inline"`
 
-	// Ring stability (used to decrease token reshuffling on scale-up)
+	// Ring stability (used to decrease token reshuffling on scale-up).
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
 	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
 }

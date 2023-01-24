@@ -319,15 +319,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 		return errors.Wrap(err, "failed to initialize ruler's lifecycler")
 	}
 
-	r.ring, err = ring.NewWithStoreClientAndStrategy(
-		r.cfg.Ring.toRingConfig(),
-		rulerRingName,
-		RulerRingKey,
-		ringStore,
-		ring.NewIgnoreUnhealthyInstancesReplicationStrategy(),
-		prometheus.WrapRegistererWithPrefix("cortex_", r.registry),
-		r.logger,
-	)
+	r.ring, err = ring.NewWithStoreClientAndStrategy(r.cfg.Ring.toRingConfig(), rulerRingName, RulerRingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", r.registry), r.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize ruler's ring")
 	}

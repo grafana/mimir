@@ -84,8 +84,8 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 
 	cfg.ExternalURL = externalURL
 	cfg.DataDir = tempDir
-	cfg.ShardingRing.InstanceID = "test"
-	cfg.ShardingRing.InstanceAddr = "127.0.0.1"
+	cfg.ShardingRing.Common.InstanceID = "test"
+	cfg.ShardingRing.Common.InstanceAddr = "127.0.0.1"
 	cfg.PollInterval = time.Minute
 	cfg.ShardingRing.ReplicationFactor = 1
 	cfg.Persister = PersisterConfig{Interval: time.Hour}
@@ -106,7 +106,7 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 	// The mock client pool allows the distributor to talk to the instance
 	// without requiring a gRPC server to be running.
 	clientPool := newPassthroughAlertmanagerClientPool()
-	clientPool.setServer(cfg.ShardingRing.InstanceAddr+":0", am)
+	clientPool.setServer(cfg.ShardingRing.Common.InstanceAddr+":0", am)
 	am.alertmanagerClientsPool = clientPool
 	am.distributor.alertmanagerClientsPool = clientPool
 
@@ -770,8 +770,8 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		registries.AddUserRegistry(instanceID, reg)
 
 		cfg.ShardingRing.ReplicationFactor = 2
-		cfg.ShardingRing.InstanceID = instanceID
-		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
+		cfg.ShardingRing.Common.InstanceID = instanceID
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
@@ -841,8 +841,8 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		cfg := mockAlertmanagerConfig(t)
 
 		cfg.ShardingRing.ReplicationFactor = 1
-		cfg.ShardingRing.InstanceID = fmt.Sprintf("instance-%d", i)
-		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
+		cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("instance-%d", i)
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
 
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
@@ -1215,7 +1215,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 			if tt.existing {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(amConfig.ShardingRing.InstanceID, amConfig.ShardingRing.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now())
+					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now())
 					return ringDesc, true, nil
 				}))
 			}
@@ -1318,8 +1318,8 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 
 				amConfig := mockAlertmanagerConfig(t)
 				amConfig.ShardingRing.ReplicationFactor = tt.replicationFactor
-				amConfig.ShardingRing.InstanceID = instanceID
-				amConfig.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				amConfig.ShardingRing.Common.InstanceID = instanceID
+				amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 				// Do not check the ring topology changes or poll in an interval in this test (we explicitly sync alertmanagers).
 				amConfig.PollInterval = time.Hour
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
@@ -1523,8 +1523,8 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 	const heartbeatTimeout = time.Minute
 	ctx := context.Background()
 	amConfig := mockAlertmanagerConfig(t)
-	amConfig.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
-	amConfig.ShardingRing.HeartbeatTimeout = heartbeatTimeout
+	amConfig.ShardingRing.Common.HeartbeatPeriod = 100 * time.Millisecond
+	amConfig.ShardingRing.Common.HeartbeatTimeout = heartbeatTimeout
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1603,8 +1603,8 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 
 		amConfig := mockAlertmanagerConfig(t)
 		amConfig.ShardingRing.ReplicationFactor = 3
-		amConfig.ShardingRing.InstanceID = instanceID
-		amConfig.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+		amConfig.ShardingRing.Common.InstanceID = instanceID
+		amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 
 		// Do not check the ring topology changes or poll in an interval in this test (we explicitly sync alertmanagers).
 		amConfig.PollInterval = time.Hour
@@ -1709,8 +1709,8 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				amConfig := mockAlertmanagerConfig(t)
 				amConfig.ExternalURL = externalURL
 				amConfig.ShardingRing.ReplicationFactor = tt.replicationFactor
-				amConfig.ShardingRing.InstanceID = instanceID
-				amConfig.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				amConfig.ShardingRing.Common.InstanceID = instanceID
+				amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 
 				// Do not check the ring topology changes or poll in an interval in this test (we explicitly sync alertmanagers).
 				amConfig.PollInterval = time.Hour
@@ -1721,7 +1721,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
-				clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)
+				clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
 				am.alertmanagerClientsPool = clientPool
 
 				require.NoError(t, services.StartAndAwaitRunning(ctx, am))
@@ -1888,8 +1888,8 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				amConfig := mockAlertmanagerConfig(t)
 				amConfig.ExternalURL = externalURL
 				amConfig.ShardingRing.ReplicationFactor = tt.replicationFactor
-				amConfig.ShardingRing.InstanceID = instanceID
-				amConfig.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				amConfig.ShardingRing.Common.InstanceID = instanceID
+				amConfig.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 
 				// Do not check the ring topology changes or poll in an interval in this test (we explicitly sync alertmanagers).
 				amConfig.PollInterval = time.Hour
@@ -1899,7 +1899,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 
-				clientPool.setServer(amConfig.ShardingRing.InstanceAddr+":0", am)
+				clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
 				am.alertmanagerClientsPool = clientPool
 
 				require.NoError(t, services.StartAndAwaitRunning(ctx, am))

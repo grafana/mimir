@@ -96,7 +96,7 @@ func TestMimir(t *testing.T) {
 		},
 		Ruler: ruler.Config{
 			Ring: ruler.RingConfig{
-				CommonRingConfig: util.CommonRingConfig{
+				Common: util.CommonRingConfig{
 					KVStore: kv.Config{
 						Store: "memberlist",
 					},
@@ -123,7 +123,7 @@ func TestMimir(t *testing.T) {
 				return v
 			}(),
 			ShardingRing: alertmanager.RingConfig{
-				CommonRingConfig: util.CommonRingConfig{
+				Common: util.CommonRingConfig{
 					KVStore:                kv.Config{Store: "memberlist"},
 					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 				},
@@ -142,7 +142,7 @@ func TestMimir(t *testing.T) {
 		},
 		Distributor: distributor.Config{
 			DistributorRing: distributor.RingConfig{
-				CommonRingConfig: util.CommonRingConfig{
+				Common: util.CommonRingConfig{
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},

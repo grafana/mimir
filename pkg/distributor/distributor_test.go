@@ -1823,7 +1823,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			var clientConfig client.Config
 			limits := validation.Limits{}
 			flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
-			distributorCfg.DistributorRing.KVStore.Store = "inmemory"
+			distributorCfg.DistributorRing.Common.KVStore.Store = "inmemory"
 
 			limits.IngestionRate = float64(rate.Inf) // Unlimited.
 			testData.prepareConfig(&limits)
@@ -3570,10 +3570,10 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		flagext.DefaultValues(&distributorCfg, &clientConfig)
 
 		distributorCfg.IngesterClientFactory = factory
-		distributorCfg.DistributorRing.HeartbeatPeriod = 100 * time.Millisecond
-		distributorCfg.DistributorRing.InstanceID = strconv.Itoa(i)
-		distributorCfg.DistributorRing.KVStore.Mock = kvStore
-		distributorCfg.DistributorRing.InstanceAddr = "127.0.0.1"
+		distributorCfg.DistributorRing.Common.HeartbeatPeriod = 100 * time.Millisecond
+		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
+		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
+		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
 		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
 		distributorCfg.InstanceLimits.MaxInflightPushRequests = cfg.maxInflightRequests
 		distributorCfg.InstanceLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
