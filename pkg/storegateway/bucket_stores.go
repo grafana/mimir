@@ -8,7 +8,6 @@ package storegateway
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,7 +23,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -463,8 +461,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
-		newChunksLimiterFactory(u.limits, userID),
-		newSeriesLimiterFactory(u.limits, userID), // No series limiter.
+		NewChunksLimiterFactory(uint64(u.limits.MaxChunksPerQuery(userID))),
+		NewSeriesLimiterFactory(uint64(u.limits.MaxFetchedSeriesPerQuery(userID))),
 		u.partitioner,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
@@ -507,7 +505,7 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 		err := u.closeBucketStore(userID)
 		switch {
 		case errors.Is(err, errBucketStoreNotFound):
-			// This is OK, nothing was closed.
+			// This is OK, nothing was closed.Ï
 		case err == nil:
 			level.Info(u.logger).Log("msg", "closed bucket store for user", "user", userID)
 		default:
@@ -559,37 +557,4 @@ type spanSeriesServer struct {
 
 func (s spanSeriesServer) Context() context.Context {
 	return s.ctx
-}
-
-type limiterWithErrorStatusCode struct {
-	limiter *Limiter
-}
-
-func (c *limiterWithErrorStatusCode) Reserve(num uint64) error {
-	err := c.limiter.Reserve(num)
-	if err != nil {
-		return httpgrpc.Errorf(http.StatusUnprocessableEntity, err.Error())
-	}
-
-	return nil
-}
-
-func newChunksLimiterFactory(limits *validation.Overrides, userID string) ChunksLimiterFactory {
-	return func(failedCounter prometheus.Counter) ChunksLimiter {
-		// Since limit overrides could be live reloaded, we have to get the current user's limit
-		// each time a new limiter is instantiated.
-		return &limiterWithErrorStatusCode{
-			limiter: NewLimiter(uint64(limits.MaxChunksPerQuery(userID)), failedCounter),
-		}
-	}
-}
-
-func newSeriesLimiterFactory(limits *validation.Overrides, userID string) SeriesLimiterFactory {
-	return func(failedCounter prometheus.Counter) SeriesLimiter {
-		// Since limit overrides could be live reloaded, we have to get the current user's limit
-		// each time a new limiter is instantiated.
-		return &limiterWithErrorStatusCode{
-			limiter: NewLimiter(uint64(limits.MaxFetchedSeriesPerQuery(userID)), failedCounter),
-		}
-	}
 }

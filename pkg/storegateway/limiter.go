@@ -6,10 +6,11 @@
 package storegateway
 
 import (
+	"net/http"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 )
 
@@ -58,7 +59,7 @@ func (l *Limiter) Reserve(num uint64) error {
 		// We need to protect from the counter being incremented twice due to concurrency
 		// while calling Reserve().
 		l.failedOnce.Do(l.failedCounter.Inc)
-		return errors.Errorf("limit %v exceeded", l.limit)
+		return httpgrpc.Errorf(http.StatusUnprocessableEntity, "limit %v exceeded", l.limit)
 	}
 	return nil
 }
