@@ -17,6 +17,7 @@
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
 * [ENHANCEMENT] Query-frontend: track `cortex_frontend_query_response_codec_duration_seconds` and `cortex_frontend_query_response_codec_payload_bytes` metrics to measure the time taken and bytes read / written while encoding and decoding query result payloads. #4110
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 * [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 * [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
