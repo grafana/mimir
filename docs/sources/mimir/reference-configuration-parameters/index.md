@@ -240,6 +240,7 @@ usage_stats:
 
 overrides_exporter:
   ring:
+    # The key-value store used to share the hash ring across multiple instances.
     kvstore:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
       # inmemory, memberlist, multi.
@@ -638,6 +639,7 @@ ha_tracker:
 [remote_timeout: <duration> | default = 2s]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1462,6 +1464,7 @@ alertmanager_client:
 [resend_delay: <duration> | default = 1m]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1652,6 +1655,7 @@ The `alertmanager` block configures the alertmanager.
 [max_recv_msg_size: <int> | default = 104857600]
 
 sharding_ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3433,6 +3437,7 @@ The `compactor` block configures the compactor component.
 [disabled_tenants: <string> | default = ""]
 
 sharding_ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.

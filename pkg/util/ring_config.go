@@ -20,7 +20,7 @@ import (
 // for various coordination tasks such as sharding or service discovery.
 type CommonRingConfig struct {
 	// KV store details
-	KVStore          kv.Config     `yaml:"kvstore"`
+	KVStore          kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances."`
 	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
 	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 
