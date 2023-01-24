@@ -38,7 +38,7 @@ spec:
       containers:
         - name: smoke-test
           image: "{{ .Values.smoke_test.image.repository }}:{{ .Values.smoke_test.image.tag }}"
-          imagePullPolicy: {{ .Values.smoke_test.pullPolicy }}
+          imagePullPolicy: {{ .Values.smoke_test.image.pullPolicy }}
           args:
             - "-tests.smoke-test"
             - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
