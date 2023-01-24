@@ -461,8 +461,12 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
-		NewChunksLimiterFactory(uint64(u.limits.MaxChunksPerQuery(userID))),
-		NewSeriesLimiterFactory(uint64(u.limits.MaxFetchedSeriesPerQuery(userID))),
+		NewChunksLimiterFactory(func() uint64 {
+			return uint64(u.limits.MaxChunksPerQuery(userID))
+		}),
+		NewSeriesLimiterFactory(func() uint64 {
+			return uint64(u.limits.MaxFetchedSeriesPerQuery(userID))
+		}),
 		u.partitioner,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
@@ -505,7 +509,7 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 		err := u.closeBucketStore(userID)
 		switch {
 		case errors.Is(err, errBucketStoreNotFound):
-			// This is OK, nothing was closed.Ï
+			// This is OK, nothing was closed.
 		case err == nil:
 			level.Info(u.logger).Log("msg", "closed bucket store for user", "user", userID)
 		default:

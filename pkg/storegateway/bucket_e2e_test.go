@@ -124,8 +124,8 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		metricsRegistry:      prometheus.NewRegistry(),
 		tempDir:              t.TempDir(),
 		manyParts:            false,
-		seriesLimiterFactory: NewSeriesLimiterFactory(0),
-		chunksLimiterFactory: NewChunksLimiterFactory(0),
+		seriesLimiterFactory: newSeriesLimiterFactory(0),
+		chunksLimiterFactory: newChunksLimiterFactory(0),
 		indexCache:           noopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
@@ -615,8 +615,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 
 			prepConfig := defaultPrepareStoreConfig(t)
-			prepConfig.chunksLimiterFactory = NewChunksLimiterFactory(testData.maxChunksLimit)
-			prepConfig.seriesLimiterFactory = NewSeriesLimiterFactory(testData.maxSeriesLimit)
+			prepConfig.chunksLimiterFactory = newChunksLimiterFactory(testData.maxChunksLimit)
+			prepConfig.seriesLimiterFactory = newSeriesLimiterFactory(testData.maxSeriesLimit)
 
 			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
 			assert.NoError(t, s.store.SyncBlocks(ctx))
