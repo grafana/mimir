@@ -392,8 +392,8 @@ func (r *request) do() {
 	err := r.buildKafkaMessages()
 	if err != nil {
 		r.errors.WithLabelValues("failed").Inc()
-
 		r.handleError(ctx, http.StatusInternalServerError, err)
+		return
 	}
 
 	r.requests.Inc()
@@ -421,6 +421,7 @@ func (r *request) buildKafkaMessages() error {
 		if err != nil {
 			return errors.Wrap(err, "failed to marshal time series for submitting to Kafka")
 		}
+		r.messages[i].Value = protoBuf.Bytes()
 		r.messages[i].Key, err = util_kafka.ComposeKafkaKey(r.messages[i].Key, []byte(r.user), t.Labels, r.rules)
 		if err != nil {
 			return errors.Wrap(err, "failed to compose kafka key")
