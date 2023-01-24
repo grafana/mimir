@@ -43,15 +43,15 @@ func checkErrorStatusCode(t *testing.T, err error) {
 	assert.Equal(t, uint32(http.StatusUnprocessableEntity), uint32(st.Code()))
 }
 
-// newChunksLimiterFactory makes a new ChunksLimiterFactory with a static limit.
-func newChunksLimiterFactory(limit uint64) ChunksLimiterFactory {
+// newStaticChunksLimiterFactory makes a new ChunksLimiterFactory with a static limit.
+func newStaticChunksLimiterFactory(limit uint64) ChunksLimiterFactory {
 	return func(failedCounter prometheus.Counter) ChunksLimiter {
 		return NewLimiter(limit, failedCounter)
 	}
 }
 
-// newSeriesLimiterFactory makes a new ChunksLimiterFactory with a static limit.
-func newSeriesLimiterFactory(limit uint64) SeriesLimiterFactory {
+// newStaticSeriesLimiterFactory makes a new ChunksLimiterFactory with a static limit.
+func newStaticSeriesLimiterFactory(limit uint64) SeriesLimiterFactory {
 	return func(failedCounter prometheus.Counter) SeriesLimiter {
 		return NewLimiter(limit, failedCounter)
 	}

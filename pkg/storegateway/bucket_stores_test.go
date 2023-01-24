@@ -322,7 +322,7 @@ func TestBucketStores_Series_ShouldCorrectlyQuerySeriesSpanningMultipleChunks(t 
 	}
 }
 
-func TestBucketStores_getOrCreateStore(t *testing.T) {
+func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	const (
