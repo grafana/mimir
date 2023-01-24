@@ -240,6 +240,11 @@ usage_stats:
 
 overrides_exporter:
   ring:
+    # (experimental) Enable the ring used by override-exporters to deduplicate
+    # exported limit metrics.
+    # CLI flag: -overrides-exporter.ring.enabled
+    [enabled: <boolean> | default = false]
+
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
       # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -304,11 +309,6 @@ overrides_exporter:
     # (advanced) IP address to advertise in the ring. Default is auto-detected.
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
-
-    # (experimental) Enable the ring used by override-exporters to deduplicate
-    # exported limit metrics.
-    # CLI flag: -overrides-exporter.ring.enabled
-    [enabled: <boolean> | default = false]
 
     # (advanced) Minimum time to wait for ring stability at startup, if set to
     # positive value. Set to 0 to disable.

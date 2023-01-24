@@ -45,11 +45,11 @@ var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
 // RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
-	// Use common config shared with other components' ring config.
-	util.CommonRingConfig `yaml:",inline"`
-
 	// Whether the ring is enabled for overrides-exporters.
 	Enabled bool `yaml:"enabled" category:"experimental"`
+
+	// Use common config shared with other components' ring config.
+	util.CommonRingConfig `yaml:",inline"`
 
 	// Ring stability (used to decrease token reshuffling on scale-up)
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
