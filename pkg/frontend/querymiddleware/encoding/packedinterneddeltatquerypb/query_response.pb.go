@@ -12,6 +12,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	strconv "strconv"
 	strings "strings"
 )
 
@@ -25,6 +26,54 @@ var _ = math.Inf
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+
+type MatrixSeriesValueSource_DataType int32
+
+const (
+	MatrixSeriesValueSource_FLOAT     MatrixSeriesValueSource_DataType = 0
+	MatrixSeriesValueSource_HISTOGRAM MatrixSeriesValueSource_DataType = 1
+)
+
+var MatrixSeriesValueSource_DataType_name = map[int32]string{
+	0: "FLOAT",
+	1: "HISTOGRAM",
+}
+
+var MatrixSeriesValueSource_DataType_value = map[string]int32{
+	"FLOAT":     0,
+	"HISTOGRAM": 1,
+}
+
+func (MatrixSeriesValueSource_DataType) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{6, 0}
+}
+
+type Histogram_ResetHint int32
+
+const (
+	Histogram_UNKNOWN Histogram_ResetHint = 0
+	Histogram_YES     Histogram_ResetHint = 1
+	Histogram_NO      Histogram_ResetHint = 2
+	Histogram_GAUGE   Histogram_ResetHint = 3
+)
+
+var Histogram_ResetHint_name = map[int32]string{
+	0: "UNKNOWN",
+	1: "YES",
+	2: "NO",
+	3: "GAUGE",
+}
+
+var Histogram_ResetHint_value = map[string]int32{
+	"UNKNOWN": 0,
+	"YES":     1,
+	"NO":      2,
+	"GAUGE":   3,
+}
+
+func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{7, 0}
+}
 
 type QueryResponse struct {
 	Status    string `protobuf:"bytes,1,opt,name=Status,proto3" json:"Status,omitempty"`
@@ -155,12 +204,11 @@ type VectorData struct {
 	// Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
 	// both smaller in encoded form and more efficient to decode (as the length is known upfront).
 	// See https://protobuf.dev/programming-guides/encoding/#packed.
-	// Each metric in Metrics has the corresponding value in Values for the corresponding timestamp in Timestamps.
-	//
-	// TODO: will this make it more difficult to support native histograms?
-	// (particularly for cases where some points have values and others are histograms)
-	Metrics []Metric  `protobuf:"bytes,3,rep,name=Metrics,proto3" json:"Metrics"`
-	Values  []float64 `protobuf:"fixed64,4,rep,packed,name=Values,proto3" json:"Values,omitempty"`
+	// Each metric in Metrics has the corresponding value in Values.
+	FloatMetrics     []Metric     `protobuf:"bytes,3,rep,name=FloatMetrics,proto3" json:"FloatMetrics"`
+	FloatValues      []float64    `protobuf:"fixed64,4,rep,packed,name=FloatValues,proto3" json:"FloatValues,omitempty"`
+	HistogramMetrics []Metric     `protobuf:"bytes,5,rep,name=HistogramMetrics,proto3" json:"HistogramMetrics"`
+	Histograms       []*Histogram `protobuf:"bytes,6,rep,name=Histograms,proto3" json:"Histograms,omitempty"`
 }
 
 func (m *VectorData) Reset()      { *m = VectorData{} }
@@ -209,16 +257,30 @@ func (m *VectorData) GetTimestamp() int64 {
 	return 0
 }
 
-func (m *VectorData) GetMetrics() []Metric {
+func (m *VectorData) GetFloatMetrics() []Metric {
 	if m != nil {
-		return m.Metrics
+		return m.FloatMetrics
 	}
 	return nil
 }
 
-func (m *VectorData) GetValues() []float64 {
+func (m *VectorData) GetFloatValues() []float64 {
 	if m != nil {
-		return m.Values
+		return m.FloatValues
+	}
+	return nil
+}
+
+func (m *VectorData) GetHistogramMetrics() []Metric {
+	if m != nil {
+		return m.HistogramMetrics
+	}
+	return nil
+}
+
+func (m *VectorData) GetHistograms() []*Histogram {
+	if m != nil {
+		return m.Histograms
 	}
 	return nil
 }
@@ -267,9 +329,9 @@ func (m *Metric) GetMetricSymbols() []uint64 {
 }
 
 type ScalarData struct {
-	Value float64 `protobuf:"fixed64,1,opt,name=Value,proto3" json:"Value,omitempty"`
 	// TODO: is there a better type to use here?
-	Timestamp int64 `protobuf:"varint,2,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`
+	Timestamp int64   `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`
+	Value     float64 `protobuf:"fixed64,2,opt,name=Value,proto3" json:"Value,omitempty"`
 }
 
 func (m *ScalarData) Reset()      { *m = ScalarData{} }
@@ -304,16 +366,16 @@ func (m *ScalarData) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ScalarData proto.InternalMessageInfo
 
-func (m *ScalarData) GetValue() float64 {
+func (m *ScalarData) GetTimestamp() int64 {
 	if m != nil {
-		return m.Value
+		return m.Timestamp
 	}
 	return 0
 }
 
-func (m *ScalarData) GetTimestamp() int64 {
+func (m *ScalarData) GetValue() float64 {
 	if m != nil {
-		return m.Timestamp
+		return m.Value
 	}
 	return 0
 }
@@ -381,17 +443,34 @@ type MatrixSeries struct {
 	// Why not use a map<...> here? We want to preserve the order of the labels.
 	// TODO: replace with Metric?
 	MetricSymbols []uint64 `protobuf:"varint,1,rep,packed,name=MetricSymbols,proto3" json:"MetricSymbols,omitempty"`
+	// First value: timestamp delta relative to MatrixData.BaseTimestamp.
+	// Subsequent values: delta-of-deltas
+	TimestampDeltas []int64 `protobuf:"varint,2,rep,packed,name=TimestampDeltas,proto3" json:"TimestampDeltas,omitempty"`
 	// Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
 	// both smaller in encoded form and more efficient to decode (as the length is known upfront).
 	// See https://protobuf.dev/programming-guides/encoding/#packed.
-	// Each value in Values is for the corresponding timestamp in Timestamps.
+	FloatValues []float64    `protobuf:"fixed64,3,rep,packed,name=FloatValues,proto3" json:"FloatValues,omitempty"`
+	Histograms  []*Histogram `protobuf:"bytes,4,rep,name=Histograms,proto3" json:"Histograms,omitempty"`
+	// If this series is entirely floats or entirely histograms (the most common scenario), this will not be populated.
+	// If this series is a mixture of floats and histograms, this provides run-length encoding information on which
+	// timestamps have which kind of value.
 	//
-	// TODO: will this make it more difficult to support native histograms?
-	// (particularly for cases where some points have values and others are histograms)
-	Values []float64 `protobuf:"fixed64,2,rep,packed,name=Values,proto3" json:"Values,omitempty"`
-	// First value: timestamp delta relative to MatrixData.BaseTimestamp.
-	// Subsequent values: delta-of-deltas
-	TimestampDeltas []int64 `protobuf:"varint,3,rep,packed,name=TimestampDeltas,proto3" json:"TimestampDeltas,omitempty"`
+	// For example, if a series has the following data:
+	//
+	//	t1: float1
+	//	t2: float2
+	//	t3: histogram1
+	//	t4: histogram2
+	//	t5: float3
+	//
+	// ...then the fields on this message will have these values:
+	//
+	//	FloatValues: [float1, float2, float3]
+	//	Histograms: [histogram1, histogram2]
+	//	ValueSources: [(FLOAT, 2), (HISTOGRAM, 2), (FLOAT, 1)]
+	//
+	// TODO: could we use packed encoding here by having a list of DataTypes and a list of counts? (Do mixed-type series happen often enough for us to care?)
+	ValueSources []*MatrixSeriesValueSource `protobuf:"bytes,5,rep,name=ValueSources,proto3" json:"ValueSources,omitempty"`
 }
 
 func (m *MatrixSeries) Reset()      { *m = MatrixSeries{} }
@@ -433,13 +512,6 @@ func (m *MatrixSeries) GetMetricSymbols() []uint64 {
 	return nil
 }
 
-func (m *MatrixSeries) GetValues() []float64 {
-	if m != nil {
-		return m.Values
-	}
-	return nil
-}
-
 func (m *MatrixSeries) GetTimestampDeltas() []int64 {
 	if m != nil {
 		return m.TimestampDeltas
@@ -447,52 +519,448 @@ func (m *MatrixSeries) GetTimestampDeltas() []int64 {
 	return nil
 }
 
+func (m *MatrixSeries) GetFloatValues() []float64 {
+	if m != nil {
+		return m.FloatValues
+	}
+	return nil
+}
+
+func (m *MatrixSeries) GetHistograms() []*Histogram {
+	if m != nil {
+		return m.Histograms
+	}
+	return nil
+}
+
+func (m *MatrixSeries) GetValueSources() []*MatrixSeriesValueSource {
+	if m != nil {
+		return m.ValueSources
+	}
+	return nil
+}
+
+type MatrixSeriesValueSource struct {
+	Type  MatrixSeriesValueSource_DataType `protobuf:"varint,1,opt,name=Type,proto3,enum=packedinterneddeltatquerypb.MatrixSeriesValueSource_DataType" json:"Type,omitempty"`
+	Count uint64                           `protobuf:"varint,2,opt,name=Count,proto3" json:"Count,omitempty"`
+}
+
+func (m *MatrixSeriesValueSource) Reset()      { *m = MatrixSeriesValueSource{} }
+func (*MatrixSeriesValueSource) ProtoMessage() {}
+func (*MatrixSeriesValueSource) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{6}
+}
+func (m *MatrixSeriesValueSource) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MatrixSeriesValueSource) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MatrixSeriesValueSource.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MatrixSeriesValueSource) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MatrixSeriesValueSource.Merge(m, src)
+}
+func (m *MatrixSeriesValueSource) XXX_Size() int {
+	return m.Size()
+}
+func (m *MatrixSeriesValueSource) XXX_DiscardUnknown() {
+	xxx_messageInfo_MatrixSeriesValueSource.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MatrixSeriesValueSource proto.InternalMessageInfo
+
+func (m *MatrixSeriesValueSource) GetType() MatrixSeriesValueSource_DataType {
+	if m != nil {
+		return m.Type
+	}
+	return MatrixSeriesValueSource_FLOAT
+}
+
+func (m *MatrixSeriesValueSource) GetCount() uint64 {
+	if m != nil {
+		return m.Count
+	}
+	return 0
+}
+
+// This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+type Histogram struct {
+	// Types that are valid to be assigned to Count:
+	//
+	//	*Histogram_CountInt
+	//	*Histogram_CountFloat
+	Count isHistogram_Count `protobuf_oneof:"count"`
+	Sum   float64           `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
+	// The schema defines the bucket schema. Currently, valid numbers
+	// are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+	// is a bucket boundary in each case, and then each power of two is
+	// divided into 2^n logarithmic buckets. Or in other words, each
+	// bucket boundary is the previous boundary times 2^(2^-n). In the
+	// future, more bucket schemas may be added using numbers < -4 or >
+	// 8.
+	Schema        int32   `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
+	ZeroThreshold float64 `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
+	// Types that are valid to be assigned to ZeroCount:
+	//
+	//	*Histogram_ZeroCountInt
+	//	*Histogram_ZeroCountFloat
+	ZeroCount isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
+	// Negative Buckets.
+	NegativeSpans []*BucketSpan `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans,omitempty"`
+	// Use either "negative_deltas" or "negative_counts", the former for
+	// regular histograms with integer counts, the latter for float
+	// histograms.
+	NegativeDeltas []int64   `protobuf:"zigzag64,9,rep,packed,name=negative_deltas,json=negativeDeltas,proto3" json:"negative_deltas,omitempty"`
+	NegativeCounts []float64 `protobuf:"fixed64,10,rep,packed,name=negative_counts,json=negativeCounts,proto3" json:"negative_counts,omitempty"`
+	// Positive Buckets.
+	PositiveSpans []*BucketSpan `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans,omitempty"`
+	// Use either "positive_deltas" or "positive_counts", the former for
+	// regular histograms with integer counts, the latter for float
+	// histograms.
+	PositiveDeltas []int64             `protobuf:"zigzag64,12,rep,packed,name=positive_deltas,json=positiveDeltas,proto3" json:"positive_deltas,omitempty"`
+	PositiveCounts []float64           `protobuf:"fixed64,13,rep,packed,name=positive_counts,json=positiveCounts,proto3" json:"positive_counts,omitempty"`
+	ResetHint      Histogram_ResetHint `protobuf:"varint,14,opt,name=reset_hint,json=resetHint,proto3,enum=packedinterneddeltatquerypb.Histogram_ResetHint" json:"reset_hint,omitempty"`
+}
+
+func (m *Histogram) Reset()      { *m = Histogram{} }
+func (*Histogram) ProtoMessage() {}
+func (*Histogram) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{7}
+}
+func (m *Histogram) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Histogram) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Histogram.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Histogram) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Histogram.Merge(m, src)
+}
+func (m *Histogram) XXX_Size() int {
+	return m.Size()
+}
+func (m *Histogram) XXX_DiscardUnknown() {
+	xxx_messageInfo_Histogram.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Histogram proto.InternalMessageInfo
+
+type isHistogram_Count interface {
+	isHistogram_Count()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+type isHistogram_ZeroCount interface {
+	isHistogram_ZeroCount()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type Histogram_CountInt struct {
+	CountInt uint64 `protobuf:"varint,1,opt,name=count_int,json=countInt,proto3,oneof"`
+}
+type Histogram_CountFloat struct {
+	CountFloat float64 `protobuf:"fixed64,2,opt,name=count_float,json=countFloat,proto3,oneof"`
+}
+type Histogram_ZeroCountInt struct {
+	ZeroCountInt uint64 `protobuf:"varint,6,opt,name=zero_count_int,json=zeroCountInt,proto3,oneof"`
+}
+type Histogram_ZeroCountFloat struct {
+	ZeroCountFloat float64 `protobuf:"fixed64,7,opt,name=zero_count_float,json=zeroCountFloat,proto3,oneof"`
+}
+
+func (*Histogram_CountInt) isHistogram_Count()           {}
+func (*Histogram_CountFloat) isHistogram_Count()         {}
+func (*Histogram_ZeroCountInt) isHistogram_ZeroCount()   {}
+func (*Histogram_ZeroCountFloat) isHistogram_ZeroCount() {}
+
+func (m *Histogram) GetCount() isHistogram_Count {
+	if m != nil {
+		return m.Count
+	}
+	return nil
+}
+func (m *Histogram) GetZeroCount() isHistogram_ZeroCount {
+	if m != nil {
+		return m.ZeroCount
+	}
+	return nil
+}
+
+func (m *Histogram) GetCountInt() uint64 {
+	if x, ok := m.GetCount().(*Histogram_CountInt); ok {
+		return x.CountInt
+	}
+	return 0
+}
+
+func (m *Histogram) GetCountFloat() float64 {
+	if x, ok := m.GetCount().(*Histogram_CountFloat); ok {
+		return x.CountFloat
+	}
+	return 0
+}
+
+func (m *Histogram) GetSum() float64 {
+	if m != nil {
+		return m.Sum
+	}
+	return 0
+}
+
+func (m *Histogram) GetSchema() int32 {
+	if m != nil {
+		return m.Schema
+	}
+	return 0
+}
+
+func (m *Histogram) GetZeroThreshold() float64 {
+	if m != nil {
+		return m.ZeroThreshold
+	}
+	return 0
+}
+
+func (m *Histogram) GetZeroCountInt() uint64 {
+	if x, ok := m.GetZeroCount().(*Histogram_ZeroCountInt); ok {
+		return x.ZeroCountInt
+	}
+	return 0
+}
+
+func (m *Histogram) GetZeroCountFloat() float64 {
+	if x, ok := m.GetZeroCount().(*Histogram_ZeroCountFloat); ok {
+		return x.ZeroCountFloat
+	}
+	return 0
+}
+
+func (m *Histogram) GetNegativeSpans() []*BucketSpan {
+	if m != nil {
+		return m.NegativeSpans
+	}
+	return nil
+}
+
+func (m *Histogram) GetNegativeDeltas() []int64 {
+	if m != nil {
+		return m.NegativeDeltas
+	}
+	return nil
+}
+
+func (m *Histogram) GetNegativeCounts() []float64 {
+	if m != nil {
+		return m.NegativeCounts
+	}
+	return nil
+}
+
+func (m *Histogram) GetPositiveSpans() []*BucketSpan {
+	if m != nil {
+		return m.PositiveSpans
+	}
+	return nil
+}
+
+func (m *Histogram) GetPositiveDeltas() []int64 {
+	if m != nil {
+		return m.PositiveDeltas
+	}
+	return nil
+}
+
+func (m *Histogram) GetPositiveCounts() []float64 {
+	if m != nil {
+		return m.PositiveCounts
+	}
+	return nil
+}
+
+func (m *Histogram) GetResetHint() Histogram_ResetHint {
+	if m != nil {
+		return m.ResetHint
+	}
+	return Histogram_UNKNOWN
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*Histogram) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*Histogram_CountInt)(nil),
+		(*Histogram_CountFloat)(nil),
+		(*Histogram_ZeroCountInt)(nil),
+		(*Histogram_ZeroCountFloat)(nil),
+	}
+}
+
+type BucketSpan struct {
+	Offset int32  `protobuf:"zigzag32,1,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length uint32 `protobuf:"varint,2,opt,name=length,proto3" json:"length,omitempty"`
+}
+
+func (m *BucketSpan) Reset()      { *m = BucketSpan{} }
+func (*BucketSpan) ProtoMessage() {}
+func (*BucketSpan) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ab2c8ecc140befb, []int{8}
+}
+func (m *BucketSpan) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BucketSpan) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BucketSpan.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BucketSpan) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BucketSpan.Merge(m, src)
+}
+func (m *BucketSpan) XXX_Size() int {
+	return m.Size()
+}
+func (m *BucketSpan) XXX_DiscardUnknown() {
+	xxx_messageInfo_BucketSpan.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BucketSpan proto.InternalMessageInfo
+
+func (m *BucketSpan) GetOffset() int32 {
+	if m != nil {
+		return m.Offset
+	}
+	return 0
+}
+
+func (m *BucketSpan) GetLength() uint32 {
+	if m != nil {
+		return m.Length
+	}
+	return 0
+}
+
 func init() {
+	proto.RegisterEnum("packedinterneddeltatquerypb.MatrixSeriesValueSource_DataType", MatrixSeriesValueSource_DataType_name, MatrixSeriesValueSource_DataType_value)
+	proto.RegisterEnum("packedinterneddeltatquerypb.Histogram_ResetHint", Histogram_ResetHint_name, Histogram_ResetHint_value)
 	proto.RegisterType((*QueryResponse)(nil), "packedinterneddeltatquerypb.QueryResponse")
 	proto.RegisterType((*VectorData)(nil), "packedinterneddeltatquerypb.VectorData")
 	proto.RegisterType((*Metric)(nil), "packedinterneddeltatquerypb.Metric")
 	proto.RegisterType((*ScalarData)(nil), "packedinterneddeltatquerypb.ScalarData")
 	proto.RegisterType((*MatrixData)(nil), "packedinterneddeltatquerypb.MatrixData")
 	proto.RegisterType((*MatrixSeries)(nil), "packedinterneddeltatquerypb.MatrixSeries")
+	proto.RegisterType((*MatrixSeriesValueSource)(nil), "packedinterneddeltatquerypb.MatrixSeriesValueSource")
+	proto.RegisterType((*Histogram)(nil), "packedinterneddeltatquerypb.Histogram")
+	proto.RegisterType((*BucketSpan)(nil), "packedinterneddeltatquerypb.BucketSpan")
 }
 
 func init() { proto.RegisterFile("query_response.proto", fileDescriptor_8ab2c8ecc140befb) }
 
 var fileDescriptor_8ab2c8ecc140befb = []byte{
-	// 490 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0xc1, 0x6e, 0xd3, 0x40,
-	0x14, 0xf4, 0xc6, 0xae, 0xab, 0xbc, 0x12, 0x81, 0x56, 0x15, 0x5a, 0x15, 0xb4, 0x44, 0x06, 0x09,
-	0x23, 0x41, 0x2a, 0x05, 0x3e, 0x00, 0x4c, 0x11, 0x5c, 0x7a, 0xc0, 0xa9, 0x7a, 0x45, 0x6b, 0x67,
-	0x09, 0x16, 0x49, 0xd6, 0xac, 0xd7, 0x12, 0xb9, 0x21, 0xbe, 0x80, 0x0b, 0x9f, 0x80, 0xc4, 0x81,
-	0x0f, 0xe9, 0x31, 0xc7, 0x9e, 0x10, 0x71, 0x2e, 0x1c, 0xfb, 0x09, 0xc8, 0xbb, 0x36, 0x4e, 0x73,
-	0x88, 0x7c, 0xdb, 0x79, 0x6f, 0x66, 0x3c, 0x9e, 0xb5, 0xe1, 0xf0, 0x53, 0xce, 0xe5, 0xe2, 0x9d,
-	0xe4, 0x59, 0x2a, 0xe6, 0x19, 0x1f, 0xa4, 0x52, 0x28, 0x81, 0xef, 0xa4, 0x2c, 0xfe, 0xc8, 0xc7,
-	0xc9, 0x5c, 0x71, 0x39, 0xe7, 0xe3, 0x31, 0x9f, 0x2a, 0xa6, 0x34, 0x33, 0x8d, 0x8e, 0x9e, 0x4c,
-	0x12, 0xf5, 0x21, 0x8f, 0x06, 0xb1, 0x98, 0x1d, 0x4f, 0xc4, 0x44, 0x1c, 0x6b, 0x4d, 0x94, 0xbf,
-	0xd7, 0x48, 0x03, 0x7d, 0x32, 0x5e, 0xde, 0xaf, 0x0e, 0xf4, 0xde, 0x96, 0xd2, 0xb0, 0x7a, 0x06,
-	0xbe, 0x0d, 0xee, 0x48, 0x31, 0x95, 0x67, 0x04, 0xf5, 0x91, 0xdf, 0x0d, 0x2b, 0x84, 0xef, 0x42,
-	0xf7, 0x95, 0x94, 0x42, 0x9e, 0x2d, 0x52, 0x4e, 0x3a, 0x7a, 0xd5, 0x0c, 0xf0, 0x21, 0xec, 0x69,
-	0x40, 0x6c, 0xbd, 0x31, 0x00, 0xbf, 0x00, 0xf7, 0x9c, 0xc7, 0x4a, 0x48, 0xe2, 0xf4, 0x91, 0x7f,
-	0x30, 0x7c, 0x38, 0xd8, 0x11, 0x7d, 0x60, 0xa8, 0x27, 0x4c, 0xb1, 0x37, 0x56, 0x58, 0x09, 0x4b,
-	0x8b, 0x51, 0xcc, 0xa6, 0x4c, 0x92, 0xbd, 0x16, 0x16, 0x86, 0x5a, 0x5b, 0x18, 0x54, 0x5a, 0x9c,
-	0x32, 0x25, 0x93, 0xcf, 0xc4, 0x6d, 0x61, 0x61, 0xa8, 0xb5, 0x85, 0x41, 0x81, 0x0b, 0x4e, 0x39,
-	0xf1, 0x7e, 0x20, 0x80, 0x26, 0x26, 0x26, 0xb0, 0x3f, 0x5a, 0xcc, 0x22, 0x31, 0x2d, 0xcb, 0xb2,
-	0xfd, 0x6e, 0x58, 0xc3, 0xb2, 0xad, 0xb3, 0x64, 0xc6, 0x33, 0xc5, 0x66, 0xa9, 0x6e, 0xcb, 0x0e,
-	0x9b, 0x01, 0x7e, 0x09, 0xfb, 0xa7, 0x5c, 0xc9, 0x24, 0xce, 0x88, 0xdd, 0xb7, 0xfd, 0x83, 0xe1,
-	0xfd, 0xdd, 0x91, 0x34, 0x37, 0x70, 0x2e, 0x7e, 0xdf, 0xb3, 0xc2, 0x5a, 0x89, 0x8f, 0xc0, 0x3d,
-	0x67, 0xd3, 0x9c, 0x67, 0xc4, 0xe9, 0xdb, 0x3e, 0x0a, 0x3a, 0xb7, 0x50, 0x58, 0x4d, 0xbc, 0x21,
-	0xb8, 0x86, 0x86, 0x7d, 0xe8, 0x99, 0xd3, 0x66, 0x50, 0x47, 0x93, 0xaf, 0x2f, 0xbc, 0xe7, 0x00,
-	0x4d, 0x7d, 0xe5, 0x85, 0x6a, 0x2f, 0xfd, 0x15, 0xa0, 0xd0, 0x80, 0xdd, 0xaf, 0xe5, 0x7d, 0x47,
-	0x00, 0x4d, 0x7d, 0x3b, 0xda, 0x79, 0x00, 0xbd, 0x80, 0x65, 0x7c, 0xdb, 0xea, 0xfa, 0x10, 0xbf,
-	0x06, 0x77, 0xc4, 0x65, 0xc2, 0xeb, 0x92, 0x1e, 0xb5, 0xb8, 0x37, 0x23, 0xa8, 0xaa, 0xaa, 0xe4,
-	0xde, 0x57, 0x04, 0x37, 0x36, 0xd7, 0xed, 0x4b, 0xd9, 0x28, 0xb9, 0xb3, 0x5d, 0x32, 0x7e, 0x0c,
-	0x37, 0xff, 0x87, 0x3d, 0x29, 0xb3, 0x98, 0xa0, 0xb6, 0x26, 0x6d, 0xaf, 0x82, 0x67, 0xcb, 0x15,
-	0xb5, 0x2e, 0x57, 0xd4, 0xba, 0x5a, 0x51, 0xf4, 0xa5, 0xa0, 0xe8, 0x67, 0x41, 0xd1, 0x45, 0x41,
-	0xd1, 0xb2, 0xa0, 0xe8, 0x4f, 0x41, 0xd1, 0xdf, 0x82, 0x5a, 0x57, 0x05, 0x45, 0xdf, 0xd6, 0xd4,
-	0x5a, 0xae, 0xa9, 0x75, 0xb9, 0xa6, 0x56, 0xe4, 0xea, 0xdf, 0xf4, 0xe9, 0xbf, 0x00, 0x00, 0x00,
-	0xff, 0xff, 0xec, 0xe4, 0xb8, 0x6c, 0x0a, 0x04, 0x00, 0x00,
+	// 985 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x6f, 0x1b, 0xc5,
+	0x1b, 0xde, 0xf1, 0xae, 0x37, 0xd9, 0xd7, 0x76, 0xb2, 0x1d, 0x45, 0xbf, 0xdf, 0xaa, 0xc0, 0x62,
+	0x96, 0xd2, 0x9a, 0x0a, 0x5c, 0x14, 0x7a, 0x42, 0x20, 0x11, 0xb7, 0x49, 0x5c, 0x20, 0xb1, 0x3a,
+	0x76, 0x0a, 0x9c, 0xac, 0xb5, 0x3d, 0xb1, 0x57, 0xb5, 0x77, 0xcd, 0xce, 0x18, 0x11, 0x4e, 0x1c,
+	0x39, 0x72, 0xe1, 0x13, 0x70, 0xe1, 0x80, 0xfa, 0x39, 0x7a, 0xcc, 0x31, 0x27, 0x44, 0x9c, 0x0b,
+	0x12, 0x97, 0x7e, 0x04, 0x34, 0x33, 0xfb, 0xc7, 0x0e, 0x60, 0xb9, 0xbd, 0xed, 0xfb, 0xcc, 0xf3,
+	0x3e, 0xf3, 0xe4, 0x7d, 0x9f, 0x8c, 0x0c, 0x3b, 0xdf, 0xcc, 0x68, 0x7c, 0xd6, 0x8d, 0x29, 0x9b,
+	0x46, 0x21, 0xa3, 0xf5, 0x69, 0x1c, 0xf1, 0x08, 0xbf, 0x36, 0xf5, 0xfb, 0x4f, 0xe9, 0x20, 0x08,
+	0x39, 0x8d, 0x43, 0x3a, 0x18, 0xd0, 0x31, 0xf7, 0xb9, 0x64, 0x4e, 0x7b, 0x37, 0xdf, 0x1f, 0x06,
+	0x7c, 0x34, 0xeb, 0xd5, 0xfb, 0xd1, 0xe4, 0xde, 0x30, 0x1a, 0x46, 0xf7, 0x64, 0x4f, 0x6f, 0x76,
+	0x2a, 0x2b, 0x59, 0xc8, 0x2f, 0xa5, 0xe5, 0xfd, 0x56, 0x80, 0xca, 0x63, 0xd1, 0x4a, 0x92, 0x3b,
+	0xf0, 0xff, 0xc0, 0x6c, 0x73, 0x9f, 0xcf, 0x98, 0x83, 0xaa, 0xa8, 0x66, 0x91, 0xa4, 0xc2, 0xaf,
+	0x83, 0xb5, 0x1f, 0xc7, 0x51, 0xdc, 0x39, 0x9b, 0x52, 0xa7, 0x20, 0x8f, 0x72, 0x00, 0xef, 0x40,
+	0x51, 0x16, 0x8e, 0x2e, 0x4f, 0x54, 0x81, 0xf7, 0xc0, 0x7c, 0x42, 0xfb, 0x3c, 0x8a, 0x1d, 0xa3,
+	0x8a, 0x6a, 0xa5, 0xdd, 0x3b, 0xf5, 0x15, 0xd6, 0xeb, 0x8a, 0xfa, 0xd0, 0xe7, 0x7e, 0x53, 0x23,
+	0x49, 0xa3, 0x90, 0x68, 0xf7, 0xfd, 0xb1, 0x1f, 0x3b, 0xc5, 0x35, 0x24, 0x14, 0x35, 0x95, 0x50,
+	0x95, 0x90, 0x38, 0xf2, 0x79, 0x1c, 0x7c, 0xe7, 0x98, 0x6b, 0x48, 0x28, 0x6a, 0x2a, 0xa1, 0xaa,
+	0x86, 0x09, 0x86, 0x40, 0xbc, 0x8b, 0x02, 0x40, 0x6e, 0x13, 0x3b, 0xb0, 0xd1, 0x3e, 0x9b, 0xf4,
+	0xa2, 0xb1, 0x18, 0x96, 0x5e, 0xb3, 0x48, 0x5a, 0x8a, 0x69, 0x75, 0x82, 0x09, 0x65, 0xdc, 0x9f,
+	0x4c, 0xe5, 0xb4, 0x74, 0x92, 0x03, 0xf8, 0x08, 0xca, 0x07, 0xe3, 0xc8, 0xe7, 0x47, 0x94, 0xc7,
+	0x41, 0x9f, 0x39, 0x7a, 0x55, 0xaf, 0x95, 0x76, 0xdf, 0x5e, 0xed, 0x4b, 0x72, 0x1b, 0xc6, 0xf3,
+	0xdf, 0xdf, 0xd4, 0xc8, 0x52, 0x3b, 0xbe, 0x05, 0x25, 0x59, 0x3f, 0xf1, 0xc7, 0x33, 0xca, 0x1c,
+	0xa3, 0xaa, 0xd7, 0x50, 0xa3, 0x60, 0x23, 0xb2, 0x08, 0xe3, 0x13, 0xb0, 0x9b, 0x01, 0xe3, 0xd1,
+	0x30, 0xf6, 0x27, 0xe9, 0xc5, 0xc5, 0x97, 0xbd, 0xf8, 0x1f, 0x12, 0xf8, 0x00, 0x20, 0xc3, 0x98,
+	0x63, 0x4a, 0xc1, 0xdb, 0x2b, 0x05, 0x33, 0x3a, 0x59, 0xe8, 0xf4, 0x76, 0xc1, 0x54, 0x92, 0xb8,
+	0x06, 0x15, 0xf5, 0xb5, 0x38, 0x5b, 0x43, 0xfe, 0x41, 0xcb, 0x07, 0xde, 0xa7, 0x00, 0xf9, 0xc6,
+	0x97, 0x67, 0x8e, 0xae, 0xcf, 0x7c, 0x07, 0x8a, 0x72, 0x10, 0x72, 0x1b, 0x88, 0xa8, 0xc2, 0xfb,
+	0x19, 0x01, 0xe4, 0x1b, 0x5f, 0xb1, 0xd0, 0x5b, 0x50, 0x69, 0xf8, 0x8c, 0x5e, 0x5f, 0xea, 0x32,
+	0x88, 0x0f, 0xc1, 0x6c, 0xd3, 0x38, 0xa0, 0xe9, 0x4a, 0xdf, 0x5d, 0x23, 0x6a, 0xaa, 0x21, 0x99,
+	0x6f, 0xd2, 0xee, 0x3d, 0x2b, 0x40, 0x79, 0xf1, 0x78, 0xfd, 0xa1, 0xe0, 0xf7, 0x60, 0x3b, 0x33,
+	0xf4, 0x50, 0xdc, 0xc7, 0x9c, 0x42, 0x55, 0xaf, 0xe9, 0x92, 0x7b, 0xfd, 0xe8, 0x7a, 0x76, 0xf4,
+	0x7f, 0xcf, 0xce, 0xf2, 0x92, 0x8d, 0x57, 0x5d, 0x32, 0xfe, 0x0a, 0xca, 0x52, 0xb1, 0x1d, 0xcd,
+	0xe2, 0x3e, 0x4d, 0xf3, 0x77, 0x7f, 0xed, 0x29, 0x2d, 0x34, 0x93, 0x25, 0x25, 0xef, 0x19, 0x82,
+	0xff, 0xff, 0x07, 0x13, 0x3f, 0x06, 0x43, 0xbe, 0x5a, 0x22, 0x13, 0x5b, 0xbb, 0x9f, 0xbc, 0xca,
+	0x6d, 0x75, 0x11, 0x0f, 0x21, 0x42, 0x8c, 0xf4, 0xbd, 0x7b, 0x10, 0xcd, 0x42, 0x2e, 0x63, 0x60,
+	0x10, 0x55, 0x78, 0x77, 0x61, 0x33, 0xe5, 0x61, 0x0b, 0x8a, 0x07, 0x5f, 0xb4, 0xf6, 0x3a, 0xb6,
+	0x86, 0x2b, 0x60, 0x35, 0x1f, 0xb5, 0x3b, 0xad, 0x43, 0xb2, 0x77, 0x64, 0xa3, 0x9b, 0xc6, 0x8f,
+	0xbf, 0xb8, 0xc8, 0xfb, 0xab, 0x08, 0x56, 0x36, 0x19, 0xfc, 0x06, 0x58, 0x7d, 0x21, 0xd1, 0x0d,
+	0x42, 0x2e, 0x7d, 0x1a, 0x4d, 0x8d, 0x6c, 0x4a, 0xe8, 0x51, 0xc8, 0xf1, 0x5b, 0x50, 0x52, 0xc7,
+	0xa7, 0x62, 0x29, 0x2a, 0xc2, 0x4d, 0x8d, 0x80, 0x04, 0xe5, 0xa2, 0xb0, 0x0d, 0x3a, 0x9b, 0x4d,
+	0xe4, 0xfb, 0x8b, 0x88, 0xf8, 0x14, 0x2f, 0x39, 0xeb, 0x8f, 0xe8, 0xc4, 0x97, 0xaf, 0xef, 0x0d,
+	0x92, 0x54, 0xf8, 0x1d, 0xd8, 0xfa, 0x9e, 0xc6, 0x51, 0x97, 0x8f, 0x62, 0xca, 0x46, 0xd1, 0x78,
+	0x20, 0x9f, 0x56, 0x44, 0x2a, 0x02, 0xed, 0xa4, 0x20, 0xbe, 0x9d, 0xd0, 0x72, 0x5f, 0xa6, 0xf4,
+	0x85, 0x48, 0x59, 0xe0, 0x0f, 0x52, 0x6f, 0x77, 0xc1, 0x5e, 0xe0, 0x29, 0x83, 0x1b, 0xd2, 0x20,
+	0x22, 0x5b, 0x19, 0x53, 0x99, 0x3c, 0x86, 0xad, 0x90, 0x0e, 0x7d, 0x1e, 0x7c, 0x4b, 0xbb, 0x6c,
+	0xea, 0x87, 0xcc, 0xd9, 0x94, 0x09, 0x58, 0xfd, 0x24, 0x37, 0x66, 0xfd, 0xa7, 0x94, 0xb7, 0xa7,
+	0x7e, 0x48, 0x2a, 0x69, 0xbb, 0xa8, 0x18, 0xbe, 0x03, 0xdb, 0x99, 0xde, 0x40, 0x65, 0xdd, 0xaa,
+	0xea, 0x35, 0x4c, 0xb2, 0x6b, 0x92, 0x98, 0x2f, 0x12, 0xa5, 0x51, 0xe6, 0x80, 0x88, 0x7a, 0x4e,
+	0x94, 0x2e, 0x99, 0x70, 0x38, 0x8d, 0x58, 0xb0, 0xe0, 0xb0, 0xf4, 0x92, 0x0e, 0xd3, 0xf6, 0xcc,
+	0x61, 0xa6, 0x97, 0x38, 0x2c, 0x2b, 0x87, 0x29, 0x9c, 0x3b, 0xcc, 0x88, 0x89, 0xc3, 0x8a, 0x72,
+	0x98, 0xc2, 0x89, 0xc3, 0x16, 0x40, 0x4c, 0x19, 0xe5, 0xdd, 0x91, 0xd8, 0xc9, 0x96, 0xcc, 0xf4,
+	0x07, 0xeb, 0xfd, 0x2f, 0xd6, 0x89, 0x68, 0x6c, 0x06, 0x21, 0x27, 0x56, 0x9c, 0x7e, 0x7a, 0x1f,
+	0x81, 0x95, 0xe1, 0xb8, 0x04, 0x1b, 0x27, 0xc7, 0x9f, 0x1f, 0xb7, 0xbe, 0x3c, 0xb6, 0x35, 0xbc,
+	0x01, 0xfa, 0xd7, 0xfb, 0x6d, 0x1b, 0x61, 0x13, 0x0a, 0xc7, 0x2d, 0xbb, 0x20, 0x42, 0x7d, 0xb8,
+	0x77, 0x72, 0xb8, 0x6f, 0xeb, 0x2a, 0xc5, 0x8d, 0x0d, 0x28, 0x4a, 0xb3, 0x8d, 0x32, 0x40, 0x9e,
+	0x82, 0xcf, 0x8c, 0xcd, 0x6d, 0xdb, 0x26, 0x16, 0x4f, 0x1f, 0x1b, 0xef, 0x63, 0x80, 0x7c, 0x46,
+	0x22, 0x99, 0xd1, 0xe9, 0x29, 0xa3, 0x2a, 0xea, 0x37, 0x48, 0x52, 0x09, 0x7c, 0x4c, 0xc3, 0x21,
+	0x1f, 0xc9, 0x84, 0x57, 0x48, 0x52, 0x35, 0xee, 0x9f, 0x5f, 0xba, 0xda, 0xc5, 0xa5, 0xab, 0xbd,
+	0xb8, 0x74, 0xd1, 0x0f, 0x73, 0x17, 0xfd, 0x3a, 0x77, 0xd1, 0xf3, 0xb9, 0x8b, 0xce, 0xe7, 0x2e,
+	0xfa, 0x63, 0xee, 0xa2, 0x3f, 0xe7, 0xae, 0xf6, 0x62, 0xee, 0xa2, 0x9f, 0xae, 0x5c, 0xed, 0xfc,
+	0xca, 0xd5, 0x2e, 0xae, 0x5c, 0xad, 0x67, 0xca, 0x9f, 0x38, 0x1f, 0xfe, 0x1d, 0x00, 0x00, 0xff,
+	0xff, 0x7e, 0xeb, 0x16, 0x49, 0x46, 0x09, 0x00, 0x00,
 }
 
+func (x MatrixSeriesValueSource_DataType) String() string {
+	s, ok := MatrixSeriesValueSource_DataType_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
+func (x Histogram_ResetHint) String() string {
+	s, ok := Histogram_ResetHint_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
 func (this *QueryResponse) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -634,19 +1102,35 @@ func (this *VectorData) Equal(that interface{}) bool {
 	if this.Timestamp != that1.Timestamp {
 		return false
 	}
-	if len(this.Metrics) != len(that1.Metrics) {
+	if len(this.FloatMetrics) != len(that1.FloatMetrics) {
 		return false
 	}
-	for i := range this.Metrics {
-		if !this.Metrics[i].Equal(&that1.Metrics[i]) {
+	for i := range this.FloatMetrics {
+		if !this.FloatMetrics[i].Equal(&that1.FloatMetrics[i]) {
 			return false
 		}
 	}
-	if len(this.Values) != len(that1.Values) {
+	if len(this.FloatValues) != len(that1.FloatValues) {
 		return false
 	}
-	for i := range this.Values {
-		if this.Values[i] != that1.Values[i] {
+	for i := range this.FloatValues {
+		if this.FloatValues[i] != that1.FloatValues[i] {
+			return false
+		}
+	}
+	if len(this.HistogramMetrics) != len(that1.HistogramMetrics) {
+		return false
+	}
+	for i := range this.HistogramMetrics {
+		if !this.HistogramMetrics[i].Equal(&that1.HistogramMetrics[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
 			return false
 		}
 	}
@@ -700,10 +1184,10 @@ func (this *ScalarData) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.Value != that1.Value {
+	if this.Timestamp != that1.Timestamp {
 		return false
 	}
-	if this.Timestamp != that1.Timestamp {
+	if this.Value != that1.Value {
 		return false
 	}
 	return true
@@ -775,14 +1259,6 @@ func (this *MatrixSeries) Equal(that interface{}) bool {
 			return false
 		}
 	}
-	if len(this.Values) != len(that1.Values) {
-		return false
-	}
-	for i := range this.Values {
-		if this.Values[i] != that1.Values[i] {
-			return false
-		}
-	}
 	if len(this.TimestampDeltas) != len(that1.TimestampDeltas) {
 		return false
 	}
@@ -790,6 +1266,279 @@ func (this *MatrixSeries) Equal(that interface{}) bool {
 		if this.TimestampDeltas[i] != that1.TimestampDeltas[i] {
 			return false
 		}
+	}
+	if len(this.FloatValues) != len(that1.FloatValues) {
+		return false
+	}
+	for i := range this.FloatValues {
+		if this.FloatValues[i] != that1.FloatValues[i] {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
+			return false
+		}
+	}
+	if len(this.ValueSources) != len(that1.ValueSources) {
+		return false
+	}
+	for i := range this.ValueSources {
+		if !this.ValueSources[i].Equal(that1.ValueSources[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *MatrixSeriesValueSource) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MatrixSeriesValueSource)
+	if !ok {
+		that2, ok := that.(MatrixSeriesValueSource)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.Count != that1.Count {
+		return false
+	}
+	return true
+}
+func (this *Histogram) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram)
+	if !ok {
+		that2, ok := that.(Histogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Count == nil {
+		if this.Count != nil {
+			return false
+		}
+	} else if this.Count == nil {
+		return false
+	} else if !this.Count.Equal(that1.Count) {
+		return false
+	}
+	if this.Sum != that1.Sum {
+		return false
+	}
+	if this.Schema != that1.Schema {
+		return false
+	}
+	if this.ZeroThreshold != that1.ZeroThreshold {
+		return false
+	}
+	if that1.ZeroCount == nil {
+		if this.ZeroCount != nil {
+			return false
+		}
+	} else if this.ZeroCount == nil {
+		return false
+	} else if !this.ZeroCount.Equal(that1.ZeroCount) {
+		return false
+	}
+	if len(this.NegativeSpans) != len(that1.NegativeSpans) {
+		return false
+	}
+	for i := range this.NegativeSpans {
+		if !this.NegativeSpans[i].Equal(that1.NegativeSpans[i]) {
+			return false
+		}
+	}
+	if len(this.NegativeDeltas) != len(that1.NegativeDeltas) {
+		return false
+	}
+	for i := range this.NegativeDeltas {
+		if this.NegativeDeltas[i] != that1.NegativeDeltas[i] {
+			return false
+		}
+	}
+	if len(this.NegativeCounts) != len(that1.NegativeCounts) {
+		return false
+	}
+	for i := range this.NegativeCounts {
+		if this.NegativeCounts[i] != that1.NegativeCounts[i] {
+			return false
+		}
+	}
+	if len(this.PositiveSpans) != len(that1.PositiveSpans) {
+		return false
+	}
+	for i := range this.PositiveSpans {
+		if !this.PositiveSpans[i].Equal(that1.PositiveSpans[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveDeltas) != len(that1.PositiveDeltas) {
+		return false
+	}
+	for i := range this.PositiveDeltas {
+		if this.PositiveDeltas[i] != that1.PositiveDeltas[i] {
+			return false
+		}
+	}
+	if len(this.PositiveCounts) != len(that1.PositiveCounts) {
+		return false
+	}
+	for i := range this.PositiveCounts {
+		if this.PositiveCounts[i] != that1.PositiveCounts[i] {
+			return false
+		}
+	}
+	if this.ResetHint != that1.ResetHint {
+		return false
+	}
+	return true
+}
+func (this *Histogram_CountInt) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram_CountInt)
+	if !ok {
+		that2, ok := that.(Histogram_CountInt)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CountInt != that1.CountInt {
+		return false
+	}
+	return true
+}
+func (this *Histogram_CountFloat) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram_CountFloat)
+	if !ok {
+		that2, ok := that.(Histogram_CountFloat)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CountFloat != that1.CountFloat {
+		return false
+	}
+	return true
+}
+func (this *Histogram_ZeroCountInt) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram_ZeroCountInt)
+	if !ok {
+		that2, ok := that.(Histogram_ZeroCountInt)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.ZeroCountInt != that1.ZeroCountInt {
+		return false
+	}
+	return true
+}
+func (this *Histogram_ZeroCountFloat) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram_ZeroCountFloat)
+	if !ok {
+		that2, ok := that.(Histogram_ZeroCountFloat)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.ZeroCountFloat != that1.ZeroCountFloat {
+		return false
+	}
+	return true
+}
+func (this *BucketSpan) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BucketSpan)
+	if !ok {
+		that2, ok := that.(BucketSpan)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Offset != that1.Offset {
+		return false
+	}
+	if this.Length != that1.Length {
+		return false
 	}
 	return true
 }
@@ -836,18 +1585,28 @@ func (this *VectorData) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 10)
 	s = append(s, "&packedinterneddeltatquerypb.VectorData{")
 	s = append(s, "Symbols: "+fmt.Sprintf("%#v", this.Symbols)+",\n")
 	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
-	if this.Metrics != nil {
-		vs := make([]*Metric, len(this.Metrics))
+	if this.FloatMetrics != nil {
+		vs := make([]*Metric, len(this.FloatMetrics))
 		for i := range vs {
-			vs[i] = &this.Metrics[i]
+			vs[i] = &this.FloatMetrics[i]
 		}
-		s = append(s, "Metrics: "+fmt.Sprintf("%#v", vs)+",\n")
+		s = append(s, "FloatMetrics: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
-	s = append(s, "Values: "+fmt.Sprintf("%#v", this.Values)+",\n")
+	s = append(s, "FloatValues: "+fmt.Sprintf("%#v", this.FloatValues)+",\n")
+	if this.HistogramMetrics != nil {
+		vs := make([]*Metric, len(this.HistogramMetrics))
+		for i := range vs {
+			vs[i] = &this.HistogramMetrics[i]
+		}
+		s = append(s, "HistogramMetrics: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	if this.Histograms != nil {
+		s = append(s, "Histograms: "+fmt.Sprintf("%#v", this.Histograms)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -867,8 +1626,8 @@ func (this *ScalarData) GoString() string {
 	}
 	s := make([]string, 0, 6)
 	s = append(s, "&packedinterneddeltatquerypb.ScalarData{")
-	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
 	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
+	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -894,11 +1653,100 @@ func (this *MatrixSeries) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 9)
 	s = append(s, "&packedinterneddeltatquerypb.MatrixSeries{")
 	s = append(s, "MetricSymbols: "+fmt.Sprintf("%#v", this.MetricSymbols)+",\n")
-	s = append(s, "Values: "+fmt.Sprintf("%#v", this.Values)+",\n")
 	s = append(s, "TimestampDeltas: "+fmt.Sprintf("%#v", this.TimestampDeltas)+",\n")
+	s = append(s, "FloatValues: "+fmt.Sprintf("%#v", this.FloatValues)+",\n")
+	if this.Histograms != nil {
+		s = append(s, "Histograms: "+fmt.Sprintf("%#v", this.Histograms)+",\n")
+	}
+	if this.ValueSources != nil {
+		s = append(s, "ValueSources: "+fmt.Sprintf("%#v", this.ValueSources)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *MatrixSeriesValueSource) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&packedinterneddeltatquerypb.MatrixSeriesValueSource{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Count: "+fmt.Sprintf("%#v", this.Count)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *Histogram) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 18)
+	s = append(s, "&packedinterneddeltatquerypb.Histogram{")
+	if this.Count != nil {
+		s = append(s, "Count: "+fmt.Sprintf("%#v", this.Count)+",\n")
+	}
+	s = append(s, "Sum: "+fmt.Sprintf("%#v", this.Sum)+",\n")
+	s = append(s, "Schema: "+fmt.Sprintf("%#v", this.Schema)+",\n")
+	s = append(s, "ZeroThreshold: "+fmt.Sprintf("%#v", this.ZeroThreshold)+",\n")
+	if this.ZeroCount != nil {
+		s = append(s, "ZeroCount: "+fmt.Sprintf("%#v", this.ZeroCount)+",\n")
+	}
+	if this.NegativeSpans != nil {
+		s = append(s, "NegativeSpans: "+fmt.Sprintf("%#v", this.NegativeSpans)+",\n")
+	}
+	s = append(s, "NegativeDeltas: "+fmt.Sprintf("%#v", this.NegativeDeltas)+",\n")
+	s = append(s, "NegativeCounts: "+fmt.Sprintf("%#v", this.NegativeCounts)+",\n")
+	if this.PositiveSpans != nil {
+		s = append(s, "PositiveSpans: "+fmt.Sprintf("%#v", this.PositiveSpans)+",\n")
+	}
+	s = append(s, "PositiveDeltas: "+fmt.Sprintf("%#v", this.PositiveDeltas)+",\n")
+	s = append(s, "PositiveCounts: "+fmt.Sprintf("%#v", this.PositiveCounts)+",\n")
+	s = append(s, "ResetHint: "+fmt.Sprintf("%#v", this.ResetHint)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *Histogram_CountInt) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&packedinterneddeltatquerypb.Histogram_CountInt{` +
+		`CountInt:` + fmt.Sprintf("%#v", this.CountInt) + `}`}, ", ")
+	return s
+}
+func (this *Histogram_CountFloat) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&packedinterneddeltatquerypb.Histogram_CountFloat{` +
+		`CountFloat:` + fmt.Sprintf("%#v", this.CountFloat) + `}`}, ", ")
+	return s
+}
+func (this *Histogram_ZeroCountInt) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&packedinterneddeltatquerypb.Histogram_ZeroCountInt{` +
+		`ZeroCountInt:` + fmt.Sprintf("%#v", this.ZeroCountInt) + `}`}, ", ")
+	return s
+}
+func (this *Histogram_ZeroCountFloat) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&packedinterneddeltatquerypb.Histogram_ZeroCountFloat{` +
+		`ZeroCountFloat:` + fmt.Sprintf("%#v", this.ZeroCountFloat) + `}`}, ", ")
+	return s
+}
+func (this *BucketSpan) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&packedinterneddeltatquerypb.BucketSpan{")
+	s = append(s, "Offset: "+fmt.Sprintf("%#v", this.Offset)+",\n")
+	s = append(s, "Length: "+fmt.Sprintf("%#v", this.Length)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1043,20 +1891,48 @@ func (m *VectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Values) > 0 {
-		for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
-			f4 := math.Float64bits(float64(m.Values[iNdEx]))
+	if len(m.Histograms) > 0 {
+		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Histograms[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x32
+		}
+	}
+	if len(m.HistogramMetrics) > 0 {
+		for iNdEx := len(m.HistogramMetrics) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.HistogramMetrics[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x2a
+		}
+	}
+	if len(m.FloatValues) > 0 {
+		for iNdEx := len(m.FloatValues) - 1; iNdEx >= 0; iNdEx-- {
+			f4 := math.Float64bits(float64(m.FloatValues[iNdEx]))
 			i -= 8
 			encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(f4))
 		}
-		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.Values)*8))
+		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.FloatValues)*8))
 		i--
 		dAtA[i] = 0x22
 	}
-	if len(m.Metrics) > 0 {
-		for iNdEx := len(m.Metrics) - 1; iNdEx >= 0; iNdEx-- {
+	if len(m.FloatMetrics) > 0 {
+		for iNdEx := len(m.FloatMetrics) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.Metrics[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.FloatMetrics[iNdEx].MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -1145,16 +2021,16 @@ func (m *ScalarData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.Timestamp != 0 {
-		i = encodeVarintQueryResponse(dAtA, i, uint64(m.Timestamp))
-		i--
-		dAtA[i] = 0x10
-	}
 	if m.Value != 0 {
 		i -= 8
 		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
 		i--
-		dAtA[i] = 0x9
+		dAtA[i] = 0x11
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -1230,32 +2106,60 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.TimestampDeltas) > 0 {
-		dAtA8 := make([]byte, len(m.TimestampDeltas)*10)
-		var j7 int
-		for _, num1 := range m.TimestampDeltas {
-			num := uint64(num1)
-			for num >= 1<<7 {
-				dAtA8[j7] = uint8(uint64(num)&0x7f | 0x80)
-				num >>= 7
-				j7++
+	if len(m.ValueSources) > 0 {
+		for iNdEx := len(m.ValueSources) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ValueSources[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
 			}
-			dAtA8[j7] = uint8(num)
-			j7++
+			i--
+			dAtA[i] = 0x2a
 		}
-		i -= j7
-		copy(dAtA[i:], dAtA8[:j7])
-		i = encodeVarintQueryResponse(dAtA, i, uint64(j7))
+	}
+	if len(m.Histograms) > 0 {
+		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Histograms[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.FloatValues) > 0 {
+		for iNdEx := len(m.FloatValues) - 1; iNdEx >= 0; iNdEx-- {
+			f7 := math.Float64bits(float64(m.FloatValues[iNdEx]))
+			i -= 8
+			encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(f7))
+		}
+		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.FloatValues)*8))
 		i--
 		dAtA[i] = 0x1a
 	}
-	if len(m.Values) > 0 {
-		for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
-			f9 := math.Float64bits(float64(m.Values[iNdEx]))
-			i -= 8
-			encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(f9))
+	if len(m.TimestampDeltas) > 0 {
+		dAtA9 := make([]byte, len(m.TimestampDeltas)*10)
+		var j8 int
+		for _, num1 := range m.TimestampDeltas {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA9[j8] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j8++
+			}
+			dAtA9[j8] = uint8(num)
+			j8++
 		}
-		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.Values)*8))
+		i -= j8
+		copy(dAtA[i:], dAtA9[:j8])
+		i = encodeVarintQueryResponse(dAtA, i, uint64(j8))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -1276,6 +2180,267 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintQueryResponse(dAtA, i, uint64(j10))
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MatrixSeriesValueSource) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MatrixSeriesValueSource) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MatrixSeriesValueSource) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Count != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.Count))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Type != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Histogram) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Histogram) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ResetHint != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.ResetHint))
+		i--
+		dAtA[i] = 0x70
+	}
+	if len(m.PositiveCounts) > 0 {
+		for iNdEx := len(m.PositiveCounts) - 1; iNdEx >= 0; iNdEx-- {
+			f12 := math.Float64bits(float64(m.PositiveCounts[iNdEx]))
+			i -= 8
+			encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(f12))
+		}
+		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.PositiveCounts)*8))
+		i--
+		dAtA[i] = 0x6a
+	}
+	if len(m.PositiveDeltas) > 0 {
+		var j13 int
+		dAtA15 := make([]byte, len(m.PositiveDeltas)*10)
+		for _, num := range m.PositiveDeltas {
+			x14 := (uint64(num) << 1) ^ uint64((num >> 63))
+			for x14 >= 1<<7 {
+				dAtA15[j13] = uint8(uint64(x14)&0x7f | 0x80)
+				j13++
+				x14 >>= 7
+			}
+			dAtA15[j13] = uint8(x14)
+			j13++
+		}
+		i -= j13
+		copy(dAtA[i:], dAtA15[:j13])
+		i = encodeVarintQueryResponse(dAtA, i, uint64(j13))
+		i--
+		dAtA[i] = 0x62
+	}
+	if len(m.PositiveSpans) > 0 {
+		for iNdEx := len(m.PositiveSpans) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.PositiveSpans[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x5a
+		}
+	}
+	if len(m.NegativeCounts) > 0 {
+		for iNdEx := len(m.NegativeCounts) - 1; iNdEx >= 0; iNdEx-- {
+			f16 := math.Float64bits(float64(m.NegativeCounts[iNdEx]))
+			i -= 8
+			encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(f16))
+		}
+		i = encodeVarintQueryResponse(dAtA, i, uint64(len(m.NegativeCounts)*8))
+		i--
+		dAtA[i] = 0x52
+	}
+	if len(m.NegativeDeltas) > 0 {
+		var j17 int
+		dAtA19 := make([]byte, len(m.NegativeDeltas)*10)
+		for _, num := range m.NegativeDeltas {
+			x18 := (uint64(num) << 1) ^ uint64((num >> 63))
+			for x18 >= 1<<7 {
+				dAtA19[j17] = uint8(uint64(x18)&0x7f | 0x80)
+				j17++
+				x18 >>= 7
+			}
+			dAtA19[j17] = uint8(x18)
+			j17++
+		}
+		i -= j17
+		copy(dAtA[i:], dAtA19[:j17])
+		i = encodeVarintQueryResponse(dAtA, i, uint64(j17))
+		i--
+		dAtA[i] = 0x4a
+	}
+	if len(m.NegativeSpans) > 0 {
+		for iNdEx := len(m.NegativeSpans) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.NegativeSpans[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryResponse(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x42
+		}
+	}
+	if m.ZeroCount != nil {
+		{
+			size := m.ZeroCount.Size()
+			i -= size
+			if _, err := m.ZeroCount.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if m.ZeroThreshold != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.ZeroThreshold))))
+		i--
+		dAtA[i] = 0x29
+	}
+	if m.Schema != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64((uint32(m.Schema)<<1)^uint32((m.Schema>>31))))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Sum != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Sum))))
+		i--
+		dAtA[i] = 0x19
+	}
+	if m.Count != nil {
+		{
+			size := m.Count.Size()
+			i -= size
+			if _, err := m.Count.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Histogram_CountInt) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Histogram_CountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i = encodeVarintQueryResponse(dAtA, i, uint64(m.CountInt))
+	i--
+	dAtA[i] = 0x8
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_CountFloat) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Histogram_CountFloat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= 8
+	encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.CountFloat))))
+	i--
+	dAtA[i] = 0x11
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_ZeroCountInt) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Histogram_ZeroCountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i = encodeVarintQueryResponse(dAtA, i, uint64(m.ZeroCountInt))
+	i--
+	dAtA[i] = 0x30
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_ZeroCountFloat) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *Histogram_ZeroCountFloat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= 8
+	encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.ZeroCountFloat))))
+	i--
+	dAtA[i] = 0x39
+	return len(dAtA) - i, nil
+}
+func (m *BucketSpan) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BucketSpan) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BucketSpan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Length != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64(m.Length))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Offset != 0 {
+		i = encodeVarintQueryResponse(dAtA, i, uint64((uint32(m.Offset)<<1)^uint32((m.Offset>>31))))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -1366,14 +2531,26 @@ func (m *VectorData) Size() (n int) {
 	if m.Timestamp != 0 {
 		n += 1 + sovQueryResponse(uint64(m.Timestamp))
 	}
-	if len(m.Metrics) > 0 {
-		for _, e := range m.Metrics {
+	if len(m.FloatMetrics) > 0 {
+		for _, e := range m.FloatMetrics {
 			l = e.Size()
 			n += 1 + l + sovQueryResponse(uint64(l))
 		}
 	}
-	if len(m.Values) > 0 {
-		n += 1 + sovQueryResponse(uint64(len(m.Values)*8)) + len(m.Values)*8
+	if len(m.FloatValues) > 0 {
+		n += 1 + sovQueryResponse(uint64(len(m.FloatValues)*8)) + len(m.FloatValues)*8
+	}
+	if len(m.HistogramMetrics) > 0 {
+		for _, e := range m.HistogramMetrics {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
+	}
+	if len(m.Histograms) > 0 {
+		for _, e := range m.Histograms {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
 	}
 	return n
 }
@@ -1400,11 +2577,11 @@ func (m *ScalarData) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Value != 0 {
-		n += 9
-	}
 	if m.Timestamp != 0 {
 		n += 1 + sovQueryResponse(uint64(m.Timestamp))
+	}
+	if m.Value != 0 {
+		n += 9
 	}
 	return n
 }
@@ -1446,15 +2623,152 @@ func (m *MatrixSeries) Size() (n int) {
 		}
 		n += 1 + sovQueryResponse(uint64(l)) + l
 	}
-	if len(m.Values) > 0 {
-		n += 1 + sovQueryResponse(uint64(len(m.Values)*8)) + len(m.Values)*8
-	}
 	if len(m.TimestampDeltas) > 0 {
 		l = 0
 		for _, e := range m.TimestampDeltas {
 			l += sovQueryResponse(uint64(e))
 		}
 		n += 1 + sovQueryResponse(uint64(l)) + l
+	}
+	if len(m.FloatValues) > 0 {
+		n += 1 + sovQueryResponse(uint64(len(m.FloatValues)*8)) + len(m.FloatValues)*8
+	}
+	if len(m.Histograms) > 0 {
+		for _, e := range m.Histograms {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
+	}
+	if len(m.ValueSources) > 0 {
+		for _, e := range m.ValueSources {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MatrixSeriesValueSource) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Type != 0 {
+		n += 1 + sovQueryResponse(uint64(m.Type))
+	}
+	if m.Count != 0 {
+		n += 1 + sovQueryResponse(uint64(m.Count))
+	}
+	return n
+}
+
+func (m *Histogram) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Count != nil {
+		n += m.Count.Size()
+	}
+	if m.Sum != 0 {
+		n += 9
+	}
+	if m.Schema != 0 {
+		n += 1 + sozQueryResponse(uint64(m.Schema))
+	}
+	if m.ZeroThreshold != 0 {
+		n += 9
+	}
+	if m.ZeroCount != nil {
+		n += m.ZeroCount.Size()
+	}
+	if len(m.NegativeSpans) > 0 {
+		for _, e := range m.NegativeSpans {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
+	}
+	if len(m.NegativeDeltas) > 0 {
+		l = 0
+		for _, e := range m.NegativeDeltas {
+			l += sozQueryResponse(uint64(e))
+		}
+		n += 1 + sovQueryResponse(uint64(l)) + l
+	}
+	if len(m.NegativeCounts) > 0 {
+		n += 1 + sovQueryResponse(uint64(len(m.NegativeCounts)*8)) + len(m.NegativeCounts)*8
+	}
+	if len(m.PositiveSpans) > 0 {
+		for _, e := range m.PositiveSpans {
+			l = e.Size()
+			n += 1 + l + sovQueryResponse(uint64(l))
+		}
+	}
+	if len(m.PositiveDeltas) > 0 {
+		l = 0
+		for _, e := range m.PositiveDeltas {
+			l += sozQueryResponse(uint64(e))
+		}
+		n += 1 + sovQueryResponse(uint64(l)) + l
+	}
+	if len(m.PositiveCounts) > 0 {
+		n += 1 + sovQueryResponse(uint64(len(m.PositiveCounts)*8)) + len(m.PositiveCounts)*8
+	}
+	if m.ResetHint != 0 {
+		n += 1 + sovQueryResponse(uint64(m.ResetHint))
+	}
+	return n
+}
+
+func (m *Histogram_CountInt) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	n += 1 + sovQueryResponse(uint64(m.CountInt))
+	return n
+}
+func (m *Histogram_CountFloat) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	n += 9
+	return n
+}
+func (m *Histogram_ZeroCountInt) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	n += 1 + sovQueryResponse(uint64(m.ZeroCountInt))
+	return n
+}
+func (m *Histogram_ZeroCountFloat) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	n += 9
+	return n
+}
+func (m *BucketSpan) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Offset != 0 {
+		n += 1 + sozQueryResponse(uint64(m.Offset))
+	}
+	if m.Length != 0 {
+		n += 1 + sovQueryResponse(uint64(m.Length))
 	}
 	return n
 }
@@ -1512,16 +2826,28 @@ func (this *VectorData) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForMetrics := "[]Metric{"
-	for _, f := range this.Metrics {
-		repeatedStringForMetrics += strings.Replace(strings.Replace(f.String(), "Metric", "Metric", 1), `&`, ``, 1) + ","
+	repeatedStringForFloatMetrics := "[]Metric{"
+	for _, f := range this.FloatMetrics {
+		repeatedStringForFloatMetrics += strings.Replace(strings.Replace(f.String(), "Metric", "Metric", 1), `&`, ``, 1) + ","
 	}
-	repeatedStringForMetrics += "}"
+	repeatedStringForFloatMetrics += "}"
+	repeatedStringForHistogramMetrics := "[]Metric{"
+	for _, f := range this.HistogramMetrics {
+		repeatedStringForHistogramMetrics += strings.Replace(strings.Replace(f.String(), "Metric", "Metric", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForHistogramMetrics += "}"
+	repeatedStringForHistograms := "[]*Histogram{"
+	for _, f := range this.Histograms {
+		repeatedStringForHistograms += strings.Replace(f.String(), "Histogram", "Histogram", 1) + ","
+	}
+	repeatedStringForHistograms += "}"
 	s := strings.Join([]string{`&VectorData{`,
 		`Symbols:` + fmt.Sprintf("%v", this.Symbols) + `,`,
 		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
-		`Metrics:` + repeatedStringForMetrics + `,`,
-		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
+		`FloatMetrics:` + repeatedStringForFloatMetrics + `,`,
+		`FloatValues:` + fmt.Sprintf("%v", this.FloatValues) + `,`,
+		`HistogramMetrics:` + repeatedStringForHistogramMetrics + `,`,
+		`Histograms:` + repeatedStringForHistograms + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1541,8 +2867,8 @@ func (this *ScalarData) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&ScalarData{`,
-		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
 		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1568,10 +2894,115 @@ func (this *MatrixSeries) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForHistograms := "[]*Histogram{"
+	for _, f := range this.Histograms {
+		repeatedStringForHistograms += strings.Replace(f.String(), "Histogram", "Histogram", 1) + ","
+	}
+	repeatedStringForHistograms += "}"
+	repeatedStringForValueSources := "[]*MatrixSeriesValueSource{"
+	for _, f := range this.ValueSources {
+		repeatedStringForValueSources += strings.Replace(f.String(), "MatrixSeriesValueSource", "MatrixSeriesValueSource", 1) + ","
+	}
+	repeatedStringForValueSources += "}"
 	s := strings.Join([]string{`&MatrixSeries{`,
 		`MetricSymbols:` + fmt.Sprintf("%v", this.MetricSymbols) + `,`,
-		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
 		`TimestampDeltas:` + fmt.Sprintf("%v", this.TimestampDeltas) + `,`,
+		`FloatValues:` + fmt.Sprintf("%v", this.FloatValues) + `,`,
+		`Histograms:` + repeatedStringForHistograms + `,`,
+		`ValueSources:` + repeatedStringForValueSources + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *MatrixSeriesValueSource) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&MatrixSeriesValueSource{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Histogram) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForNegativeSpans := "[]*BucketSpan{"
+	for _, f := range this.NegativeSpans {
+		repeatedStringForNegativeSpans += strings.Replace(f.String(), "BucketSpan", "BucketSpan", 1) + ","
+	}
+	repeatedStringForNegativeSpans += "}"
+	repeatedStringForPositiveSpans := "[]*BucketSpan{"
+	for _, f := range this.PositiveSpans {
+		repeatedStringForPositiveSpans += strings.Replace(f.String(), "BucketSpan", "BucketSpan", 1) + ","
+	}
+	repeatedStringForPositiveSpans += "}"
+	s := strings.Join([]string{`&Histogram{`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`Sum:` + fmt.Sprintf("%v", this.Sum) + `,`,
+		`Schema:` + fmt.Sprintf("%v", this.Schema) + `,`,
+		`ZeroThreshold:` + fmt.Sprintf("%v", this.ZeroThreshold) + `,`,
+		`ZeroCount:` + fmt.Sprintf("%v", this.ZeroCount) + `,`,
+		`NegativeSpans:` + repeatedStringForNegativeSpans + `,`,
+		`NegativeDeltas:` + fmt.Sprintf("%v", this.NegativeDeltas) + `,`,
+		`NegativeCounts:` + fmt.Sprintf("%v", this.NegativeCounts) + `,`,
+		`PositiveSpans:` + repeatedStringForPositiveSpans + `,`,
+		`PositiveDeltas:` + fmt.Sprintf("%v", this.PositiveDeltas) + `,`,
+		`PositiveCounts:` + fmt.Sprintf("%v", this.PositiveCounts) + `,`,
+		`ResetHint:` + fmt.Sprintf("%v", this.ResetHint) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Histogram_CountInt) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Histogram_CountInt{`,
+		`CountInt:` + fmt.Sprintf("%v", this.CountInt) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Histogram_CountFloat) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Histogram_CountFloat{`,
+		`CountFloat:` + fmt.Sprintf("%v", this.CountFloat) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Histogram_ZeroCountInt) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Histogram_ZeroCountInt{`,
+		`ZeroCountInt:` + fmt.Sprintf("%v", this.ZeroCountInt) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Histogram_ZeroCountFloat) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Histogram_ZeroCountFloat{`,
+		`ZeroCountFloat:` + fmt.Sprintf("%v", this.ZeroCountFloat) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BucketSpan) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&BucketSpan{`,
+		`Offset:` + fmt.Sprintf("%v", this.Offset) + `,`,
+		`Length:` + fmt.Sprintf("%v", this.Length) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1920,7 +3351,7 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 			}
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Metrics", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field FloatMetrics", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -1947,8 +3378,8 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Metrics = append(m.Metrics, Metric{})
-			if err := m.Metrics[len(m.Metrics)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			m.FloatMetrics = append(m.FloatMetrics, Metric{})
+			if err := m.FloatMetrics[len(m.FloatMetrics)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -1961,7 +3392,7 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 				v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
 				iNdEx += 8
 				v2 := float64(math.Float64frombits(v))
-				m.Values = append(m.Values, v2)
+				m.FloatValues = append(m.FloatValues, v2)
 			} else if wireType == 2 {
 				var packedLen int
 				for shift := uint(0); ; shift += 7 {
@@ -1990,8 +3421,8 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 				}
 				var elementCount int
 				elementCount = packedLen / 8
-				if elementCount != 0 && len(m.Values) == 0 {
-					m.Values = make([]float64, 0, elementCount)
+				if elementCount != 0 && len(m.FloatValues) == 0 {
+					m.FloatValues = make([]float64, 0, elementCount)
 				}
 				for iNdEx < postIndex {
 					var v uint64
@@ -2001,11 +3432,79 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 					v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
 					iNdEx += 8
 					v2 := float64(math.Float64frombits(v))
-					m.Values = append(m.Values, v2)
+					m.FloatValues = append(m.FloatValues, v2)
 				}
 			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field Values", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field FloatValues", wireType)
 			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HistogramMetrics", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.HistogramMetrics = append(m.HistogramMetrics, Metric{})
+			if err := m.HistogramMetrics[len(m.HistogramMetrics)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Histograms", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Histograms = append(m.Histograms, &Histogram{})
+			if err := m.Histograms[len(m.Histograms)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryResponse(dAtA[iNdEx:])
@@ -2189,17 +3688,6 @@ func (m *ScalarData) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 1 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
-			}
-			var v uint64
-			if (iNdEx + 8) > l {
-				return io.ErrUnexpectedEOF
-			}
-			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
-			iNdEx += 8
-			m.Value = float64(math.Float64frombits(v))
-		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
 			}
@@ -2218,6 +3706,17 @@ func (m *ScalarData) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 2:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Value = float64(math.Float64frombits(v))
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryResponse(dAtA[iNdEx:])
@@ -2486,60 +3985,6 @@ func (m *MatrixSeries) Unmarshal(dAtA []byte) error {
 				return fmt.Errorf("proto: wrong wireType = %d for field MetricSymbols", wireType)
 			}
 		case 2:
-			if wireType == 1 {
-				var v uint64
-				if (iNdEx + 8) > l {
-					return io.ErrUnexpectedEOF
-				}
-				v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
-				iNdEx += 8
-				v2 := float64(math.Float64frombits(v))
-				m.Values = append(m.Values, v2)
-			} else if wireType == 2 {
-				var packedLen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowQueryResponse
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					packedLen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if packedLen < 0 {
-					return ErrInvalidLengthQueryResponse
-				}
-				postIndex := iNdEx + packedLen
-				if postIndex < 0 {
-					return ErrInvalidLengthQueryResponse
-				}
-				if postIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				var elementCount int
-				elementCount = packedLen / 8
-				if elementCount != 0 && len(m.Values) == 0 {
-					m.Values = make([]float64, 0, elementCount)
-				}
-				for iNdEx < postIndex {
-					var v uint64
-					if (iNdEx + 8) > l {
-						return io.ErrUnexpectedEOF
-					}
-					v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
-					iNdEx += 8
-					v2 := float64(math.Float64frombits(v))
-					m.Values = append(m.Values, v2)
-				}
-			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field Values", wireType)
-			}
-		case 3:
 			if wireType == 0 {
 				var v int64
 				for shift := uint(0); ; shift += 7 {
@@ -2614,6 +4059,821 @@ func (m *MatrixSeries) Unmarshal(dAtA []byte) error {
 				}
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field TimestampDeltas", wireType)
+			}
+		case 3:
+			if wireType == 1 {
+				var v uint64
+				if (iNdEx + 8) > l {
+					return io.ErrUnexpectedEOF
+				}
+				v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+				iNdEx += 8
+				v2 := float64(math.Float64frombits(v))
+				m.FloatValues = append(m.FloatValues, v2)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				elementCount = packedLen / 8
+				if elementCount != 0 && len(m.FloatValues) == 0 {
+					m.FloatValues = make([]float64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					if (iNdEx + 8) > l {
+						return io.ErrUnexpectedEOF
+					}
+					v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+					iNdEx += 8
+					v2 := float64(math.Float64frombits(v))
+					m.FloatValues = append(m.FloatValues, v2)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field FloatValues", wireType)
+			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Histograms", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Histograms = append(m.Histograms, &Histogram{})
+			if err := m.Histograms[len(m.Histograms)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValueSources", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ValueSources = append(m.ValueSources, &MatrixSeriesValueSource{})
+			if err := m.ValueSources[len(m.ValueSources)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryResponse(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MatrixSeriesValueSource) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryResponse
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MatrixSeriesValueSource: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MatrixSeriesValueSource: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			m.Type = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Type |= MatrixSeriesValueSource_DataType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Count", wireType)
+			}
+			m.Count = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Count |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryResponse(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Histogram) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryResponse
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Histogram: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Histogram: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CountInt", wireType)
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Count = &Histogram_CountInt{v}
+		case 2:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CountFloat", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Count = &Histogram_CountFloat{float64(math.Float64frombits(v))}
+		case 3:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sum", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Sum = float64(math.Float64frombits(v))
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Schema", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.Schema = v
+		case 5:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ZeroThreshold", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.ZeroThreshold = float64(math.Float64frombits(v))
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ZeroCountInt", wireType)
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ZeroCount = &Histogram_ZeroCountInt{v}
+		case 7:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ZeroCountFloat", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.ZeroCount = &Histogram_ZeroCountFloat{float64(math.Float64frombits(v))}
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NegativeSpans", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NegativeSpans = append(m.NegativeSpans, &BucketSpan{})
+			if err := m.NegativeSpans[len(m.NegativeSpans)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 9:
+			if wireType == 0 {
+				var v uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				v = (v >> 1) ^ uint64((int64(v&1)<<63)>>63)
+				m.NegativeDeltas = append(m.NegativeDeltas, int64(v))
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.NegativeDeltas) == 0 {
+					m.NegativeDeltas = make([]int64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQueryResponse
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					v = (v >> 1) ^ uint64((int64(v&1)<<63)>>63)
+					m.NegativeDeltas = append(m.NegativeDeltas, int64(v))
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field NegativeDeltas", wireType)
+			}
+		case 10:
+			if wireType == 1 {
+				var v uint64
+				if (iNdEx + 8) > l {
+					return io.ErrUnexpectedEOF
+				}
+				v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+				iNdEx += 8
+				v2 := float64(math.Float64frombits(v))
+				m.NegativeCounts = append(m.NegativeCounts, v2)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				elementCount = packedLen / 8
+				if elementCount != 0 && len(m.NegativeCounts) == 0 {
+					m.NegativeCounts = make([]float64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					if (iNdEx + 8) > l {
+						return io.ErrUnexpectedEOF
+					}
+					v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+					iNdEx += 8
+					v2 := float64(math.Float64frombits(v))
+					m.NegativeCounts = append(m.NegativeCounts, v2)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field NegativeCounts", wireType)
+			}
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PositiveSpans", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PositiveSpans = append(m.PositiveSpans, &BucketSpan{})
+			if err := m.PositiveSpans[len(m.PositiveSpans)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 12:
+			if wireType == 0 {
+				var v uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				v = (v >> 1) ^ uint64((int64(v&1)<<63)>>63)
+				m.PositiveDeltas = append(m.PositiveDeltas, int64(v))
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.PositiveDeltas) == 0 {
+					m.PositiveDeltas = make([]int64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQueryResponse
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					v = (v >> 1) ^ uint64((int64(v&1)<<63)>>63)
+					m.PositiveDeltas = append(m.PositiveDeltas, int64(v))
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field PositiveDeltas", wireType)
+			}
+		case 13:
+			if wireType == 1 {
+				var v uint64
+				if (iNdEx + 8) > l {
+					return io.ErrUnexpectedEOF
+				}
+				v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+				iNdEx += 8
+				v2 := float64(math.Float64frombits(v))
+				m.PositiveCounts = append(m.PositiveCounts, v2)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQueryResponse
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthQueryResponse
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				elementCount = packedLen / 8
+				if elementCount != 0 && len(m.PositiveCounts) == 0 {
+					m.PositiveCounts = make([]float64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					if (iNdEx + 8) > l {
+						return io.ErrUnexpectedEOF
+					}
+					v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+					iNdEx += 8
+					v2 := float64(math.Float64frombits(v))
+					m.PositiveCounts = append(m.PositiveCounts, v2)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field PositiveCounts", wireType)
+			}
+		case 14:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResetHint", wireType)
+			}
+			m.ResetHint = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ResetHint |= Histogram_ResetHint(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryResponse(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthQueryResponse
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BucketSpan) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryResponse
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BucketSpan: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BucketSpan: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Offset", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			v = int32((uint32(v) >> 1) ^ uint32(((v&1)<<31)>>31))
+			m.Offset = v
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Length", wireType)
+			}
+			m.Length = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryResponse
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Length |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 		default:
 			iNdEx = preIndex

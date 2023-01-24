@@ -59,12 +59,16 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeScalar(d *packe
 }
 
 func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeVector(d *packedinterneddeltatquerypb.VectorData) querymiddleware.PrometheusData {
-	// TODO: check that the number of metrics, timestamps and values is the same
-	sampleCount := len(d.Metrics)
+	if len(d.HistogramMetrics) > 0 {
+		panic("don't yet support decoding histograms")
+	}
+
+	// TODO: check that the number of metrics and values is the same
+	sampleCount := len(d.FloatMetrics)
 	result := make([]querymiddleware.SampleStream, sampleCount)
 
 	for sampleIdx := 0; sampleIdx < sampleCount; sampleIdx++ {
-		metricSymbols := d.Metrics[sampleIdx].MetricSymbols
+		metricSymbols := d.FloatMetrics[sampleIdx].MetricSymbols
 		labelCount := len(metricSymbols) / 2
 		labels := make([]mimirpb.LabelAdapter, labelCount)
 
@@ -79,7 +83,7 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeVector(d *packe
 			Labels: labels,
 			Samples: []mimirpb.Sample{
 				{
-					Value:       d.Values[sampleIdx],
+					Value:       d.FloatValues[sampleIdx],
 					TimestampMs: d.Timestamp,
 				},
 			},
@@ -96,6 +100,10 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeMatrix(d *packe
 	result := make([]querymiddleware.SampleStream, len(d.Series))
 
 	for seriesIdx, series := range d.Series {
+		if len(series.Histograms) > 0 {
+			panic("don't yet support decoding histograms")
+		}
+
 		labelCount := len(series.MetricSymbols) / 2
 		labels := make([]mimirpb.LabelAdapter, labelCount)
 
@@ -117,7 +125,7 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) decodeMatrix(d *packe
 			timestamp += currentDelta
 
 			samples[sampleIdx] = mimirpb.Sample{
-				Value:       series.Values[sampleIdx],
+				Value:       series.FloatValues[sampleIdx],
 				TimestampMs: timestamp,
 			}
 		}
@@ -225,10 +233,10 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) encodeVector(data *qu
 	}
 
 	return packedinterneddeltatquerypb.VectorData{
-		Symbols:   symbols,
-		Metrics:   metrics,
-		Values:    values,
-		Timestamp: timestamp,
+		Symbols:      symbols,
+		FloatMetrics: metrics,
+		FloatValues:  values,
+		Timestamp:    timestamp,
 	}
 }
 
@@ -277,7 +285,7 @@ func (c PackedInternedProtobufWithRelativeTimestampsCodec) encodeMatrix(data *qu
 
 		series[seriesIdx] = packedinterneddeltatquerypb.MatrixSeries{
 			MetricSymbols:   metricSymbols,
-			Values:          values,
+			FloatValues:     values,
 			TimestampDeltas: timestampDeltas,
 		}
 	}

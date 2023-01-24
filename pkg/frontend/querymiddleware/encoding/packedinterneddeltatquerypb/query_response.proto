@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Prometheus Team
 
 syntax = "proto3";
 
@@ -36,12 +39,12 @@ message VectorData {
   // Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
   // both smaller in encoded form and more efficient to decode (as the length is known upfront).
   // See https://protobuf.dev/programming-guides/encoding/#packed.
-  // Each metric in Metrics has the corresponding value in Values for the corresponding timestamp in Timestamps.
-  //
-  // TODO: will this make it more difficult to support native histograms?
-  // (particularly for cases where some points have values and others are histograms)
-  repeated Metric Metrics = 3 [(gogoproto.nullable) = false];
-  repeated double Values = 4 [packed = true];
+  // Each metric in Metrics has the corresponding value in Values.
+  repeated Metric FloatMetrics = 3 [(gogoproto.nullable) = false];
+  repeated double FloatValues = 4 [packed = true];
+
+  repeated Metric HistogramMetrics = 5 [(gogoproto.nullable) = false];
+  repeated Histogram Histograms = 6;
 }
 
 message Metric {
@@ -49,10 +52,10 @@ message Metric {
 }
 
 message ScalarData {
-  double Value = 1;
-
   // TODO: is there a better type to use here?
-  int64 Timestamp = 2; // milliseconds
+  int64 Timestamp = 1; // milliseconds
+
+  double Value = 2;
 }
 
 message MatrixData {
@@ -66,16 +69,101 @@ message MatrixSeries {
   // TODO: replace with Metric?
   repeated uint64 MetricSymbols = 1 [packed = true];
 
+  // First value: timestamp delta relative to MatrixData.BaseTimestamp.
+  // Subsequent values: delta-of-deltas
+  repeated int64 TimestampDeltas = 2 [packed = true];
+
   // Why not use a repeated Sample type here? Repeated scalar types can be "packed" encoded, which is
   // both smaller in encoded form and more efficient to decode (as the length is known upfront).
   // See https://protobuf.dev/programming-guides/encoding/#packed.
-  // Each value in Values is for the corresponding timestamp in Timestamps.
-  //
-  // TODO: will this make it more difficult to support native histograms?
-  // (particularly for cases where some points have values and others are histograms)
-  repeated double Values = 2 [packed = true];
+  repeated double FloatValues = 3 [packed = true];
 
-  // First value: timestamp delta relative to MatrixData.BaseTimestamp.
-  // Subsequent values: delta-of-deltas
-  repeated int64 TimestampDeltas = 3 [packed = true];
+  repeated Histogram Histograms = 4;
+
+  // If this series is entirely floats or entirely histograms (the most common scenario), this will not be populated.
+  // If this series is a mixture of floats and histograms, this provides run-length encoding information on which
+  // timestamps have which kind of value.
+  //
+  // For example, if a series has the following data:
+  //  t1: float1
+  //  t2: float2
+  //  t3: histogram1
+  //  t4: histogram2
+  //  t5: float3
+  // ...then the fields on this message will have these values:
+  //  FloatValues: [float1, float2, float3]
+  //  Histograms: [histogram1, histogram2]
+  //  ValueSources: [(FLOAT, 2), (HISTOGRAM, 2), (FLOAT, 1)]
+  //
+  // TODO: could we use packed encoding here by having a list of DataTypes and a list of counts? (Do mixed-type series happen often enough for us to care?)
+  repeated MatrixSeriesValueSource ValueSources = 5;
+}
+
+message MatrixSeriesValueSource {
+  enum DataType {
+    option (gogoproto.goproto_enum_prefix) = true;
+    FLOAT = 0;
+    HISTOGRAM = 1;
+  }
+
+  DataType Type = 1;
+  uint64 Count = 2;
+}
+
+// This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
+message Histogram {
+  enum ResetHint {
+    option (gogoproto.goproto_enum_prefix) = true;
+    UNKNOWN = 0; // Need to test for a counter reset explicitly.
+    YES     = 1; // This is the 1st histogram after a counter reset.
+    NO      = 2; // There was no counter reset between this and the previous Histogram.
+    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+  }
+
+  oneof count { // Count of observations in the histogram.
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  oneof zero_count { // Count in zero bucket.
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8;
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11;
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  ResetHint reset_hint               = 14;
+
+  // In https://github.com/prometheus/prometheus/blob/main/prompb/types.proto, the timestamp is field 15,
+  // so reserve it to avoid conflicts or issues later.
+  reserved 15;
+  reserved "timestamp";
+}
+
+message BucketSpan {
+  sint32 offset = 1;
+  uint32 length = 2;
 }
