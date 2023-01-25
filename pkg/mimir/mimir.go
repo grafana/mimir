@@ -40,6 +40,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/aggregator"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
@@ -119,6 +120,7 @@ type Config struct {
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
+	Aggregator       aggregator.Config               `yaml:"aggregator"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -178,6 +180,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
+	c.Aggregator.RegisterFlags(f)
 
 	c.Common.RegisterFlags(f, logger)
 }
@@ -267,6 +270,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+	if err := c.Aggregator.Validate(); err != nil {
+		return errors.Wrap(err, "invalid aggregator config")
+	}
+
 	return nil
 }
 
@@ -669,6 +676,7 @@ type Mimir struct {
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 	EphemeralChecker         ephemeral.SeriesCheckerByUser
+	Aggregator               *aggregator.Aggregator
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter

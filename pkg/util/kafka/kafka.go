@@ -1,6 +1,10 @@
 package kafka
 
 import (
+	"errors"
+	"strings"
+	"unsafe"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -34,6 +38,16 @@ OUTER_LABELS:
 	return append(key, aggregatedLset.Bytes(buf)...), nil
 }
 
-func DecomposeKafkaKey(key []byte) ([]byte, []byte, error) {
-	return nil, nil, nil
+func DecomposeKafkaKey(key []byte) (string, string, error) {
+	keyStr := yoloString(key)
+	sepIdx := strings.IndexByte(keyStr, userSep)
+	if sepIdx < 0 {
+		return "", "", errors.New("invalid key: no user separator: " + keyStr)
+	}
+
+	return keyStr[:sepIdx], keyStr[sepIdx+1:], nil
+}
+
+func yoloString(buf []byte) string {
+	return *((*string)(unsafe.Pointer(&buf)))
 }

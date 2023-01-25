@@ -32,6 +32,7 @@ import (
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
 
+	"github.com/grafana/mimir/pkg/aggregator"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
@@ -90,6 +91,7 @@ const (
 	QueryScheduler             string = "query-scheduler"
 	TenantFederation           string = "tenant-federation"
 	UsageStats                 string = "usage-stats"
+	Aggregator                 string = "aggregator"
 	All                        string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
@@ -790,6 +792,15 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	return s, nil
 }
 
+func (t *Mimir) initAggregator() (_ services.Service, err error) {
+	t.Aggregator, err = aggregator.NewAggregator(t.Cfg.Aggregator, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.Aggregator, nil
+}
+
 func (t *Mimir) initUsageStats() (services.Service, error) {
 	if !t.Cfg.UsageStats.Enabled {
 		return nil, nil
@@ -848,6 +859,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(Aggregator, t.initAggregator)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
@@ -880,6 +892,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
 		TenantFederation:         {Queryable},
+		Aggregator:               {API},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
 		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
