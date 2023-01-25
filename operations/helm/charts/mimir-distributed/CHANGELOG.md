@@ -39,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851
 * [BUGFIX] Use alertmanager headless service in `gateway` NGINX configuration. #3851
 * [BUGFIX] Use `50Gi` persistent volume for ingesters in `capped-small.yaml`. #3919
+* [ENHANCEMENT] Add Datadog proxy to GEM helm chart #4084
 
 ## 4.0.1
 
