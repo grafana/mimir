@@ -30,18 +30,62 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestReaders(t *testing.T) {
+var implementations = []struct {
+	name    string
+	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
+}{
+	{
+		name: "binary reader",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{})
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "binary reader with map populate",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{MapPopulateEnabled: true})
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "lazy binary reader",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			readerFactory := func() (Reader, error) {
+				return NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{})
+			}
+
+			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "stream binary reader",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+}
+
+func TestReadersComparedToIndexHeader(t *testing.T) {
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, bkt.Close())
-	})
+	requireCleanup(t, bkt.Close)
 
 	// Create block index version 2.
-	idIndexV2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	series := []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -57,7 +101,9 @@ func TestReaders(t *testing.T) {
 		labels.FromStrings("a", "13"),
 		labels.FromStrings("a", "1", "longer-string", "1"),
 		labels.FromStrings("a", "1", "longer-string", "2"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	}
+
+	idIndexV2, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
@@ -73,62 +119,29 @@ func TestReaders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), nil))
 
-	for _, id := range []ulid.ULID{idIndexV2, metaIndexV1.ULID} {
-		t.Run(id.String(), func(t *testing.T) {
+	for _, testBlock := range []struct {
+		version string
+		id      ulid.ULID
+	}{
+		{version: "v2", id: idIndexV2},
+		{version: "v1", id: metaIndexV1.ULID},
+	} {
+		t.Run(testBlock.version, func(t *testing.T) {
+			id := testBlock.id
 			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 			require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
 
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, indexFile.Close())
-			})
+			requireCleanup(t, indexFile.Close)
 
 			b := realByteSlice(indexFile.Bytes())
-
-			t.Run("binary reader", func(t *testing.T) {
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{})
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					require.NoError(t, br.Close())
+			for _, impl := range implementations {
+				t.Run(impl.name, func(t *testing.T) {
+					r := impl.factory(t, ctx, tmpDir, id)
+					compareIndexToHeader(t, b, r)
 				})
-
-				compareIndexToHeader(t, b, br)
-			})
-
-			t.Run("binary reader with map populate", func(t *testing.T) {
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{MapPopulateEnabled: true})
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					require.NoError(t, br.Close())
-				})
-
-				compareIndexToHeader(t, b, br)
-			})
-
-			t.Run("lazy binary reader", func(t *testing.T) {
-				factory := func() (Reader, error) {
-					return NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{})
-				}
-
-				br, err := NewLazyBinaryReader(ctx, factory, log.NewNopLogger(), nil, tmpDir, id, NewLazyBinaryReaderMetrics(nil), nil)
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					require.NoError(t, br.Close())
-				})
-
-				compareIndexToHeader(t, b, br)
-			})
-
-			t.Run("stream binary reader", func(t *testing.T) {
-				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					require.NoError(t, br.Close())
-				})
-
-				compareIndexToHeader(t, b, br)
-			})
+			}
 
 		})
 	}
@@ -188,7 +201,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname, nil)
+		vals, err := headerReader.LabelValues(lname, "", nil)
 		require.NoError(t, err)
 		require.Equal(t, expectedLabelVals, vals)
 
@@ -274,6 +287,122 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil))
 
 	return m
+}
+
+func TestReadersLabelValues(t *testing.T) {
+	const testLabelCount = 32
+	const testSeriesCount = 512
+
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	requireCleanup(t, bkt.Close)
+
+	series := make([]labels.Labels, 0, testSeriesCount)
+	lblValues := make([]int, testLabelCount)
+	for i := 0; i < testSeriesCount; i++ {
+		// add first, so we'll have the value_000.
+		lblStrings := make([]string, 0, testLabelCount*2)
+		for idx, val := range lblValues {
+			lblStrings = append(lblStrings, fmt.Sprintf("test_label_%d", idx), fmt.Sprintf("value_%03d", val))
+		}
+		series = append(series, labels.FromStrings(lblStrings...))
+
+		for idx := range lblValues {
+			lblValues[idx]++
+			if idx < 2 {
+				continue
+			}
+			lblValues[idx] %= idx
+		}
+	}
+
+	id, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil))
+
+	indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
+	require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+
+	indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
+	require.NoError(t, err)
+	requireCleanup(t, indexFile.Close)
+
+	type testCase struct {
+		prefix   string
+		desc     string
+		filter   func(string) bool
+		expected int
+	}
+	tests := map[string][]testCase{
+		"test_label_0": {
+			{prefix: "", expected: 512},
+			{prefix: "value_", expected: 512},
+			{prefix: "value_0", expected: 100},
+			{prefix: "value_1", expected: 100},
+			{prefix: "value_2", expected: 100},
+			{prefix: "value_3", expected: 100},
+			{prefix: "value_4", expected: 100},
+			{prefix: "value_5", expected: 12},
+			{prefix: "value_00", expected: 10},
+			{prefix: "value_10", expected: 10},
+			{prefix: "value_20", expected: 10},
+			{prefix: "value_30", expected: 10},
+			{prefix: "value_40", expected: 10},
+			{prefix: "value_50", expected: 10},
+			{prefix: "value_000", expected: 1},
+			{prefix: "value_400", expected: 1},
+			{prefix: "value_511", expected: 1},
+			{prefix: "value_512", expected: 0},
+			{prefix: "value_600", expected: 0},
+			{prefix: "value_aaa", expected: 0},
+			{prefix: "value_0000", expected: 0},
+			{prefix: "value_5110", expected: 0},
+			{
+				prefix:   "value_",
+				desc:     " only even",
+				filter:   labels.MustNewMatcher(labels.MatchRegexp, "test_label_0", "value_[0-9][0-9][02468]").Matches,
+				expected: 256,
+			},
+			{
+				prefix:   "",
+				desc:     " only even",
+				filter:   labels.MustNewMatcher(labels.MatchRegexp, "test_label_0", "value_[0-9][0-9][02468]").Matches,
+				expected: 256,
+			},
+		},
+	}
+
+	for lblIdx := 2; lblIdx < testLabelCount; lblIdx++ {
+		lbl := fmt.Sprintf("test_label_%d", lblIdx)
+		tests[lbl] = append(tests[lbl],
+			testCase{prefix: "", expected: lblIdx},
+			testCase{prefix: "value_", expected: lblIdx},
+			testCase{prefix: "value_000", expected: 1},
+			testCase{prefix: "value_001", expected: 1},
+			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx-1), expected: 1},
+			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx), expected: 0},
+		)
+	}
+
+	for _, impl := range implementations {
+		t.Run(impl.name, func(t *testing.T) {
+			r := impl.factory(t, ctx, tmpDir, id)
+			for lbl, tcs := range tests {
+				t.Run(lbl, func(t *testing.T) {
+					for _, tc := range tcs {
+						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
+							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+							require.NoError(t, err)
+							require.Equal(t, tc.expected, len(values))
+						})
+					}
+				})
+			}
+		})
+	}
 }
 
 func BenchmarkBinaryWrite(t *testing.B) {
@@ -467,4 +596,10 @@ func readSymbols(bs index.ByteSlice, version, off int) ([]string, map[uint32]str
 		cnt--
 	}
 	return symbolSlice, symbols, errors.Wrap(d.Err(), "read symbols")
+}
+
+func requireCleanup(t *testing.T, cleanupFun func() error) {
+	t.Cleanup(func() {
+		require.NoError(t, cleanupFun())
+	})
 }

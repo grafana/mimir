@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -415,6 +416,36 @@ func (w *binaryWriter) Close() error {
 type postingValueOffsets struct {
 	offsets       []postingOffset
 	lastValOffset int64
+}
+
+func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
+	// Find the first offset that is greater or equal to the value.
+	offsetIdx := sort.Search(len(e.offsets), func(i int) bool {
+		return prefix <= e.offsets[i].value
+	})
+
+	// We always include the last value in the offsets,
+	// and given that prefix is always less or equal than the value,
+	// we can conclude that there are no values with this prefix.
+	if offsetIdx == len(e.offsets) {
+		return 0, false
+	}
+
+	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
+	// Next values won't have the prefix, so we can return early.
+	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
+		return 0, false
+	}
+
+	// If the value is not equal to the prefix, this value might have the prefix.
+	// But maybe the values in the previous offset also had the prefix,
+	// so we need to step back one offset to find all values with this prefix.
+	// Unless, of course, we are at the first offset.
+	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
+		offsetIdx--
+	}
+
+	return offsetIdx, true
 }
 
 type postingOffset struct {
@@ -843,7 +874,7 @@ func (r *BinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
-func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (r *BinaryReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	if r.indexVersion == index.FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -851,7 +882,7 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			if filter == nil || filter(k) {
+			if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
 				values = append(values, k)
 			}
 		}
@@ -866,13 +897,21 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 	if len(e.offsets) == 0 {
 		return nil, nil
 	}
-	values := make([]string, 0, len(e.offsets)*r.postingOffsetsInMemSampling)
+
+	offsetIdx := 0
+	if prefix != "" {
+		offsetIdx, ok = e.prefixOffset(prefix)
+		if !ok {
+			return nil, nil
+		}
+	}
 
 	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
-	d.Skip(e.offsets[0].tableOff)
+	d.Skip(e.offsets[offsetIdx].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	skip := 0
+	values := make([]string, 0, (len(e.offsets)-offsetIdx)*r.postingOffsetsInMemSampling)
 	for d.Err() == nil {
 		if skip == 0 {
 			// These are always the same number of bytes,
@@ -884,13 +923,27 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 		} else {
 			d.Skip(skip)
 		}
-		s := yoloString(d.UvarintBytes()) // Label value.
-		if filter == nil || filter(s) {
-			values = append(values, s)
+
+		value := yoloString(d.UvarintBytes())
+		if prefix == "" {
+			// Quick path for no prefix matching.
+			if filter == nil || filter(value) {
+				values = append(values, value)
+			}
+		} else {
+			if strings.HasPrefix(value, prefix) {
+				if filter == nil || filter(value) {
+					values = append(values, value)
+				}
+			} else if prefix < value {
+				// There will be no more values with the prefix.
+				break
+			}
 		}
-		if s == lastVal {
+		if value == lastVal {
 			break
 		}
+
 		d.Uvarint64() // Offset.
 	}
 	if d.Err() != nil {

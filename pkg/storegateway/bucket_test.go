@@ -757,13 +757,13 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
 	if iir.onLabelValuesCalled != nil {
 		if err := iir.onLabelValuesCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValues(name, filter)
+	return iir.Reader.LabelValues(name, prefix, filter)
 }
 
 type contextNotifyingOnDoneWaiting struct {
@@ -913,6 +913,11 @@ func benchmarkExpandedPostings(
 	series int,
 ) {
 	ctx := context.Background()
+	series = series / 5
+
+	iUniqueValues := series / 10      // The amount of unique values for "i" label prefix. See appendTestSeries.
+	iUniqueValue := iUniqueValues / 2 // There will be 50 series matching: 5 per each series, 10 for each n. See appendTestSeries.
+
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+labelLongSuffix)
 
@@ -922,6 +927,8 @@ func benchmarkExpandedPostings(
 	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
 	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
+	iUniquePrefixPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", fmt.Sprintf("%d.+", iUniqueValue))
+	iNotUniquePrefixPlus := labels.MustNewMatcher(labels.MatchNotRegexp, "i", fmt.Sprintf("%d.+", iUniqueValue))
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
@@ -939,7 +946,6 @@ func benchmarkExpandedPostings(
 	// Just make sure that we're testing what we think we're testing.
 	require.NotEmpty(t, iRegexNotSetMatches.SetMatches(), "Should have non empty SetMatches to test the proper path.")
 
-	series = series / 5
 	cases := []struct {
 		name     string
 		matchers []*labels.Matcher
@@ -979,6 +985,9 @@ func benchmarkExpandedPostings(
 		{`i=~"[0-2]xxx"`, []*labels.Matcher{iRegexClass}, 150},                                  // 50 series for "1", 50 for "2" and 50 for "3".
 		{`i!~[0-2]xxx`, []*labels.Matcher{iRegexNotSetMatches}, 5*series - 150},                 // inverse of iRegexAlternateSuffix
 		{`i=~".*", i!~[0-2]xxx`, []*labels.Matcher{iStar, iRegexNotSetMatches}, 5*series - 150}, // inverse of iRegexAlternateSuffix
+		{`i=~"<unique_prefix>.+"`, []*labels.Matcher{iUniquePrefixPlus}, 50},
+		{`n="1",i=~"<unique_prefix>.+"`, []*labels.Matcher{n1, iUniquePrefixPlus}, 2},
+		{`n="1",i!~"<unique_prefix>.+"`, []*labels.Matcher{n1, iNotUniquePrefixPlus}, int(float64(series)*0.2) - 2},
 		{`p!=""`, []*labels.Matcher{pNotEmpty}, series},
 	}
 
