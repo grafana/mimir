@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
@@ -260,37 +261,76 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 }
 
 func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
-	// Prometheus
-	tsdbHistogram := tsdb.GenerateTestHistograms(1)[0]
-	remoteWriteHistogram := remote.HistogramToHistogramProto(1337, tsdbHistogram)
-	data, err := remoteWriteHistogram.Marshal()
-	assert.NoError(t, err, "marshal to protbuf")
+	tests := map[string]struct {
+		tsdbHistogram *histogram.Histogram
+		expectGauge   bool
+	}{
+		"counter": {
+			tsdbHistogram: tsdb.GenerateTestHistograms(1)[0],
+			expectGauge:   false,
+		},
+		"gauge": {
+			tsdbHistogram: tsdb.GenerateTestGaugeHistograms(1)[0],
+			expectGauge:   true,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Prometheus
+			remoteWriteHistogram := remote.HistogramToHistogramProto(1337, test.tsdbHistogram)
+			data, err := remoteWriteHistogram.Marshal()
+			assert.NoError(t, err, "marshal to protbuf")
 
-	// Mimir
-	receivedHistogram := &Histogram{}
-	err = receivedHistogram.Unmarshal(data)
-	assert.NoError(t, err, "unmarshal from protobuf")
-	assert.False(t, receivedHistogram.IsFloatHistogram())
-	mimirHistogram := FromHistogramProtoToHistogram(*receivedHistogram)
+			// Mimir
+			receivedHistogram := &Histogram{}
+			err = receivedHistogram.Unmarshal(data)
+			assert.NoError(t, err, "unmarshal from protobuf")
+			assert.False(t, receivedHistogram.IsFloatHistogram())
+			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
+			mimirHistogram := FromHistogramProtoToHistogram(*receivedHistogram)
 
-	// Is equal
-	assert.Equal(t, tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
+			// Is equal
+			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
+		})
+	}
 }
 
 func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
-	// Prometheus
-	tsdbHistogram := tsdb.GenerateTestFloatHistograms(1)[0]
-	remoteWriteHistogram := remote.FloatHistogramToHistogramProto(1337, tsdbHistogram)
-	data, err := remoteWriteHistogram.Marshal()
-	assert.NoError(t, err, "marshal to protbuf")
+	tests := map[string]struct {
+		tsdbHistogram *histogram.FloatHistogram
+		expectGauge   bool
+	}{
+		"counter": {
+			tsdbHistogram: tsdb.GenerateTestFloatHistograms(1)[0],
+			expectGauge:   false,
+		},
+		"gauge": {
+			tsdbHistogram: tsdb.GenerateTestGaugeFloatHistograms(1)[0],
+			expectGauge:   true,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Prometheus
+			remoteWriteHistogram := remote.FloatHistogramToHistogramProto(1337, test.tsdbHistogram)
+			data, err := remoteWriteHistogram.Marshal()
+			assert.NoError(t, err, "marshal to protbuf")
 
-	// Mimir
-	receivedHistogram := &Histogram{}
-	err = receivedHistogram.Unmarshal(data)
-	assert.NoError(t, err, "unmarshal from protobuf")
-	assert.True(t, receivedHistogram.IsFloatHistogram())
-	mimirHistogram := FromHistogramProtoToFloatHistogram(*receivedHistogram)
+			// Mimir
+			receivedHistogram := &Histogram{}
+			err = receivedHistogram.Unmarshal(data)
+			assert.NoError(t, err, "unmarshal from protobuf")
+			assert.True(t, receivedHistogram.IsFloatHistogram())
+			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
+			mimirHistogram := FromHistogramProtoToFloatHistogram(*receivedHistogram)
 
-	// Is equal
-	assert.Equal(t, tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
+			// Is equal
+			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
+		})
+	}
+}
+
+func TestCounterResetHint(t *testing.T) {
+	// Use protobuf generated code to check equivalence
+	assert.Equal(t, prompb.Histogram_ResetHint_value, Histogram_ResetHint_value)
 }

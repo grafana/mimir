@@ -159,29 +159,31 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 
 func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
 	return &histogram.Histogram{
-		Schema:          hp.Schema,
-		ZeroThreshold:   hp.ZeroThreshold,
-		ZeroCount:       hp.GetZeroCountInt(),
-		Count:           hp.GetCountInt(),
-		Sum:             hp.Sum,
-		PositiveSpans:   fromSpansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets: hp.GetPositiveDeltas(),
-		NegativeSpans:   fromSpansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets: hp.GetNegativeDeltas(),
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountInt(),
+		Count:            hp.GetCountInt(),
+		Sum:              hp.Sum,
+		PositiveSpans:    fromSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveDeltas(),
+		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeDeltas(),
 	}
 }
 
 func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
-		Schema:          hp.Schema,
-		ZeroThreshold:   hp.ZeroThreshold,
-		ZeroCount:       hp.GetZeroCountFloat(),
-		Count:           hp.GetCountFloat(),
-		Sum:             hp.Sum,
-		PositiveSpans:   fromSpansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets: hp.GetPositiveCounts(),
-		NegativeSpans:   fromSpansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets: hp.GetNegativeCounts(),
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountFloat(),
+		Count:            hp.GetCountFloat(),
+		Sum:              hp.Sum,
+		PositiveSpans:    fromSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveCounts(),
+		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
 func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
