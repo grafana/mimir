@@ -32,7 +32,7 @@ spec:
         []
       containers:
         - name: smoke-test
-          imagePullPolicy: 
+          imagePullPolicy: IfNotPresent
           args:
             - "-tests.smoke-test"
             - "-tests.write-endpoint=http://metamonitoring-values-mimir-nginx.citestns.svc:80"
