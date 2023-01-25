@@ -811,7 +811,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) (objstore.BucketReader, string, ulid.ULID, int64, int64) {
 	tmpDir := tb.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -822,6 +822,13 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 	})
 
 	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
+
+	return bkt, tmpDir, id, minT, maxT
+}
+
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
+
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.Config{})
 	require.NoError(tb, err)
 
