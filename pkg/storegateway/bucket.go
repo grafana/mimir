@@ -1129,7 +1129,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx,
-				s.maxSeriesPerBatch,
+				s.maxSeriesPerBatch/len(blocks),
 				s.userID,
 				indexr,
 				s.indexCache,
