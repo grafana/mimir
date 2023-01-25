@@ -676,7 +676,7 @@ type Mimir struct {
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 	EphemeralChecker         ephemeral.SeriesCheckerByUser
-	Aggregator               *aggregator.Aggregator
+	Aggregator               *aggregator.KafkaConsumer
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter

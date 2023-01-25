@@ -793,7 +793,7 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initAggregator() (_ services.Service, err error) {
-	t.Aggregator, err = aggregator.NewAggregator(t.Cfg.Aggregator, util_log.Logger, t.Registerer)
+	t.Aggregator, err = aggregator.NewKafkaConsumer(t.Cfg.Aggregator, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}

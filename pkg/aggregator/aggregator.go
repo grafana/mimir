@@ -1,233 +1,35 @@
 package aggregator
 
 import (
-	"context"
 	"math"
 	"time"
-	"unsafe"
 
-	"github.com/go-kit/log"
-
-	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_kafka "github.com/grafana/mimir/pkg/util/kafka"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/segmentio/kafka-go"
 )
-
-type Aggregator struct {
-	services.Service
-	logger       log.Logger
-	cfg          Config
-	shutdownCh   chan struct{}
-	kafkaReaders []*kafka.Reader
-
-	aggs userAggregations
-}
-
-func NewAggregator(cfg Config, logger log.Logger, reg prometheus.Registerer) (*Aggregator, error) {
-	agg := &Aggregator{
-		logger:     logger,
-		shutdownCh: make(chan struct{}),
-		cfg:        cfg,
-	}
-
-	agg.Service = services.NewBasicService(agg.starting, agg.running, agg.stopping)
-
-	return agg, nil
-}
-
-func (a *Aggregator) starting(ctx context.Context) error {
-	for _, partition := range a.cfg.kafkaPartitions {
-		reader := kafka.NewReader(kafka.ReaderConfig{
-			Brokers:   a.cfg.kafkaBrokers,
-			Topic:     a.cfg.KafkaTopic,
-			Partition: partition,
-			MinBytes:  1e2,
-			MaxBytes:  10e6,
-		})
-
-		a.kafkaReaders = append(a.kafkaReaders, reader)
-
-		go newPartitionConsumer(a.cfg, reader, a.shutdownCh, a.logger)
-	}
-
-	return nil
-}
-
-func (a *Aggregator) running(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-a.shutdownCh:
-		return nil
-	}
-}
-
-func (a *Aggregator) stopping(_ error) error {
-	close(a.shutdownCh)
-
-	multiErr := errors.NewMulti()
-	for _, reader := range a.kafkaReaders {
-		err := reader.Close()
-		if err != nil {
-			multiErr.Add(err)
-		}
-	}
-
-	return multiErr.Err()
-}
-
-type partitionConsumer struct {
-	cfg             Config
-	aggs            userAggregations
-	shutdownCh      chan struct{}
-	logger          log.Logger
-	handleAggregate func(user string, aggSample mimirpb.Sample)
-}
-
-func newPartitionConsumer(cfg Config, reader *kafka.Reader, shutdownCh chan struct{}, logger log.Logger) {
-	partitionConsumer{
-		cfg:        cfg,
-		aggs:       newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay),
-		shutdownCh: shutdownCh,
-		logger:     logger,
-	}.consume(reader)
-}
-
-func (c partitionConsumer) isShuttingDown() bool {
-	select {
-	case <-c.shutdownCh:
-		return true
-	default:
-		return false
-	}
-}
-
-func (c partitionConsumer) consume(reader *kafka.Reader) {
-	for !c.isShuttingDown() {
-		m, err := reader.ReadMessage(context.Background())
-		if err != nil {
-			level.Error(c.logger).Log("msg", "failed to read kafka message", "err", err)
-			break
-		}
-
-		c.handleMessage(m)
-	}
-}
-
-func (c partitionConsumer) handleMessage(message kafka.Message) {
-	user, aggregatedLabels, err := util_kafka.DecomposeKafkaKey(message.Key)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to decompose kafka key, dropping message", "err", err)
-		return
-	}
-
-	var value mimirpb.PreallocTimeseries
-	err = value.Unmarshal(message.Value)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to unmarshal kafka message, dropping message", "err", err)
-		return
-	}
-
-	c.handleTimeseries(user, aggregatedLabels, value)
-}
-
-func (c partitionConsumer) handleTimeseries(user, aggregatedLabels string, value mimirpb.PreallocTimeseries) {
-	if len(value.Samples) == 0 {
-		// No value, ignoring.
-		return
-	}
-
-	rawLabels := labelsToString(value.Labels)
-	for _, sample := range value.Samples {
-		aggSample := c.aggs.ingest(user, aggregatedLabels, rawLabels, sample)
-		if math.IsNaN(aggSample.Value) {
-			c.handleAggregate(user, aggSample)
-		}
-	}
-}
-
-// labelsToString converts a slice of labels to a string.
-// it assumes that every labelset has a metric name
-func labelsToString(labels []mimirpb.LabelAdapter) string {
-	res := make([]byte, 0, predictSize(labels))
-	res = append(res, metricName(labels)...)
-	if len(labels) == 1 {
-		return yoloString(res)
-	}
-
-	res = append(res, '{')
-	firstLabel := true
-	for _, label := range labels {
-		if label.Name == model.MetricNameLabel {
-			continue
-		}
-		if !firstLabel {
-			res = append(res, ',')
-			firstLabel = false
-		}
-		res = append(res, label.Name...)
-		res = append(res, '=')
-		res = append(res, label.Value...)
-	}
-	res = append(res, '}')
-
-	return yoloString(res)
-}
-
-func yoloString(buf []byte) string {
-	return *((*string)(unsafe.Pointer(&buf)))
-}
-
-func metricName(labels []mimirpb.LabelAdapter) []byte {
-	for _, label := range labels {
-		if label.Name == model.MetricNameLabel {
-			return []byte(label.Value)
-		}
-	}
-
-	return []byte{}
-}
-
-func predictSize(labels []mimirpb.LabelAdapter) int {
-	var size int
-
-	for _, label := range labels {
-		if label.Name != model.MetricNameLabel {
-			size += len(label.Value)
-			if len(labels) > 1 {
-				size += 2 // for the {} chars
-			}
-		} else {
-			size += len(label.Name)
-			size += 2 // for the "" chars
-			size += len(label.Value)
-
-			if len(labels) > 2 {
-				size += 1 // for the , after the label/value
-			}
-		}
-	}
-
-	return size
-}
 
 // userAggregations contains the aggregation state for all users.
 // Note that it and all its sub-structs are not thread-safe, to gain parallelism we partition the Kafka topic.
 type userAggregations struct {
-	interval time.Duration
-	delay    time.Duration
+	interval int64
+	delay    int64
 	byUser   map[string]aggregations
 }
 
+// newUserAggregations creates a new userAggregations object, following is a description of the parameters.
+//
+// interval:
+// The interval at which to generate an aggregated sample.
+// Note that the aggregation isn't triggered by a timer, it's triggered by newer samples arriving.
+// The interval parameter determines the spacing between aggregated samples, but it doesn't guarantee that an aggregated
+// sample will be generated every interval.
+//
+// delay:
+// The delay to wait before generating an aggregated sample based on a raw sample,
+// this is the tolerance for samples to arrive late.
 func newUserAggregations(interval, delay time.Duration) userAggregations {
 	return userAggregations{
-		interval: interval,
-		delay:    delay,
+		interval: interval.Milliseconds(),
+		delay:    delay.Milliseconds(),
 		byUser:   map[string]aggregations{},
 	}
 }
@@ -241,7 +43,7 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 		u.byUser[user] = aggs
 	}
 
-	aggSample := aggs.ingest(u.interval.Milliseconds(), u.delay.Milliseconds(), sample, aggregatedLabels, rawLabels)
+	aggSample := aggs.ingest(u.interval, u.delay, sample, aggregatedLabels, rawLabels)
 	u.byUser[user] = aggs
 
 	return aggSample
@@ -291,8 +93,6 @@ func newAggregation() aggregation {
 }
 
 func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLabels string) (aggSample mimirpb.Sample) {
-	aggSample.Value = math.NaN()
-
 	aggregationTs := getAggregationTs(sample.TimestampMs, interval)
 	if aggregationTs <= a.lastTimestamp {
 		// Aggregated sample which would be generated from the sample with the given timestamp has already been generated.
@@ -300,28 +100,34 @@ func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLa
 		return
 	}
 
-	bucketCount := bucketCount(interval, delay)
-	targetBucket := int(sample.TimestampMs/interval) % bucketCount
 	rawSeries, ok := a.rawSeries[rawLabels]
 	if !ok {
-		rawSeries = newTimeBuckets(interval, delay)
+		rawSeries = newTimeBuckets(bucketCount(interval, delay))
 		a.rawSeries[rawLabels] = rawSeries
 	}
-	rawSeries.ingest(targetBucket, sample)
+	rawSeries.ingest(sample, interval)
+	a.rawSeries[rawLabels] = rawSeries
 
-	aggSample.TimestampMs = getAggregationTs(sample.TimestampMs-delay-interval, interval)
-	if aggSample.TimestampMs > a.lastTimestamp {
-		aggSample.Value = a.aggregate(aggSample.TimestampMs, interval, bucketCount)
+	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
+	if lastEligbleTs > a.lastTimestamp {
+		aggSample = a.aggregateTo(lastEligbleTs, interval)
+	} else {
+		aggSample = mimirpb.Sample{
+			TimestampMs: lastEligbleTs,
+			Value:       math.NaN(),
+		}
 	}
 
 	return
 }
 
-func (a *aggregation) aggregate(aggregationTs, intervalMs int64, bucketCount int) float64 {
-	bucket := int(aggregationTs/intervalMs) % bucketCount
+func (a *aggregation) aggregateTo(toTs, interval int64) mimirpb.Sample {
 	increasesSum := math.NaN()
-	for _, rawSeries := range a.rawSeries {
-		increase := rawSeries.increaseToBucket(bucket)
+	highestTs := int64(0)
+	for key, rawSeries := range a.rawSeries {
+		ts, increase := rawSeries.increaseToTs(toTs)
+		a.rawSeries[key] = rawSeries
+
 		if !math.IsNaN(increase) {
 			if math.IsNaN(increasesSum) {
 				increasesSum = 0
@@ -329,29 +135,47 @@ func (a *aggregation) aggregate(aggregationTs, intervalMs int64, bucketCount int
 
 			increasesSum += increase
 		}
+
+		if ts > highestTs {
+			highestTs = ts
+		}
 	}
 
-	a.lastTimestamp = aggregationTs
-
-	if !math.IsNaN(increasesSum) && math.IsNaN(a.lastValue) {
-		a.lastValue = increasesSum
+	var returnValue float64
+	if math.IsNaN(increasesSum) {
+		returnValue = math.NaN()
 	} else {
-		a.lastValue += increasesSum
+		if math.IsNaN(a.lastValue) {
+			a.lastValue = increasesSum
+		} else {
+			a.lastValue += increasesSum
+		}
+		returnValue = a.lastValue
 	}
 
-	return a.lastValue
+	if highestTs > 0 {
+		a.lastTimestamp = getAggregationTs(highestTs, interval)
+	} else {
+		a.lastTimestamp = getAggregationTs(toTs, interval)
+	}
+
+	return mimirpb.Sample{
+		TimestampMs: a.lastTimestamp,
+		Value:       returnValue,
+	}
 }
 
 // timeBuckets is a fixed size ring buffer of time buckets for which we're generating aggregations.
 // Its size is determined by the aggregation interval and aggregation delay, it is calculated like:
 // ceil( ( <aggregation delay> + <aggregation interval> ) / <aggregation interval> )
 type timeBuckets struct {
+	current int // Pointer to the current time bucket.
 	buckets []timeBucket
 }
 
-func newTimeBuckets(interval, delay int64) timeBuckets {
+func newTimeBuckets(bucketCount int) timeBuckets {
 	tb := timeBuckets{
-		buckets: make([]timeBucket, bucketCount(interval, delay)),
+		buckets: make([]timeBucket, bucketCount),
 	}
 	for i := range tb.buckets {
 		tb.buckets[i].sample.Value = math.NaN()
@@ -372,43 +196,75 @@ func getAggregationTs(timestamp, interval int64) int64 {
 	return timestamp/interval*interval + interval - 1
 }
 
-func (t timeBuckets) ingest(targetBucket int, sample mimirpb.Sample) {
-	if t.buckets[targetBucket].sample.TimestampMs >= sample.TimestampMs {
-		// Sample older or same age as current sample in this bucket, ignoring.
+func (t *timeBuckets) ingest(sample mimirpb.Sample, interval int64) {
+	sampleBucketTs := getAggregationTs(sample.TimestampMs, interval)
+	currentBucketTs := getAggregationTs(t.buckets[t.current].sample.TimestampMs, interval)
+	if currentBucketTs == sampleBucketTs {
+		// The sample is in the current bucket, we can just replace that bucket.
+		t.buckets[t.current].sample = sample
 		return
 	}
-
-	t.buckets[targetBucket].sample = sample
+	if currentBucketTs < sampleBucketTs {
+		// The sample is in a future bucket, we give it a new bucket.
+		t.current = incWrapped(t.current, len(t.buckets))
+		t.buckets[t.current].sample = sample
+		return
+	}
 }
 
-func (t timeBuckets) increaseToBucket(bucket int) float64 {
-	curValue := t.buckets[bucket].sample.Value
-	prevValue := t.buckets[decWrapped(bucket, len(t.buckets))].sample.Value
+func (t *timeBuckets) increaseToTs(toTs int64) (int64, float64) {
+	increase := math.NaN()
+	ts := int64(0)
 
-	if math.IsNaN(curValue) {
-		return math.NaN()
+	lowerBound, upperBound := -1, -1
+	for i := 0; i < len(t.buckets); i++ {
+		bucket := subtractWrapped(t.current, len(t.buckets), i)
+		if upperBound < 0 {
+			// Looking for the upper bound.
+			if t.buckets[bucket].sample.TimestampMs != 0 && t.buckets[bucket].sample.TimestampMs <= toTs {
+				upperBound = bucket
+				ts = t.buckets[bucket].sample.TimestampMs
+			}
+		} else {
+			// looking for the lower bound.
+			if t.buckets[bucket].sample.TimestampMs != 0 && t.buckets[bucket].sample.TimestampMs <= t.buckets[upperBound].sample.TimestampMs {
+				lowerBound = bucket
+				break
+			}
+		}
 	}
 
-	if math.IsNaN(prevValue) {
-		return curValue
+	if upperBound >= 0 {
+		if lowerBound >= 0 {
+			if t.buckets[upperBound].sample.Value > t.buckets[lowerBound].sample.Value {
+				increase = t.buckets[upperBound].sample.Value - t.buckets[lowerBound].sample.Value
+			} else {
+				// If the upper bound is smaller than the lower bound, the counter has been reset.
+				increase = t.buckets[upperBound].sample.Value
+			}
+			t.buckets[lowerBound].sample.Value = math.NaN()
+			t.buckets[lowerBound].sample.TimestampMs = 0
+		} else {
+			// We have only the upper bound, we can't calculate the increase, taking the absolute value of the upper bound as increase.
+			increase = t.buckets[upperBound].sample.Value
+		}
 	}
 
-	if prevValue > curValue {
-		// Counter reset, use absolute value as increase.
-		return curValue
-	}
-
-	// Difference is the increase.
-	return curValue - prevValue
+	return ts, increase
 }
 
-// decWrapped decreases the integer <i> by one, if <i> is 0 it returns <size> - 1 (wrapping around).
-func decWrapped(i, size int) int {
-	if i == 0 {
-		return size - 1
+// subtractWrapped subtracts the integer <sub> from the integer <i>, it wraps around at 0 going back to <size>.
+func subtractWrapped(i, size, sub int) int {
+	return (i + size - sub) % size
+}
+
+// incWrapped increases the integer <i> by one, if <i> is <size> - 1 it returns 0 (wrapping around).
+func incWrapped(i, size int) int {
+	if i == size-1 {
+		return 0
 	}
 
-	return i - 1
+	return i + 1
 }
 
 // time bucket represents one interval of time for which we're generating an aggregation,

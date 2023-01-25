@@ -14,10 +14,6 @@ import (
 func TestPerformingAggregations(t *testing.T) {
 	user := "test_user"
 
-	offsetToMs := func(offset int64) int64 {
-		return offset * time.Second.Milliseconds()
-	}
-
 	type ingestCall struct {
 		user              string
 		aggregated        string
@@ -137,7 +133,7 @@ func TestPerformingAggregations(t *testing.T) {
 			ingestCalls: []ingestCall{
 				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(135), 3, offsetToMs(60) - 1, math.NaN()},
 				// 5x Next time bucket.
-				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(435), 4, offsetToMs(120) - 1, 3},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(435), 4, offsetToMs(180) - 1, 3},
 			},
 		},
 	}
@@ -159,4 +155,118 @@ func TestPerformingAggregations(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTimeBucketsIncreaseToTs(t *testing.T) {
+	interval := int64(60)
+	type testCase struct {
+		name           string
+		bucketCount    int
+		ingestSamples  []mimirpb.Sample
+		toTs           int64
+		expectTs       int64
+		expectIncrease float64
+	}
+	testCases := []testCase{
+		{
+			name:        "ingest one sample, get its value as increase",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 100, Value: 3},
+			},
+			toTs:           200,
+			expectTs:       100,
+			expectIncrease: 3,
+		}, {
+			name:        "ingest two samples into consecutive buckets, get increase between them",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 3},
+				{TimestampMs: 170, Value: 5},
+			},
+			toTs:           180,
+			expectTs:       170,
+			expectIncrease: 2,
+		}, {
+			name:        "ingest two samples into same bucket, get higher as increase",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 3},
+				{TimestampMs: 111, Value: 5},
+			},
+			toTs:           180,
+			expectTs:       111,
+			expectIncrease: 5,
+		}, {
+			name:        "ingest two samples into two buckets with gap between, get increase between them",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 3},
+				{TimestampMs: 240, Value: 7},
+			},
+			toTs:           250,
+			expectTs:       240,
+			expectIncrease: 4,
+		}, {
+			name:        "ingest two samples into two buckets, get up to timestamp of latter",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 2},
+				{TimestampMs: 120, Value: 5},
+			},
+			toTs:           120,
+			expectTs:       120,
+			expectIncrease: 3,
+		}, {
+			name:        "ingest two samples into two buckets with reset, get second value as increase",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 5},
+				{TimestampMs: 120, Value: 2},
+			},
+			toTs:           120,
+			expectTs:       120,
+			expectIncrease: 2,
+		}, {
+			name:        "ingest four samples into four buckets, get increase between last two",
+			bucketCount: 4,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 5},
+				{TimestampMs: 170, Value: 6},
+				{TimestampMs: 230, Value: 8},
+				{TimestampMs: 290, Value: 11},
+			},
+			toTs:           300,
+			expectTs:       290,
+			expectIncrease: 3,
+		}, {
+			name:        "ingest four samples into two buckets, get increase between last two",
+			bucketCount: 2,
+			ingestSamples: []mimirpb.Sample{
+				{TimestampMs: 110, Value: 5},
+				{TimestampMs: 170, Value: 6},
+				{TimestampMs: 230, Value: 8},
+				{TimestampMs: 290, Value: 11},
+			},
+			toTs:           300,
+			expectTs:       290,
+			expectIncrease: 3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tb := newTimeBuckets(tc.bucketCount)
+			for _, ingest := range tc.ingestSamples {
+				tb.ingest(ingest, interval)
+			}
+			gotTs, gotIncrease := tb.increaseToTs(tc.toTs)
+			require.Equal(t, tc.expectTs, gotTs)
+			require.Equal(t, tc.expectIncrease, gotIncrease)
+		})
+	}
+}
+
+func offsetToMs(offset int64) int64 {
+	return offset * time.Second.Milliseconds()
 }
