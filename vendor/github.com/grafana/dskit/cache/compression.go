@@ -99,7 +99,6 @@ func (s *snappyCache) Name() string {
 	return s.next.Name()
 }
 
-func (s *snappyCache) Delete(_ context.Context, _ string) error {
-	// no-op
-	return nil
+func (s *snappyCache) Delete(ctx context.Context, key string) error {
+	return s.next.Delete(ctx, key)
 }
