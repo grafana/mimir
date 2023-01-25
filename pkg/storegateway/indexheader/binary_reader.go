@@ -924,23 +924,23 @@ func (r *BinaryReader) LabelValues(name string, prefix string, filter func(strin
 			d.Skip(skip)
 		}
 
-		value := yoloString(d.UvarintBytes())
+		unsafeValue := yoloString(d.UvarintBytes())
 		if prefix == "" {
 			// Quick path for no prefix matching.
-			if filter == nil || filter(value) {
-				values = append(values, value)
+			if filter == nil || filter(unsafeValue) {
+				values = append(values, unsafeValue)
 			}
 		} else {
-			if strings.HasPrefix(value, prefix) {
-				if filter == nil || filter(value) {
-					values = append(values, value)
+			if strings.HasPrefix(unsafeValue, prefix) {
+				if filter == nil || filter(unsafeValue) {
+					values = append(values, unsafeValue)
 				}
-			} else if prefix < value {
+			} else if prefix < unsafeValue {
 				// There will be no more values with the prefix.
 				break
 			}
 		}
-		if value == lastVal {
+		if unsafeValue == lastVal {
 			break
 		}
 
