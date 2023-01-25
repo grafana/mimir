@@ -22,13 +22,13 @@ data:
             store: memberlist
     admin_client:
       storage:
+        backend: s3
         s3:
           access_key_id: grafana-mimir
           bucket_name: enterprise-metrics-admin
           endpoint: gateway-enterprise-values-minio.citestns.svc:9000
           insecure: true
           secret_access_key: supersecret
-        type: s3
     alertmanager:
       data_dir: /data
       enable_api: true
@@ -67,6 +67,14 @@ data:
       sharding_ring:
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
+    datadog:
+      memcached_client:
+        host: dnssrvnoa+gateway-enterprise-values-mimir-gr-writes-cache.citestns.svc:11211
+        timeout: 1s
+      remote_read:
+        endpoint: http://gateway-enterprise-values-mimir-query-frontend.citestns.svc:8080/prometheus
+      remote_write:
+        endpoint: dns:///gateway-enterprise-values-mimir-distributor.citestns.svc:9095
     frontend:
       parallelize_shardable_queries: true
       scheduler_address: gateway-enterprise-values-mimir-query-scheduler-headless.citestns.svc:9095
@@ -82,6 +90,10 @@ data:
           url: http://gateway-enterprise-values-mimir-alertmanager-headless.citestns.svc:8080
         compactor:
           url: http://gateway-enterprise-values-mimir-compactor.citestns.svc:8080
+        datadog_read_proxy:
+          url: http://gateway-enterprise-values-mimir-datadog-read-proxy.citestns.svc:8080
+        datadog_write_proxy:
+          url: http://gateway-enterprise-values-mimir-datadog-write-proxy.citestns.svc:8080
         default:
           url: http://gateway-enterprise-values-mimir-admin-api.citestns.svc:8080
         distributor:
