@@ -7,6 +7,7 @@ package encoding
 var KnownCodecs = map[string]Codec{
 	"original JSON":                                                       OriginalJsonCodec{},
 	"original query middleware protobuf":                                  OriginalQueryMiddlewareProtobufCodec{},
+	"snappy compressed original query middleware protobuf":                SnappyWrapperCodec{OriginalQueryMiddlewareProtobufCodec{}},
 	"uninterned protobuf":                                                 UninternedProtobufCodec{},
 	"interned protobuf":                                                   InternedProtobufCodec{},
 	"interned protobuf with single string symbol table":                   InternedProtobufWithSingleStringCodec{},
