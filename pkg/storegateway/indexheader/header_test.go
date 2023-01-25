@@ -358,7 +358,8 @@ func TestReadersLabelValues(t *testing.T) {
 			{prefix: "value_512", expected: 0},
 			{prefix: "value_600", expected: 0},
 			{prefix: "value_aaa", expected: 0},
-			{prefix: "value_aaa", expected: 0},
+			{prefix: "value_0000", expected: 0},
+			{prefix: "value_5110", expected: 0},
 			{
 				prefix:   "value_",
 				desc:     " only even",
