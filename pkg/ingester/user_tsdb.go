@@ -210,15 +210,16 @@ func (u *userTSDB) Close() error {
 	return merr.Err()
 }
 
-func (u *userTSDB) Compact(now time.Time) error {
-	var merr multierror.MultiError
+func (u *userTSDB) TruncateEphemeral(now time.Time) error {
 	eph := u.getEphemeralStorage()
 	if eph != nil {
-		merr.Add(errors.Wrap(eph.Truncate(now.Add(-u.ephemeralSeriesRetentionPeriod).UnixMilli()), "ephemeral storage"))
+		return eph.Truncate(now.Add(-u.ephemeralSeriesRetentionPeriod).UnixMilli())
 	}
+	return nil
+}
 
-	merr.Add(errors.Wrap(u.db.Compact(), "persistent storage"))
-	return merr.Err()
+func (u *userTSDB) Compact() error {
+	return u.db.Compact()
 }
 
 func (u *userTSDB) StartTime() (int64, error) {

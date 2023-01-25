@@ -48,6 +48,7 @@ jobs:
         github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
         source_folder: "docs/sources/mimir"
         target_folder: "content/docs/mimir/next"
+        allow_no_changes: true
 
     - name: "Publish to website repository helm-charts/mimir-distributed (next)"
       uses: "./.github/actions/website-sync"
@@ -61,3 +62,4 @@ jobs:
         github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
         source_folder: "docs/sources/helm-charts/mimir-distributed"
         target_folder: "content/docs/helm-charts/mimir-distributed/next"
+        allow_no_changes: true

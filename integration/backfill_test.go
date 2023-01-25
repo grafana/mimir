@@ -41,10 +41,10 @@ func TestMimirtoolBackfill(t *testing.T) {
 	tmpDir := t.TempDir()
 	blockEnd := time.Now().Truncate(2 * time.Hour)
 
-	block1, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test1")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0)
+	block1, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test1")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
 	require.NoError(t, err)
 
-	block2, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test2")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0)
+	block2, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test2")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
 	require.NoError(t, err)
 
 	s, err := e2e.NewScenario(networkName)
@@ -130,7 +130,7 @@ overrides:
 
 	{
 		// Let's try to upload a block without meta.json.
-		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0)
+		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
 		require.NoError(t, err)
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
@@ -143,7 +143,7 @@ overrides:
 		// Let's try block with external labels. Mimir currently rejects those.
 		extLabels := labels.FromStrings("ext", "labels")
 
-		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels, 0)
+		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels)
 		require.NoError(t, err)
 
 		output, err := runMimirtoolBackfill(tmpDir, compactor, b)

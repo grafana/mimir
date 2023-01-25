@@ -9,9 +9,9 @@ weight: 60
 
 Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.org/wiki/Consistent_hashing) and are widely used by Grafana Mimir for sharding and replication.
 
-## How the hash ring works in Grafana Mimir
+## How hash rings work in Grafana Mimir
 
-The hash ring in Grafana Mimir is used to share work across several replicas of a component in a consistent way, so that any other component can decide which address to talk to.
+Hash rings in Grafana Mimir are used to share work across several replicas of a component in a consistent way, so that any other component can decide which address to talk to.
 The workload or data to share is hashed first and the result of the hashing is used to find which ring member owns it.
 
 Grafana Mimir uses the `fnv32a` hash function, which returns 32-bit unsigned integers so its value can be between `0` and `(2^32)-1`, inclusive.
@@ -62,12 +62,12 @@ In the example that follows, the series are replicated to the instances of `Inge
 
 ### Consistent hashing
 
-The hash ring guarantees the property known as consistent hashing.
+A hash ring guarantees what is known as _consistent hashing_.
 
-When an instance is added or removed from the ring, consistent hashing minimizes the number of tokens that are moved from one instance to another.
+When an instance is added or removed from a given ring, consistent hashing minimizes the number of tokens that are moved from one instance to another.
 On average, the number of tokens that need to move to a different instance is only `n/m`, where `n` is the total number of tokens (32-bit unsigned integer) and `m` is the number of instances that are registered in the ring.
 
-## Components that use the hash ring
+## Components that use a hash ring
 
 There are several Grafana Mimir components that need a hash ring.
 Each of the following components builds an independent hash ring:
@@ -79,18 +79,18 @@ Each of the following components builds an independent hash ring:
 - [(Optional) Rulers]({{< relref "../components/ruler/index.md" >}}) shard rule groups to evaluate.
 - [(Optional) Alertmanagers]({{< relref "../components/alertmanager.md" >}}) shard tenants.
 
-## How the hash ring is shared between Grafana Mimir instances
+## How a hash ring is shared between Grafana Mimir instances
 
 Hash ring data structures need to be shared between Grafana Mimir instances.
-To propagate changes to the hash ring, Grafana Mimir uses a key-value store.
+To propagate changes to a given hash ring, Grafana Mimir uses a key-value store.
 The key-value store is required and can be configured independently for the hash rings of different components.
 
 For more information, see the [key-value store documentation]({{< relref "../key-value-store.md" >}}).
 
-## Features that are built using the hash ring
+## Features that are built using a hash ring
 
-Grafana Mimir primarily uses the hash ring for sharding and replication.
-Features that are built using the hash ring:
+Grafana Mimir primarily uses a hash ring for sharding and replication.
+Features that are built using a hash ring:
 
 - **Service discovery**: Instances can discover each other looking up who is registered in the ring.
 - **Heartbeating**: Instances periodically send a heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if it misses the heartbeat for some period of time.

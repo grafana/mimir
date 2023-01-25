@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230109170026-7242706251b9
+	github.com/grafana/dskit v0.0.0-20230120165636-649501dde2ca
 	github.com/grafana/e2e v0.1.1-0.20230119164726-5e313a82020d
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
@@ -229,8 +229,8 @@ require (
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
-// Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230119151144-44904a663c20
+// Using a fork of Prometheus with Mimir-specific changes.
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230125082610-38af345deab1
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

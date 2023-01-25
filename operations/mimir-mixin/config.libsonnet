@@ -607,6 +607,10 @@
         enabled: false,
         hpa_name: 'keda-hpa-distributor',
       },
+      ruler: {
+        enabled: false,
+        hpa_name: 'keda-hpa-ruler',
+      },
     },
 
 

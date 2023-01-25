@@ -48,7 +48,8 @@ message SeriesRequest {
   int64 max_time = 2;
   repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
 
-  int64 max_resolution_window = 4;
+  // Thanos max_resolution_window.
+  reserved 4;
 
   // Thanos aggregates.
   reserved 5;
@@ -67,13 +68,11 @@ message SeriesRequest {
   // implementation of a specific store.
   google.protobuf.Any hints = 9;
 
-  // Query step size in milliseconds.
-  // Deprecated: Use query_hints instead.
-  int64 step = 10;
+  // Thanos step.
+  reserved 10;
 
-  // Range vector selector range in milliseconds.
-  // Deprecated: Use query_hints instead.
-  int64 range = 11;
+  // Thanos range.
+  reserved 11;
 
   // Thanos query_hints.
   reserved 12;

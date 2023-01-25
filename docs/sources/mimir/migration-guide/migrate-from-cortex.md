@@ -7,12 +7,12 @@ weight: 10
 
 # Migrate from Cortex to Grafana Mimir
 
-As an operator, you can migrate a Helm deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-The overview includes the steps required for any environment. To migrate deployment environments with Helm, see [Migrate to Grafana Mimir using Helm]({{< relref "#migrate-to-grafana-mimir-using-helm" >}}).
+As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
+The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnent]({{< relref "#migrate-to-grafana-mimir-using-jsonnet" >}}).
 
 > **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 
-To migrate a Jsonnet deployment of Cortex refer to [Migrate from Cortex](/docs/mimir/latest/migration-guides/migrate-from-cortex).
+To migrate a Helm deployment of Cortex refer to [Migrate from Cortex](/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-cortex).
 
 Grafana Mimir includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
@@ -36,7 +36,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
   Using the monitoring mixin, you need to install both alerting and recording rules in either Prometheus or Cortex. You also need to install dashboards in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
-  To upload rules to the ruler using mimirtool, refer to [mimirtool rules](/docs/mimir/latest/operators-guide/tools/mimirtool/#rules).
+  To upload rules to the ruler using mimirtool, refer to [mimirtool rules]({{< relref "../operators-guide/tools/mimirtool.md" >}}).
   To import the dashboards into Grafana, refer to [Import dashboard](/docs/grafana/latest/dashboards/export-import/#import-dashboard).
 
 ## Notable changes
@@ -106,7 +106,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Generate the configuration for Grafana Mimir
 
-The [`mimirtool config convert`](/docs/mimir/latest/operators-guide/tools/mimirtool/#convert) command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
+The [`mimirtool config convert`]({{< relref "../operators-guide/tools/mimirtool.md#config" >}}) command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
 
 ### Install mimirtool
 
@@ -125,131 +125,61 @@ The `mimirtool config convert` command converts Cortex 1.11 configuration files 
 It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
 If you have explicitly set configuration parameters to a value matching the Cortex default, by default, `mimirtool config convert` doesn't update the value.
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
-Refer to [convert](/docs/mimir/latest/operators-guide/tools/mimirtool/#convert) for more information on using `mimirtool` for configuration conversion.
+Refer to [convert]({{< relref "../operators-guide/tools/mimirtool.md#convert" >}}) for more information on using `mimirtool` for configuration conversion.
 
-## Migrate to Grafana Mimir using Helm
+## Migrate to Grafana Mimir using Jsonnet
 
-You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.1.0) from the Cortex Helm chart
-(`cortex-helm/cortex` v1.7.0).
+Grafana Mimir has a Jsonnet library that replaces the existing Cortex Jsonnet library and updated monitoring mixin.
 
-### Before you begin
+### Migrate to Grafana Mimir video
 
-- Ensure that you are running the v1.7.0 release of the Cortex Helm chart.
-- Ensure that you are running ingesters using a Kubernetes StatefulSet.
-- Install `yq` [v4](https://github.com/mikefarah/yq).
+The following video shows you how to migrate to Grafana Mimir using Jsonnet.
 
-  In the `values.yaml` file:
+{{< vimeo 691929138 >}}
 
-  ```
-  ingester:
-    statefulSet:
-      enabled: true
-  ```
+<br/>
 
-  The ingester needs storage capacity for write-ahead-logging (WAL) and to create blocks for uploading.
-  The WAL was optional in Cortex with chunks, but not optional in Mimir.
-  A StatefulSet is the most convenient way to make sure that each Pod gets a storage volume.
+### Migrate to Grafana Mimir instructions
 
-**To migrate to the Grafana Mimir Helm chart:**
+The following instructions describe how to migrate to Grafana Mimir using Jsonnet.
+
+To install the updated libraries using `jsonnet-bundler`, run the following commands:
+
+```bash
+jb install github.com/grafana/mimir/operations/mimir@main
+jb install github.com/grafana/mimir/operations/mimir-mixin@main
+```
+
+**To deploy the updated Jsonnet:**
 
 1. Install the updated monitoring mixin.
 
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/requirements/#additional-resources-metrics).
+   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/monitor-grafana-mimir/requirements.md#additional-resources-metrics" >}}).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
-1. Run the following command to add the Grafana Helm chart repository:
-
-   ```bash
-   helm repo add grafana https://grafana.github.io/helm-charts
+1. Replace the import of the Cortex Jsonnet library with the Mimir Jsonnet library.
+   For example:
+   ```jsonnet
+   import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet'
    ```
-
-1. Convert the Cortex configuration in your `values.yaml` file.
-
-   a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
-
-   ```bash
-   yq '.config' <VALUES YAML FILE> > cortex.yaml
+1. Remove the `cortex_` prefix from any member keys of the `<MIMIR>._config` object.
+   For example, `cortex_compactor_disk_data_size` becomes `compactor_disk_data_size`.
+1. If you are using the Cortex defaults, set the server HTTP port to 80.
+   The new Mimir default is 8080.
+   For example:
+   ```jsonnet
+   (import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet') {
+     _config+: {
+       server_http.port: 80,
+     },
+   }
    ```
+1. For each component, use `mimirtool` to update the configured arguments.
+   To extract the flags for each component, refer to [Extracting flags from Jsonnet]({{< relref "../operators-guide/tools/mimirtool.md#extracting-flags-from-jsonnet" >}}).
+1. Apply the updated Jsonnet
 
-   b. Use `mimirtool` to update the configuration.
-
-   ```bash
-   mimirtool config convert --yaml-file cortex.yaml --yaml-out mimir.yaml
-   ```
-
-   c. Clean up the generated YAML configuration.
-
-   You have to remove some fields that are generated by `mimirtool config convert` or are coming from old configuration,
-   because the mimir-distributed Helm chart has already set the default value for them. Use the following script to
-   clean up those fields:
-
-   ```bash
-   yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir,.frontend_worker.frontend_address,.ingester.ring.tokens_file_path,.ruler.alertmanager_url,.ruler.rule_path,.runtime_config.file)' mimir.yaml
-   ```
-
-   d. At the top level of your custom Helm values file, put the updated configuration under the `mimir.structuredConfig` key.
-
-   > **Note:** The `mimir.structuredConfig` field, which is added in v3.0.0, allows you to override a specific
-   > configuration without needing to rewrite the whole block string literal, such as in `mimir.config`.
-
-   In your Helm values file:
-
-   ```yaml
-   mimir:
-     structuredConfig: <CONFIGURATION FILE CONTENTS>
-   ```
-
-   Example:
-
-   ```yaml
-   mimir:
-     structuredConfig:
-       ingester:
-         ring:
-           num_tokens: 512
-   ```
-
-   e. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
-   The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
-
-   In your `values.yaml` file:
-
-   ```yaml
-   ingester:
-     podManagementPolicy: "OrderedReady"
-   ```
-
-   f. Set the `nameOverride` parameter to `cortex`.
-   This configuration parameter ensures that resources have the same names as those created by the Cortex Helm chart and ensures Kubernetes performs a rolling upgrade of existing resources instead of creating new resources.
-
-   In your `values.yaml` file:
-
-   ```yaml
-   nameOverride: "cortex"
-   ```
-
-   g. Disable MinIO.
-   The Grafana Mimir Helm chart enables MinIO by default for convenience during first time install.
-   If you are migrating from Cortex and have your existing object storage you must disable MinIO in Grafana Mimir Helm
-   chart custom values.yaml.
-
-   In your `values.yaml` file:
-
-   ```yaml
-   minio:
-     enabled: false
-   ```
-
-1. Run the Helm upgrade with the Grafana Mimir chart.
-
-   > **Note:** The name of the release must match your Cortex Helm chart release.
-
-   ```bash
-   helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
-   ```
-
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/dashboards/).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitor-grafana-mimir/dashboards/_index.md" >}}).
