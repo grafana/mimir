@@ -613,7 +613,7 @@
       },
       gateway: {
         enabled: false,
-        hpa_name: 'keda-hpa-cortex-gw',
+        hpa_name: 'keda-hpa-cortex-gw.*',
       },
     },
 
