@@ -611,6 +611,10 @@
         enabled: false,
         hpa_name: 'keda-hpa-ruler',
       },
+      gateway: {
+        enabled: false,
+        hpa_name: 'keda-hpa-cortex-gw.*',
+      },
     },
 
 

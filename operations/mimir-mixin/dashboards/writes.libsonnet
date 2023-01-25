@@ -200,10 +200,6 @@ local filename = 'mimir-writes.json';
         )
       )
     )
-    .addRowIf(
-      $._config.autoscaling.distributor.enabled,
-      $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
-    )
     .addRow(
       $.row('Ingester')
       .addPanel(
@@ -220,6 +216,14 @@ local filename = 'mimir-writes.json';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         )
       )
+    )
+    .addRowIf(
+      $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+    )
+    .addRowIf(
+      $._config.autoscaling.distributor.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
     )
     .addRow(
       $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')

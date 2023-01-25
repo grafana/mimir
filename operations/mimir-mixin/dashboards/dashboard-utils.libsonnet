@@ -495,9 +495,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panel(title) +
       $.queryPanel(
         [
-          'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
-          'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
-          'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler=~"%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler=~"%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler=~"%s"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
         ],
         [
           'Min',
@@ -518,7 +518,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           $.filterKedaMetricByHPA('(keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"} / 1000)', $._config.autoscaling[component].hpa_name),
-          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s", metric_name=~".*cpu.*"} / 1000' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s", metric_name=~".*cpu.*"} / 1000' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
         ], [
           'Scaling metric',
           'Target per replica',
@@ -539,7 +539,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}', $._config.autoscaling[component].hpa_name),
-          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s", metric_name=~".*memory.*"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s", metric_name=~".*memory.*"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
         ], [
           'Scaling metric',
           'Target per replica',
