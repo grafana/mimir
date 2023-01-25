@@ -6691,28 +6691,6 @@
             },
             {
               "kind": "field",
-              "name": "wait_stability_min_duration",
-              "required": false,
-              "desc": "Minimum time to wait for ring stability at startup. 0 to disable.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "compactor.ring.wait-stability-min-duration",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "wait_stability_max_duration",
-              "required": false,
-              "desc": "Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway.",
-              "fieldValue": null,
-              "fieldDefaultValue": 300000000000,
-              "fieldFlag": "compactor.ring.wait-stability-max-duration",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "instance_id",
               "required": false,
               "desc": "Instance ID to register in the ring.",
@@ -6752,6 +6730,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "compactor.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "wait_stability_min_duration",
+              "required": false,
+              "desc": "Minimum time to wait for ring stability at startup. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "compactor.ring.wait-stability-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "wait_stability_max_duration",
+              "required": false,
+              "desc": "Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 300000000000,
+              "fieldFlag": "compactor.ring.wait-stability-max-duration",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             },
             {
@@ -9472,28 +9472,6 @@
             },
             {
               "kind": "field",
-              "name": "replication_factor",
-              "required": false,
-              "desc": "The replication factor to use when sharding the alertmanager.",
-              "fieldValue": null,
-              "fieldDefaultValue": 3,
-              "fieldFlag": "alertmanager.sharding-ring.replication-factor",
-              "fieldType": "int",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "zone_awareness_enabled",
-              "required": false,
-              "desc": "True to enable zone-awareness and replicate alerts across different availability zones.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "alertmanager.sharding-ring.zone-awareness-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "instance_id",
               "required": false,
               "desc": "Instance ID to register in the ring.",
@@ -9511,8 +9489,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
-              "fieldType": "list of strings",
-              "fieldCategory": "advanced"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -9534,6 +9511,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager.sharding-ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "replication_factor",
+              "required": false,
+              "desc": "The replication factor to use when sharding the alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "alertmanager.sharding-ring.replication-factor",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "zone_awareness_enabled",
+              "required": false,
+              "desc": "True to enable zone-awareness and replicate alerts across different availability zones.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager.sharding-ring.zone-awareness-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -11880,32 +11879,10 @@
               "kind": "field",
               "name": "heartbeat_timeout",
               "required": false,
-              "desc": "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.",
+              "desc": "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled).",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
               "fieldFlag": "overrides-exporter.ring.heartbeat-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "wait_stability_min_duration",
-              "required": false,
-              "desc": "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "overrides-exporter.ring.wait-stability-min-duration",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "wait_stability_max_duration",
-              "required": false,
-              "desc": "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.",
-              "fieldValue": null,
-              "fieldDefaultValue": 300000000000,
-              "fieldFlag": "overrides-exporter.ring.wait-stability-max-duration",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -11950,6 +11927,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "overrides-exporter.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "wait_stability_min_duration",
+              "required": false,
+              "desc": "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "overrides-exporter.ring.wait-stability-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "wait_stability_max_duration",
+              "required": false,
+              "desc": "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 300000000000,
+              "fieldFlag": "overrides-exporter.ring.wait-stability-max-duration",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             }
           ],

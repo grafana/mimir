@@ -95,6 +95,8 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -alertmanager.sharding-ring.etcd.username string
     	Etcd username.
+  -alertmanager.sharding-ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -alertmanager.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.storage.path string

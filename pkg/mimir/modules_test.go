@@ -167,25 +167,25 @@ func TestMultiKVSetup(t *testing.T) {
 
 	for target, checkFn := range map[string]func(t *testing.T, c Config){
 		All: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		Ruler: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		AlertManager: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Alertmanager.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Alertmanager.ShardingRing.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		Distributor: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Distributor.DistributorRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 		},
 
@@ -203,7 +203,7 @@ func TestMultiKVSetup(t *testing.T) {
 		},
 
 		Compactor: func(t *testing.T, c Config) {
-			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
 		},
 
 		QueryScheduler: func(t *testing.T, c Config) {
@@ -212,9 +212,10 @@ func TestMultiKVSetup(t *testing.T) {
 
 		Backend: func(t *testing.T, c Config) {
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
-			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
 	} {
 		t.Run(target, func(t *testing.T) {

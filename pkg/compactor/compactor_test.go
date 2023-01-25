@@ -1056,9 +1056,9 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := prepareConfig(t)
-	cfg.ShardingRing.InstanceID = "compactor-1"
-	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = ringStore
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
 	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
 
 	// Mock the planner as if there's no compaction to do,
@@ -1187,11 +1187,11 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 
 	for i := 1; i <= 2; i++ {
 		cfg := prepareConfig(t)
-		cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
-		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+		cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("compactor-%d", i)
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 		cfg.ShardingRing.WaitStabilityMinDuration = 3 * time.Second
 		cfg.ShardingRing.WaitStabilityMaxDuration = 10 * time.Second
-		cfg.ShardingRing.KVStore.Mock = kvstore
+		cfg.ShardingRing.Common.KVStore.Mock = kvstore
 
 		var limits validation.Limits
 		flagext.DefaultValues(&limits)
@@ -1259,9 +1259,9 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 
 	cfg := prepareConfig(t)
 	cfg.CompactionConcurrency = 1
-	cfg.ShardingRing.InstanceID = "compactor-1"
-	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = ringStore
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
 
 	limits := newMockConfigProvider()
 	limits.splitAndMergeShards = map[string]int{"user-1": 4}
@@ -1552,8 +1552,8 @@ func prepareConfig(t *testing.T) Config {
 	// Inject default KV store. Must be overridden if "real" sharding is required.
 	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { _ = closer.Close() })
-	compactorCfg.ShardingRing.KVStore.Mock = inmem
-	compactorCfg.ShardingRing.InstanceAddr = "localhost"
+	compactorCfg.ShardingRing.Common.KVStore.Mock = inmem
+	compactorCfg.ShardingRing.Common.InstanceAddr = "localhost"
 
 	return compactorCfg
 }
@@ -1747,11 +1747,11 @@ func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 		cfg := prepareConfig(t)
 		cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
 
-		cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
-		cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+		cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("compactor-%d", i)
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 		cfg.ShardingRing.WaitStabilityMinDuration = 3 * time.Second
 		cfg.ShardingRing.WaitStabilityMaxDuration = 10 * time.Second
-		cfg.ShardingRing.KVStore.Mock = kvstore
+		cfg.ShardingRing.Common.KVStore.Mock = kvstore
 
 		// Each compactor will get its own temp dir for storing local files.
 		var limits validation.Limits
@@ -1821,9 +1821,9 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := prepareConfig(t)
-	cfg.ShardingRing.InstanceID = "compactor-1"
-	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = ringStore
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
 
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10
@@ -1917,13 +1917,13 @@ func TestOwnUser(t *testing.T) {
 				cfg.EnabledTenants = tc.enabledUsers
 				cfg.DisabledTenants = tc.disabledUsers
 
-				cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
-				cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("compactor-%d", i)
+				cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 				// No need to wait. All compactors are started before we do any tests, and we wait for all of them
 				// to appear in all rings.
 				cfg.ShardingRing.WaitStabilityMinDuration = 0
 				cfg.ShardingRing.WaitStabilityMaxDuration = 0
-				cfg.ShardingRing.KVStore.Mock = kvStore
+				cfg.ShardingRing.Common.KVStore.Mock = kvStore
 
 				limits := newMockConfigProvider()
 				limits.instancesShardSize = tc.compactorShards
@@ -1968,7 +1968,7 @@ func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, 
 		if ok {
 			// We set instance ID even when not using sharding. It makes output nicer, since
 			// calling method only wants to see some identifier.
-			result = append(result, c.compactorCfg.ShardingRing.InstanceID)
+			result = append(result, c.compactorCfg.ShardingRing.Common.InstanceID)
 		}
 	}
 	return result

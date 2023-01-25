@@ -288,20 +288,9 @@ overrides_exporter:
     [heartbeat_period: <duration> | default = 15s]
 
     # (advanced) The heartbeat timeout after which overrides-exporters are
-    # considered unhealthy within the ring.
+    # considered unhealthy within the ring. 0 = never (timeout disabled).
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
-
-    # (advanced) Minimum time to wait for ring stability at startup, if set to
-    # positive value. Set to 0 to disable.
-    # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
-    [wait_stability_min_duration: <duration> | default = 0s]
-
-    # (advanced) Maximum time to wait for ring stability at startup. If the
-    # overrides-exporter ring keeps changing after this period of time, it will
-    # start anyway.
-    # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
-    [wait_stability_max_duration: <duration> | default = 5m]
 
     # (advanced) Instance ID to register in the ring.
     # CLI flag: -overrides-exporter.ring.instance-id
@@ -320,6 +309,17 @@ overrides_exporter:
     # (advanced) IP address to advertise in the ring. Default is auto-detected.
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
+
+    # (advanced) Minimum time to wait for ring stability at startup, if set to
+    # positive value. Set to 0 to disable.
+    # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
+    [wait_stability_min_duration: <duration> | default = 0s]
+
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # overrides-exporter ring keeps changing after this period of time, it will
+    # start anyway.
+    # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
+    [wait_stability_max_duration: <duration> | default = 5m]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -639,6 +639,7 @@ ha_tracker:
 [remote_timeout: <duration> | default = 2s]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1463,6 +1464,7 @@ alertmanager_client:
 [resend_delay: <duration> | default = 1m]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1700,21 +1702,12 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) The replication factor to use when sharding the alertmanager.
-  # CLI flag: -alertmanager.sharding-ring.replication-factor
-  [replication_factor: <int> | default = 3]
-
-  # (advanced) True to enable zone-awareness and replicate alerts across
-  # different availability zones.
-  # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
-  [zone_awareness_enabled: <boolean> | default = false]
-
   # (advanced) Instance ID to register in the ring.
   # CLI flag: -alertmanager.sharding-ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # (advanced) List of network interface names to look up when finding the
-  # instance IP address.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
   [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
@@ -1726,6 +1719,15 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) The replication factor to use when sharding the alertmanager.
+  # CLI flag: -alertmanager.sharding-ring.replication-factor
+  [replication_factor: <int> | default = 3]
+
+  # (advanced) True to enable zone-awareness and replicate alerts across
+  # different availability zones.
+  # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
+  [zone_awareness_enabled: <boolean> | default = false]
 
   # (advanced) The availability zone where this instance is running. Required if
   # zone-awareness is enabled.
@@ -3435,6 +3437,7 @@ The `compactor` block configures the compactor component.
 [disabled_tenants: <string> | default = ""]
 
 sharding_ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3479,16 +3482,6 @@ sharding_ring:
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
-  # CLI flag: -compactor.ring.wait-stability-min-duration
-  [wait_stability_min_duration: <duration> | default = 0s]
-
-  # (advanced) Maximum time to wait for ring stability at startup. If the
-  # compactor ring keeps changing after this period of time, the compactor will
-  # start anyway.
-  # CLI flag: -compactor.ring.wait-stability-max-duration
-  [wait_stability_max_duration: <duration> | default = 5m]
-
   # (advanced) Instance ID to register in the ring.
   # CLI flag: -compactor.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
@@ -3506,6 +3499,16 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
+  # CLI flag: -compactor.ring.wait-stability-min-duration
+  [wait_stability_min_duration: <duration> | default = 0s]
+
+  # (advanced) Maximum time to wait for ring stability at startup. If the
+  # compactor ring keeps changing after this period of time, the compactor will
+  # start anyway.
+  # CLI flag: -compactor.ring.wait-stability-max-duration
+  [wait_stability_max_duration: <duration> | default = 5m]
 
   # (advanced) Timeout for waiting on compactor to become ACTIVE in the ring.
   # CLI flag: -compactor.ring.wait-active-instance-timeout
