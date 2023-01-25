@@ -963,7 +963,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"^keda-hpa-distributor$\"}",
+                        "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Min",
@@ -971,7 +971,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"^keda-hpa-distributor$\"}",
+                        "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Max",
@@ -979,7 +979,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"^keda-hpa-distributor$\"}",
+                        "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Current",
@@ -1069,7 +1069,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"^keda-hpa-distributor$\", metric_name=~\".*cpu.*\"} / 1000",
+                        "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\", metric_name=~\".*cpu.*\"} / 1000",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Target per replica",
@@ -1159,7 +1159,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"^keda-hpa-distributor$\", metric_name=~\".*memory.*\"}",
+                        "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\", metric_name=~\".*memory.*\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Target per replica",
