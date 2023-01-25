@@ -291,21 +291,21 @@ func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
 	})
 
 	// We always include the last value in the offsets,
-	// and given that value is always less or equal than the value,
-	// we can conclude that there are no values with this value.
+	// and given that prefix is always less or equal than the value,
+	// we can conclude that there are no values with this prefix.
 	if offsetIdx == len(e.offsets) {
 		return 0, false
 	}
 
-	// Prefix is lower than the first value in the offsets, and that first value doesn't have this value.
-	// Next values won't have the value, so we can return early.
+	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
+	// Next values won't have the prefix, so we can return early.
 	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
 		return 0, false
 	}
 
-	// If the value is not equal to the value, this value might have the value.
-	// But maybe the values in the previous offset also had the value,
-	// so we need to step back one offset to find all values with this value.
+	// If the value is not equal to the prefix, this value might have the prefix.
+	// But maybe the values in the previous offset also had the prefix,
+	// so we need to step back one offset to find all values with this prefix.
 	// Unless, of course, we are at the first offset.
 	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
 		offsetIdx--
