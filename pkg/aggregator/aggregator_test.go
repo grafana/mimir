@@ -135,6 +135,18 @@ func TestPerformingAggregations(t *testing.T) {
 				// 5x Next time bucket.
 				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(435), 4, offsetToMs(180) - 1, 3},
 			},
+		}, {
+			name:        "out of order data",
+			aggInterval: time.Minute,
+			aggDelay:    0,
+			ingestCalls: []ingestCall{
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(135), 3, offsetToMs(120) - 1, math.NaN()},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(195), 4, offsetToMs(180) - 1, 3},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(136), 3, offsetToMs(120) - 1, math.NaN()},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(255), 8, offsetToMs(240) - 1, 4},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(137), 4, offsetToMs(120) - 1, math.NaN()},
+				{user, "test_metric{label1=\"value1\"}", "test_metric{label1=\"value1\",label2=\"value1\"}", offsetToMs(315), 9, offsetToMs(300) - 1, 8},
+			},
 		},
 	}
 

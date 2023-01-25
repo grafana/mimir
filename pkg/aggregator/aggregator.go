@@ -91,6 +91,12 @@ func newAggregation() *aggregation {
 }
 
 func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLabels string) (aggSample mimirpb.Sample) {
+	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
+	aggSample = mimirpb.Sample{
+		TimestampMs: lastEligbleTs,
+		Value:       math.NaN(),
+	}
+
 	aggregationTs := getAggregationTs(sample.TimestampMs, interval)
 	if aggregationTs <= a.lastTimestamp {
 		// Aggregated sample which would be generated from the sample with the given timestamp has already been generated.
@@ -105,14 +111,8 @@ func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLa
 	}
 	rawSeries.ingest(sample, interval)
 
-	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
 	if lastEligbleTs > a.lastTimestamp {
 		aggSample = a.aggregateTo(lastEligbleTs, interval)
-	} else {
-		aggSample = mimirpb.Sample{
-			TimestampMs: lastEligbleTs,
-			Value:       math.NaN(),
-		}
 	}
 
 	return
