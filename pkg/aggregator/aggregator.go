@@ -232,6 +232,8 @@ func newUserAggregations(interval, delay time.Duration) userAggregations {
 	}
 }
 
+// ingest ingests a sample for aggregation.
+// It might return an aggregated sample if this ingestion has resulted in one, otherwise it will return a sample with a NaN value.
 func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, sample mimirpb.Sample) mimirpb.Sample {
 	aggs, ok := u.byUser[user]
 	if !ok {
