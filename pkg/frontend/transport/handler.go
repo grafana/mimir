@@ -242,8 +242,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		logStatus := "failed"
 		if errors.Is(queryErr, context.Canceled) {
 			logStatus = "canceled"
-		}
-		if errors.Is(queryErr, context.DeadlineExceeded) {
+		} else if errors.Is(queryErr, context.DeadlineExceeded) {
 			logStatus = "timeout"
 		}
 
