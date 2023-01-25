@@ -6,10 +6,11 @@
 package storegateway
 
 import (
+	"net/http"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 )
 
@@ -58,21 +59,21 @@ func (l *Limiter) Reserve(num uint64) error {
 		// We need to protect from the counter being incremented twice due to concurrency
 		// while calling Reserve().
 		l.failedOnce.Do(l.failedCounter.Inc)
-		return errors.Errorf("limit %v exceeded", l.limit)
+		return httpgrpc.Errorf(http.StatusUnprocessableEntity, "limit %v exceeded", l.limit)
 	}
 	return nil
 }
 
-// NewChunksLimiterFactory makes a new ChunksLimiterFactory with a static limit.
-func NewChunksLimiterFactory(limit uint64) ChunksLimiterFactory {
+// NewChunksLimiterFactory makes a new ChunksLimiterFactory with a dynamic limit.
+func NewChunksLimiterFactory(limitsExtractor func() uint64) ChunksLimiterFactory {
 	return func(failedCounter prometheus.Counter) ChunksLimiter {
-		return NewLimiter(limit, failedCounter)
+		return NewLimiter(limitsExtractor(), failedCounter)
 	}
 }
 
-// NewSeriesLimiterFactory makes a new NewSeriesLimiterFactory with a static limit.
-func NewSeriesLimiterFactory(limit uint64) SeriesLimiterFactory {
+// NewSeriesLimiterFactory makes a new NewSeriesLimiterFactory with a dynamic limit.
+func NewSeriesLimiterFactory(limitsExtractor func() uint64) SeriesLimiterFactory {
 	return func(failedCounter prometheus.Counter) SeriesLimiter {
-		return NewLimiter(limit, failedCounter)
+		return NewLimiter(limitsExtractor(), failedCounter)
 	}
 }
