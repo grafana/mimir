@@ -326,6 +326,7 @@ func (m *LabelPair) GetValue() []byte {
 }
 
 type Sample struct {
+	// Fields order MUST match promql.Point so that we can cast types between them.
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 }
@@ -820,6 +821,8 @@ func (m *BucketSpan) GetLength() uint32 {
 	return 0
 }
 
+// SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
+// for compatibility with PromQL API results
 type SampleHistogram struct {
 	Count   float64            `protobuf:"fixed64,1,opt,name=count,proto3" json:"count,omitempty"`
 	Sum     float64            `protobuf:"fixed64,2,opt,name=sum,proto3" json:"sum,omitempty"`
