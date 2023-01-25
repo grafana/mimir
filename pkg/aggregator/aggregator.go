@@ -12,7 +12,7 @@ import (
 type userAggregations struct {
 	interval int64
 	delay    int64
-	byUser   map[string]aggregations
+	byUser   map[string]*aggregations
 }
 
 // newUserAggregations creates a new userAggregations object, following is a description of the parameters.
@@ -30,7 +30,7 @@ func newUserAggregations(interval, delay time.Duration) userAggregations {
 	return userAggregations{
 		interval: interval.Milliseconds(),
 		delay:    delay.Milliseconds(),
-		byUser:   map[string]aggregations{},
+		byUser:   map[string]*aggregations{},
 	}
 }
 
@@ -44,7 +44,6 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 	}
 
 	aggSample := aggs.ingest(u.interval, u.delay, sample, aggregatedLabels, rawLabels)
-	u.byUser[user] = aggs
 
 	return aggSample
 }
@@ -52,12 +51,12 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 // aggregations represents the aggregation state for a single user.
 type aggregations struct {
 	// aggregations is keyed by the labelset of the aggregated series that we're generating.
-	aggregations map[string]aggregation
+	aggregations map[string]*aggregation
 }
 
-func newAggregations() aggregations {
-	return aggregations{
-		aggregations: map[string]aggregation{},
+func newAggregations() *aggregations {
+	return &aggregations{
+		aggregations: map[string]*aggregation{},
 	}
 }
 
@@ -69,7 +68,6 @@ func (a *aggregations) ingest(interval, delay int64, sample mimirpb.Sample, aggr
 	}
 
 	aggSample := agg.ingest(interval, delay, sample, rawLabels)
-	a.aggregations[aggregatedLabels] = agg
 
 	return aggSample
 }
@@ -77,7 +75,7 @@ func (a *aggregations) ingest(interval, delay int64, sample mimirpb.Sample, aggr
 // aggregation is the state of one aggregated series (not an aggregated metrics).
 type aggregation struct {
 	// rawSeries is keyed by the labelset of the raw series that we're aggregating.
-	rawSeries map[string]timeBuckets
+	rawSeries map[string]*timeBuckets
 
 	// lastTimestamp is the last timestamp for which an aggregation has been generated.
 	lastTimestamp int64
@@ -85,9 +83,9 @@ type aggregation struct {
 	lastValue float64
 }
 
-func newAggregation() aggregation {
-	return aggregation{
-		rawSeries: map[string]timeBuckets{},
+func newAggregation() *aggregation {
+	return &aggregation{
+		rawSeries: map[string]*timeBuckets{},
 		lastValue: math.NaN(),
 	}
 }
@@ -106,7 +104,6 @@ func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLa
 		a.rawSeries[rawLabels] = rawSeries
 	}
 	rawSeries.ingest(sample, interval)
-	a.rawSeries[rawLabels] = rawSeries
 
 	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
 	if lastEligbleTs > a.lastTimestamp {
@@ -173,8 +170,8 @@ type timeBuckets struct {
 	buckets []timeBucket
 }
 
-func newTimeBuckets(bucketCount int) timeBuckets {
-	tb := timeBuckets{
+func newTimeBuckets(bucketCount int) *timeBuckets {
+	tb := &timeBuckets{
 		buckets: make([]timeBucket, bucketCount),
 	}
 	for i := range tb.buckets {
