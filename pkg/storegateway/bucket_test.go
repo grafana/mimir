@@ -832,6 +832,10 @@ func prepareTestBlockWithBinaryReader(tb test.TB, dataSetup ...func(tb testing.T
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.Config{})
 	require.NoError(tb, err)
 
+	return newBucketBlockFactory(bkt, r, id, minT, maxT)
+}
+
+func newBucketBlockFactory(bkt objstore.BucketReader, r indexheader.Reader, id ulid.ULID, minT int64, maxT int64) func() *bucketBlock {
 	return func() *bucketBlock {
 		return &bucketBlock{
 			userID:            "tenant",
