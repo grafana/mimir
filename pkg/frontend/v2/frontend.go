@@ -176,7 +176,8 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	f.requests.waitUntilDone()
+	// Wait on any in-flight requests
+	f.requests.Wait()
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
@@ -307,19 +308,30 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 }
 
 type requestsInProgress struct {
-	mu          sync.Mutex
-	requests    map[uint64]*frontendRequest
-	terminating bool
-	done        chan struct{}
-	logger      log.Logger
+	mu       sync.Mutex
+	requests map[uint64]*frontendRequest
+	logger   log.Logger
+	wg       sync.WaitGroup
 }
 
 func newRequestsInProgress(logger log.Logger) *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
-		done:     make(chan struct{}),
 		logger:   logger,
 	}
+}
+
+// Wait waits for any in-flight requests to finish.
+func (r *requestsInProgress) Wait() {
+	if r.count() == 0 {
+		level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
+		return
+	}
+
+	level.Info(r.logger).Log("msg", "waiting for in-flight queries to finish...")
+	r.wg.Wait()
+
+	level.Info(r.logger).Log("msg", "finished waiting for in-flight queries")
 }
 
 func (r *requestsInProgress) count() int {
@@ -329,30 +341,14 @@ func (r *requestsInProgress) count() int {
 	return len(r.requests)
 }
 
-// waitUntilDone puts r in terminating mode and waits until there are no more requests.
-func (r *requestsInProgress) waitUntilDone() {
-	r.mu.Lock()
-	r.terminating = true
-
-	// If there are already no in-flight queries, just return
-	if len(r.requests) == 0 {
-		r.mu.Unlock()
-		level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
-		return
-	}
-
-	// Wait for remaining queries to finish
-	r.mu.Unlock()
-	level.Info(r.logger).Log("msg", "waiting for in-flight queries to finish...")
-	<-r.done
-
-	level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
-}
-
 func (r *requestsInProgress) put(req *frontendRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if _, exists := r.requests[req.queryID]; !exists {
+		// Count one more in-flight request
+		r.wg.Add(1)
+	}
 	r.requests[req.queryID] = req
 }
 
@@ -360,11 +356,12 @@ func (r *requestsInProgress) delete(queryID uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delete(r.requests, queryID)
-	if r.terminating && len(r.requests) == 0 {
-		// Signal that termination phase can end
-		r.done <- struct{}{}
+	if _, exists := r.requests[queryID]; exists {
+		// Count one less in-flight request
+		r.wg.Done()
 	}
+
+	delete(r.requests, queryID)
 }
 
 func (r *requestsInProgress) get(queryID uint64) *frontendRequest {
