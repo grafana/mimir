@@ -67,18 +67,19 @@ func (m *MockCache) Name() string {
 	return "mock"
 }
 
+func (m *MockCache) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.cache, key)
+	return nil
+}
+
 func (m *MockCache) Flush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.cache = map[string]Item{}
-}
-
-func (m *MockCache) Delete(key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.cache, key)
 }
 
 // InstrumentedMockCache is a mocked cache implementation which also tracks the number
@@ -108,6 +109,11 @@ func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string, opts .
 
 func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
+}
+
+func (m *InstrumentedMockCache) Delete(_ context.Context, _ string) error {
+	// no-op
+	return nil
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {

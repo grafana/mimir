@@ -44,6 +44,9 @@ type Cache interface {
 	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
 	Name() string
+
+	// Delete cache entry with the given key if it exists.
+	Delete(ctx context.Context, key string) error
 }
 
 // Options are used to modify the behavior of an individual call to get results
@@ -84,8 +87,9 @@ const (
 )
 
 type BackendConfig struct {
-	Backend   string          `yaml:"backend"`
-	Memcached MemcachedConfig `yaml:"memcached"`
+	Backend   string            `yaml:"backend"`
+	Memcached MemcachedConfig   `yaml:"memcached"`
+	Redis     RedisClientConfig `yaml:"redis" category:"experimental"`
 }
 
 // Validate the config.
@@ -113,6 +117,13 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
 		return NewMemcachedCache(cacheName, logger, client, reg), nil
+
+	case BackendRedis:
+		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create redis client")
+		}
+		return NewRedisCache(cacheName, logger, client, reg), nil
 
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)

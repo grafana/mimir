@@ -134,3 +134,8 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (re
 func (l *LRUCache) Name() string {
 	return "in-memory-" + l.name
 }
+
+func (l *LRUCache) Delete(_ context.Context, _ string) error {
+	// no-op
+	return nil
+}
