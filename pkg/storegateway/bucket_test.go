@@ -270,7 +270,7 @@ func TestBlockLabelNames(t *testing.T) {
 	slices.Sort(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
+	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -378,7 +378,7 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context,
 func TestBlockLabelValues(t *testing.T) {
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
+	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -480,260 +480,267 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
+	bucketBlockFactories := map[string]func() *bucketBlock{
+		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
+		"stream reader": prepareTestBlockWithStreamReader(tb, appendTestSeries(series)),
+	}
 
-	t.Run("happy cases", func(t *testing.T) {
-		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
-	})
+	for name, newTestBucketBlock := range bucketBlockFactories {
+		t.Run(name, func(t *testing.T) {
+			t.Run("happy cases", func(t *testing.T) {
+				benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
+			})
 
-	t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
-		b := newTestBucketBlock()
-		b.indexCache = corruptedPostingsCache{}
+			t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
+				b := newTestBucketBlock()
+				b.indexCache = corruptedPostingsCache{}
 
-		// cache provides undecodable values
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, series, len(refs))
-	})
+				// cache provides undecodable values
+				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(refs))
+			})
 
-	t.Run("promise", func(t *testing.T) {
-		expectedErr := fmt.Errorf("failed as expected")
+			t.Run("promise", func(t *testing.T) {
+				expectedErr := fmt.Errorf("failed as expected")
 
-		labelValuesCalls := map[string]*sync.WaitGroup{"i": {}, "n": {}, "fail": {}}
-		for _, c := range labelValuesCalls {
-			// we expect one call for each label name
-			c.Add(1)
-		}
+				labelValuesCalls := map[string]*sync.WaitGroup{"i": {}, "n": {}, "fail": {}}
+				for _, c := range labelValuesCalls {
+					// we expect one call for each label name
+					c.Add(1)
+				}
 
-		releaseCalls := make(chan struct{})
-		onlabelValuesCalled := func(labelName string) error {
-			// this will panic if unexpected label is called, or called too many (>1) times
-			labelValuesCalls[labelName].Done()
-			<-releaseCalls
-			if labelName == "fail" {
-				return expectedErr
-			}
-			return nil
-		}
+				releaseCalls := make(chan struct{})
+				onlabelValuesCalled := func(labelName string) error {
+					// this will panic if unexpected label is called, or called too many (>1) times
+					labelValuesCalls[labelName].Done()
+					<-releaseCalls
+					if labelName == "fail" {
+						return expectedErr
+					}
+					return nil
+				}
 
-		b := newTestBucketBlock()
-		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: onlabelValuesCalled,
-		}
+				b := newTestBucketBlock()
+				b.indexHeaderReader = &interceptedIndexReader{
+					Reader:              b.indexHeaderReader,
+					onLabelValuesCalled: onlabelValuesCalled,
+				}
 
-		// we're building a scenario where:
-		// - first three calls (0, 1, 2) will be called concurrently with same matchers
-		//   - call 0 will create the promise, but it's expandedPostings call won't return until we have received all calls
-		//   - call 1 will wait on the promise
-		//   - call 2 will cancel the context once we see it waiting on the promise, so it should stop waiting
-		//
-		// - call 3 will be called concurrently with the first three, but with different matchers, so we can see that results are not mixed
-		//
-		// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
-		var (
-			ress    [6][]storage.SeriesRef
-			errs    [6]error
-			results sync.WaitGroup
-		)
-		results.Add(6)
+				// we're building a scenario where:
+				// - first three calls (0, 1, 2) will be called concurrently with same matchers
+				//   - call 0 will create the promise, but it's expandedPostings call won't return until we have received all calls
+				//   - call 1 will wait on the promise
+				//   - call 2 will cancel the context once we see it waiting on the promise, so it should stop waiting
+				//
+				// - call 3 will be called concurrently with the first three, but with different matchers, so we can see that results are not mixed
+				//
+				// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
+				var (
+					ress    [6][]storage.SeriesRef
+					errs    [6]error
+					results sync.WaitGroup
+				)
+				results.Add(6)
 
-		deduplicatedCallMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")} // all series match this, but we need to call LabelValues("i")
-		otherMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$")}          // one fifth of series match this, but we need to call LabelValues("n")
-		failingMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "fail", "^.*$")}       // LabelValues() is mocked to fail with "fail" label
+				deduplicatedCallMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")} // all series match this, but we need to call LabelValues("i")
+				otherMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$")}          // one fifth of series match this, but we need to call LabelValues("n")
+				failingMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "fail", "^.*$")}       // LabelValues() is mocked to fail with "fail" label
 
-		// first call will create the promise
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// first call will create the promise
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
-		}()
-		// wait for this call to actually create a promise and call LabelValues
-		labelValuesCalls["i"].Wait()
+					ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
+				}()
+				// wait for this call to actually create a promise and call LabelValues
+				labelValuesCalls["i"].Wait()
 
-		// second call will wait on the promise
-		secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// second call will wait on the promise
+				secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
-		}()
-		// wait until this is waiting on the promise
-		<-secondContext.waitingDone
+					ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
+				}()
+				// wait until this is waiting on the promise
+				<-secondContext.waitingDone
 
-		// third call will have context canceled before promise returns
-		thirdCallInnerContext, thirdContextCancel := context.WithCancel(context.Background())
-		thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// third call will have context canceled before promise returns
+				thirdCallInnerContext, thirdContextCancel := context.WithCancel(context.Background())
+				thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
-		}()
-		// wait until this is waiting on the promise
-		<-thirdContext.waitingDone
-		// and cancel its context
-		thirdContextCancel()
+					ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
+				}()
+				// wait until this is waiting on the promise
+				<-thirdContext.waitingDone
+				// and cancel its context
+				thirdContextCancel()
 
-		// fourth call will create its own promise
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// fourth call will create its own promise
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
-		}()
-		// wait for this call to actually create a promise and call LabelValues
-		labelValuesCalls["n"].Wait()
+					ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
+				}()
+				// wait for this call to actually create a promise and call LabelValues
+				labelValuesCalls["n"].Wait()
 
-		// fifth call will create its own promise which will fail
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// fifth call will create its own promise which will fail
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
-		}()
-		// wait for this call to actually create a promise and call LabelValues
-		labelValuesCalls["fail"].Wait()
+					ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
+				}()
+				// wait for this call to actually create a promise and call LabelValues
+				labelValuesCalls["fail"].Wait()
 
-		// sixth call will wait on the promise to see it fail
-		sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
-		go func() {
-			defer results.Done()
-			indexr := b.indexReader()
-			defer indexr.Close()
+				// sixth call will wait on the promise to see it fail
+				sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+				go func() {
+					defer results.Done()
+					indexr := b.indexReader()
+					defer indexr.Close()
 
-			ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
-		}()
-		// wait until this is waiting on the promise
-		<-sixthContext.waitingDone
+					ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
+				}()
+				// wait until this is waiting on the promise
+				<-sixthContext.waitingDone
 
-		// let all calls return and wait for the results
-		close(releaseCalls)
-		results.Wait()
+				// let all calls return and wait for the results
+				close(releaseCalls)
+				results.Wait()
 
-		require.Equal(t, series, len(ress[0]), "First result should have %d series (all of them)", series)
-		require.NoError(t, errs[0], "First results should not fail")
+				require.Equal(t, series, len(ress[0]), "First result should have %d series (all of them)", series)
+				require.NoError(t, errs[0], "First results should not fail")
 
-		require.Equal(t, series, len(ress[1]), "Second result should have %d series (all of them)", series)
-		require.NoError(t, errs[1], "Second results should not fail")
+				require.Equal(t, series, len(ress[1]), "Second result should have %d series (all of them)", series)
+				require.NoError(t, errs[1], "Second results should not fail")
 
-		require.Nil(t, ress[2], "Third result should not have series")
-		require.ErrorIs(t, errs[2], context.Canceled, "Third result should have a context.Canceled error")
+				require.Nil(t, ress[2], "Third result should not have series")
+				require.ErrorIs(t, errs[2], context.Canceled, "Third result should have a context.Canceled error")
 
-		require.Equal(t, series/5, len(ress[3]), "Fourth result should have %d series (one fifth of total)", series/5)
-		require.NoError(t, errs[3], "Fourth results should not fail")
+				require.Equal(t, series/5, len(ress[3]), "Fourth result should have %d series (one fifth of total)", series/5)
+				require.NoError(t, errs[3], "Fourth results should not fail")
 
-		require.Nil(t, ress[4], "Fifth result should not have series")
-		require.ErrorIs(t, errs[4], expectedErr, "failed", "Fifth result should fail as 'failed'")
+				require.Nil(t, ress[4], "Fifth result should not have series")
+				require.ErrorIs(t, errs[4], expectedErr, "failed", "Fifth result should fail as 'failed'")
 
-		require.Nil(t, ress[5], "Sixth result should not have series")
-		require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
-	})
+				require.Nil(t, ress[5], "Sixth result should not have series")
+				require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
+			})
 
-	t.Run("cached", func(t *testing.T) {
-		labelValuesCalls := map[string]int{}
-		onLabelValuesCalled := func(name string) error {
-			labelValuesCalls[name]++
-			return nil
-		}
+			t.Run("cached", func(t *testing.T) {
+				labelValuesCalls := map[string]int{}
+				onLabelValuesCalled := func(name string) error {
+					labelValuesCalls[name]++
+					return nil
+				}
 
-		b := newTestBucketBlock()
-		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: onLabelValuesCalled,
-		}
-		b.indexCache = newInMemoryIndexCache(t)
+				b := newTestBucketBlock()
+				b.indexHeaderReader = &interceptedIndexReader{
+					Reader:              b.indexHeaderReader,
+					onLabelValuesCalled: onLabelValuesCalled,
+				}
+				b.indexCache = newInMemoryIndexCache(t)
 
-		// first call succeeds and caches value
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, series, len(refs))
-		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
+				// first call succeeds and caches value
+				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(refs))
+				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
 
-		// second call uses cached value, so it doesn't call LabelValues again
-		refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, series, len(refs))
-		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
+				// second call uses cached value, so it doesn't call LabelValues again
+				refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(refs))
+				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
 
-		// different matcher on same label should not be cached
-		differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-		refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, series, len(refs))
-		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
-	})
+				// different matcher on same label should not be cached
+				differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
+				refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(refs))
+				require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
+			})
 
-	t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
-		b := newTestBucketBlock()
-		b.indexCache = corruptedExpandedPostingsCache{}
+			t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
+				b := newTestBucketBlock()
+				b.indexCache = corruptedExpandedPostingsCache{}
 
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, series, len(refs))
-	})
+				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(refs))
+			})
 
-	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
-		b := newTestBucketBlock()
-		b.indexHeaderReader = &interceptedIndexReader{
-			Reader: b.indexHeaderReader,
-			onLabelValuesCalled: func(_ string) error {
-				return context.Canceled // alwaysFails
-			},
-		}
-		b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
+			t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
+				b := newTestBucketBlock()
+				b.indexHeaderReader = &interceptedIndexReader{
+					Reader: b.indexHeaderReader,
+					onLabelValuesCalled: func(_ string) error {
+						return context.Canceled // alwaysFails
+					},
+				}
+				b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.Error(t, err)
-	})
+				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+				_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.Error(t, err)
+			})
 
-	t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
-		b := newTestBucketBlock()
-		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
-		mockBucket := &bucket.ClientMock{}
-		b.bkt = mockBucket
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
-			// With a regular EqualsMatcher we can look up the value of the label in the postings
-			// offset table and see if it has any matches. If it matches no series, then
-			// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
-			labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
-		}
-		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
-	})
+			t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+				b := newTestBucketBlock()
+				b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+				mockBucket := &bucket.ClientMock{}
+				b.bkt = mockBucket
+				matchers := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+					// With a regular EqualsMatcher we can look up the value of the label in the postings
+					// offset table and see if it has any matches. If it matches no series, then
+					// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
+					labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
+				}
+				postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Empty(t, postings)
+				mockBucket.Mock.AssertNotCalled(t, "Get")
+				mockBucket.Mock.AssertNotCalled(t, "GetRange")
+			})
 
-	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
-		b := newTestBucketBlock()
-		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
-		mockBucket := &bucket.ClientMock{}
-		b.bkt = mockBucket
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
-			// Since prometheus regular expressions are anchored at each end, some regular expressions have a
-			// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
-			labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
-		}
-		postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
-	})
+			t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+				b := newTestBucketBlock()
+				b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+				mockBucket := &bucket.ClientMock{}
+				b.bkt = mockBucket
+				matchers := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+					// Since prometheus regular expressions are anchored at each end, some regular expressions have a
+					// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
+					labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
+				}
+				postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Empty(t, postings)
+				mockBucket.Mock.AssertNotCalled(t, "Get")
+				mockBucket.Mock.AssertNotCalled(t, "GetRange")
+			})
+		})
+	}
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
@@ -807,11 +814,20 @@ func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx cont
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
 	const series = 50e5
-	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
-	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+
+	bucketBlockFactories := map[string]func() *bucketBlock{
+		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
+		"stream reader": prepareTestBlockWithStreamReader(tb, appendTestSeries(series)),
+	}
+
+	for name, newTestBucketBlock := range bucketBlockFactories {
+		b.Run(name, func(b *testing.B) {
+			benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+		})
+	}
 }
 
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) (objstore.BucketReader, string, ulid.ULID, int64, int64) {
 	tmpDir := tb.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -822,9 +838,30 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 	})
 
 	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
+
+	return bkt, tmpDir, id, minT, maxT
+}
+
+func prepareTestBlockWithBinaryReader(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
+
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.Config{})
 	require.NoError(tb, err)
 
+	return newBucketBlockFactory(bkt, r, id, minT, maxT)
+}
+
+func prepareTestBlockWithStreamReader(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
+
+	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
+	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, metrics, indexheader.Config{})
+	require.NoError(tb, err)
+
+	return newBucketBlockFactory(bkt, r, id, minT, maxT)
+}
+
+func newBucketBlockFactory(bkt objstore.BucketReader, r indexheader.Reader, id ulid.ULID, minT int64, maxT int64) func() *bucketBlock {
 	return func() *bucketBlock {
 		return &bucketBlock{
 			userID:            "tenant",
@@ -2522,7 +2559,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 	const series = 100
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
+	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
 	b := newTestBucketBlock()
 
 	mint, maxt := int64(0), int64(0)
@@ -2536,7 +2573,7 @@ func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 }
 
 func TestBlockSeries_Cache(t *testing.T) {
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(100))
+	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(100))
 
 	t.Run("does not update cache on error", func(t *testing.T) {
 		b := newTestBucketBlock()
