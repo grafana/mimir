@@ -429,7 +429,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	skip := 0
-	values := make([]string, 0, len(e.offsets)*t.postingOffsetsInMemSampling)
+	values := make([]string, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
 	for d.Err() == nil {
 		if skip == 0 {
 			// These are always the same number of bytes,
@@ -442,28 +442,28 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 			d.Skip(skip)
 		}
 
-		value := yoloString(d.UnsafeUvarintBytes())
+		unsafeValue := yoloString(d.UnsafeUvarintBytes())
 		if prefix == "" {
 			// Quick path for no prefix matching.
-			if filter == nil || filter(value) {
+			if filter == nil || filter(unsafeValue) {
 				// Clone the yolo string since its bytes will be invalidated as soon as
 				// any other reads against the decoding buffer are performed.
-				values = append(values, strings.Clone(value))
+				values = append(values, strings.Clone(unsafeValue))
 			}
 		} else {
-			if strings.HasPrefix(value, prefix) {
-				if filter == nil || filter(value) {
+			if strings.HasPrefix(unsafeValue, prefix) {
+				if filter == nil || filter(unsafeValue) {
 					// Clone the yolo string since its bytes will be invalidated as soon as
 					// any other reads against the decoding buffer are performed.
-					values = append(values, strings.Clone(value))
+					values = append(values, strings.Clone(unsafeValue))
 				}
-			} else if prefix < value {
+			} else if prefix < unsafeValue {
 				// There will be no more values with the prefix.
 				break
 			}
 		}
 
-		if value == lastVal {
+		if unsafeValue == lastVal {
 			break
 		}
 		d.Uvarint64() // Offset.
