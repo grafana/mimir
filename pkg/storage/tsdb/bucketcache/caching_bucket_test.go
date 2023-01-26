@@ -126,10 +126,14 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete first 3 subranges.
-				cache.Delete(cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize))
+				err1 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize))
+				err2 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize))
+				err3 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize))
+				if err1 != nil || err2 != nil || err3 != nil {
+					t.Errorf("unexpected error from cache delete")
+				}
 			},
 		},
 
@@ -141,10 +145,14 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete last 3 subranges.
-				cache.Delete(cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize))
+				err1 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize))
+				err2 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize))
+				err3 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize))
+				if err1 != nil || err2 != nil || err3 != nil {
+					t.Errorf("unexpected error from cache delete")
+				}
 			},
 		},
 
@@ -156,10 +164,14 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				cache.Delete(cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize))
+				err1 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize))
+				err2 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize))
+				err3 := cache.Delete(ctx, cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize))
+				if err1 != nil || err2 != nil || err3 != nil {
+					t.Errorf("unexpected error from cache delete")
+				}
 			},
 		},
 
@@ -176,7 +188,10 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					err := cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					if err != nil {
+						t.Errorf("unexpected error from cache delete")
+					}
 				}
 			},
 		},
@@ -196,7 +211,10 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					err := cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					if err != nil {
+						t.Errorf("unexpected error from cache delete")
+					}
 				}
 			},
 		},
@@ -215,7 +233,10 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					err := cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					if err != nil {
+						t.Errorf("unexpected error from cache delete")
+					}
 				}
 			},
 		},
