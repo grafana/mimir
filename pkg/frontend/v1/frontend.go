@@ -147,7 +147,7 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
+	// This will also stop the requests queue, which stops accepting new requests and errors out any pending requests.
 	return services.StopManagerAndAwaitStopped(context.Background(), f.subservices)
 }
 
@@ -195,7 +195,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	}
 }
 
-// Process allows backends to pull requests from the frontend.
+// Process allows queriers to pull requests from the frontend.
 func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	querierID, err := getQuerierID(server)
 	if err != nil {
@@ -295,20 +295,19 @@ func getQuerierID(server frontendv1pb.Frontend_ProcessServer) (string, error) {
 	err := server.Send(&frontendv1pb.FrontendToClient{
 		Type: frontendv1pb.GET_ID,
 		// Old queriers don't support GET_ID, and will try to use the request.
-		// To avoid confusing them, include dummy request.
+		// To avoid confusing them, include a dummy request.
 		HttpRequest: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Url:    "/invalid_request_sent_by_frontend",
 		},
 	})
-
 	if err != nil {
 		return "", err
 	}
 
 	resp, err := server.Recv()
 
-	// Old queriers will return empty string, which is fine. All old queriers will be
+	// Old queriers will return an empty string, which is fine. All old queriers will be
 	// treated as single querier with lot of connections.
 	// (Note: if resp is nil, GetClientID() returns "")
 	return resp.GetClientID(), err

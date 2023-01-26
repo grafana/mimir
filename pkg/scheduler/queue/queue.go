@@ -183,6 +183,7 @@ func (q *RequestQueue) stopping(_ error) error {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
+	// Wait while there enqueued requests and requests from queriers are being processed
 	for q.queues.len() > 0 && q.connectedQuerierWorkers.Load() > 0 {
 		q.cond.Wait(context.Background())
 	}
