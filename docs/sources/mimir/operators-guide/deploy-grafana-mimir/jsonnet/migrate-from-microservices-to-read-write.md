@@ -14,7 +14,7 @@ weight: 40
 
 At a high level, the steps involved are as follows:
 
-1. Deploy read-write components along side microservices (they join the same ring).
+1. Deploy read-write components alongside microservices; they both join the same ring.
 1. Switch over end points in your ingress.
 1. Decommission microservices.
 
@@ -112,6 +112,9 @@ diff --color=always store-gateway-zone-c.yaml mimir-backend-zone-c.yaml
 
 ## Step 3: Migrate read-path to read-write service
 
+
+### Step 3.1: Scale up read component
+
 Scale up the Mimir read component using either the autoscaler or explicitly setting the number of replicas. (Keep the current microservices at their present level of replicas or autoscaling).
 
 ```jsonnet
@@ -143,11 +146,15 @@ Scale up the Mimir read component using either the autoscaler or explicitly sett
 
 The Read-write querier at this point will start running queries from the `query-scheduler` (as they share the same ring).
 
+### Step 3.2: Check mimir-read is working
+
 Perform a test query by port-forwarding to `mimir-read`.
 
 Ensure `mimir-read` is running queries:
 
 `sum by (pod) (rate(cortex_querier_request_duration_seconds_count{job=~".*mimir-read.*))", route=~"(prometheus|api_prom)_api_v1_.+"}[1m]))`
+
+### Step 3.3: Route traffic to mimir-read
 
 Configure your load-balancer to route read requests to `mimir-read`.
 
@@ -156,6 +163,8 @@ Ensure the `query-frontend` microservice is no longer getting requests:
 `sum by(pod) (rate(cortex_query_frontend_queries_total{pod!~"ruler-query-frontend.*"}[1m]))`
 
 ## Step 4: Migrate backend components to backend service
+
+### Step 4.1: Scale up backend component
 
 Scale up the Mimir backend component.
 
@@ -167,6 +176,8 @@ Scale up the Mimir backend component.
 }
 ```
 
+### Step 4.2: Check mimir-backend is working
+
 Check the following rings:
 
 - Query-scheduler ring should include both microservices and read-write components.
@@ -175,6 +186,8 @@ Check the following rings:
 - Ruler ring should include both microservices and read-write components.
 
 Run a few test queries on long-term data.
+
+### Step 4.3: Route traffic to mimir-backend
 
 Configure your load-balancer to route `compactor` and `ruler` endpoints to `mimir-backend`.
 
@@ -242,6 +255,8 @@ It is now safe to disable [ruler remote evaluation]({{< relref "configure-ruler.
 
 ## Step 6: Migrate write path to read-write deployment
 
+### Step 6.1: Scale up write component
+
 Scale up `mimir-write`.
 
 ```jsonnet
@@ -252,6 +267,7 @@ Scale up `mimir-write`.
 }
 ```
 
+### Step 6.2: Route traffic to mimir-write
 Configure your load-balancer to route write requests to `mimir-write`.
 
 Ensure the microservice distributor is no longer receiving write requests:
@@ -260,7 +276,9 @@ Ensure the microservice distributor is no longer receiving write requests:
 
 ## Step 7: Scale down write microservices
 
-Scale down `distributor`:
+### Step 7.1: Scale down distributors
+
+Set `distributor` replicas to `0`:
 
 ```jsonnet
 {
@@ -270,6 +288,8 @@ Scale down `distributor`:
 ```
 
 Wait the next TSDB head compaction for ingesters (2 hours).
+
+### Step 7.2: Scale down ingesters
 
 > **Warning:**
 > You must follow the shutdown ingester procedure to avoid data loss.
