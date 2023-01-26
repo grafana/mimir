@@ -2578,6 +2578,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = false]
 
+# (experimental) To stop processing native histograms as soon as possible, set
+# to true
+# CLI flag: -store-gateway.ignore-native-histograms-on-read
+[ignore_native_histograms_on_read: <boolean> | default = false]
+
 # (advanced) Additional custom trackers for active metrics. If there are active
 # series matching a provided matcher (map value), the count will be exposed in
 # the custom trackers metric labeled using the tracker name (map key). Zero
