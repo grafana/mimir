@@ -42,14 +42,23 @@ import (
 const testFrontendWorkerConcurrency = 5
 
 func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
+	t.Helper()
 	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency)
 }
 
 func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
+	t.Helper()
+
 	l, err := net.Listen("tcp", "")
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = l.Close()
+	})
 
 	server := grpc.NewServer(opts...)
+	t.Cleanup(func() {
+		server.GracefulStop()
+	})
 
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
@@ -76,11 +85,6 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	go func() {
 		_ = server.Serve(l)
 	}()
-
-	t.Cleanup(func() {
-		_ = l.Close()
-		server.GracefulStop()
-	})
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
 	t.Cleanup(func() {
