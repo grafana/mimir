@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"unsafe"
@@ -8,7 +9,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 const userSep = '\xfe'
@@ -20,9 +20,27 @@ func ComposeKafkaKey(buf, user []byte, lsetAdapter []mimirpb.LabelAdapter, rules
 		return nil, err
 	}
 
-	metricRule := rules[metricName]
-	aggregatedLset := make(labels.Labels, 0, len(lset))
+	builder := bytes.NewBuffer(buf[:0])
+	_, err = builder.Write(user)
+	if err != nil {
+		return nil, err
+	}
+	err = builder.WriteByte(userSep)
+	if err != nil {
+		return nil, err
+	}
+	_, err = builder.WriteString(metricName)
+	if err != nil {
+		return nil, err
+	}
+	err = builder.WriteByte('{')
+	if err != nil {
+		return nil, err
+	}
 
+	metricRule := rules[metricName]
+
+	firstLabel := true
 OUTER_LABELS:
 	for _, l := range lset {
 		for _, dropLabel := range metricRule.DropLabels {
@@ -31,11 +49,38 @@ OUTER_LABELS:
 			}
 		}
 
-		aggregatedLset = append(aggregatedLset, l)
+		if !firstLabel {
+			builder.WriteByte(',')
+			firstLabel = false
+		}
+
+		_, err = builder.WriteString(l.Name)
+		if err != nil {
+			return nil, err
+		}
+		err = builder.WriteByte('=')
+		if err != nil {
+			return nil, err
+		}
+		err = builder.WriteByte('"')
+		if err != nil {
+			return nil, err
+		}
+		_, err = builder.WriteString(l.Value)
+		if err != nil {
+			return nil, err
+		}
+		err = builder.WriteByte('"')
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = builder.WriteByte('{')
+	if err != nil {
+		return nil, err
 	}
 
-	key := append(user, userSep)
-	return append(key, aggregatedLset.Bytes(buf)...), nil
+	return builder.Bytes(), nil
 }
 
 func DecomposeKafkaKey(key []byte) (string, string, error) {

@@ -43,7 +43,7 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 		u.byUser[user] = aggs
 	}
 
-	aggSample := aggs.ingest(u.interval, u.delay, sample, aggregatedLabels, rawLabels)
+	aggSample := aggs.ingest(u.interval, u.delay, aggregatedLabels, rawLabels, sample)
 
 	return aggSample
 }
@@ -60,14 +60,14 @@ func newAggregations() *aggregations {
 	}
 }
 
-func (a *aggregations) ingest(interval, delay int64, sample mimirpb.Sample, aggregatedLabels, rawLabels string) mimirpb.Sample {
+func (a *aggregations) ingest(interval, delay int64, aggregatedLabels, rawLabels string, sample mimirpb.Sample) mimirpb.Sample {
 	agg, ok := a.aggregations[aggregatedLabels]
 	if !ok {
 		agg = newAggregation()
 		a.aggregations[aggregatedLabels] = agg
 	}
 
-	aggSample := agg.ingest(interval, delay, sample, rawLabels)
+	aggSample := agg.ingest(interval, delay, rawLabels, sample)
 
 	return aggSample
 }
@@ -90,7 +90,7 @@ func newAggregation() *aggregation {
 	}
 }
 
-func (a *aggregation) ingest(interval, delay int64, sample mimirpb.Sample, rawLabels string) (aggSample mimirpb.Sample) {
+func (a *aggregation) ingest(interval, delay int64, rawLabels string, sample mimirpb.Sample) (aggSample mimirpb.Sample) {
 	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
 	aggSample = mimirpb.Sample{
 		TimestampMs: lastEligbleTs,

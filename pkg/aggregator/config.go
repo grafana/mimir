@@ -16,6 +16,8 @@ type Config struct {
 	kafkaPartitions     []int
 	AggregationInterval time.Duration `yaml:"aggregation_interval" category:"experimental"`
 	AggregationDelay    time.Duration `yaml:"aggregation_delay" category:"experimental"`
+	FlushInterval       time.Duration `yaml:"flush_interval" category:"experimental"`
+	ResultChanSize      int           `yaml:"result_chan_size" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -24,7 +26,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.KafkaPartitions, "aggregator.kafka-partitions", "0", "Kafka partitions to t consume metrics from, separated by \",\". Can be a list of integers or ranges of integers (e.g. 0-3,5,7-10).")
 	f.DurationVar(&c.AggregationInterval, "aggregator.aggregation-interval", time.Minute, "Interval at which to generate aggregated series.")
 	f.DurationVar(&c.AggregationDelay, "aggregator.aggregation-delay", 90*time.Second, "Delay until aggregation is performed, this is the time window which clients have to send us their raw samples.")
-
+	f.DurationVar(&c.FlushInterval, "aggregator.flush-interval", time.Second, "Interval at which to flush aggregated samples.")
+	f.IntVar(&c.ResultChanSize, "aggregator.result-chan-size", 1000, "Size of the channel used to send aggregated samples into batches.")
 }
 
 func (c *Config) Validate() error {

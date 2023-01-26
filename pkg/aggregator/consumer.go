@@ -10,33 +10,56 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_kafka "github.com/grafana/mimir/pkg/util/kafka"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/tsdb/errors"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/segmentio/kafka-go"
 )
 
+type AggregateHandler func(user, aggregatedLabels string, aggSample mimirpb.Sample)
+
 type KafkaConsumer struct {
 	services.Service
-	logger       log.Logger
-	cfg          Config
-	shutdownCh   chan struct{}
-	kafkaReaders []*kafka.Reader
+	logger             log.Logger
+	cfg                Config
+	shutdownCh         chan struct{}
+	kafkaReaders       []*kafka.Reader
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
+	aggregateHandler   AggregateHandler
 }
 
-func NewKafkaConsumer(cfg Config, logger log.Logger, reg prometheus.Registerer) (*KafkaConsumer, error) {
+func NewKafkaConsumer(cfg Config, push Push, logger log.Logger, reg prometheus.Registerer) (*KafkaConsumer, error) {
+	var err error
+	batcher := NewBatcher(cfg, push, logger)
+	subservices := []services.Service(nil)
+	subservices = append(subservices, batcher)
+
 	kc := &KafkaConsumer{
 		logger:     logger,
-		shutdownCh: make(chan struct{}),
 		cfg:        cfg,
+		shutdownCh: make(chan struct{}),
 	}
 
-	kc.Service = services.NewBasicService(kc.starting, kc.running, kc.stopping)
+	kc.aggregateHandler = batcher.AddSample
+	kc.subservices, err = services.NewManager(subservices...)
+	if err != nil {
+		return nil, err
+	}
 
+	kc.subservicesWatcher = services.NewFailureWatcher()
+	kc.subservicesWatcher.WatchManager(kc.subservices)
+
+	kc.Service = services.NewBasicService(kc.starting, kc.running, kc.stopping)
 	return kc, nil
 }
 
 func (kc *KafkaConsumer) starting(ctx context.Context) error {
+	if err := services.StartManagerAndAwaitHealthy(ctx, kc.subservices); err != nil {
+		return errors.Wrap(err, "unable to start kafka consumer subservices")
+	}
+
 	for _, partition := range kc.cfg.kafkaPartitions {
 		reader := kafka.NewReader(kafka.ReaderConfig{
 			Brokers:   kc.cfg.kafkaBrokers,
@@ -48,7 +71,7 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 
 		kc.kafkaReaders = append(kc.kafkaReaders, reader)
 
-		go newPartitionConsumer(kc.cfg, reader, kc.shutdownCh, kc.logger)
+		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, kc.shutdownCh, kc.logger)
 	}
 
 	return nil
@@ -60,13 +83,15 @@ func (kc *KafkaConsumer) running(ctx context.Context) error {
 		return nil
 	case <-kc.shutdownCh:
 		return nil
+	case err := <-kc.subservicesWatcher.Chan():
+		return errors.Wrap(err, "kafka consumer subservice failed")
 	}
 }
 
 func (kc *KafkaConsumer) stopping(_ error) error {
 	close(kc.shutdownCh)
 
-	multiErr := errors.NewMulti()
+	multiErr := tsdb_errors.NewMulti()
 	for _, reader := range kc.kafkaReaders {
 		err := reader.Close()
 		if err != nil {
@@ -74,23 +99,29 @@ func (kc *KafkaConsumer) stopping(_ error) error {
 		}
 	}
 
+	err := services.StopManagerAndAwaitStopped(context.Background(), kc.subservices)
+	if err != nil {
+		multiErr.Add(err)
+	}
+
 	return multiErr.Err()
 }
 
 type partitionConsumer struct {
-	cfg             Config
-	aggs            userAggregations
-	shutdownCh      chan struct{}
-	logger          log.Logger
-	handleAggregate func(user string, aggSample mimirpb.Sample)
+	cfg              Config
+	aggs             userAggregations
+	shutdownCh       chan struct{}
+	logger           log.Logger
+	aggregateHandler AggregateHandler
 }
 
-func newPartitionConsumer(cfg Config, reader *kafka.Reader, shutdownCh chan struct{}, logger log.Logger) {
+func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, shutdownCh chan struct{}, logger log.Logger) {
 	partitionConsumer{
-		cfg:        cfg,
-		aggs:       newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay),
-		shutdownCh: shutdownCh,
-		logger:     logger,
+		cfg:              cfg,
+		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay),
+		shutdownCh:       shutdownCh,
+		logger:           logger,
+		aggregateHandler: handler,
 	}.consume(reader)
 }
 
@@ -142,7 +173,8 @@ func (c partitionConsumer) handleTimeseries(user, aggregatedLabels string, value
 	for _, sample := range value.Samples {
 		aggSample := c.aggs.ingest(user, aggregatedLabels, rawLabels, sample)
 		if math.IsNaN(aggSample.Value) {
-			c.handleAggregate(user, aggSample)
+			// If sample value isn't NaN then it is an aggregation result, handling it.
+			c.aggregateHandler(user, aggregatedLabels, aggSample)
 		}
 	}
 }
