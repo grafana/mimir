@@ -102,17 +102,20 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	return f, ms
 }
 
-func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
+func sendResponseWithDelay(t *testing.T, f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
+	t.Helper()
+
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
 		Stats:        &stats.Stats{},
 	})
+	require.NoError(t, err)
 }
 
 func TestFrontendBasicWorkflow(t *testing.T) {
@@ -124,7 +127,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
@@ -149,7 +152,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
@@ -196,7 +199,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
