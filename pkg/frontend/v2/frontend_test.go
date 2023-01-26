@@ -249,7 +249,7 @@ func TestFrontendCancellation(t *testing.T) {
 	})
 
 	ms.checkWithLock(func() {
-		require.Equal(t, 2, len(ms.msgs))
+		require.Len(t, ms.msgs, 2)
 		require.True(t, ms.msgs[0].Type == schedulerpb.ENQUEUE)
 		require.True(t, ms.msgs[1].Type == schedulerpb.CANCEL)
 		require.True(t, ms.msgs[0].QueryID == ms.msgs[1].QueryID)
@@ -290,7 +290,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 	})
 
 	ms.checkWithLock(func() {
-		require.Equal(t, 2*reqCount, len(ms.msgs))
+		require.Len(t, ms.msgs, 2*reqCount)
 		msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
 		for _, msg := range ms.msgs {
 			msgTypeCounts[msg.Type]++
@@ -339,7 +339,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 	require.Nil(t, resp)
 
 	ms.checkWithLock(func() {
-		require.Equal(t, 1, len(ms.msgs))
+		require.Len(t, ms.msgs, 1)
 	})
 }
 
@@ -458,7 +458,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	// Connection will be established on the first roundtrip.
 	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
-	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
+	require.Equal(t, http.StatusTooManyRequests, int(resp.Code))
 
 	// Verify that there is one stream open.
 	require.Equal(t, 1, checkStreamGoroutines())
@@ -472,7 +472,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	// Another request will work as before, because worker will recreate connection.
 	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
-	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
+	require.Equal(t, http.StatusTooManyRequests, int(resp.Code))
 
 	// There should still be only one stream open, and one goroutine created for it.
 	// Previously frontend leaked goroutine because stream that received "EOF" due to server closing the connection, never stopped its goroutine.
