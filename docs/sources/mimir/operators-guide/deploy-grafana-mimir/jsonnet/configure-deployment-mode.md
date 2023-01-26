@@ -54,7 +54,7 @@ You can configure autoscaling for the read path:
 }
 ```
 
-CLI Flags for Read-Write components are inherited from the microservices.
+CLI flags for read-write components are inherited from the microservices:
 
 ```jsonnet
 {
