@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -43,6 +44,7 @@ type Config struct {
 	TesterRequestMinRange             time.Duration
 	TesterRequestMaxRange             time.Duration
 	TesterRequestMetricNameRegex      string
+	TesterRequestPromQLMatchers       flagext.StringSliceCSV
 	TesterRequestRandomLabelName      string
 	TesterRequestSkipChunks           bool
 	TesterConcurrency                 int
@@ -58,6 +60,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.TesterRequestMinRange, "tester.request-min-range", 24*time.Hour, "The minimum time range to query within the configured min and max time.")
 	f.DurationVar(&c.TesterRequestMaxRange, "tester.request-max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
 	f.StringVar(&c.TesterRequestMetricNameRegex, "tester.request-metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
+	f.Var(&c.TesterRequestPromQLMatchers, "tester.request-promql-matchers", `Additional PromQL matchers. Format is comma-separated individual matchers: pod=~"a.*",cluster!="123"`)
 	f.StringVar(&c.TesterRequestRandomLabelName, "tester.request-label-name-with-random-values", "", "Label name to add to all requests' matchers that will have a random value.")
 	f.BoolVar(&c.TesterRequestSkipChunks, "tester.request-skip-chunks", false, "True to request series without chunks.")
 	f.IntVar(&c.TesterConcurrency, "tester.concurrency", 1, "The number of concurrent requests to run.")
@@ -143,14 +146,17 @@ func main() {
 
 	selector := newStoreGatewaySelector(storesRing, cfg.Mimir.Querier.StoreGatewayClient, limits, logger, reg)
 
-	// Request.
-	matchers := []storepb.LabelMatcher{
-		{
-			Type:  storepb.LabelMatcher_RE,
-			Name:  labels.MetricName,
-			Value: cfg.TesterRequestMetricNameRegex,
-		},
+	matchers, err := parsePromQLMatchers(cfg.TesterRequestPromQLMatchers)
+	if err != nil {
+		panic(errors.Wrap(err, "parsing additional matchers matchers"))
 	}
+
+	// Request.
+	matchers = append(matchers, storepb.LabelMatcher{
+		Type:  storepb.LabelMatcher_RE,
+		Name:  labels.MetricName,
+		Value: cfg.TesterRequestMetricNameRegex,
+	})
 	if cfg.TesterRequestRandomLabelName != "" {
 		matchers = append(matchers, storepb.LabelMatcher{
 			Type:  storepb.LabelMatcher_EQ,
@@ -158,6 +164,8 @@ func main() {
 			Value: "",
 		})
 	}
+
+	logger.Log("msg", "config", "matchers", fmt.Sprintf("%v", matchers))
 
 	t := newTester(cfg.TesterUserID, finder, selector, cfg.TesterComparisonAuthoritativeZone, logger)
 	g, _ := errgroup.WithContext(ctx)
@@ -209,6 +217,19 @@ func getRandomRequestTimeRange(cfg *Config) (start, end int64) {
 	}
 
 	return
+}
+
+func parsePromQLMatchers(ms []string) ([]storepb.LabelMatcher, error) {
+	var promMatchers []*labels.Matcher
+	for _, m := range ms {
+		parsed, err := parser.ParseMetricSelector("{" + m + "}")
+		if err != nil {
+			return nil, err
+		}
+		promMatchers = append(promMatchers, parsed...)
+
+	}
+	return storepb.PromMatchersToMatchers(promMatchers...)
 }
 
 type noBlocksStoreLimits struct{}
