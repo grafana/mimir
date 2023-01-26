@@ -1983,6 +1983,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
     	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+  -store-gateway.ignore-native-histograms-on-read
+    	[experimental] To stop processing native histograms as soon as possible, set to true
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
