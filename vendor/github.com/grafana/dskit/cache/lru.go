@@ -135,7 +135,7 @@ func (l *LRUCache) Name() string {
 	return "in-memory-" + l.name
 }
 
-func (l *LRUCache) Delete(_ context.Context, _ string) error {
-	// no-op
-	return nil
+func (l *LRUCache) Delete(ctx context.Context, key string) error {
+	l.lru.Remove(key)
+	return l.c.Delete(ctx, key)
 }

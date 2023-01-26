@@ -85,9 +85,10 @@ func (m *MockCache) Flush() {
 // InstrumentedMockCache is a mocked cache implementation which also tracks the number
 // of times its functions are called.
 type InstrumentedMockCache struct {
-	cache      *MockCache
-	storeCount atomic.Int32
-	fetchCount atomic.Int32
+	cache       *MockCache
+	storeCount  atomic.Int32
+	fetchCount  atomic.Int32
+	deleteCount atomic.Int32
 }
 
 // NewInstrumentedMockCache makes a new InstrumentedMockCache.
@@ -111,9 +112,9 @@ func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
 }
 
-func (m *InstrumentedMockCache) Delete(_ context.Context, _ string) error {
-	// no-op
-	return nil
+func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
+	m.deleteCount.Inc()
+	return m.cache.Delete(ctx, key)
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {
@@ -122,4 +123,8 @@ func (m *InstrumentedMockCache) CountStoreCalls() int {
 
 func (m *InstrumentedMockCache) CountFetchCalls() int {
 	return int(m.fetchCount.Load())
+}
+
+func (m *InstrumentedMockCache) CountDeleteCalls() int {
+	return int(m.deleteCount.Load())
 }

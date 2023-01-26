@@ -86,14 +86,14 @@ func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClie
 // Store data identified by keys.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *remoteCache) Store(_ context.Context, data map[string][]byte, ttl time.Duration) {
+func (c *remoteCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
 	var (
 		firstErr error
 		failed   int
 	)
 
 	for key, val := range data {
-		if err := c.remoteClient.SetAsync(context.Background(), key, val, ttl); err != nil {
+		if err := c.remoteClient.SetAsync(ctx, key, val, ttl); err != nil {
 			failed++
 			if firstErr == nil {
 				firstErr = err

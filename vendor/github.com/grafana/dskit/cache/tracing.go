@@ -46,7 +46,6 @@ func (t SpanlessTracingCache) Name() string {
 	return t.c.Name()
 }
 
-func (t SpanlessTracingCache) Delete(_ context.Context, _ string) error {
-	// no-op
-	return nil
+func (t SpanlessTracingCache) Delete(ctx context.Context, key string) error {
+	return t.c.Delete(ctx, key)
 }
