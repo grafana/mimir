@@ -220,9 +220,6 @@ func matchersConfigString(matchers map[Source][]string) string {
 	return sb.String()
 }
 
-// MarshalYAML implements yaml.Marshaler.
-//
-//goland:noinspection GoMixedReceiverTypes // We need MarshalYAML to be on non-pointer as validation.Limits doesn't use pointer to this struct.
 func (c LabelMatchers) MarshalYAML() (interface{}, error) {
 	return c.getMap(), nil
 }
