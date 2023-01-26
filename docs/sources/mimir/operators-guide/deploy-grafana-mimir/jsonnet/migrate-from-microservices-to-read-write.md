@@ -1,6 +1,5 @@
 ---
-description:
-  Migrate from a cluster deployed with as microservices to
+description: Migrate from a cluster deployed with as microservices to
   one in read-write mode.
 menuTitle: Migrate from microservices to read-write mode
 title: Migrate from microservices to read-write mode without downtime
@@ -111,7 +110,6 @@ diff --color=always store-gateway-zone-c.yaml mimir-backend-zone-c.yaml
 ```
 
 ## Step 3: Migrate read-path to read-write service
-
 
 ### Step 3.1: Scale up read component
 
@@ -268,6 +266,7 @@ Scale up `mimir-write`.
 ```
 
 ### Step 6.2: Route traffic to mimir-write
+
 Configure your load-balancer to route write requests to `mimir-write`.
 
 Ensure the microservice distributor is no longer receiving write requests:
