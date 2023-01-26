@@ -6952,7 +6952,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 		},
 	})
 
-	// Pushing new series fails, because of limit of 1. This is a function because i.Push cleans up the request, but we want to reuse it.
+	// This is a function because i.Push cleans up the request, but we want to reuse it.
 	newReq := func() *mimirpb.WriteRequest {
 		return ToWriteRequestEphemeral(
 			[]labels.Labels{{{Name: labels.MetricName, Value: "new-metric"}}},
@@ -6962,6 +6962,7 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 			mimirpb.API,
 		)
 	}
+	// Pushing new series fails, because of limit of 1.
 	_, err = i.Push(ctx, newReq())
 	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(i.limiter.FormatError(userID, errMaxEphemeralSeriesPerUserLimitExceeded), userID).Error()), err)
 
