@@ -174,7 +174,7 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        local legends = ['instant queries', 'range queries', 'label names queries', 'label values queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'];
+        local legends = ['instant queries', 'range queries', '"label names" queries', '"label values" queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'];
 
         $.panel('Queries / sec') +
         $.queryPanel(
