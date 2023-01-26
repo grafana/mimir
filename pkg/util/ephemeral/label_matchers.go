@@ -3,6 +3,7 @@
 package ephemeral
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -104,6 +105,17 @@ func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	*c, err = parseLabelMatchers(rawMatchers)
+	return err
+}
+
+func (c *LabelMatchers) UnmarshalJSON(data []byte) error {
+	m := map[Source][]string{}
+	err := json.Unmarshal(data, &m)
+	if err != nil {
+		return err
+	}
+
+	*c, err = parseLabelMatchers(m)
 	return err
 }
 
@@ -212,6 +224,14 @@ func matchersConfigString(matchers map[Source][]string) string {
 //
 //goland:noinspection GoMixedReceiverTypes // We need MarshalYAML to be on non-pointer as validation.Limits doesn't use pointer to this struct.
 func (c LabelMatchers) MarshalYAML() (interface{}, error) {
+	return c.getMap(), nil
+}
+
+func (c LabelMatchers) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.getMap())
+}
+
+func (c LabelMatchers) getMap() map[Source][]string {
 	res := map[Source][]string{}
 
 	for _, source := range ValidSources {
@@ -222,5 +242,5 @@ func (c LabelMatchers) MarshalYAML() (interface{}, error) {
 		res[source] = c.raw[source]
 	}
 
-	return res, nil
+	return res
 }
