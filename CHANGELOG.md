@@ -25,6 +25,10 @@
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 
+### Documentation
+
+* [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+
 ## 2.6.0-rc.0
 
 ### Grafana Mimir

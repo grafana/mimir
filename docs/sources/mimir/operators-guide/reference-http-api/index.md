@@ -14,10 +14,11 @@ keywords:
 
 Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.
 
-This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and monolithic mode:
+This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode, monolithic mode, and read-write mode:
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
+- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}) for the grouping of components.
 
 ## Endpoints
 
