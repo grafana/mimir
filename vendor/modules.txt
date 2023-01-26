@@ -526,7 +526,7 @@ github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
-# github.com/grafana/e2e v0.1.1-0.20230119164726-5e313a82020d
+# github.com/grafana/e2e v0.1.1-0.20230126152734-a5f4bd6cfa9e
 ## explicit; go 1.18
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
@@ -766,8 +766,8 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.3.0
 ## explicit; go 1.9
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.39.1-0.20230110141620-846591a16635 => github.com/zenador/prometheus-common v0.0.0-20230111050330-24dba8e7f709
-## explicit; go 1.18
+# github.com/prometheus/common v0.39.1-0.20230126140546-ca1f99be33b3
+## explicit; go 1.17
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
@@ -1379,5 +1379,4 @@ sigs.k8s.io/yaml
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
-# github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20230111050330-24dba8e7f709
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

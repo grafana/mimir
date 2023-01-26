@@ -63,7 +63,7 @@ func (s Sample) String() string {
 	if s.Histogram != nil {
 		return fmt.Sprintf("%s => %s", s.Metric, SampleHistogramPair{
 			Timestamp: s.Timestamp,
-			Histogram: *s.Histogram,
+			Histogram: s.Histogram,
 		})
 	}
 	return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
@@ -82,7 +82,7 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 			Metric: s.Metric,
 			Histogram: SampleHistogramPair{
 				Timestamp: s.Timestamp,
-				Histogram: *s.Histogram,
+				Histogram: s.Histogram,
 			},
 		}
 		return json.Marshal(&v)
@@ -381,9 +381,4 @@ func (mat Matrix) String() string {
 	}
 
 	return strings.Join(strs, "\n")
-}
-
-type GenericSamplePair interface {
-	SamplePair | SampleHistogramPair
-	GetTimestamp() Time
 }

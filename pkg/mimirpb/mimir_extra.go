@@ -25,15 +25,14 @@ func (vs *SampleHistogramPair) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	vs.Timestamp = int64(s.Timestamp)
-	h := FromPromCommonToMimirSampleHistogram(s.Histogram)
-	vs.Histogram = &h
+	vs.Histogram = FromPromCommonToMimirSampleHistogram(s.Histogram)
 	return nil
 }
 
 func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
 	s := model.SampleHistogramPair{
 		Timestamp: model.Time(vs.Timestamp),
-		Histogram: FromMimirSampleToPromCommonHistogram(*vs.Histogram),
+		Histogram: FromMimirSampleToPromCommonHistogram(vs.Histogram),
 	}
 	return json.Marshal(s)
 }

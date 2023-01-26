@@ -192,7 +192,7 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 	return result
 }
 
-func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
+func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -207,7 +207,7 @@ func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
 	}
 }
 
-func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram {
+func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -222,11 +222,11 @@ func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram 
 	}
 }
 
-func FromHistogramProtoToPromCommonHistogram(h Histogram) model.SampleHistogram {
+func FromHistogramProtoToPromCommonHistogram(h *Histogram) *model.SampleHistogram {
 	if h.IsFloatHistogram() {
-		return FromFloatHistogramToPromCommonHistogram(*FromHistogramProtoToFloatHistogram(h))
+		return FromFloatHistogramToPromCommonHistogram(FromHistogramProtoToFloatHistogram(h))
 	}
-	return FromHistogramToPromCommonHistogram(*FromHistogramProtoToHistogram(h))
+	return FromHistogramToPromCommonHistogram(FromHistogramProtoToHistogram(h))
 }
 
 func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
@@ -277,34 +277,12 @@ func fromSpansToSpansProto(s []histogram.Span) []*BucketSpan {
 	return spans
 }
 
-func FromPromCommonToMimirSampleHistogram(src model.SampleHistogram) SampleHistogram {
-	buckets := make([]*HistogramBucket, len(src.Buckets))
-	for i, bucket := range src.Buckets {
-		buckets[i] = &HistogramBucket{
-			Boundaries: int32(bucket.Boundaries),
-			Lower:      float64(bucket.Lower),
-			Upper:      float64(bucket.Upper),
-			Count:      float64(bucket.Count),
-		}
-	}
-	return SampleHistogram{Count: float64(src.Count), Sum: float64(src.Sum), Buckets: buckets}
+func FromPromCommonToMimirSampleHistogram(src *model.SampleHistogram) *SampleHistogram {
+	return (*SampleHistogram)(unsafe.Pointer(src))
 }
 
-func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHistogram {
-	buckets := make(model.HistogramBuckets, len(src.Buckets))
-	for i, bucket := range src.Buckets {
-		buckets[i] = &model.HistogramBucket{
-			Boundaries: int(bucket.Boundaries),
-			Lower:      model.FloatString(bucket.Lower),
-			Upper:      model.FloatString(bucket.Upper),
-			Count:      model.FloatString(bucket.Count),
-		}
-	}
-	return model.SampleHistogram{
-		Count:   model.FloatString(src.Count),
-		Sum:     model.FloatString(src.Sum),
-		Buckets: buckets,
-	}
+func FromMimirSampleToPromCommonHistogram(src *SampleHistogram) *model.SampleHistogram {
+	return (*model.SampleHistogram)(unsafe.Pointer(src))
 }
 
 // FromPointsToSamples converts []promql.Point to []Sample.
@@ -322,8 +300,8 @@ func FromPointsToSamples(points []promql.Point) []Sample {
 	return samples
 }
 
-func getBucketBoundaries(bucket histogram.Bucket[float64]) int {
-	boundaries := 2 // Exclusive on both sides AKA open interval.
+func getBucketBoundaries(bucket histogram.Bucket[float64]) int32 {
+	var boundaries int32 = 2 // Exclusive on both sides AKA open interval.
 	if bucket.LowerInclusive {
 		if bucket.UpperInclusive {
 			boundaries = 3 // Inclusive on both sides AKA closed interval.
@@ -348,7 +326,7 @@ func FromFloatHistogramToSampleHistogramProto(h histogram.FloatHistogram) Sample
 			continue // No need to expose empty buckets in JSON.
 		}
 		buckets = append(buckets, &HistogramBucket{
-			Boundaries: int32(getBucketBoundaries(bucket)),
+			Boundaries: getBucketBoundaries(bucket),
 			Lower:      bucket.Lower,
 			Upper:      bucket.Upper,
 			Count:      bucket.Count,
@@ -379,7 +357,7 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 }
 
 // FromFloatHistogramToPromCommonHistogram converts histogram.FloatHistogram to model.SampleHistogram.
-func FromFloatHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.SampleHistogram {
+func FromFloatHistogramToPromCommonHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
 	buckets := make([]*model.HistogramBucket, 0)
 	it := h.AllBucketIterator()
 	for it.Next() {
@@ -394,15 +372,15 @@ func FromFloatHistogramToPromCommonHistogram(h histogram.FloatHistogram) model.S
 			Count:      model.FloatString(bucket.Count),
 		})
 	}
-	return model.SampleHistogram{
+	return &model.SampleHistogram{
 		Count:   model.FloatString(h.Count),
 		Sum:     model.FloatString(h.Sum),
 		Buckets: buckets,
 	}
 }
 
-func FromHistogramToPromCommonHistogram(h histogram.Histogram) model.SampleHistogram {
-	return FromFloatHistogramToPromCommonHistogram(*h.ToFloat())
+func FromHistogramToPromCommonHistogram(h *histogram.Histogram) *model.SampleHistogram {
+	return FromFloatHistogramToPromCommonHistogram(h.ToFloat())
 }
 
 type byLabel []LabelAdapter

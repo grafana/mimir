@@ -151,7 +151,7 @@ func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if h.IsFloatHistogram() {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
 	}
-	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(h)
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
@@ -166,7 +166,7 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 	if !h.IsFloatHistogram() {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
 	}
-	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(h)
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
 // AtT implements implements chunkenc.Iterator.
