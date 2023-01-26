@@ -65,7 +65,7 @@ When running Grafana Mimir in microservices mode and using the pre-compiled dash
 
 ### Default `job` selection in read-write mode
 
-When running Grafana Mimir in read-write mode and using the pre-compiled dashboards and alerts, set the `job` label  accordingly:
+When running Grafana Mimir in read-write mode and using the pre-compiled dashboards and alerts, set the `job` label accordingly:
 
 | Mimir service | Expected `job` label        |
 | :------------ | :-------------------------- |

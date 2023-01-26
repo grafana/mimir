@@ -16,7 +16,7 @@ Grafana Mimir supports multiple [deployment modes]({{< relref "../../architectur
 
 ### Requirements
 
-Read-write deployment mode requires that you use multi-zone ingesters and multi-zone store gateways. Additionally,  rule evaluation is performed within `mimir-backend`, so you must disable ruler remote evaluation.
+Read-write deployment mode requires that you use multi-zone ingesters and multi-zone store gateways. Additionally, rule evaluation is performed within `mimir-backend`, so you must disable ruler remote evaluation.
 
 You can set the deployment mode via the `deployment_mode` configuration variable:
 
