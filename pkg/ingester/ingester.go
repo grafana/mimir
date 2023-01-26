@@ -1082,9 +1082,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					)
 
 					if h.IsFloatHistogram() {
-						fh = mimirpb.FromHistogramProtoToFloatHistogram(h)
+						fh = mimirpb.FromHistogramProtoToFloatHistogram(&h)
 					} else {
-						ih = mimirpb.FromHistogramProtoToHistogram(h)
+						ih = mimirpb.FromHistogramProtoToHistogram(&h)
 					}
 					if ref != 0 {
 						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {

@@ -30,7 +30,7 @@ require (
 	github.com/prometheus/alertmanager v0.25.0-rc.0.0.20221216141313-26cbd6bd862e
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
-	github.com/prometheus/common v0.39.1-0.20230110141620-846591a16635
+	github.com/prometheus/common v0.39.1-0.20230126140546-ca1f99be33b3
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sirupsen/logrus v1.9.0
@@ -250,8 +250,6 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 // + https://github.com/go-yaml/yaml/pull/691
 // + https://github.com/go-yaml/yaml/pull/876
 replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
-
-replace github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20230111050330-24dba8e7f709
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup-golang-1.19.2)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

@@ -18,10 +18,10 @@ func MergeSampleSets(a, b []model.SamplePair) []model.SamplePair {
 	result := make([]model.SamplePair, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
-		if a[i].GetTimestamp() < b[j].GetTimestamp() {
+		if a[i].Timestamp < b[j].Timestamp {
 			result = append(result, a[i])
 			i++
-		} else if a[i].GetTimestamp() > b[j].GetTimestamp() {
+		} else if a[i].Timestamp > b[j].Timestamp {
 			result = append(result, b[j])
 			j++
 		} else {

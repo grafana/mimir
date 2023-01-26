@@ -406,7 +406,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 		Histograms: []model.SampleHistogramPair{
 			{
 				Timestamp: model.Time(tsMillis),
-				Histogram: *GenerateTestSampleHistogram(value),
+				Histogram: GenerateTestSampleHistogram(value),
 			},
 		},
 	})

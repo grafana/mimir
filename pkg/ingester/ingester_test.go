@@ -7150,15 +7150,15 @@ func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
-		expectHistogram  model.SampleHistogram
+		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
 			sampleHistograms: makeWriteRequestHistograms(1, generateTestHistogram(0)),
-			expectHistogram:  *generateTestSampleHistogram(0),
+			expectHistogram:  generateTestSampleHistogram(0),
 		},
 		"float histogram": {
 			sampleHistograms: makeWriteRequestFloatHistograms(1, generateTestFloatHistogram(0)),
-			expectHistogram:  *generateTestSampleHistogram(0),
+			expectHistogram:  generateTestSampleHistogram(0),
 		},
 	}
 	for testName, testCfg := range tests {
@@ -7168,7 +7168,7 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 	}
 }
 
-func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram model.SampleHistogram) {
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
 	limits := defaultLimitsTestConfig()
 	limits.AcceptNativeHistograms = false
 

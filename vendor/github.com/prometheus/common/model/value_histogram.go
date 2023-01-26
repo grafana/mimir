@@ -43,7 +43,7 @@ func (v *FloatString) UnmarshalJSON(b []byte) error {
 }
 
 type HistogramBucket struct {
-	Boundaries int
+	Boundaries int32
 	Lower      FloatString
 	Upper      FloatString
 	Count      FloatString
@@ -135,13 +135,17 @@ func (s *SampleHistogram) Equal(o *SampleHistogram) bool {
 
 type SampleHistogramPair struct {
 	Timestamp Time
-	Histogram SampleHistogram
+	// Histogram should never be nil, it's only stored as pointer for efficiency.
+	Histogram *SampleHistogram
 }
 
 func (s SampleHistogramPair) MarshalJSON() ([]byte, error) {
 	t, err := json.Marshal(s.Timestamp)
 	if err != nil {
 		return nil, err
+	}
+	if s.Histogram == nil {
+		return nil, fmt.Errorf("histogram is nil")
 	}
 	v, err := json.Marshal(s.Histogram)
 	if err != nil {
@@ -159,6 +163,9 @@ func (s *SampleHistogramPair) UnmarshalJSON(buf []byte) error {
 	if gotLen := len(tmp); gotLen != wantLen {
 		return fmt.Errorf("wrong number of fields: %d != %d", gotLen, wantLen)
 	}
+	if s.Histogram == nil {
+		return fmt.Errorf("histogram is null")
+	}
 	return nil
 }
 
@@ -167,9 +174,5 @@ func (s SampleHistogramPair) String() string {
 }
 
 func (s *SampleHistogramPair) Equal(o *SampleHistogramPair) bool {
-	return s == o || (s.Histogram.Equal(&o.Histogram) && s.Timestamp.Equal(o.Timestamp))
-}
-
-func (s SampleHistogramPair) GetTimestamp() Time {
-	return s.Timestamp
+	return s == o || (s.Histogram.Equal(o.Histogram) && s.Timestamp.Equal(o.Timestamp))
 }

@@ -99,7 +99,3 @@ func (s *SamplePair) Equal(o *SamplePair) bool {
 func (s SamplePair) String() string {
 	return fmt.Sprintf("%s @[%s]", s.Value, s.Timestamp)
 }
-
-func (s SamplePair) GetTimestamp() Time {
-	return s.Timestamp
-}

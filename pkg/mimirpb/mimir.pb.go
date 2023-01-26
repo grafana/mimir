@@ -823,6 +823,7 @@ func (m *BucketSpan) GetLength() uint32 {
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
 // for compatibility with PromQL API results
+// Must keep the same order and type of fields for casting
 type SampleHistogram struct {
 	Count   float64            `protobuf:"fixed64,1,opt,name=count,proto3" json:"count,omitempty"`
 	Sum     float64            `protobuf:"fixed64,2,opt,name=sum,proto3" json:"sum,omitempty"`
@@ -882,6 +883,7 @@ func (m *SampleHistogram) GetBuckets() []*HistogramBucket {
 	return nil
 }
 
+// Must keep the same order and type of fields for casting, see SampleHistogram
 type HistogramBucket struct {
 	Boundaries int32   `protobuf:"varint,1,opt,name=boundaries,proto3" json:"boundaries,omitempty"`
 	Lower      float64 `protobuf:"fixed64,2,opt,name=lower,proto3" json:"lower,omitempty"`

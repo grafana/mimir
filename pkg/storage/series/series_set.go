@@ -189,7 +189,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if h.IsFloatHistogram() {
 		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
 	}
-	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(h)
+	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
@@ -200,7 +200,7 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 	if !h.IsFloatHistogram() {
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
 	}
-	return int64(h.Timestamp), mimirpb.FromHistogramProtoToFloatHistogram(h)
+	return int64(h.Timestamp), mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
