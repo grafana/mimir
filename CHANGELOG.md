@@ -19,6 +19,7 @@
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 
 ### Jsonnet
 

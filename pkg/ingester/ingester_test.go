@@ -6899,15 +6899,27 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 
 	// Push ephemeral series with good timestamps (in last 10 minutes)
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := ToWriteRequestEphemeral(
-		[]labels.Labels{{{Name: labels.MetricName, Value: "test"}}},
-		[]mimirpb.Sample{{Value: float64(100), TimestampMs: now.Add(-9 * time.Minute).UnixMilli()}},
-		nil,
-		nil,
-		mimirpb.API,
-	)
-	_, err = i.Push(ctx, req)
-	require.NoError(t, err)
+	oldTS := now.Add(-9 * time.Minute).UnixMilli()
+	// This is a function, because i.Push() cleans up the passed request, but we want to reuse it.
+	oldReq := func() *mimirpb.WriteRequest {
+		return ToWriteRequestEphemeral(
+			[]labels.Labels{{{Name: labels.MetricName, Value: "test"}}},
+			[]mimirpb.Sample{{Value: float64(100), TimestampMs: oldTS}},
+			nil,
+			nil,
+			mimirpb.API,
+		)
+	}
+	{
+		r := oldReq()
+		require.NotEmpty(t, r.EphemeralTimeseries[0].Labels[0].Name)
+
+		_, err = i.Push(ctx, r)
+		require.NoError(t, err)
+
+		// Verify that ephemeral timeseries were cleaned in Push.
+		require.Empty(t, r.EphemeralTimeseries[0].Labels)
+	}
 
 	// Query back the series and verify that sample exists.
 	verifySamples := func(t *testing.T, expected model.Matrix) {
@@ -6940,15 +6952,18 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 		},
 	})
 
+	// This is a function because i.Push cleans up the request, but we want to reuse it.
+	newReq := func() *mimirpb.WriteRequest {
+		return ToWriteRequestEphemeral(
+			[]labels.Labels{{{Name: labels.MetricName, Value: "new-metric"}}},
+			[]mimirpb.Sample{{Value: float64(500), TimestampMs: now.UnixMilli()}},
+			nil,
+			nil,
+			mimirpb.API,
+		)
+	}
 	// Pushing new series fails, because of limit of 1.
-	newReq := ToWriteRequestEphemeral(
-		[]labels.Labels{{{Name: labels.MetricName, Value: "new-metric"}}},
-		[]mimirpb.Sample{{Value: float64(500), TimestampMs: now.UnixMilli()}},
-		nil,
-		nil,
-		mimirpb.API,
-	)
-	_, err = i.Push(ctx, newReq)
+	_, err = i.Push(ctx, newReq())
 	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(i.limiter.FormatError(userID, errMaxEphemeralSeriesPerUserLimitExceeded), userID).Error()), err)
 
 	db := i.getTSDB(userID)
@@ -6961,11 +6976,11 @@ func TestIngesterTruncationOfEphemeralSeries(t *testing.T) {
 	verifySamples(t, nil)
 
 	// Pushing the same request should now fail, because min valid time for ephemeral storage has moved on to (now + 5 minutes - ephemeral series retention = now - 5 minutes)
-	_, err = i.Push(ctx, req)
-	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(req.EphemeralTimeseries[0].Samples[0].TimestampMs), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}), userID).Error()), err)
+	_, err = i.Push(ctx, oldReq())
+	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(oldTS), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}), userID).Error()), err)
 
 	// Pushing new series now works.
-	_, err = i.Push(ctx, newReq)
+	_, err = i.Push(ctx, newReq())
 	require.NoError(t, err)
 
 	verifySamples(t, model.Matrix{
