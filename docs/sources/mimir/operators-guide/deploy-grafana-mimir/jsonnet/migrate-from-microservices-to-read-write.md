@@ -1,5 +1,5 @@
 ---
-description: Migrate from a cluster deployed with as microservices to
+description: Migrate from a cluster deployed as microservices to
   one in read-write mode.
 menuTitle: Migrate from microservices to read-write mode
 title: Migrate from microservices to read-write mode without downtime
