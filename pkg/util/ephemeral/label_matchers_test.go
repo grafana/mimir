@@ -249,7 +249,12 @@ api:
 					t.Run("marshal yaml", func(t *testing.T) {
 						gotYaml, err := yaml.Marshal(&got)
 						require.NoError(t, err)
+						require.Equal(t, tc.inputYamlBlob, string(gotYaml))
+					})
 
+					t.Run("marshal yaml (non-pointer)", func(t *testing.T) {
+						gotYaml, err := yaml.Marshal(got)
+						require.NoError(t, err)
 						require.Equal(t, tc.inputYamlBlob, string(gotYaml))
 					})
 				}
