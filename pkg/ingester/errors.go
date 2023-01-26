@@ -13,33 +13,27 @@ import (
 )
 
 type validationError struct {
-	err       error // underlying error
-	errorType string
-	code      int
-	labels    labels.Labels
+	err    error // underlying error
+	code   int
+	labels labels.Labels
 }
 
-func makeLimitError(errorType string, err error) error {
+func makeLimitError(err error) error {
 	return &validationError{
-		errorType: errorType,
-		err:       err,
-		code:      http.StatusBadRequest,
+		err:  err,
+		code: http.StatusBadRequest,
 	}
 }
 
-func makeMetricLimitError(errorType string, labels labels.Labels, err error) error {
+func makeMetricLimitError(labels labels.Labels, err error) error {
 	return &validationError{
-		errorType: errorType,
-		err:       err,
-		code:      http.StatusBadRequest,
-		labels:    labels,
+		err:    err,
+		code:   http.StatusBadRequest,
+		labels: labels,
 	}
 }
 
 func (e *validationError) Error() string {
-	if e.err == nil {
-		return e.errorType
-	}
 	if e.labels == nil {
 		return e.err.Error()
 	}

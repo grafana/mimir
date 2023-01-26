@@ -37,7 +37,7 @@ To use the query-scheduler, query-frontends and queriers need to discover the ad
 The query-scheduler supports two service discovery mechanisms:
 
 - DNS-based service discovery
-- Ring-based service discovery (experimental)
+- Ring-based service discovery
 
 ### DNS-based service discovery
 
@@ -50,13 +50,59 @@ To use the query-scheduler with DNS-based service discovery, configure the query
 
 > **Note:** The querier pulls queries only from the query-frontend or the query-scheduler, but not both. `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and only one option can be set.
 
-### Ring-based service discovery (experimental)
+### Ring-based service discovery
 
 To use the query-scheduler with ring-based service discovery, configure the query-schedulers to join their hash ring, and the query-frontends and queriers to discover query-scheduler instances via the ring:
 
 1. [Configure the hash ring]({{< relref "../../../configure/configure-hash-rings.md" >}}) for the query-scheduler.
 1. Set `-query-scheduler.service-discovery-mode=ring` (or its respective YAML configuration parameter) to query-scheduler, query-frontend and querier.
 1. Set the `-query-scheduler.ring.*` flags (or their respective YAML configuration parameters) to query-scheduler, query-frontend and querier.
+
+#### Migrate from DNS-based to ring-based service discovery
+
+To migrate the query-scheduler from [DNS-based service discovery](#dns-based-service-discovery) to [ring-based service discovery](#ring-based-service-discovery), perform the following steps:
+
+1. Configure the **query-scheduler** instances to join a ring:
+
+   ```
+   -query-scheduler.service-discovery-mode=ring
+
+   # Configure the query-scheduler ring backend (e.g. "memberlist").
+   -query-scheduler.ring.store=<backend>
+
+   # If the configured <backend> is "memberlist", then ensure memberlist is configured for the query-scheduler.
+   -memberlist.join=<same as other Mimir components>
+
+   # If the configured <backend> is "consul" or "etcd", then set their backend configuration
+   # for the query-scheduler ring:
+   # - Consul: -query-scheduler.ring.consul.*
+   # - Ecd:    -query-scheduler.ring.etcd.*
+   ```
+
+1. Wait until the query-scheduler instances have completed rolling out.
+1. Ensure the changes have been successfully applied; open the [query-scheduler ring status]({{< relref "../../../reference-http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
+   At this point, queriers and query-frontend are still discovering query-schedulers via DNS.
+1. Configure **query-frontend** and **querier** instances to discover query-schedulers via the ring:
+
+   ```
+   -query-scheduler.service-discovery-mode=ring
+
+   # Remove the DNS-based service discovery configuration:
+   # -query-frontend.scheduler-address
+
+   # Configure the query-scheduler ring backend (e.g. "memberlist").
+   -query-scheduler.ring.store=<backend>
+
+   # If the configured <backend> is "memberlist", then ensure memberlist is configured for the query-scheduler.
+   -memberlist.join=<same as other Mimir components>
+
+   # If the configured <backend> is "consul" or "etcd", then set their backend configuration
+   # for the query-scheduler ring:
+   # - Consul: -query-scheduler.ring.consul.*
+   # - Ecd:    -query-scheduler.ring.etcd.*
+   ```
+
+> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../deploy-grafana-mimir/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery.md" >}}).
 
 ## Operational considerations
 

@@ -180,7 +180,7 @@
       // splitting in the frontend, the reality is this only limits rate(foo[32d])
       // type queries. 32 days to allow for comparision over the last month (31d) and
       // then some.
-      'store.max-query-length': '768h',
+      'querier.max-partial-query-length': '768h',
     } + $.mimirRuntimeConfigFile,
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
@@ -217,6 +217,18 @@
         {}
       else
         querySchedulerRingConfig,
+
+    overridesExporterRingConfig:
+      if !$._config.overrides_exporter_ring_enabled then
+        {}
+      else
+        {
+          'overrides-exporter.ring.enabled': true,
+          'overrides-exporter.ring.store': 'consul',
+          'overrides-exporter.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+          'overrides-exporter.ring.prefix': '',
+          'overrides-exporter.ring.wait-stability-min-duration': '1m',
+        },
 
     ruler_enabled: false,
     ruler_storage_backend: $._config.storage_backend,

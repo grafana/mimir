@@ -11,7 +11,7 @@
 
 > **Warning**
 >
-> This feature must be enabled with [feature gate](https://github.com/open-telemetry/opentelemetry-collector/tree/main/service/featuregate) `pkg.translator.prometheus.NormalizeName`. It is disabled by default (alpha stage).
+> This feature must be enabled with [feature gate](https://github.com/open-telemetry/opentelemetry-collector/tree/main/featuregate) `pkg.translator.prometheus.NormalizeName`. It is disabled by default (alpha stage).
 >
 > ```shell-session
 > $ otelcol --config=config.yaml --feature-gates=pkg.translator.prometheus.NormalizeName

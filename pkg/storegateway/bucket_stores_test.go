@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -34,7 +35,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/weaveworks/common/logging"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBucketStores_InitialSync(t *testing.T) {
@@ -73,7 +74,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -150,7 +151,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
@@ -211,7 +212,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
@@ -296,7 +297,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
@@ -321,6 +322,81 @@ func TestBucketStores_Series_ShouldCorrectlyQuerySeriesSpanningMultipleChunks(t 
 	}
 }
 
+func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		userID                = "user-1"
+		overriddenChunksLimit = 1000000
+		overriddenSeriesLimit = 2000
+	)
+
+	defaultLimits := defaultLimitsConfig()
+
+	tests := map[string]struct {
+		tenantLimits        map[string]*validation.Limits
+		expectedChunkLimit  uint64
+		expectedSeriesLimit uint64
+	}{
+		"when max_fetched_chunks_per_query and max_fetched_series_per_query are not overridden, their default values are used as the limit of the Limiter": {
+			expectedChunkLimit:  uint64(defaultLimits.MaxChunksPerQuery),
+			expectedSeriesLimit: uint64(defaultLimits.MaxFetchedSeriesPerQuery),
+		},
+		"when max_fetched_chunks_per_query and max_fetched_series_per_query are overridden, the overridden values are used as the limit of the Limiter": {
+			tenantLimits: map[string]*validation.Limits{
+				userID: {
+					MaxChunksPerQuery:        overriddenChunksLimit,
+					MaxFetchedSeriesPerQuery: overriddenSeriesLimit,
+				},
+			},
+			expectedChunkLimit:  uint64(overriddenChunksLimit),
+			expectedSeriesLimit: uint64(overriddenSeriesLimit),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := prepareStorageConfig(t)
+
+			storageDir := t.TempDir()
+
+			bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+			require.NoError(t, err)
+
+			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
+			require.NoError(t, err)
+
+			reg := prometheus.NewPedanticRegistry()
+			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, overrides, log.NewNopLogger(), reg)
+			require.NoError(t, err)
+
+			store, err := stores.getOrCreateStore(userID)
+			require.NoError(t, err)
+
+			chunksLimit := overrides.MaxChunksPerQuery(userID)
+			if chunksLimit != 0 {
+				chunksLimiter := store.chunksLimiterFactory(promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "chunks"}))
+				err = chunksLimiter.Reserve(testData.expectedChunkLimit)
+				require.NoError(t, err)
+
+				err = chunksLimiter.Reserve(1)
+				require.Error(t, err)
+			}
+
+			seriesLimit := overrides.MaxFetchedSeriesPerQuery(userID)
+			if seriesLimit != 0 {
+				seriesLimiter := store.seriesLimiterFactory(promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "series"}))
+				err = seriesLimiter.Reserve(testData.expectedSeriesLimit)
+				require.NoError(t, err)
+
+				err = seriesLimiter.Reserve(1)
+				require.Error(t, err)
+			}
+
+		})
+	}
+}
+
 func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *testing.T, lazyLoadingEnabled bool) {
 	const (
 		userID     = "user-1"
@@ -341,7 +417,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	require.NoError(t, stores.InitialSync(ctx))
@@ -428,7 +504,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, stores.InitialSync(ctx))
 
@@ -558,16 +634,6 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 	return srv.SeriesSet, srv.Warnings, err
 }
 
-func mockLoggingLevel() logging.Level {
-	level := logging.Level{}
-	err := level.Set("info")
-	if err != nil {
-		panic(err)
-	}
-
-	return level
-}
-
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
@@ -602,7 +668,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 	sharding := userShardingStrategy{}
 
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.

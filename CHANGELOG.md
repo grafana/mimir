@@ -4,12 +4,51 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825
+* [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
+* [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
+* [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
+* [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
+
+### Mixin
+
+* [CHANGE] Move auto-scaling panel rows down beneath logical network path in Reads and Writes dashboards. #4049
+* [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
+* [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
+* [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049
+* [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
+* [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
+* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+
+### Jsonnet
+
+* [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+
+### Documentation
+
+* [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+
+## 2.6.0-rc.0
+
+### Grafana Mimir
+
+* [CHANGE] Querier: Introduce `-querier.max-partial-query-length` to limit the time range for partial queries at the querier level and deprecate `-store.max-query-length`. #3825 #4017
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
+* [CHANGE] Ingester: If shipping is enabled block retention will now be relative to the upload time to cloud storage. If shipping is disabled block retention will be relative to the creation time of the block instead of the mintime of the last block created. #3816
+* [CHANGE] Query-frontend: Deprecated CLI flag `-query-frontend.align-querier-with-step` has been removed. #3982
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779 #3839
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439
-* [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to shard tenants to overrides-exporters and avoid export of duplicate per-tenant limit override metrics. #3908
+* [FEATURE] Overrides-exporter: Added experimental ring support to overrides-exporter via `-overrides-exporter.ring.enabled`. When enabled, the ring is used to establish a leader replica for the export of limit override metrics. #3908 #3953
+* [FEATURE] Ephemeral storage (experimental): Mimir can now accept samples into "ephemeral storage". Such samples are available for querying for a short amount of time (`-blocks-storage.ephemeral-tsdb.retention-period`, defaults to 10 minutes), and then removed from memory. To use ephemeral storage, distributor must be configured with `-distributor.ephemeral-series-enabled` option. Series matching `-distributor.ephemeral-series-matchers` will be marked for storing into ephemeral storage in ingesters. Each tenant needs to have ephemeral storage enabled by using `-ingester.max-ephemeral-series-per-user` limit, which defaults to 0 (no ephemeral storage). Ingesters have new `-ingester.instance-limits.max-ephemeral-series` limit for total number of series in ephemeral storage across all tenants. If ingestion of samples into ephemeral storage fails, `cortex_discarded_samples_total` metric will use values prefixed with `ephemeral-` for `reason` label. Querying of ephemeral storage is possible by using `{__mimir_storage__="ephemeral"}` as metric selector. Following new metrics related to ephemeral storage are introduced: #3897 #3922 #3961 #3997 #4004
+  * `cortex_ingester_ephemeral_series`
+  * `cortex_ingester_ephemeral_series_created_total`
+  * `cortex_ingester_ephemeral_series_removed_total`
+  * `cortex_ingester_ingested_ephemeral_samples_total`
+  * `cortex_ingester_ingested_ephemeral_samples_failures_total`
+  * `cortex_ingester_memory_ephemeral_users`
+  * `cortex_ingester_queries_ephemeral_total`
+  * `cortex_ingester_queried_ephemeral_samples`
+  * `cortex_ingester_queried_ephemeral_series`
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
@@ -30,6 +69,10 @@
 * [ENHANCEMENT] Reduce overhead of debug logging when filtered out. #3875
 * [ENHANCEMENT] Update Docker base images from `alpine:3.16.2` to `alpine:3.17.1`. #3898
 * [ENHANCEMENT] Ingester: Add new `/ingester/tsdb_metrics` endpoint to return tenant-specific TSDB metrics. #3923
+* [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.max-total-query-length` and its associated YAML configuration is now stable. #3882
+* [ENHANCEMENT] Ruler: rule groups now support optional and experimental `align_evaluation_time_on_interval` field, which causes all evaluations to happen on interval-aligned timestamp. #4013
+* [ENHANCEMENT] Query-scheduler: ring-based service discovery is now stable. #4028
+* [ENHANCEMENT] Store-gateway: improved performance of prefix matching on the labels. #4055 #4080
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
@@ -41,6 +84,9 @@
 * [BUGFIX] Distributor, Query-scheduler: Make sure ring metrics include a `cortex_` prefix as expected by dashboards. #3809
 * [BUGFIX] Querier: canceled requests are no longer reported as "consistency check" failures. #3837 #3927
 * [BUGFIX] Distributor: don't panic when `metric_relabel_configs` in overrides contains null element. #3868
+* [BUGFIX] Distributor: don't panic when OTLP histograms don't have any buckets. #3853
+* [BUGFIX] Ingester, Compactor: fix panic that can occur when compaction fails. #3955
+* [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` error when the calling querier cancels the request. #4007
 
 ### Mixin
 
@@ -49,6 +95,7 @@
 * [ENHANCEMENT] Alerts: Added `MimirAlertmanagerInstanceHasNoTenants` alert that fires when an alertmanager instance ows no tenants. #3826
 * [ENHANCEMENT] Alerts: Added `MimirRulerInstanceHasNoRuleGroups` alert that fires when a ruler replica is not assigned any rule group to evaluate. #3723
 * [ENHANCEMENT] Support for baremetal deployment for alerts and scaling recording rules. #3719
+* [ENHANCEMENT] Dashboards: querier autoscaling now supports multiple scaled objects (configurable via `$._config.autoscale.querier.hpa_name`). #3962
 * [BUGFIX] Alerts: Fixed `MimirIngesterRestarts` alert when Mimir is deployed in read-write mode. #3716
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MimirMemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
@@ -56,6 +103,7 @@
 * [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 * [BUGFIX] Tenants dashboard: Make it compatible with all deployment types. #3754
 * [BUGFIX] Alerts: Fixed `MimirCompactorHasNotUploadedBlocks` to not fire if compactor has nothing to do. #3793
+* [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric is 0, to avoid false positives on scaled objects with 0 min replicas. #3999
 
 ### Jsonnet
 
@@ -66,6 +114,7 @@
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [ENHANCEMENT] Update memcached image from `memcached:1.6.16-alpine` to `memcached:1.6.17-alpine`. #3914
+* [ENHANCEMENT] Allow configuring the ring for overrides-exporter. #3995
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
 * [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
 * [BUGFIX] Fixed `mimir-write` and `mimir-read` Kubernetes service to correctly balance requests among pods. #3855 #3864 #3906
@@ -74,14 +123,16 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Update `mimirtool config convert` to work with Mimir 2.4, 2.5, 2.6 changes. #3952
 * [ENHANCEMENT] Mimirtool is now available to install through Homebrew with `brew install mimirtool`. #3776
+* [ENHANCEMENT] Added `--concurrency` to `mimirtool rules sync` command. #3996
 * [BUGFIX] Fix summary output from `mimirtool rules sync` to display correct number of groups created and updated. #3918
 
 ### Documentation
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
 * [ENHANCEMENT] Update migration from cortex documentation. #3662
-* [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+* [ENHANCEMENT] Query-scheduler: documented how to migrate from DNS-based to ring-based service discovery. #4028
 
 ### Tools
 
@@ -117,7 +168,7 @@
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
 * [ENHANCEMENT] Query-frontend: added "fetched index bytes" to query statistics, so that the statistics contain the total bytes read by store-gateways from TSDB block indexes. #3206
 * [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
-* [ENHANCEMENT] Added the `/api/v1/status/config` API to maintain API compatibility with prometheus. #3596
+* [ENHANCEMENT] Added `/api/v1/status/config` and `/api/v1/status/flags` APIs to maintain compatibility with prometheus. #3596 #3983
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302

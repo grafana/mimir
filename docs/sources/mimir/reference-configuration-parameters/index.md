@@ -288,7 +288,7 @@ overrides_exporter:
     [heartbeat_period: <duration> | default = 15s]
 
     # (advanced) The heartbeat timeout after which overrides-exporters are
-    # considered unhealthy within the ring.
+    # considered unhealthy within the ring. 0 = never (timeout disabled).
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -309,6 +309,17 @@ overrides_exporter:
     # (advanced) IP address to advertise in the ring. Default is auto-detected.
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
+
+    # (advanced) Minimum time to wait for ring stability at startup, if set to
+    # positive value. Set to 0 to disable.
+    # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
+    [wait_stability_min_duration: <duration> | default = 0s]
+
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # overrides-exporter ring keeps changing after this period of time, it will
+    # start anyway.
+    # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
+    [wait_stability_max_duration: <duration> | default = 5m]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -628,6 +639,7 @@ ha_tracker:
 [remote_timeout: <duration> | default = 2s]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -737,6 +749,11 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
+
+# (experimental) Enable marking series as ephemeral based on the given matchers
+# in the runtime config.
+# CLI flag: -distributor.ephemeral-series-enabled
+[ephemeral_series_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -917,6 +934,12 @@ instance_limits:
   # Requests to create additional series will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-series
   [max_series: <int> | default = 0]
+
+  # (experimental) Max ephemeral series that this ingester can hold (across all
+  # tenants). Requests to create additional ephemeral series will be rejected. 0
+  # = unlimited.
+  # CLI flag: -ingester.instance-limits.max-ephemeral-series
+  [max_ephemeral_series: <int> | default = 0]
 
   # (advanced) Max inflight push requests that this ingester can handle (across
   # all tenants). Additional requests will be rejected. 0 = unlimited.
@@ -1441,6 +1464,7 @@ alertmanager_client:
 [resend_delay: <duration> | default = 1m]
 
 ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1678,21 +1702,12 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) The replication factor to use when sharding the alertmanager.
-  # CLI flag: -alertmanager.sharding-ring.replication-factor
-  [replication_factor: <int> | default = 3]
-
-  # (advanced) True to enable zone-awareness and replicate alerts across
-  # different availability zones.
-  # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
-  [zone_awareness_enabled: <boolean> | default = false]
-
   # (advanced) Instance ID to register in the ring.
   # CLI flag: -alertmanager.sharding-ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
 
-  # (advanced) List of network interface names to look up when finding the
-  # instance IP address.
+  # List of network interface names to look up when finding the instance IP
+  # address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
   [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
@@ -1704,6 +1719,15 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) The replication factor to use when sharding the alertmanager.
+  # CLI flag: -alertmanager.sharding-ring.replication-factor
+  [replication_factor: <int> | default = 3]
+
+  # (advanced) True to enable zone-awareness and replicate alerts across
+  # different availability zones.
+  # CLI flag: -alertmanager.sharding-ring.zone-awareness-enabled
+  [zone_awareness_enabled: <boolean> | default = false]
 
   # (advanced) The availability zone where this instance is running. Required if
   # zone-awareness is enabled.
@@ -2523,6 +2547,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 0]
 
+# (experimental) The maximum number of in-memory ephemeral series per tenant,
+# across the cluster before replication. 0 to disable ephemeral storage.
+# CLI flag: -ingester.max-ephemeral-series-per-user
+[max_ephemeral_series_per_user: <int> | default = 0]
+
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
@@ -2577,8 +2606,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
 # The maximum number of unique series for which a query can fetch samples from
-# each ingesters and storage. This limit is enforced in the querier and ruler. 0
-# to disable
+# each ingesters and storage. This limit is enforced in the querier, ruler and
+# store-gateway. 0 to disable
 # CLI flag: -querier.max-fetched-series-per-query
 [max_fetched_series_per_query: <int> | default = 0]
 
@@ -2826,6 +2855,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
+
+# (experimental) Lists of series matchers prefixed by the source. The source
+# must be one of any, api, rule. If an incoming sample matches at least one of
+# the matchers with its source it gets marked as ephemeral. The format of the
+# value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
+# CLI flag: -distributor.ephemeral-series-matchers
+[ephemeral_series_matchers: <map of source name (string) to series matchers ([]string)> | default = ]
 ```
 
 ### blocks_storage
@@ -3135,8 +3171,10 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # TSDB blocks retention in the ingester before a block is removed, relative to
-  # the newest block written for the tenant. This should be larger than the
+  # TSDB blocks retention in the ingester before a block is removed. If shipping
+  # is enabled, the retention will be relative to the time when the block was
+  # uploaded to storage. If shipping is disabled then its relative to the
+  # creation time of the block. This should be larger than the
   # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
   # large enough to give store-gateways and queriers enough time to discover
   # newly uploaded blocks.
@@ -3251,6 +3289,51 @@ tsdb:
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
+
+ephemeral_tsdb:
+  # (experimental) Retention of ephemeral series.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.retention-period
+  [retention_period: <duration> | default = 10m]
+
+  # (experimental) The write buffer size used by the head chunks mapper. Lower
+  # values reduce memory utilisation on clusters with a large number of tenants
+  # at the cost of increased disk I/O operations.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes
+  [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
+
+  # (experimental) How much variance (as percentage between 0 and 1) should be
+  # applied to the chunk end time, to spread chunks writing across time. Doesn't
+  # apply to the last chunk of the chunk range. 0 means no variance.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance
+  [head_chunks_end_time_variance: <float> | default = 0]
+
+  # (experimental) The number of shards of series to use in TSDB (must be a
+  # power of 2). Reducing this will decrease memory footprint, but can
+  # negatively impact performance.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.stripe-size
+  [stripe_size: <int> | default = 16384]
+
+  # (experimental) The size of the write queue used by the head chunks mapper.
+  # Lower values reduce memory utilisation at the cost of potentially higher
+  # ingest latency. Value of 0 switches chunks mapper to implementation without
+  # a queue.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size
+  [head_chunks_write_queue_size: <int> | default = 1000000]
+
+  # (experimental) How long to cache postings for matchers in the Head and
+  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl
+  [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in the Head and OOOHead when ttl > 0.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size
+  [head_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in the
+  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force
+  [head_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 
 ### compactor
@@ -3354,6 +3437,7 @@ The `compactor` block configures the compactor component.
 [disabled_tenants: <string> | default = ""]
 
 sharding_ring:
+  # The key-value store used to share the hash ring across multiple instances.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3398,16 +3482,6 @@ sharding_ring:
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
-  # CLI flag: -compactor.ring.wait-stability-min-duration
-  [wait_stability_min_duration: <duration> | default = 0s]
-
-  # (advanced) Maximum time to wait for ring stability at startup. If the
-  # compactor ring keeps changing after this period of time, the compactor will
-  # start anyway.
-  # CLI flag: -compactor.ring.wait-stability-max-duration
-  [wait_stability_max_duration: <duration> | default = 5m]
-
   # (advanced) Instance ID to register in the ring.
   # CLI flag: -compactor.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
@@ -3425,6 +3499,16 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
+  # CLI flag: -compactor.ring.wait-stability-min-duration
+  [wait_stability_min_duration: <duration> | default = 0s]
+
+  # (advanced) Maximum time to wait for ring stability at startup. If the
+  # compactor ring keeps changing after this period of time, the compactor will
+  # start anyway.
+  # CLI flag: -compactor.ring.wait-stability-max-duration
+  [wait_stability_max_duration: <duration> | default = 5m]
 
   # (advanced) Timeout for waiting on compactor to become ACTIVE in the ring.
   # CLI flag: -compactor.ring.wait-active-instance-timeout

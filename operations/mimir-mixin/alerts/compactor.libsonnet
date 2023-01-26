@@ -56,10 +56,10 @@
           },
         },
         {
-          // Alert if compactor failed to run 2 consecutive compactions.
+          // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
           alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
           expr: |||
-            increase(cortex_compactor_runs_failed_total[2h]) >= 2
+            increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
           |||,
           labels: {
             severity: 'critical',

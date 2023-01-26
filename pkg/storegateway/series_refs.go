@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -34,6 +35,11 @@ var (
 		// the slice with the right size.
 		New: nil,
 	})
+)
+
+const (
+	errSeriesLimitMessage = "exceeded series limit"
+	errChunksLimitMessage = "exceeded chunks limit"
 )
 
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
@@ -447,8 +453,9 @@ func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.Series
 	}
 }
 
-func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
-	return newSeriesChunkRefsSeriesSet(newPreloadingSetIterator[seriesChunkRefsSet](ctx, 1, batches))
+func newSeriesSetWithoutChunks(ctx context.Context, iterator seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
+	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunkRefsSet](ctx, 1, iterator, stats)
+	return newSeriesChunkRefsSeriesSet(iterator)
 }
 
 func (s *seriesChunkRefsSeriesSet) Next() bool {
@@ -579,7 +586,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	l.currentBatch = l.from.At()
 	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
 	if err != nil {
-		l.err = errors.Wrap(err, "exceeded series limit")
+		l.err = errors.Wrap(err, errSeriesLimitMessage)
 		return false
 	}
 
@@ -590,7 +597,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 
 	err = l.chunksLimiter.Reserve(uint64(totalChunks))
 	if err != nil {
-		l.err = errors.Wrap(err, "exceeded chunks limit")
+		l.err = errors.Wrap(err, errChunksLimitMessage)
 		return false
 	}
 	return true
@@ -635,12 +642,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
-	metrics *BucketStoreMetrics,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
@@ -652,8 +656,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	var iterator seriesChunkRefsSetIterator
-	iterator = newLoadingSeriesChunkRefsSetIterator(
+	iterator := newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -668,9 +671,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 		tenantID,
 		logger,
 	)
-	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("series_load"))
-	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
-	return iterator, nil
+
+	// Track the time spent loading series and chunk refs.
+	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
+		stats.update(func(stats *queryStats) {
+			stats.streamingSeriesFetchRefsDuration += duration
+		})
+	}), nil
 }
 
 func newLoadingSeriesChunkRefsSetIterator(

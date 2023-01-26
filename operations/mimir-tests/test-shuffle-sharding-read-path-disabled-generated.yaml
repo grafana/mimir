@@ -495,6 +495,7 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -querier.shuffle-sharding-ingesters-enabled=false
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -505,7 +506,6 @@ spec:
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.tenant-shard-size=3
-        - -store.max-query-length=768h
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -726,6 +726,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -querier.max-partial-query-length=768h
         - -querier.shuffle-sharding-ingesters-enabled=false
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
@@ -742,7 +743,6 @@ spec:
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.tenant-shard-size=3
-        - -store.max-query-length=768h
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.5.0

@@ -67,6 +67,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/ephemeral"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -262,6 +263,9 @@ func (c *Config) Validate(log log.Logger) error {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
+	}
+	if err := c.OverridesExporter.Validate(); err != nil {
+		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
 	return nil
 }
@@ -664,6 +668,7 @@ type Mimir struct {
 	ActivityTracker          *activitytracker.ActivityTracker
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
+	EphemeralChecker         ephemeral.SeriesCheckerByUser
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter

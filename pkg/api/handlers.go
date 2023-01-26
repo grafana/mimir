@@ -8,7 +8,6 @@ package api
 import (
 	"context"
 	"embed"
-	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -31,7 +30,6 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/middleware"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -163,26 +161,32 @@ func DefaultConfigHandler(actualCfg interface{}, defaultCfg interface{}) http.Ha
 	}
 }
 
-type yamlConfig struct {
-	YamlString string `json:"yaml"`
-}
 type configResponse struct {
-	Status string      `json:"status"`
-	Config *yamlConfig `json:"data"`
+	Status string            `json:"status"`
+	Config map[string]string `json:"data"`
 }
 
-func (cfg *Config) statusConfigHandler(actualCfg interface{}) http.HandlerFunc {
+func (cfg *Config) statusConfigHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		response := configResponse{
 			Status: "success",
-			Config: &yamlConfig{},
+			Config: map[string]string{},
 		}
-		data, err := yaml.Marshal(actualCfg)
-		if err != nil {
-			// adapted from https://github.com/prometheus/prometheus/blob/c3fac587ef3c7d515e319844042ee0dddab54cbc/config/config.go#L252
-			response.Config.YamlString = fmt.Sprintf("<error creating config string: %s>", err)
+		util.WriteJSONResponse(w, response)
+	}
+}
+
+type flagsResponse struct {
+	Status string            `json:"status"`
+	Flags  map[string]string `json:"data"`
+}
+
+func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		response := flagsResponse{
+			Status: "success",
+			Flags:  map[string]string{},
 		}
-		response.Config.YamlString = string(data)
 		util.WriteJSONResponse(w, response)
 	}
 }

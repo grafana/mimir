@@ -249,7 +249,7 @@ func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
 	return LimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
-		maxQueryLengthFlag))
+		maxPartialQueryLengthFlag))
 }
 
 func NewMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Duration) LimitError {

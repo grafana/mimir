@@ -11,7 +11,7 @@ weight: 10
 
 # About Grafana Mimir exemplars
 
-An exemplar is a specific trace representative of a repeated pattern of data in a given time interval. It helps you identify higher cardinality metadata from specific events within time series data. To learn more about exemplars and how they can help you isolate and troubleshoot problems with your systems, see [Introduction to exemplars](https://grafana.com/docs/grafana/latest/basics/exemplars/).
+An exemplar is a specific trace representative of a repeated pattern of data in a given time interval. It helps you identify higher cardinality metadata from specific events within time series data. To learn more about exemplars and how they can help you isolate and troubleshoot problems with your systems, see [Introduction to exemplars](/docs/grafana/latest/basics/exemplars/).
 
 Grafana Mimir includes the ability to store exemplars in-memory. Exemplar storage in Grafana Mimir is implemented similarly to how it is in Prometheus. Exemplars are stored as a fixed size circular buffer that stores exemplars in memory for all series.
 

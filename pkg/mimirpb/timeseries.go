@@ -314,6 +314,13 @@ func ReuseTimeseries(ts *TimeSeries) {
 	}
 	ts.Labels = ts.Labels[:0]
 	ts.Samples = ts.Samples[:0]
+
+	ClearExemplars(ts)
+	timeSeriesPool.Put(ts)
+}
+
+// ClearExemplars safely removes exemplars from TimeSeries.
+func ClearExemplars(ts *TimeSeries) {
 	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
 	for i := range ts.Exemplars {
 		for j := range ts.Exemplars[i].Labels {
@@ -322,7 +329,6 @@ func ReuseTimeseries(ts *TimeSeries) {
 		}
 	}
 	ts.Exemplars = ts.Exemplars[:0]
-	timeSeriesPool.Put(ts)
 }
 
 // ReusePreallocTimeseries puts the timeseries and the yoloSlice back into their respective pools for re-use.

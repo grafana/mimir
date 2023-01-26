@@ -51,16 +51,13 @@ The following features are currently experimental:
   - Disable alerting and recording rules evaluation on a per-tenant basis
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
+  - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
 - Distributor
   - Metrics relabeling
-  - Request rate limit
-    - `-distributor.request-rate-limit`
-    - `-distributor.request-burst-limit`
   - OTLP ingestion path
-- Exemplar storage
-  - `-ingester.max-global-exemplars-per-user`
-  - `-ingester.exemplars-update-period`
-  - API endpoint `/api/v1/query_exemplars`
+  - Marking of series for ephemeral storage
+    - `-distributor.ephemeral-series-enabled`
+    - `-distributor.ephemeral-series-matchers`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -87,13 +84,17 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+  - Support for ephemeral storage:
+    - `-ingester.max-ephemeral-series-per-user`
+    - `-ingester.instance-limits.max-ephemeral-series`
+    - Use of `__mimir_storage__` label matcher.
+    - All `-blocks-storage.ephemeral-tsdb.*` options.
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
-  - Ring-based service discovery (`-query-scheduler.service-discovery-mode` and `-query-scheduler.ring.*`)
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header.map-populate-enabled`

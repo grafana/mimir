@@ -241,7 +241,8 @@ type MultitenantCompactor struct {
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
 	compactionRunsCompleted        prometheus.Counter
-	compactionRunsFailed           prometheus.Counter
+	compactionRunsErred            prometheus.Counter
+	compactionRunsShutdown         prometheus.Counter
 	compactionRunsLastSuccess      prometheus.Gauge
 	compactionRunDiscoveredTenants prometheus.Gauge
 	compactionRunSkippedTenants    prometheus.Gauge
@@ -311,9 +312,15 @@ func newMultitenantCompactor(
 			Name: "cortex_compactor_runs_completed_total",
 			Help: "Total number of compaction runs successfully completed.",
 		}),
-		compactionRunsFailed: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_compactor_runs_failed_total",
-			Help: "Total number of compaction runs failed.",
+		compactionRunsErred: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_compactor_runs_failed_total",
+			Help:        "Total number of compaction runs failed.",
+			ConstLabels: map[string]string{"reason": "error"},
+		}),
+		compactionRunsShutdown: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_compactor_runs_failed_total",
+			Help:        "Total number of compaction runs failed.",
+			ConstLabels: map[string]string{"reason": "shutdown"},
 		}),
 		compactionRunsLastSuccess: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_last_successful_run_timestamp_seconds",
@@ -459,7 +466,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
+	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' KV store")
 	}
@@ -479,7 +486,7 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' lifecycler")
 	}
 
-	compactorsRing, err := ring.New(cfg.ToRingConfig(), "compactor", ringKey, logger, reg)
+	compactorsRing, err := ring.New(cfg.toRingConfig(), "compactor", ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' ring client")
 	}
@@ -526,8 +533,10 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 		if succeeded && compactionErrorCount == 0 {
 			c.compactionRunsCompleted.Inc()
 			c.compactionRunsLastSuccess.SetToCurrentTime()
+		} else if compactionErrorCount == 0 {
+			c.compactionRunsShutdown.Inc()
 		} else {
-			c.compactionRunsFailed.Inc()
+			c.compactionRunsErred.Inc()
 		}
 
 		// Reset progress metrics once done.
@@ -540,7 +549,10 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	level.Info(c.logger).Log("msg", "discovering users from bucket")
 	users, err := c.discoverUsersWithRetries(ctx)
 	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to discover users from bucket", "err", err)
+		if !errors.Is(err, context.Canceled) {
+			compactionErrorCount++
+			level.Error(c.logger).Log("msg", "failed to discover users from bucket", "err", err)
+		}
 		return
 	}
 
@@ -589,9 +601,16 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 		level.Info(c.logger).Log("msg", "starting compaction of user blocks", "user", userID)
 
 		if err = c.compactUserWithRetries(ctx, userID); err != nil {
-			c.compactionRunFailedTenants.Inc()
-			compactionErrorCount++
-			level.Error(c.logger).Log("msg", "failed to compact user blocks", "user", userID, "err", err)
+			switch {
+			case errors.Is(err, context.Canceled):
+				// We don't want to count shutdowns as failed compactions because we will pick up with the rest of the compaction after the restart.
+				level.Info(c.logger).Log("msg", "compaction for user was interrupted by a shutdown", "user", userID)
+				return
+			default:
+				c.compactionRunFailedTenants.Inc()
+				compactionErrorCount++
+				level.Error(c.logger).Log("msg", "failed to compact user blocks", "user", userID, "err", err)
+			}
 			continue
 		}
 

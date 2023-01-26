@@ -48,21 +48,21 @@ func OTLPHandler(
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		var decoderFunc func(buf []byte) (pmetricotlp.Request, error)
+		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
 		logger := log.WithContext(ctx, log.Logger)
 
 		contentType := r.Header.Get("Content-Type")
 		switch contentType {
 		case pbContentType:
-			decoderFunc = func(buf []byte) (pmetricotlp.Request, error) {
-				req := pmetricotlp.NewRequest()
+			decoderFunc = func(buf []byte) (pmetricotlp.ExportRequest, error) {
+				req := pmetricotlp.NewExportRequest()
 				return req, req.UnmarshalProto(buf)
 			}
 
 		case jsonContentType:
-			decoderFunc = func(buf []byte) (pmetricotlp.Request, error) {
-				req := pmetricotlp.NewRequest()
+			decoderFunc = func(buf []byte) (pmetricotlp.ExportRequest, error) {
+				req := pmetricotlp.NewExportRequest()
 				return req, req.UnmarshalJSON(buf)
 			}
 
@@ -199,7 +199,7 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 }
 
 // TimeseriesToOTLPRequest is used in tests.
-func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request {
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	for _, ts := range timeseries {
@@ -212,20 +212,20 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 				continue
 			}
 
-			attributes.InsertString(l.Name, l.Value)
+			attributes.PutStr(l.Name, l.Value)
 		}
 
 		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 		metric.SetName(name)
-		metric.SetDataType(pmetric.MetricDataTypeGauge)
+		metric.SetEmptyGauge()
 
 		for _, sample := range ts.Samples {
 			datapoint := metric.Gauge().DataPoints().AppendEmpty()
 			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
-			datapoint.SetDoubleVal(sample.Value)
+			datapoint.SetDoubleValue(sample.Value)
 			attributes.CopyTo(datapoint.Attributes())
 		}
 	}
 
-	return pmetricotlp.NewRequestFromMetrics(d)
+	return pmetricotlp.NewExportRequestFromMetrics(d)
 }

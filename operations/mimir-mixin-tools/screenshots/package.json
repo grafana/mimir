@@ -1,4 +1,6 @@
 {
+  "name": "screenshots",
+  "version": "0.1.0",
   "dependencies": {
     "puppeteer": "^19.2.0"
   }

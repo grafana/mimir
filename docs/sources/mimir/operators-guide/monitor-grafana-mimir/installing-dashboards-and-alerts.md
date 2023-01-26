@@ -25,7 +25,7 @@ The packaged dashboards and alerts have been compiled from the sources using a d
 If you need to customize the required metrics label names please choose one of the other installation options.
 
 1. Download [dashboards](https://github.com/grafana/mimir/tree/main/operations/mimir-mixin-compiled/dashboards), [recording rules](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/rules.yaml) and [alerts](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/alerts.yaml) from Grafana Mimir repository
-2. [Import dashboards in Grafana](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard)
+2. [Import dashboards in Grafana](/docs/grafana/latest/dashboards/export-import/#import-dashboard)
 3. Install recording rules and alerts in your Prometheus
 
 ## Install from sources
@@ -42,7 +42,7 @@ If you choose this option, you can change the configuration to match your deploy
    ```bash
    make build-mixin
    ```
-4. Import the dashboards saved at `operations/mimir-mixin-compiled/dashboards/` in [Grafana](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard)
+4. Import the dashboards saved at `operations/mimir-mixin-compiled/dashboards/` in [Grafana](/docs/grafana/latest/dashboards/export-import/#import-dashboard)
 5. Install the recording rules saved at `operations/mimir-mixin-compiled/rules.yaml` in your Prometheus
 6. Install the alerts saved at `operations/mimir-mixin-compiled/alerts.yaml` in your Prometheus
 

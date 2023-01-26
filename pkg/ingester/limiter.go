@@ -19,10 +19,11 @@ import (
 
 var (
 	// These errors are only internal, to change the API error messages, see Limiter's methods below.
-	errMaxSeriesPerMetricLimitExceeded   = errors.New("per-metric series limit exceeded")
-	errMaxMetadataPerMetricLimitExceeded = errors.New("per-metric metadata limit exceeded")
-	errMaxSeriesPerUserLimitExceeded     = errors.New("per-user series limit exceeded")
-	errMaxMetadataPerUserLimitExceeded   = errors.New("per-user metric metadata limit exceeded")
+	errMaxSeriesPerMetricLimitExceeded        = errors.New("per-metric series limit exceeded")
+	errMaxMetadataPerMetricLimitExceeded      = errors.New("per-metric metadata limit exceeded")
+	errMaxSeriesPerUserLimitExceeded          = errors.New("per-user series limit exceeded")
+	errMaxEphemeralSeriesPerUserLimitExceeded = errors.New("per-user ephemeral series limit exceeded")
+	errMaxMetadataPerUserLimitExceeded        = errors.New("per-user metric metadata limit exceeded")
 )
 
 // RingCount is the interface exposed by a ring implementation which allows
@@ -86,6 +87,16 @@ func (l *Limiter) AssertMaxSeriesPerUser(userID string, series int) error {
 	return errMaxSeriesPerUserLimitExceeded
 }
 
+// AssertMaxEphemeralSeriesPerUser limit has not been reached compared to the current
+// number of series in input and returns an error if so.
+func (l *Limiter) AssertMaxEphemeralSeriesPerUser(userID string, series int) error {
+	if actualLimit := l.maxEphemeralSeriesPerUser(userID); series < actualLimit {
+		return nil
+	}
+
+	return errMaxEphemeralSeriesPerUserLimitExceeded
+}
+
 // AssertMaxMetricsWithMetadataPerUser limit has not been reached compared to the current
 // number of metrics with metadata in input and returns an error if so.
 func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int) error {
@@ -107,6 +118,8 @@ func (l *Limiter) FormatError(userID string, err error) error {
 		return l.formatMaxSeriesPerMetricError(userID)
 	case errMaxMetadataPerUserLimitExceeded:
 		return l.formatMaxMetadataPerUserError(userID)
+	case errMaxEphemeralSeriesPerUserLimitExceeded:
+		return l.formatMaxEphemeralSeriesPerUserError(userID)
 	case errMaxMetadataPerMetricLimitExceeded:
 		return l.formatMaxMetadataPerMetricError(userID)
 	default:
@@ -129,6 +142,15 @@ func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
 		validation.MaxSeriesPerMetricFlag,
+	))
+}
+
+func (l *Limiter) formatMaxEphemeralSeriesPerUserError(userID string) error {
+	globalLimit := l.limits.MaxEphemeralSeriesPerUser(userID)
+
+	return errors.New(globalerror.MaxEphemeralSeriesPerUser.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("per-user ephemeral series limit of %d exceeded", globalLimit),
+		validation.MaxEphemeralSeriesPerUserFlag,
 	))
 }
 
@@ -160,6 +182,10 @@ func (l *Limiter) maxMetadataPerMetric(userID string) int {
 
 func (l *Limiter) maxSeriesPerUser(userID string) int {
 	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser)
+}
+
+func (l *Limiter) maxEphemeralSeriesPerUser(userID string) int {
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxEphemeralSeriesPerUser)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {

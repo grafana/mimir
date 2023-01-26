@@ -8,6 +8,7 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -46,20 +46,6 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
-}
-
-type customLimiter struct {
-	limiter *Limiter
-	code    codes.Code
-}
-
-func (c *customLimiter) Reserve(num uint64) error {
-	err := c.limiter.Reserve(num)
-	if err != nil {
-		return httpgrpc.Errorf(int(c.code), err.Error())
-	}
-
-	return nil
 }
 
 func (c *swappableCache) SwapWith(cache indexcache.IndexCache) {
@@ -92,9 +78,9 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 
 		// Create two blocks per time slot. Only add 10 samples each so only one chunk
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
-		id1, err := testhelper.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset, 0)
+		id1, err := testhelper.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
-		id2, err := testhelper.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset, 0)
+		id2, err := testhelper.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
 
 		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
@@ -113,24 +99,6 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 	}
 
 	return
-}
-
-func newCustomChunksLimiterFactory(limit uint64, code codes.Code) ChunksLimiterFactory {
-	return func(failedCounter prometheus.Counter) ChunksLimiter {
-		return &customLimiter{
-			limiter: NewLimiter(limit, failedCounter),
-			code:    code,
-		}
-	}
-}
-
-func newCustomSeriesLimiterFactory(limit uint64, code codes.Code) SeriesLimiterFactory {
-	return func(failedCounter prometheus.Counter) SeriesLimiter {
-		return &customLimiter{
-			limiter: NewLimiter(limit, failedCounter),
-			code:    code,
-		}
-	}
 }
 
 type prepareStoreConfig struct {
@@ -156,8 +124,8 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		metricsRegistry:      prometheus.NewRegistry(),
 		tempDir:              t.TempDir(),
 		manyParts:            false,
-		seriesLimiterFactory: NewSeriesLimiterFactory(0),
-		chunksLimiterFactory: NewChunksLimiterFactory(0),
+		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
+		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
@@ -447,19 +415,17 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.store.maxSeriesPerBatch > 0, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
-func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, streamingEnabled bool, registry *prometheus.Registry) {
 	t.Helper()
 
-	families, err := registry.Gather()
-	require.NoError(t, err, "couldn't gather metrics from BucketStore")
-	metrics, err := util.NewMetricFamilyMap(families)
+	metrics, err := util.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
 	toLabels := func(labelValuePairs []string) (result labels.Labels) {
@@ -494,14 +460,18 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 
 	if numSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_result_series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "series"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
+
+		if streamingEnabled {
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
+		} else {
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
+			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
+		}
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))
@@ -620,26 +590,21 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 		maxChunksLimit uint64
 		maxSeriesLimit uint64
 		expectedErr    string
-		code           codes.Code
+		expectedCode   codes.Code
 	}{
 		"should succeed if the max chunks limit is not exceeded": {
 			maxChunksLimit: expectedChunks,
 		},
-		"should fail if the max chunks limit is exceeded - ResourceExhausted": {
-			maxChunksLimit: expectedChunks - 1,
-			expectedErr:    "exceeded chunks limit",
-			code:           codes.ResourceExhausted,
-		},
 		"should fail if the max chunks limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks - 1,
 			expectedErr:    "exceeded chunks limit",
-			code:           422,
+			expectedCode:   http.StatusUnprocessableEntity,
 		},
 		"should fail if the max series limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks,
 			expectedErr:    "exceeded series limit",
 			maxSeriesLimit: 1,
-			code:           422,
+			expectedCode:   http.StatusUnprocessableEntity,
 		},
 	}
 
@@ -650,8 +615,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 
 			prepConfig := defaultPrepareStoreConfig(t)
-			prepConfig.chunksLimiterFactory = newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code)
-			prepConfig.seriesLimiterFactory = newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code)
+			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
 
 			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
 			assert.NoError(t, s.store.SyncBlocks(ctx))
@@ -674,7 +639,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
 				status, ok := status.FromError(err)
 				assert.Equal(t, true, ok)
-				assert.Equal(t, testData.code, status.Code())
+				assert.Equal(t, testData.expectedCode, status.Code())
 			}
 		})
 	}

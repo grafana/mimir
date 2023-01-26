@@ -8,7 +8,6 @@ package storegateway
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,8 +23,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/logging"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -49,7 +46,6 @@ type BucketStores struct {
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
 	bucket             objstore.Bucket
-	logLevel           logging.Level
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
@@ -83,7 +79,7 @@ type BucketStores struct {
 }
 
 // NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	cachingBucket, err := tsdb.CreateCachingBucket(cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
@@ -101,7 +97,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
 		stores:             map[string]*BucketStore{},
-		logLevel:           logLevel,
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
@@ -460,17 +455,18 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithChunkPool(u.chunksPool),
 		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
 	}
-	if u.logLevel.String() == "debug" {
-		bucketStoreOpts = append(bucketStoreOpts, WithDebugLogging())
-	}
 
 	bs, err := NewBucketStore(
 		userID,
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
-		newChunksLimiterFactory(u.limits, userID),
-		NewSeriesLimiterFactory(0), // No series limiter.
+		NewChunksLimiterFactory(func() uint64 {
+			return uint64(u.limits.MaxChunksPerQuery(userID))
+		}),
+		NewSeriesLimiterFactory(func() uint64 {
+			return uint64(u.limits.MaxFetchedSeriesPerQuery(userID))
+		}),
 		u.partitioner,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
@@ -565,27 +561,4 @@ type spanSeriesServer struct {
 
 func (s spanSeriesServer) Context() context.Context {
 	return s.ctx
-}
-
-type chunkLimiter struct {
-	limiter *Limiter
-}
-
-func (c *chunkLimiter) Reserve(num uint64) error {
-	err := c.limiter.Reserve(num)
-	if err != nil {
-		return httpgrpc.Errorf(http.StatusUnprocessableEntity, err.Error())
-	}
-
-	return nil
-}
-
-func newChunksLimiterFactory(limits *validation.Overrides, userID string) ChunksLimiterFactory {
-	return func(failedCounter prometheus.Counter) ChunksLimiter {
-		// Since limit overrides could be live reloaded, we have to get the current user's limit
-		// each time a new limiter is instantiated.
-		return &chunkLimiter{
-			limiter: NewLimiter(uint64(limits.MaxChunksPerQuery(userID)), failedCounter),
-		}
-	}
 }

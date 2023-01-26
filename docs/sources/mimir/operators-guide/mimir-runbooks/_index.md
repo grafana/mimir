@@ -1042,7 +1042,8 @@ How to **investigate**:
 
 ### MimirAutoscalerNotActive
 
-This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false` and the related scaling metrics are not 0.
+When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
@@ -1061,6 +1062,35 @@ How to **investigate**:
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl get pods -n keda
   ```
+- Check KEDA custom metrics API server logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+- Check KEDA operator logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator
+  ```
+- Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
+  ```
+  # Assuming Prometheus is running in namespace "default":
+  kubectl -n default get pod -lname=prometheus
+  ```
+
+For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
+When `keda_metrics_adapter_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
+
+### MimirAutoscalerKedaFailing
+
+This alert fires when KEDA is reporting errors for any ScaledObject defined in the same Kubernetes namespace where Mimir is deployed.
+
+How it **works**:
+
+- _See [`MimirAutoscalerNotActive`](#MimirAutoscalerNotActive)_
+
+How to **investigate**:
+
 - Check KEDA custom metrics API server logs
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
@@ -1177,49 +1207,49 @@ These error IDs allow you to read related details in the documentation that foll
 This non-critical error occurs when Mimir receives a write request that contains a series without a metric name.
 Each series must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-metric-name-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid metric name.
 A metric name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-max-label-names-per-series
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a number of labels that exceed the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
 A label name name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-duplicate-label-names
 
 This non-critical error occurs when Mimir receives a write request that contains a series with the same label name two or more times.
 A series that contains a duplicated label name is invalid and gets skipped during the ingestion.
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-labels-not-sorted
 
@@ -1227,7 +1257,7 @@ This error occurs when Mimir receives a write request that contains a series who
 However, Mimir internally sorts labels for series that it receives, so this error should not occur in practice.
 If you experience this error, [open an issue in the Mimir repository](https://github.com/grafana/mimir/issues).
 
-> **Note**: Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+> **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-too-far-in-future
 
@@ -1235,49 +1265,49 @@ This non-critical error occurs when Mimir receives a write request that contains
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
 On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
 
-> **Note**: Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
+> **Note:** Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
 
 ### err-mimir-exemplar-labels-missing
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a label that identifies the related metric.
 An exemplar must have at least one valid label pair, otherwise it cannot be associated with any metric.
 
-> **Note**: Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
 
 ### err-mimir-exemplar-labels-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar where the combined set size of its labels exceeds the limit.
 The limit is used to protect the system’s stability from potential abuse or mistakes, and it cannot be configured.
 
-> **Note**: Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
 
 ### err-mimir-exemplar-timestamp-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a timestamp.
 An exemplar must have a valid timestamp, otherwise it cannot be correlated to any point in time.
 
-> **Note**: Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+> **Note:** Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
 
 ### err-mimir-metadata-missing-metric-name
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata without a metric name.
 Each metric metadata must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+> **Note:** Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
 ### err-mimir-distributor-max-ingestion-rate
 
@@ -1361,6 +1391,21 @@ How to **fix** it:
 
 - See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
+### err-mimir-ingester-max-ephemeral-series
+
+This critical error occurs when an ingester rejects a write request because it reached the maximum number of ephemeral series.
+
+How it **works**:
+
+- The ingester keeps all ephemeral series in memory.
+- The ingester has a per-instance limit on the number of ephemeral series, used to protect the ingester from overloading in case of high traffic.
+- When the limit on the number of ephemeral series is reached, new ephemeral series are rejected, while samples can still be appended to existing ones.
+- To configure the limit, set the `-ingester.instance-limits.max-ephemeral-series` option (or `max_ephemeral_series` in the runtime config).
+
+How to **fix** it:
+
+- Increase the limit, or reshard the tenants between ingesters. Please see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook for more details (it describes persistent storage, but same principles apply to ephemeral storage).
+
 ### err-mimir-ingester-max-inflight-push-requests
 
 This error occurs when an ingester rejects a write request because the maximum in-flight requests limit has been reached.
@@ -1388,6 +1433,18 @@ How to **fix** it:
 
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
+
+### err-mimir-max-ephemeral-series-per-user
+
+This error occurs when the number of ephemeral series for a given tenant exceeds the configured limit.
+
+The limit is used to protect ingesters from overloading in case a tenant writes a high number of ephemeral series, as well as to protect the whole system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-ingester.max-ephemeral-series-per-user` option (or `max_ephemeral_series_per_user` in the runtime configuration).
+
+How to **fix** it:
+
+- Ensure the actual number of ephemeral series written by the affected tenant is legit.
+- Consider increasing the per-tenant limit by using the `-ingester.max-ephemeral-series-per-user` option (or `max_ephemeral_series_per_user` in the runtime configuration).
 
 ### err-mimir-max-series-per-metric
 
@@ -1490,7 +1547,7 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-querier.max-partial-query-length` option (or `max_partial_query_length` in the runtime configuration).
 
 ### err-mimir-max-total-query-length
 
@@ -1552,7 +1609,15 @@ How it **works**:
 
 - If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
 
-> **Note**: If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+> **Note:** If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
+
+### err-mimir-ephemeral-sample-timestamp-too-old
+
+This error occurs when the ingester rejects a sample because its timestamp older than configured retention of ephemeral storage.
+
+How it **works**:
+
+- Ephemeral storage in ingesters can only hold samples that not older than `-blocks-storage.ephemeral-tsdb.retention-period` value. If the incoming timestamp is older than "now - retention", it is rejected.
 
 ### err-mimir-sample-out-of-order
 
@@ -1571,11 +1636,28 @@ Common **causes**:
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 - Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
 
-> **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
+> **Note:** You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
+
+### err-mimir-ephemeral-sample-out-of-order
+
+This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested for the same series in the ephemeral storage.
+
+Please refer to [err-mimir-sample-out-of-order](#err-mimir-sample-out-of-order) for possible reasons.
+
+> **Note**: It is not possible to enable out-of-order sample ingestion for ephemeral storage.
 
 ### err-mimir-sample-duplicate-timestamp
 
 This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
+
+Common **causes**:
+
+- Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
+- Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+
+### err-mimir-ephemeral-sample-duplicate-timestamp
+
+This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value for the same ephemeral series.
 
 Common **causes**:
 
@@ -1636,6 +1718,18 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-mimir-ephemeral-storage-not-enabled-for-user
+
+Ingester returns this error when a write request contains ephemeral series, but ephemeral storage is disabled for user.
+
+Ephemeral storage is disabled when `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) is set to 0 for given tenant.
+
+How to **fix** it:
+
+- Disable support for ephemeral series in distributor by setting `-distributor.ephemeral-series-enabled` to `false`.
+- Remove rules for marking incoming series as ephemeral for given tenant by removing `-distributor.ephemeral-series-matchers` (or `ephemeral_series_matchers` in runtime configuration).
+- Enable ephemeral storage for tenant by setting the `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) to positive number.
 
 ## Mimir routes by path
 

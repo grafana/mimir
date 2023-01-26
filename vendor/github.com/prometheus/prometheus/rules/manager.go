@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -269,7 +270,8 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
+	ruleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	alignEvaluationTimeOnInterval bool
 }
 
 // This function will be used before each rule group evaluation if not nil.
@@ -277,16 +279,17 @@ type Group struct {
 type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 type GroupOptions struct {
-	Name, File               string
-	Interval                 time.Duration
-	Limit                    int
-	Rules                    []Rule
-	SourceTenants            []string
-	ShouldRestore            bool
-	Opts                     *ManagerOptions
-	EvaluationDelay          *time.Duration
-	done                     chan struct{}
-	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
+	Name, File                    string
+	Interval                      time.Duration
+	Limit                         int
+	Rules                         []Rule
+	SourceTenants                 []string
+	ShouldRestore                 bool
+	Opts                          *ManagerOptions
+	EvaluationDelay               *time.Duration
+	done                          chan struct{}
+	RuleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	AlignEvaluationTimeOnInterval bool
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -308,22 +311,23 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                     o.Name,
-		file:                     o.File,
-		interval:                 o.Interval,
-		evaluationDelay:          o.EvaluationDelay,
-		limit:                    o.Limit,
-		rules:                    o.Rules,
-		shouldRestore:            o.ShouldRestore,
-		opts:                     o.Opts,
-		sourceTenants:            o.SourceTenants,
-		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
-		done:                     make(chan struct{}),
-		managerDone:              o.done,
-		terminated:               make(chan struct{}),
-		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:                  metrics,
-		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
+		name:                          o.Name,
+		file:                          o.File,
+		interval:                      o.Interval,
+		evaluationDelay:               o.EvaluationDelay,
+		limit:                         o.Limit,
+		rules:                         o.Rules,
+		shouldRestore:                 o.ShouldRestore,
+		opts:                          o.Opts,
+		sourceTenants:                 o.SourceTenants,
+		seriesInPreviousEval:          make([]map[string]labels.Labels, len(o.Rules)),
+		done:                          make(chan struct{}),
+		managerDone:                   o.done,
+		terminated:                    make(chan struct{}),
+		logger:                        log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:                       metrics,
+		ruleGroupPostProcessFunc:      o.RuleGroupPostProcessFunc,
+		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
 }
 
@@ -546,11 +550,13 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
-	var (
+	var offset int64
+	if !g.alignEvaluationTimeOnInterval {
 		offset = int64(g.hash() % uint64(g.interval))
-		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
-	)
+	}
+
+	adjNow := startTime - offset
+	base := adjNow - (adjNow % int64(g.interval))
 
 	return time.Unix(0, base+offset).UTC()
 }
@@ -681,7 +687,16 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}()
 
 			for _, s := range vector {
-				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
+				if s.H != nil {
+					// We assume that all native histogram results are gauge histograms.
+					// TODO(codesome): once PromQL can give the counter reset info, remove this assumption.
+					s.H.CounterResetHint = histogram.GaugeType
+					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
+				} else {
+					_, err = app.Append(0, s.Metric, s.T, s.V)
+				}
+
+				if err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
@@ -915,6 +930,10 @@ func (g *Group) Equals(ng *Group) bool {
 	}
 
 	if len(g.rules) != len(ng.rules) {
+		return false
+	}
+
+	if g.alignEvaluationTimeOnInterval != ng.alignEvaluationTimeOnInterval {
 		return false
 	}
 
@@ -1186,17 +1205,18 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                     rg.Name,
-				File:                     fn,
-				Interval:                 itv,
-				Limit:                    rg.Limit,
-				Rules:                    rules,
-				SourceTenants:            rg.SourceTenants,
-				ShouldRestore:            shouldRestore,
-				Opts:                     m.opts,
-				EvaluationDelay:          (*time.Duration)(rg.EvaluationDelay),
-				done:                     m.done,
-				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
+				Name:                          rg.Name,
+				File:                          fn,
+				Interval:                      itv,
+				Limit:                         rg.Limit,
+				Rules:                         rules,
+				SourceTenants:                 rg.SourceTenants,
+				ShouldRestore:                 shouldRestore,
+				Opts:                          m.opts,
+				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				done:                          m.done,
+				RuleGroupPostProcessFunc:      ruleGroupPostProcessFunc,
+				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,
 			})
 		}
 	}

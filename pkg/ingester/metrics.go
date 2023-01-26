@@ -16,18 +16,28 @@ import (
 )
 
 type ingesterMetrics struct {
-	ingestedSamples         *prometheus.CounterVec
-	ingestedExemplars       prometheus.Counter
-	ingestedMetadata        prometheus.Counter
-	ingestedSamplesFail     *prometheus.CounterVec
-	ingestedExemplarsFail   prometheus.Counter
-	ingestedMetadataFail    prometheus.Counter
-	queries                 prometheus.Counter
-	queriedSamples          prometheus.Histogram
-	queriedExemplars        prometheus.Histogram
-	queriedSeries           prometheus.Histogram
+	ingestedSamples       *prometheus.CounterVec
+	ingestedExemplars     prometheus.Counter
+	ingestedMetadata      prometheus.Counter
+	ingestedSamplesFail   *prometheus.CounterVec
+	ingestedExemplarsFail prometheus.Counter
+	ingestedMetadataFail  prometheus.Counter
+
+	ephemeralIngestedSamples     *prometheus.CounterVec
+	ephemeralIngestedSamplesFail *prometheus.CounterVec
+
+	queries          prometheus.Counter
+	queriedSamples   prometheus.Histogram
+	queriedExemplars prometheus.Histogram
+	queriedSeries    prometheus.Histogram
+
+	ephemeralQueries        prometheus.Counter
+	ephemeralQueriedSamples prometheus.Histogram
+	ephemeralQueriedSeries  prometheus.Histogram
+
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
+	memEphemeralUsers       prometheus.Gauge
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
@@ -38,6 +48,7 @@ type ingesterMetrics struct {
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
 	maxSeriesGauge          prometheus.GaugeFunc
+	maxEphemeralSeriesGauge prometheus.GaugeFunc
 	maxIngestionRate        prometheus.GaugeFunc
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
@@ -51,13 +62,8 @@ type ingesterMetrics struct {
 	appenderCommitDuration prometheus.Histogram
 	idleTsdbChecks         *prometheus.CounterVec
 
-	// Discarded samples
-	discardedSamplesSampleOutOfBounds    *prometheus.CounterVec
-	discardedSamplesSampleOutOfOrder     *prometheus.CounterVec
-	discardedSamplesSampleTooOld         *prometheus.CounterVec
-	discardedSamplesNewValueForTimestamp *prometheus.CounterVec
-	discardedSamplesPerUserSeriesLimit   *prometheus.CounterVec
-	discardedSamplesPerMetricSeriesLimit *prometheus.CounterVec
+	discardedPersistent *discardedMetrics
+	discardedEphemeral  *discardedMetrics
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -124,6 +130,14 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_ingested_metadata_failures_total",
 			Help: "The total number of metadata that errored on ingestion.",
 		}),
+		ephemeralIngestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_ingested_ephemeral_samples_total",
+			Help: "The total number of samples ingested per user for ephemeral series.",
+		}, []string{"user"}),
+		ephemeralIngestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_ingested_ephemeral_samples_failures_total",
+			Help: "The total number of samples that errored on ingestion per user for ephemeral series.",
+		}, []string{"user"}),
 		queries: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
@@ -146,6 +160,20 @@ func newIngesterMetrics(
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
+		ephemeralQueries: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_queries_ephemeral_total",
+			Help: "The total number of queries the ingester has handled for ephemeral storage.",
+		}),
+		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_queried_ephemeral_samples",
+			Help:    "The total number of samples from ephemeral storage returned per query.",
+			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+		}),
+		ephemeralQueriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_queried_ephemeral_series",
+			Help:    "The total number of ephemeral series returned from queries.",
+			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
+		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",
 			Help: "The current number of metadata in memory.",
@@ -153,6 +181,10 @@ func newIngesterMetrics(
 		memUsers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_users",
 			Help: "The current number of users in memory.",
+		}),
+		memEphemeralUsers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_memory_ephemeral_users",
+			Help: "The current number of users with ephemeral storage in memory.",
 		}),
 		memMetadataCreatedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_memory_metadata_created_total",
@@ -181,6 +213,17 @@ func newIngesterMetrics(
 		}, func() float64 {
 			if g := instanceLimitsFn(); g != nil {
 				return float64(g.MaxInMemorySeries)
+			}
+			return 0
+		}),
+
+		maxEphemeralSeriesGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_ephemeral_series"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInMemoryEphemeralSeries)
 			}
 			return 0
 		}),
@@ -266,18 +309,14 @@ func newIngesterMetrics(
 		}),
 		appenderCommitDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_tsdb_appender_commit_duration_seconds",
-			Help:    "The total time it takes for a push request to commit samples appended to TSDB.",
+			Help:    "The total time it takes for a push request to commit samples appended to TSDB (both persistent and ephemeral).",
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
 
-		discardedSamplesSampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
-		discardedSamplesSampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
-		discardedSamplesSampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
-		discardedSamplesNewValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
-		discardedSamplesPerUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
-		discardedSamplesPerMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		discardedPersistent: newDiscardedMetrics(r, ""),
+		discardedEphemeral:  newDiscardedMetrics(r, ephemeralDiscardPrefix),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
@@ -292,25 +331,20 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
+	m.ephemeralIngestedSamples.DeleteLabelValues(userID)
+	m.ephemeralIngestedSamplesFail.DeleteLabelValues(userID)
+
 	filter := prometheus.Labels{"user": userID}
-	m.discardedSamplesSampleOutOfBounds.DeletePartialMatch(filter)
-	m.discardedSamplesSampleOutOfOrder.DeletePartialMatch(filter)
-	m.discardedSamplesSampleTooOld.DeletePartialMatch(filter)
-	m.discardedSamplesNewValueForTimestamp.DeletePartialMatch(filter)
-	m.discardedSamplesPerUserSeriesLimit.DeletePartialMatch(filter)
-	m.discardedSamplesPerMetricSeriesLimit.DeletePartialMatch(filter)
+	m.discardedPersistent.DeletePartialMatch(filter)
+	m.discardedEphemeral.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
-	m.discardedSamplesSampleOutOfBounds.DeleteLabelValues(userID, group)
-	m.discardedSamplesSampleOutOfOrder.DeleteLabelValues(userID, group)
-	m.discardedSamplesSampleTooOld.DeleteLabelValues(userID, group)
-	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID, group)
-	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID, group)
-	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID, group)
+	m.discardedPersistent.DeleteLabelValues(userID, group)
+	m.discardedEphemeral.DeleteLabelValues(userID, group)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
@@ -319,6 +353,44 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
+}
+
+type discardedMetrics struct {
+	sampleOutOfBounds    *prometheus.CounterVec
+	sampleOutOfOrder     *prometheus.CounterVec
+	sampleTooOld         *prometheus.CounterVec
+	newValueForTimestamp *prometheus.CounterVec
+	perUserSeriesLimit   *prometheus.CounterVec
+	perMetricSeriesLimit *prometheus.CounterVec
+}
+
+func newDiscardedMetrics(r prometheus.Registerer, prefix string) *discardedMetrics {
+	return &discardedMetrics{
+		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, prefix+sampleOutOfBounds),
+		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, prefix+sampleOutOfOrder),
+		sampleTooOld:         validation.DiscardedSamplesCounter(r, prefix+sampleTooOld),
+		newValueForTimestamp: validation.DiscardedSamplesCounter(r, prefix+newValueForTimestamp),
+		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, prefix+perUserSeriesLimit),
+		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, prefix+perMetricSeriesLimit),
+	}
+}
+
+func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
+	m.sampleOutOfBounds.DeletePartialMatch(filter)
+	m.sampleOutOfOrder.DeletePartialMatch(filter)
+	m.sampleTooOld.DeletePartialMatch(filter)
+	m.newValueForTimestamp.DeletePartialMatch(filter)
+	m.perUserSeriesLimit.DeletePartialMatch(filter)
+	m.perMetricSeriesLimit.DeletePartialMatch(filter)
+}
+
+func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
+	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
+	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
+	m.sampleTooOld.DeleteLabelValues(userID, group)
+	m.newValueForTimestamp.DeleteLabelValues(userID, group)
+	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
+	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.
@@ -375,6 +447,13 @@ type tsdbMetrics struct {
 
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
+
+	ephemeralHeadTruncateFail  *prometheus.Desc
+	ephemeralHeadTruncateTotal *prometheus.Desc
+	ephemeralHeadGcDuration    *prometheus.Desc
+
+	ephemeralSeriesCreatedTotal *prometheus.Desc
+	ephemeralSeriesRemovedTotal *prometheus.Desc
 
 	regs *util.UserRegistries
 }
@@ -563,6 +642,28 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			"cortex_ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
+
+		ephemeralHeadTruncateFail: prometheus.NewDesc(
+			"cortex_ingester_ephemeral_head_truncations_failed_total",
+			"Total number of TSDB head truncations that failed for ephemeral storage.",
+			nil, nil),
+		ephemeralHeadTruncateTotal: prometheus.NewDesc(
+			"cortex_ingester_ephemeral_head_truncations_total",
+			"Total number of TSDB head truncations attempted for ephemeral storage.",
+			nil, nil),
+		ephemeralHeadGcDuration: prometheus.NewDesc(
+			"cortex_ingester_ephemeral_head_gc_duration_seconds",
+			"Runtime of garbage collection in the TSDB head for ephemeral storage.",
+			nil, nil),
+
+		ephemeralSeriesCreatedTotal: prometheus.NewDesc(
+			"cortex_ingester_ephemeral_series_created_total",
+			"The total number of series in ephemeral storage that were created per user.",
+			[]string{"user"}, nil),
+		ephemeralSeriesRemovedTotal: prometheus.NewDesc(
+			"cortex_ingester_ephemeral_series_removed_total",
+			"The total number of series in ephemeral storage that were removed per user.",
+			[]string{"user"}, nil),
 	}
 
 	if r != nil {
@@ -619,6 +720,12 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
+
+	out <- sm.ephemeralHeadTruncateFail
+	out <- sm.ephemeralHeadTruncateTotal
+	out <- sm.ephemeralHeadGcDuration
+	out <- sm.ephemeralSeriesCreatedTotal
+	out <- sm.ephemeralSeriesRemovedTotal
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -671,6 +778,12 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCountersPerUser(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerUser(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
+
+	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_failed_total")
+	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_total")
+	data.SendSumOfSummaries(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
+	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
+	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {

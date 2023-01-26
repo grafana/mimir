@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,8 +61,16 @@ type userTSDB struct {
 	seriesInMetric *metricCounter
 	limiter        *Limiter
 
-	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
-	instanceLimitsFn    func() *InstanceLimits
+	// Function that creates ephemeral storage (*tsdb.Head) for the user.
+	ephemeralFactory               func() (*tsdb.Head, error)
+	ephemeralSeriesRetentionPeriod time.Duration
+
+	ephemeralMtx     sync.RWMutex
+	ephemeralStorage *tsdb.Head
+
+	instanceSeriesCount          *atomic.Int64 // Shared across all userTSDB instances created by ingester.
+	instanceEphemeralSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
+	instanceLimitsFn             func() *InstanceLimits
 
 	stateMtx       sync.RWMutex
 	state          tsdbState
@@ -84,9 +93,12 @@ type userTSDB struct {
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
 
+	// Block min retention
+	blockMinRetention time.Duration
+
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
-	shippedBlocks    map[ulid.ULID]struct{}
+	shippedBlocks    map[ulid.ULID]time.Time
 }
 
 // Explicitly wrapping the tsdb.DB functions that we use.
@@ -95,16 +107,82 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }
 
+func (u *userTSDB) EphemeralAppender(ctx context.Context) (storage.Appender, error) {
+	es := u.getEphemeralStorage()
+	if es != nil {
+		return es.Appender(ctx), nil
+	}
+
+	es, err := u.createEphemeralStorage()
+	if err != nil {
+		return nil, err
+	}
+
+	return es.Appender(ctx), nil
+}
+
+func (u *userTSDB) createEphemeralStorage() (*tsdb.Head, error) {
+	u.ephemeralMtx.Lock()
+	defer u.ephemeralMtx.Unlock()
+
+	if u.ephemeralStorage != nil {
+		return u.ephemeralStorage, nil
+	}
+
+	es, err := u.ephemeralFactory()
+	if err == nil {
+		u.ephemeralStorage = es
+	}
+	return u.ephemeralStorage, err
+}
+
+// getEphemeralStorage returns ephemeral storage, if it exists, or nil otherwise.
+func (u *userTSDB) getEphemeralStorage() *tsdb.Head {
+	u.ephemeralMtx.RLock()
+	defer u.ephemeralMtx.RUnlock()
+
+	return u.ephemeralStorage
+}
+
+func (u *userTSDB) hasEphemeralStorage() bool {
+	u.ephemeralMtx.RLock()
+	defer u.ephemeralMtx.RUnlock()
+
+	return u.ephemeralStorage != nil
+}
+
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.Querier, error) {
+	if ephemeral {
+		eph := u.getEphemeralStorage()
+		if eph == nil {
+			return storage.NoopQuerier(), nil
+		}
+
+		return tsdb.NewBlockQuerier(eph, mint, maxt)
+	}
+
 	return u.db.Querier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		eph := u.getEphemeralStorage()
+		if eph == nil {
+			return storage.NoopChunkedQuerier(), nil
+		}
+
+		return tsdb.NewBlockChunkQuerier(eph, mint, maxt)
+	}
+
 	return u.db.ChunkQuerier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		// There is no "unordered chunk querier" for tsdb Head.
+		return u.ChunkQuerier(ctx, mint, maxt, ephemeral)
+	}
 	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
 }
 
@@ -121,7 +199,23 @@ func (u *userTSDB) Blocks() []*tsdb.Block {
 }
 
 func (u *userTSDB) Close() error {
-	return u.db.Close()
+	var merr multierror.MultiError
+
+	eph := u.getEphemeralStorage()
+	if eph != nil {
+		merr.Add(errors.Wrap(eph.Close(), "ephemeral storage"))
+	}
+
+	merr.Add(errors.Wrap(u.db.Close(), "persistent storage"))
+	return merr.Err()
+}
+
+func (u *userTSDB) TruncateEphemeral(now time.Time) error {
+	eph := u.getEphemeralStorage()
+	if eph != nil {
+		return eph.Truncate(now.Add(-u.ephemeralSeriesRetentionPeriod).UnixMilli())
+	}
+	return nil
 }
 
 func (u *userTSDB) Compact() error {
@@ -175,8 +269,15 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 	return u.db.CompactHead(tsdb.NewRangeHead(h, minTime, maxTime))
 }
 
-// PreCreation implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PreCreation(metric labels.Labels) error {
+func (u *userTSDB) persistentSeriesCallback() tsdb.SeriesLifecycleCallback {
+	return seriesLifecycleCallback{
+		preCreation:  u.persistentPreCreation,
+		postCreation: u.persistentPostCreation,
+		postDeletion: u.persistentPostDeletion,
+	}
+}
+
+func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 	if u.limiter == nil {
 		return nil
 	}
@@ -206,8 +307,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	return nil
 }
 
-// PostCreation implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PostCreation(metric labels.Labels) {
+func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
@@ -218,8 +318,7 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-// PostDeletion implements SeriesLifecycleCallback interface.
-func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) persistentPostDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
 	for _, metric := range metrics {
@@ -232,24 +331,79 @@ func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
 	}
 }
 
+func (u *userTSDB) ephemeralSeriesCallback() tsdb.SeriesLifecycleCallback {
+	return seriesLifecycleCallback{
+		preCreation:  u.ephemeralPreCreation,
+		postCreation: u.ephemeralPostCreation,
+		postDeletion: u.ephemeralPostDeletion,
+	}
+}
+
+func (u *userTSDB) ephemeralPreCreation(_ labels.Labels) error {
+	if u.limiter == nil {
+		return nil
+	}
+
+	// Verify ingester's global limit
+	gl := u.instanceLimitsFn()
+	if gl != nil && gl.MaxInMemoryEphemeralSeries > 0 {
+		if series := u.instanceEphemeralSeriesCount.Load(); series >= gl.MaxInMemoryEphemeralSeries {
+			return errMaxInMemoryEphemeralSeriesReached
+		}
+	}
+
+	eph := u.getEphemeralStorage()
+	if eph == nil {
+		// if ephemeralPreCreation is called, ephemeral storage should exist, but check here is better than panic.
+		return errors.New("ephemeral storage not created")
+	}
+
+	// Total series limit.
+	if err := u.limiter.AssertMaxEphemeralSeriesPerUser(u.userID, int(eph.NumSeries())); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (u *userTSDB) ephemeralPostCreation(_ labels.Labels) {
+	u.instanceEphemeralSeriesCount.Inc()
+}
+
+func (u *userTSDB) ephemeralPostDeletion(metrics ...labels.Labels) {
+	u.instanceEphemeralSeriesCount.Sub(int64(len(metrics)))
+}
+
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
 func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	if u.db == nil {
 		return nil
 	}
+
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
-	if u.shipper == nil {
-		return deletable
+	result := map[ulid.ULID]struct{}{}
+	deadline := time.Now().Add(-u.blockMinRetention)
+
+	// The shipper enabled case goes first because its common in the way we run the ingesters
+	if u.shipper != nil {
+		shippedBlocks := u.getCachedShippedBlocks()
+
+		for blockID := range deletable {
+			shippedBlockTime, ok := shippedBlocks[blockID]
+			if ok && shippedBlockTime.Before(deadline) {
+				result[blockID] = struct{}{}
+			}
+		}
+		return result
 	}
 
-	shippedBlocks := u.getCachedShippedBlocks()
-
-	result := map[ulid.ULID]struct{}{}
-	for shippedID := range shippedBlocks {
-		if _, ok := deletable[shippedID]; ok {
-			result[shippedID] = struct{}{}
+	for blockID := range deletable {
+		blockCreationTime := time.UnixMilli(int64(blockID.Time()))
+		if blockCreationTime.Before(deadline) {
+			result[blockID] = struct{}{}
 		}
 	}
+
 	return result
 }
 
@@ -269,7 +423,7 @@ func (u *userTSDB) updateCachedShippedBlocks() error {
 }
 
 // getCachedShippedBlocks returns the cached shipped blocks.
-func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]struct{} {
+func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]time.Time {
 	u.shippedBlocksMtx.Lock()
 	defer u.shippedBlocksMtx.Unlock()
 
@@ -352,3 +506,13 @@ func (u *userTSDB) acquireAppendLock() error {
 func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
+
+type seriesLifecycleCallback struct {
+	preCreation  func(metric labels.Labels) error
+	postCreation func(metric labels.Labels)
+	postDeletion func(metric ...labels.Labels)
+}
+
+func (s seriesLifecycleCallback) PreCreation(l labels.Labels) error { return s.preCreation(l) }
+func (s seriesLifecycleCallback) PostCreation(l labels.Labels)      { s.postCreation(l) }
+func (s seriesLifecycleCallback) PostDeletion(l ...labels.Labels)   { s.postDeletion(l...) }

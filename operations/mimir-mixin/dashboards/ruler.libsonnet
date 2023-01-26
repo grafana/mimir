@@ -101,6 +101,10 @@ local filename = 'mimir-ruler.json';
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler))
       )
     )
+    .addRowIf(
+      $._config.autoscaling.ruler.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler'),
+    )
     .addRow(
       $.kvStoreRow('Ruler - key-value store for rulers ring', 'ruler', 'ruler')
     )
