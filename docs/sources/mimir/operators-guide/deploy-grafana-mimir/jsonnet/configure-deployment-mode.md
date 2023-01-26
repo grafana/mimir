@@ -7,7 +7,7 @@ weight: 40
 
 # Configure deployment mode
 
-Grafana Mimir supports multiple [deployment modes]({{< relref "../../architecture/deployment-modes/index.md" >}}). By default the provided jsonnet will deploy in microservices mode. Monolithic mode is not currently supported in jsonnet.
+Grafana Mimir supports multiple [deployment modes]({{< relref "../../architecture/deployment-modes/index.md" >}}). By default, the provided Jsonnet deploys in microservices mode. Monolithic mode is not supported in Jsonnet.
 
 ## Use Read-Write deployment mode
 
@@ -18,7 +18,7 @@ Grafana Mimir supports multiple [deployment modes]({{< relref "../../architectur
 
 Read-write deployment mode requires that multi-zone ingesters and multi-zone store gateways are used. Additionally rule evaluation is performed within Mimir-Backend, so ruler remote evaluation must be disabled.
 
-The deployment mode is set by the `deployment_mode` configuration variable.
+You can set the deployment mode via the `deployment_mode` configuration variable:
 
 ```jsonnet
 {
@@ -42,7 +42,7 @@ The deployment mode is set by the `deployment_mode` configuration variable.
 }
 ```
 
-Autoscaling can be configured for the read path:
+You can configure autoscaling for the read path:
 
 ```jsonnet
 {
@@ -67,7 +67,7 @@ CLI Flags for Read-Write components are inherited from the microservices.
 }
 ```
 
-⚠️ Pitfall: Kubernetes resources overrides not inherited. Remember to apply overrides both microservices and read-write components, when changing:
+⚠️ Pitfall: Kubernetes resources’ overrides are not inherited. Remember to apply overrides to both microservices and read-write components, if you make changes to any of the following items:
 
 - Container specification, for example environment variables
 - Deployment

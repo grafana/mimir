@@ -22,7 +22,7 @@ To scale down the Grafana Mimir cluster, see [Scaling down ingesters](#scaling-d
 
 ## Read-Write mode
 
-When running Grafana Mimir in Read-Write mode, you can safely scale up any of the 3 components.
+When running Grafana Mimir in read-write mode, you can safely scale up any of the three components.
 
 The Mimir read component can be safely scaled up and down as it is stateless (an autoscaler may also be used).
 

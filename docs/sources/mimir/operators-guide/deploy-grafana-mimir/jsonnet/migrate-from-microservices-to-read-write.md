@@ -1,7 +1,7 @@
 ---
 description:
-  Learn how to migrate from a cluster deployed with as microservices to
-  a cluster in read-write mode.
+  Migrate from a cluster deployed with as microservices to
+  one in read-write mode.
 menuTitle: Migrate from microservices to read-write mode
 title: Migrate from microservices to read-write mode without downtime
 weight: 40
@@ -10,9 +10,9 @@ weight: 40
 # Migrate from microservices to read-write mode without downtime
 
 > **Warning:**
-> Read-Write mode is considered experimental, as is migrating between the modes.
+> Read-Write mode is considered experimental, as well as migrating between the modes.
 
-At a high level the basic process of steps to complete is:
+At a high level, the steps involved are as follows:
 
 1. Deploy read-write components along side microservices (they join the same ring).
 1. Switch over end points in your ingress.
@@ -108,7 +108,6 @@ diff --color=always compactor.yaml mimir-backend-zone-a.yaml
 diff --color=always store-gateway-zone-a.yaml mimir-backend-zone-a.yaml
 diff --color=always store-gateway-zone-b.yaml mimir-backend-zone-b.yaml
 diff --color=always store-gateway-zone-c.yaml mimir-backend-zone-c.yaml
-
 ```
 
 ## Step 3: Migrate read-path to read-write service

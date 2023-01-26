@@ -47,30 +47,30 @@ If you are interested in deploying Grafana Mimir in microservices mode, we recom
 ## Read-Write mode
 
 > **Warning:**
-> Read-Write deployment mode is currently considered experimental.
+> Read-Write deployment mode is experimental.
 
-The read-write mode provides a middle ground as an alternative to monolithic and microservices.
+The read-write mode provides an alternative to monolithic and microservices modes.
 
-In read-write mode, components are grouped into just three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths. The services group the components as follows:
+In read-write mode, components are grouped into three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths. The services group the components as follows:
 
-1. read
+- read
    - query-frontend
    - querier
-2. backend
+- backend
    - store-gateway
    - compactor
    - ruler
    - alertmanager
    - query-scheduler
    - overrides-exporter
-3. write
+- write
    - distributor
    - ingester
 
-Similar to the other modes, each Grafana Mimir process is invoked with its `-target` parameter set to the specific service (for example, `-target=read`, `-target=write`, or `-target=backend`).
+Similar to the other modes, each Grafana Mimir process is invoked with its `-target` parameter set to the specific service: `-target=read`, `-target=write`, or `-target=backend`.
 
 [//]: # "Diagram source at https://docs.google.com/drawings/d/18Qfl-H9On9zi2IRVX-rLawbpQPRcMcI0xh5uwyUjlak"
 
 ![Mimir's read-write deployment mode](read-write-mode.svg)
 
-Read-Write mode is currently only available in [jsonnet]({{< relref "../../deploy-grafana-mimir/jsonnet/deploy.md" >}}).
+Read-Write mode is only available in [Jsonnet]({{< relref "../../deploy-grafana-mimir/jsonnet/deploy.md" >}}).
