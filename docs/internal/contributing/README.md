@@ -10,7 +10,7 @@ Doing so can be a helpful way of asking for assistance or to develop an idea.
 
 When you open a PR as a draft, add a short description of what you’re still working on, what you are seeking assistance with, or both.
 
- Before a piece of work is finished:
+Before a piece of work is finished:
 
 - Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
