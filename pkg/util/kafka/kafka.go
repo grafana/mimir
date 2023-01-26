@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/prometheus/common/model"
 )
 
 const userSep = '\xfe'
@@ -43,6 +44,9 @@ func ComposeKafkaKey(buf, user []byte, lsetAdapter []mimirpb.LabelAdapter, rules
 	firstLabel := true
 OUTER_LABELS:
 	for _, l := range lset {
+		if l.Name == model.MetricNameLabel {
+			continue OUTER_LABELS
+		}
 		for _, dropLabel := range metricRule.DropLabels {
 			if l.Name == dropLabel {
 				continue OUTER_LABELS
@@ -51,6 +55,7 @@ OUTER_LABELS:
 
 		if !firstLabel {
 			builder.WriteByte(',')
+		} else {
 			firstLabel = false
 		}
 
@@ -75,7 +80,7 @@ OUTER_LABELS:
 			return nil, err
 		}
 	}
-	err = builder.WriteByte('{')
+	err = builder.WriteByte('}')
 	if err != nil {
 		return nil, err
 	}

@@ -892,7 +892,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
 		TenantFederation:         {Queryable},
-		Aggregator:               {API},
+		Aggregator:               {API, Distributor},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
 		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},

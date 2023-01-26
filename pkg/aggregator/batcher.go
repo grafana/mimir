@@ -38,9 +38,11 @@ type aggregationResult struct {
 
 func NewBatcher(cfg Config, push Push, logger log.Logger) *Batcher {
 	b := &Batcher{
+		cfg:                cfg,
 		shutdownCh:         make(chan struct{}),
 		logger:             logger,
 		aggregationResults: make(chan aggregationResultWithUser, cfg.ResultChanSize),
+		userBatches:        newUserBatches(),
 		push:               push,
 	}
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
@@ -74,7 +76,7 @@ func (b *Batcher) run() {
 		case result := <-b.aggregationResults:
 			err := b.userBatches.addResult(result)
 			if err != nil {
-				level.Error(b.logger).Log("msg", "failed to handle aggregation result", "err", err)
+				level.Error(b.logger).Log("msg", "failed to handle aggregation result", "err", err, "result", result)
 			}
 		case <-ticker.C:
 			b.flush()
@@ -89,6 +91,11 @@ func (b *Batcher) flush() {
 	for _, username := range b.userBatches.users() {
 		ctx := user.InjectOrgID(context.Background(), username)
 		writeReq := b.userBatches.writeRequest(username)
+		if writeReq == nil {
+			level.Info(b.logger).Log("msg", "skipping empty request", "user", username)
+			continue
+		}
+		level.Info(b.logger).Log("msg", "pushing request", "req", writeReq, "user", username)
 		_, err := b.push(ctx, writeReq)
 		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to push aggregation result", "err", err)
@@ -109,6 +116,10 @@ func (b *Batcher) AddSample(user, aggregatedLabels string, sample mimirpb.Sample
 
 type userBatches map[string]*batch
 
+func newUserBatches() userBatches {
+	return make(userBatches)
+}
+
 func (u userBatches) users() []string {
 	users := make([]string, 0, len(u))
 	for user := range u {
@@ -122,7 +133,10 @@ func (u userBatches) writeRequest(user string) *mimirpb.WriteRequest {
 }
 
 func (u userBatches) addResult(result aggregationResultWithUser) error {
-	userBatch := u[result.user]
+	userBatch, ok := u[result.user]
+	if !ok {
+		userBatch = &batch{}
+	}
 	err := userBatch.addResult(result.result)
 	u[result.user] = userBatch
 	return err
@@ -146,8 +160,34 @@ func (b *batch) addResult(result aggregationResult) error {
 }
 
 func (b *batch) writeReq(user string) *mimirpb.WriteRequest {
-	req := mimirpb.ToWriteRequest(b.labels, b.samples, nil, nil, mimirpb.API)
+	if len(b.samples) == 0 {
+		return nil
+	}
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
+		Source:     mimirpb.AGGREGATOR,
+	}
+
+	for i, s := range b.samples {
+		ts := mimirpb.TimeseriesFromPool()
+		ts.Labels = ts.Labels[:0]
+		ts.Samples = ts.Samples[:0]
+
+		// Copy labels because we want to reuse b.labels.
+		for _, label := range b.labels[i] {
+			ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{
+				Name:  label.Name,
+				Value: label.Value,
+			})
+		}
+		ts.Samples = append(ts.Samples, s)
+
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: ts})
+	}
+
 	b.labels = b.labels[:0]
 	b.samples = b.samples[:0]
+
 	return req
 }

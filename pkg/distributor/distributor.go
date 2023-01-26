@@ -1013,7 +1013,9 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 		}
 
 		var errCh <-chan error
-		req.Timeseries, errCh = d.forwardSamples(ctx, userID, req.Timeseries)
+		if req.Source != mimirpb.AGGREGATOR {
+			req.Timeseries, errCh = d.forwardSamples(ctx, userID, req.Timeseries)
+		}
 		resp, nextErr := next(ctx, pushReq)
 		errs := []error{nextErr}
 

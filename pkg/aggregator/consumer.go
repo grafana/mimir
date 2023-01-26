@@ -172,7 +172,7 @@ func (c partitionConsumer) handleTimeseries(user, aggregatedLabels string, value
 	rawLabels := labelsToString(value.Labels)
 	for _, sample := range value.Samples {
 		aggSample := c.aggs.ingest(user, aggregatedLabels, rawLabels, sample)
-		if math.IsNaN(aggSample.Value) {
+		if !math.IsNaN(aggSample.Value) {
 			// If sample value isn't NaN then it is an aggregation result, handling it.
 			c.aggregateHandler(user, aggregatedLabels, aggSample)
 		}
