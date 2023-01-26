@@ -78,12 +78,23 @@ local filename = 'mimir-reads.json';
         ),
       )
       .addPanel(
-        $.panel('Label queries / sec') +
-        $.statPanel($.queries.query_frontend.labelQueriesPerSecond, format='reqps') +
+        $.panel('Label names queries / sec') +
+        $.statPanel($.queries.query_frontend.labelNamesQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          'Label queries per second',
+          '"Label names" queries per second',
           |||
-            Rate of label queries per second being made to
+            Rate of "label names" endpoint queries per second being made to
+            %(product)s via the <tt>/prometheus</tt> API.
+          ||| % $._config
+        ),
+      )
+      .addPanel(
+        $.panel('Label values queries / sec') +
+        $.statPanel($.queries.query_frontend.labelValuesQueriesPerSecond, format='reqps') +
+        $.panelDescription(
+          '"Label values" queries per second',
+          |||
+            Rate of specific "label values" endpoint queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
           ||| % $._config
         ),
