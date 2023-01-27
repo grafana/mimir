@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegatewaypb
+package storegateway
 
 import (
 	"flag"
@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -46,14 +47,14 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDur
 	}
 
 	return &StoreGatewayClientImpl{
-		StoreGatewayClient: NewStoreGatewayClient(conn),
+		StoreGatewayClient: storegatewaypb.NewStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
 	}, nil
 }
 
 type StoreGatewayClientImpl struct {
-	StoreGatewayClient
+	storegatewaypb.StoreGatewayClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }

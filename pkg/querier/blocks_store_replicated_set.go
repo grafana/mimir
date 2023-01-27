@@ -20,7 +20,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -50,13 +49,13 @@ func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
 	limits BlocksStoreLimits,
-	clientConfig storegatewaypb.ClientConfig,
+	clientConfig storegateway.ClientConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
-		clientsPool:        storegatewaypb.NewStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		clientsPool:        storegateway.NewStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		balancingStrategy:  balancingStrategy,
 		limits:             limits,
 		subservicesWatcher: services.NewFailureWatcher(),

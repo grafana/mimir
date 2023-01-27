@@ -18,7 +18,6 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -59,7 +58,7 @@ func TestStoreGateway_StoreGatewayLimitHit(t *testing.T) {
 	cfg := grpcclient.Config{}
 	flagext.DefaultValues(&cfg)
 	reg := prometheus.NewPedanticRegistry()
-	factory := storegatewaypb.NewStoreGatewayClientFactory(cfg, reg)
+	factory := storegateway.NewStoreGatewayClientFactory(cfg, reg)
 	storeGatewayClient, err := factory(mimirServices[storeGatewayTag].GRPCEndpoint())
 	require.NoError(t, err)
 
@@ -71,7 +70,7 @@ func TestStoreGateway_StoreGatewayLimitHit(t *testing.T) {
 			{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_.+"},
 		},
 	}
-	stream, err := storeGatewayClient.(*storegatewaypb.StoreGatewayClientImpl).Series(ctx, req)
+	stream, err := storeGatewayClient.(*storegateway.StoreGatewayClientImpl).Series(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, stream)
 

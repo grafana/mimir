@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegatewaypb
+package storegateway
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -28,7 +29,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	defer grpcServer.GracefulStop()
 
 	srv := &mockStoreGatewayServer{}
-	RegisterStoreGatewayServer(grpcServer, srv)
+	storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -73,7 +74,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	return nil
 }
 
