@@ -284,7 +284,7 @@ How to **investigate**:
 
 ### MimirIngesterUnhealthy
 
-This alert goes off when one or more ingesters are marked as unhealthy. Check the ring web page to see which ones are marked as unhealthy. You could then check the logs to see if there are any related to involved ingesters, f.ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forget" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, f.ex.: `kubectl get events --namespace=prod | grep cloud-provider-node`.
+This alert goes off when one or more ingesters are marked as unhealthy. Check the ring web page to see which ones are marked as unhealthy. You could then check the logs to see if there are any related to involved ingesters, such as `kubectl logs --follow ingester-01 --namespace=prod`. A simple way to resolve this might be to select **Forget** on the ring page, especially if the Pod doesn't exist anymore. It might not no longer exist because it was on a node that was shut down. Check to see if there are any logs related to the node that pod is or was on, such as `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
 ### MimirMemoryMapAreasTooHigh
 
@@ -292,7 +292,7 @@ This alert fires when a Mimir process has a number of memory map areas close to 
 
 How to **fix** it:
 
-- Increase the limit on your system: `sysctl -w vm.max_map_count=<NEW LIMIT>`
+- Increase the limit on your system: `sysctl --write vm.max_map_count=<NEW LIMIT>`
 - If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to lazy mmap index-headers at query time
 
 More information:
@@ -813,7 +813,7 @@ How to **fix** it:
 - Check if the issue occurs only for few ingesters. If so:
   - Restart affected ingesters 1 by 1 (proceed with the next one once the previous pod has restarted and it's Ready)
     ```
-    kubectl -n <namespace> delete pod ingester-XXX
+    kubectl --namespace <namespace> delete pod ingester-XXX
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
@@ -992,10 +992,10 @@ This alert fires when a Mimir service rollout is stuck, which means the number o
 
 How to **investigate**:
 
-- Run `kubectl -n <namespace> get pods -l name=<statefulset|deployment>` to get a list of running pods
+- Run `kubectl --namespace <namespace> get pods --selector='name=<statefulset|deployment>'` to get a list of running pods
 - Ensure there's no pod in a failing state (eg. `Error`, `OOMKilled`, `CrashLoopBackOff`)
 - Ensure there's no pod `NotReady` (the number of ready containers should match the total number of containers, eg. `1/1` or `2/2`)
-- Run `kubectl -n <namespace> describe statefulset <name>` or `kubectl -n <namespace> describe deployment <name>` and look at "Pod Status" and "Events" to get more information
+- Run `kubectl --namespace <namespace> describe statefulset <name>` or `kubectl --namespace <namespace> describe deployment <name>` and look at "Pod Status" and "Events" to get more information
 
 ### MimirKVStoreFailure
 
@@ -1055,27 +1055,27 @@ How to **investigate**:
 
 - Check HPA conditions and events to get more details about the failure
   ```
-  kubectl describe hpa -n <namespace> keda-hpa-$component
+  kubectl describe hpa --namespace <namespace> keda-hpa-$component
   ```
 - Ensure KEDA pods are up and running
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
-  kubectl get pods -n keda
+  kubectl get pods --namespace keda
   ```
 - Check KEDA custom metrics API server logs
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
-  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  kubectl logs --namespace keda deployment/keda-operator-metrics-apiserver
   ```
 - Check KEDA operator logs
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
-  kubectl logs -n keda deployment/keda-operator
+  kubectl logs --namespace keda deployment/keda-operator
   ```
 - Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
   ```
   # Assuming Prometheus is running in namespace "default":
-  kubectl -n default get pod -lname=prometheus
+  kubectl --namespace default get pod --selector='name=prometheus'
   ```
 
 For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
@@ -1094,17 +1094,17 @@ How to **investigate**:
 - Check KEDA custom metrics API server logs
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
-  kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  kubectl logs --namespace keda deployment/keda-operator-metrics-apiserver
   ```
 - Check KEDA operator logs
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
-  kubectl logs -n keda deployment/keda-operator
+  kubectl logs --namespace keda deployment/keda-operator
   ```
 - Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
   ```
   # Assuming Prometheus is running in namespace "default":
-  kubectl -n default get pod -lname=prometheus
+  kubectl --namespace default get pod --selector='name=prometheus'
   ```
 
 ### MimirContinuousTestNotRunningOnWrites
@@ -1121,7 +1121,7 @@ How to **investigate**:
 
 - Check continuous test logs to find out more details about the failure:
   ```
-  kubectl logs -n <namespace> deployment/continuous-test
+  kubectl logs --namespace <namespace> deployment/continuous-test
   ```
 
 ### MimirContinuousTestNotRunningOnReads
@@ -1143,7 +1143,7 @@ How to **investigate**:
 
 - Check continuous test logs to find out more details about the failed assertions:
   ```
-  kubectl logs -n <namespace> deployment/continuous-test
+  kubectl logs --namespace <namespace> deployment/continuous-test
   ```
 - Check if query result comparison is failing
   - Is query failing both when results cache is enabled and when it's disabled?
@@ -1811,7 +1811,7 @@ The blocks and WAL stored in the ingester persistent disk are the last fence of 
 
 To take a **GCP persistent disk snapshot**:
 
-1. Identify the Kubernetes PVC volume name (`kubectl get pvc -n <namespace>`) of the volumes to snapshot
+1. Identify the Kubernetes PVC volume name (`kubectl get pvc --namespace <namespace>`) of the volumes to snapshot
 2. For each volume, [create a snapshot](https://console.cloud.google.com/compute/snapshotsAdd) from the GCP console ([documentation](https://cloud.google.com/compute/docs/disks/create-snapshots))
 
 ### Halt the ingesters
@@ -1906,14 +1906,14 @@ spec:
         claimName: clone-ingester-7-pvc
 ```
 
-After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataaccess /bin/sh` to inspect the disk mounted under `/data`.
+After this preparation, one can use `kubectl exec --tty=false --stdin=false clone-ingester-7-dataaccess /bin/sh` to inspect the disk mounted under `/data`.
 
 ### Install `gsutil` in the Mimir pod
 
 1. Install python
    ```
    apk add python3 py3-pip
-   ln -s /usr/bin/python3 /usr/bin/python
+   ln --symbolic /usr/bin/python3 /usr/bin/python
    pip install google-compute-engine
    ```
 2. Download `gsutil`
@@ -1925,6 +1925,7 @@ After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataacc
 3. Configure credentials
 
    ```
+   # '-e' prompt for service account credentials.
    gsutil config -e
 
    # Private key path: /var/secrets/google/credentials.json
@@ -1948,11 +1949,16 @@ These are just example actions but should give you a fair idea on how you could 
 
 Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
 
+- `-l` prints long listing
+- `-a` includes non-current object versions / generations in the listing. When combined with -l option also prints metageneration for each listed object.
+
 Step 2: Once you have the `deleted-block-list`, you can now list all the objects you need to restore, because only objects can be restored and not prefixes:
 
 ```
 while read block; do
-gsutil ls -a -r $block | grep "#" | grep -v deletion-mark.json | grep -v index.cache.json
+# '-a' includes non-current object versions / generations in the listing
+# '-r' requests a recursive listing.
+gsutil ls -a -r $block | grep "#" | grep --invert-match deletion-mark.json | grep --invert-match index.cache.json
 done < deleted-list > full-deleted-file-list
 ```
 
