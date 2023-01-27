@@ -950,7 +950,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			continue
 		}
 
-		// Look up a reference for this series.
+		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
+		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
 
 		// To find out if any sample was added to this series, we keep old value.

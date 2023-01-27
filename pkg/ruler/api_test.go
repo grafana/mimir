@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestRuler(t *testing.T) {
+func TestRuler_PrometheusRules(t *testing.T) {
 	const (
 		userID   = "user1"
 		interval = time.Minute
@@ -227,6 +227,42 @@ func TestRuler(t *testing.T) {
 				},
 			},
 		},
+		"should load alerting rules with keep_firing_for": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules: []*rulespb.RuleDesc{{
+						Alert:         "UP_ALERT_WITH_KEEP_FIRING_FOR",
+						Expr:          "up < 1",
+						For:           time.Minute,
+						KeepFiringFor: 2 * time.Minute,
+					}},
+					Interval: interval,
+				},
+			},
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:          "UP_ALERT_WITH_KEEP_FIRING_FOR",
+							Query:         "up < 1",
+							State:         "inactive",
+							Health:        "unknown",
+							Type:          "alerting",
+							Duration:      time.Minute.Seconds(),
+							KeepFiringFor: (2 * time.Minute).Seconds(),
+							Alerts:        []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -289,7 +325,7 @@ func TestRuler(t *testing.T) {
 	}
 }
 
-func TestRuler_alerts(t *testing.T) {
+func TestRuler_PrometheusAlerts(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
 	rulerAddrMap := map[string]*Ruler{}
@@ -593,6 +629,20 @@ rules:
 			require.Equal(t, tt.output, w.Body.String())
 		})
 	}
+}
+
+func TestAlertStateDescToPrometheusAlert(t *testing.T) {
+	t.Run("should not export KeepFiringSince if it's the zero value", func(t *testing.T) {
+		actual := alertStateDescToPrometheusAlert(&AlertStateDesc{})
+		assert.Nil(t, actual.KeepFiringSince)
+	})
+
+	t.Run("should export KeepFiringSince if it's not the zero value", func(t *testing.T) {
+		ts := time.Now()
+		actual := alertStateDescToPrometheusAlert(&AlertStateDesc{KeepFiringSince: ts})
+		require.NotNil(t, actual.KeepFiringSince)
+		assert.Equal(t, ts, *actual.KeepFiringSince)
+	})
 }
 
 func requestFor(t *testing.T, method string, url string, body io.Reader, userID string) *http.Request {

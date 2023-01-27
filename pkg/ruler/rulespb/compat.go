@@ -37,12 +37,13 @@ func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
 	rules := make([]*RuleDesc, len(rls))
 	for i := range rls {
 		rules[i] = &RuleDesc{
-			Expr:        rls[i].Expr.Value,
-			Record:      rls[i].Record.Value,
-			Alert:       rls[i].Alert.Value,
-			For:         time.Duration(rls[i].For),
-			Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
-			Annotations: mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
+			Expr:          rls[i].Expr.Value,
+			Record:        rls[i].Record.Value,
+			Alert:         rls[i].Alert.Value,
+			For:           time.Duration(rls[i].For),
+			KeepFiringFor: time.Duration(rls[i].KeepFiringFor),
+			Labels:        mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
+			Annotations:   mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
 		}
 	}
 
@@ -68,10 +69,11 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		exprNode.SetString(rl.GetExpr())
 
 		newRule := rulefmt.RuleNode{
-			Expr:        exprNode,
-			Labels:      mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
-			Annotations: mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
-			For:         model.Duration(rl.GetFor()),
+			Expr:          exprNode,
+			Labels:        mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
+			Annotations:   mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
+			For:           model.Duration(rl.GetFor()),
+			KeepFiringFor: model.Duration(rl.GetKeepFiringFor()),
 		}
 
 		if rl.GetRecord() != "" {

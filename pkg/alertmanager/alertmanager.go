@@ -103,7 +103,7 @@ type Alertmanager struct {
 	dispatcher      *dispatch.Dispatcher
 	inhibitor       *inhibit.Inhibitor
 	pipelineBuilder *notify.PipelineBuilder
-	stop            chan struct{}
+	maintenanceStop chan struct{}
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
@@ -169,9 +169,9 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am := &Alertmanager{
-		cfg:    cfg,
-		logger: log.With(cfg.Logger, "user", cfg.UserID),
-		stop:   make(chan struct{}),
+		cfg:             cfg,
+		logger:          log.With(cfg.Logger, "user", cfg.UserID),
+		maintenanceStop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
 			Help: "Hash of the currently loaded alertmanager configuration.",
@@ -188,18 +188,24 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
-	am.wg.Add(1)
 	var err error
-	am.nflog, err = nflog.New(
-		nflog.WithRetention(cfg.Retention),
-		nflog.WithSnapshot(filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)),
-		nflog.WithMaintenance(maintenancePeriod, am.stop, am.wg.Done, nil),
-		nflog.WithMetrics(am.registry),
-		nflog.WithLogger(log.With(am.logger, "component", "nflog")),
-	)
+	snapshotFile := filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)
+	am.nflog, err = nflog.New(nflog.Options{
+		SnapshotFile: snapshotFile,
+		Retention:    cfg.Retention,
+		Logger:       log.With(am.logger, "component", "nflog"),
+		Metrics:      am.registry,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create notification log: %v", err)
 	}
+
+	// Run the nflog maintenance in a dedicated goroutine.
+	am.wg.Add(1)
+	go func() {
+		am.nflog.Maintenance(maintenancePeriod, snapshotFile, am.maintenanceStop, nil)
+		am.wg.Done()
+	}()
 
 	c := am.state.AddState("nfl:"+cfg.UserID, am.nflog, am.registry)
 	am.nflog.SetBroadcast(c.Broadcast)
@@ -231,9 +237,10 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry)
 
+	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
 	go func() {
-		am.silences.Maintenance(maintenancePeriod, silencesFile, am.stop, nil)
+		am.silences.Maintenance(maintenancePeriod, silencesFile, am.maintenanceStop, nil)
 		am.wg.Done()
 	}()
 
@@ -412,7 +419,7 @@ func (am *Alertmanager) Stop() {
 	am.state.StopAsync()
 
 	am.alerts.Close()
-	close(am.stop)
+	close(am.maintenanceStop)
 }
 
 func (am *Alertmanager) StopAndWait() {
@@ -439,7 +446,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []*config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
+func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
 	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
@@ -454,7 +461,7 @@ func buildIntegrationsMap(nc []*config.Receiver, tmpl *template.Template, firewa
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
 	var (
 		errs         types.MultiError
 		integrations []notify.Integration

@@ -2026,6 +2026,35 @@ func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
 	}
 }
 
+func TestCachedSeriesHasher_Hash_ShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+	// You should NEVER CHANGE the expected hashes here, otherwise it means you're introducing
+	// a backward incompatible change.
+	expectedHashesBySeries := map[uint64]labels.Labels{
+		13889224011166452370: labels.FromStrings("series_id", "0"),
+		307103556485211698:   labels.FromStrings("series_id", "1"),
+		17573969331475051845: labels.FromStrings("series_id", "2"),
+		8613144804601828350:  labels.FromStrings("series_id", "3"),
+		16472193458282740080: labels.FromStrings("series_id", "4"),
+		7729501881553818438:  labels.FromStrings("series_id", "5"),
+		14697344322548709486: labels.FromStrings("series_id", "6"),
+		969809569297678032:   labels.FromStrings("series_id", "7"),
+		4148606829831788279:  labels.FromStrings("series_id", "8"),
+		7860098726487602753:  labels.FromStrings("series_id", "9"),
+	}
+
+	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	hasher := cachedSeriesHasher{cache}
+
+	seriesRef := storage.SeriesRef(0)
+
+	for expectedHash, seriesLabels := range expectedHashesBySeries {
+		actualHash := hasher.Hash(seriesRef, seriesLabels, &queryStats{})
+		assert.Equal(t, expectedHash, actualHash, "series: %s", seriesLabels.String())
+
+		seriesRef++
+	}
+}
+
 func generatePostings(numPostings int) []storage.SeriesRef {
 	postings := make([]storage.SeriesRef, numPostings)
 	for i := range postings {

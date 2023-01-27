@@ -955,7 +955,7 @@ func (b cachedSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryS
 func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
 	hash, ok := b.CachedHash(id, stats)
 	if !ok {
-		hash = lset.Hash()
+		hash = labels.StableHash(lset)
 		b.cache.Store(id, hash)
 	}
 	return hash

@@ -1105,7 +1105,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 
 		obIx := uint64(0)
 		if len(outBlocks) > 1 {
-			obIx = s.Labels().Hash() % uint64(len(outBlocks))
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
 		}
 
 		err := blockWriters[obIx].addSeries(s.Labels(), chks)
@@ -1171,7 +1171,10 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 		s := seriesSet.At()
 
-		obIx := s.Labels().Hash() % uint64(len(outBlocks))
+		var obIx uint64
+		if len(outBlocks) > 1 {
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
+		}
 
 		for _, l := range s.Labels() {
 			if err := batchers[obIx].addSymbol(l.Name); err != nil {

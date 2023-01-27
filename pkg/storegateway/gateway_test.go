@@ -1173,6 +1173,90 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	}
 }
 
+func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		numSeries = 100
+		numShards = 2
+	)
+
+	var (
+		ctx    = context.Background()
+		userID = "user-1"
+
+		// You should NEVER CHANGE the expected series here, otherwise it means you're introducing
+		// a backward incompatible change.
+		expectedSeriesIDByShard = map[string][]int{
+			"1_of_2": {0, 1, 10, 12, 16, 18, 2, 22, 23, 24, 26, 28, 29, 3, 30, 33, 34, 35, 36, 39, 40, 41, 42, 43, 44, 47, 53, 54, 57, 58, 60, 61, 63, 66, 67, 68, 69, 7, 71, 75, 77, 80, 81, 83, 84, 86, 87, 89, 9, 90, 91, 92, 94, 96, 98, 99},
+			"2_of_2": {11, 13, 14, 15, 17, 19, 20, 21, 25, 27, 31, 32, 37, 38, 4, 45, 46, 48, 49, 5, 50, 51, 52, 55, 56, 59, 6, 62, 64, 65, 70, 72, 73, 74, 76, 78, 79, 8, 82, 85, 88, 93, 95, 97},
+		}
+	)
+
+	// Prepare the storage dir.
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
+
+	// Generate a TSDB block in the storage dir, containing the fixture series.
+	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {
+		nextID := 0
+		return func() (bool, labels.Labels, int64, float64) {
+			if nextID >= numSeries {
+				return false, labels.Labels{}, 0, 0
+			}
+
+			nextSeries := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(nextID))
+			nextID++
+
+			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
+		}
+	}())
+
+	createBucketIndex(t, bucketClient, userID)
+
+	// Create a store-gateway.
+	gatewayCfg := mockGatewayConfig()
+	storageCfg := mockStorageConfig(t)
+	storageCfg.BucketStore.BucketIndex.Enabled = true
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+	// Query all series, 1 shard at a time.
+	for shardID := 0; shardID < numShards; shardID++ {
+		shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
+		expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
+
+		req := &storepb.SeriesRequest{
+			MinTime: math.MinInt64,
+			MaxTime: math.MaxInt64,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: "series_id", Value: ".+"},
+				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: shardLabel},
+			},
+		}
+
+		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
+		err = g.Series(req, srv)
+		require.NoError(t, err)
+		assert.Empty(t, srv.Warnings)
+		require.Greater(t, len(srv.SeriesSet), 0)
+
+		for _, series := range srv.SeriesSet {
+			// Ensure the series below to the right shard.
+			seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+			seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+			require.NoError(t, err)
+
+			assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+		}
+	}
+}
+
 func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 	test.VerifyNoLeak(t)
 

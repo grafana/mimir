@@ -145,7 +145,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 		lbls := builder.Labels()
 		shardID := uint64(0)
 		if shards > 0 {
-			shardID = lbls.Hash() % uint64(shards)
+			shardID = labels.StableHash(lbls) % uint64(shards)
 		}
 
 		for _, l := range lbls {
