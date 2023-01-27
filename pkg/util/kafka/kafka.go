@@ -3,16 +3,18 @@ package kafka
 import (
 	"bytes"
 	"errors"
+	"sort"
 	"strings"
 	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 const userSep = '\xfe'
+const dropped_labels_label = "__dropped_labels__"
 
 func ComposeKafkaKey(buf, user []byte, lsetAdapter []mimirpb.LabelAdapter, rules validation.ForwardingRules) ([]byte, error) {
 	lset := mimirpb.FromLabelAdaptersToLabels(lsetAdapter)
@@ -21,71 +23,29 @@ func ComposeKafkaKey(buf, user []byte, lsetAdapter []mimirpb.LabelAdapter, rules
 		return nil, err
 	}
 
-	builder := bytes.NewBuffer(buf[:0])
-	_, err = builder.Write(user)
+	keyBuilder := bytes.NewBuffer(buf[:0])
+	_, err = keyBuilder.Write(user)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.WriteByte(userSep)
-	if err != nil {
-		return nil, err
-	}
-	_, err = builder.WriteString(metricName)
-	if err != nil {
-		return nil, err
-	}
-	err = builder.WriteByte('{')
+	err = keyBuilder.WriteByte(userSep)
 	if err != nil {
 		return nil, err
 	}
 
-	metricRule := rules[metricName]
+	lsetBuilder := labels.NewBuilder(lset)
+	dropLabels := rules[metricName].DropLabels
+	lsetBuilder.Del(dropLabels...)
 
-	firstLabel := true
-OUTER_LABELS:
-	for _, l := range lset {
-		if l.Name == model.MetricNameLabel {
-			continue OUTER_LABELS
-		}
-		for _, dropLabel := range metricRule.DropLabels {
-			if l.Name == dropLabel {
-				continue OUTER_LABELS
-			}
-		}
+	// Copy the labels to drop to not modify the slice passed into this function.
+	dropped_labels := make([]string, 0, len(dropLabels))
+	dropped_labels = append(dropped_labels, dropLabels...)
+	sort.StringSlice(dropped_labels).Sort()
+	lsetBuilder.Set(dropped_labels_label, strings.Join(dropped_labels, ","))
 
-		if !firstLabel {
-			builder.WriteByte(',')
-		} else {
-			firstLabel = false
-		}
+	keyBuilder.WriteString(lsetBuilder.Labels(nil).String())
 
-		_, err = builder.WriteString(l.Name)
-		if err != nil {
-			return nil, err
-		}
-		err = builder.WriteByte('=')
-		if err != nil {
-			return nil, err
-		}
-		err = builder.WriteByte('"')
-		if err != nil {
-			return nil, err
-		}
-		_, err = builder.WriteString(l.Value)
-		if err != nil {
-			return nil, err
-		}
-		err = builder.WriteByte('"')
-		if err != nil {
-			return nil, err
-		}
-	}
-	err = builder.WriteByte('}')
-	if err != nil {
-		return nil, err
-	}
-
-	return builder.Bytes(), nil
+	return keyBuilder.Bytes(), nil
 }
 
 func DecomposeKafkaKey(key []byte) (string, string, error) {
