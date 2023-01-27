@@ -118,6 +118,10 @@ func (bqs *blockQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	its := make([]iteratorWithMaxTime, 0, len(bqs.chunks))
 
 	for _, c := range bqs.chunks {
+		if c.Raw.Type != storepb.Chunk_XOR {
+			// TODO enable iterating native histogram chunks
+			continue
+		}
 		ch, err := chunkenc.FromData(chunkenc.EncXOR, c.Raw.Data)
 		if err != nil {
 			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from XOR encoded raw data (series: %v min time: %d max time: %d)", bqs.Labels(), c.MinTime, c.MaxTime))
