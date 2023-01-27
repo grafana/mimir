@@ -66,6 +66,7 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 
 	level.Info(kc.logger).Log("msg", "starting readers for partitions", "partitions", fmt.Sprintf("%v", kc.cfg.kafkaPartitions))
 
+	metrics := newAggregationMetrics(kc.reg)
 	for _, partition := range kc.cfg.kafkaPartitions {
 		reader := kafka.NewReader(kafka.ReaderConfig{
 			Brokers:   kc.cfg.kafkaBrokers,
@@ -77,7 +78,7 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 
 		kc.kafkaReaders = append(kc.kafkaReaders, reader)
 
-		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, kc.shutdownCh, kc.logger, kc.reg)
+		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, metrics, kc.shutdownCh, kc.logger)
 	}
 
 	return nil
@@ -121,10 +122,10 @@ type partitionConsumer struct {
 	aggregateHandler AggregateHandler
 }
 
-func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, shutdownCh chan struct{}, logger log.Logger, reg prometheus.Registerer) {
+func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, metrics aggregationMetrics, shutdownCh chan struct{}, logger log.Logger) {
 	partitionConsumer{
 		cfg:              cfg,
-		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay, reg),
+		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay, metrics),
 		shutdownCh:       shutdownCh,
 		logger:           logger,
 		aggregateHandler: handler,

@@ -49,12 +49,12 @@ func newAggregationMetrics(reg prometheus.Registerer) aggregationMetrics {
 // delay:
 // The delay to wait before generating an aggregated sample based on a raw sample,
 // this is the tolerance for samples to arrive late.
-func newUserAggregations(interval, delay time.Duration, reg prometheus.Registerer) userAggregations {
+func newUserAggregations(interval, delay time.Duration, metrics aggregationMetrics) userAggregations {
 	return userAggregations{
 		interval: interval.Milliseconds(),
 		delay:    delay.Milliseconds(),
 		byUser:   map[string]*aggregations{},
-		metrics:  newAggregationMetrics(reg),
+		metrics:  metrics,
 	}
 }
 
