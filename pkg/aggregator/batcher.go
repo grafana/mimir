@@ -2,6 +2,7 @@ package aggregator
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,6 +19,7 @@ type Push func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteRe
 
 type Batcher struct {
 	services.Service
+	wg                 sync.WaitGroup
 	cfg                Config
 	logger             log.Logger
 	shutdownCh         chan struct{}
@@ -50,6 +52,7 @@ func NewBatcher(cfg Config, push Push, logger log.Logger) *Batcher {
 }
 
 func (b *Batcher) starting(ctx context.Context) error {
+	b.wg.Add(1)
 	go b.run()
 
 	return nil
@@ -66,10 +69,14 @@ func (b *Batcher) running(ctx context.Context) error {
 
 func (b *Batcher) stopping(_ error) error {
 	close(b.shutdownCh)
+	b.wg.Wait()
+
 	return nil
 }
 
 func (b *Batcher) run() {
+	defer b.wg.Done()
+
 	ticker := time.NewTicker(b.cfg.FlushInterval)
 	for {
 		select {
