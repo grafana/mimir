@@ -1719,13 +1719,13 @@ func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]
 	return buf.Bytes(), nil
 }
 
-func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges, chunkSlabs *pool.SafeSlabPool[byte]) (*[]byte, error) {
+func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges, chunksPool *pool.SafeSlabPool[byte]) (*[]byte, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
 	// Get a reader for the required range.
-	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunkSlabs})
+	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunksPool})
 	reader, err := b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 	if err != nil {
 		return nil, errors.Wrap(err, "get range reader")
@@ -1746,12 +1746,12 @@ func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length i
 	return chunkBuffer, nil
 }
 
-func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64, chunkSlabs *pool.SafeSlabPool[byte]) (io.ReadCloser, error) {
+func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64, chunksPool *pool.SafeSlabPool[byte]) (io.ReadCloser, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
-	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunkSlabs})
+	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunksPool})
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 

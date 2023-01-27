@@ -56,6 +56,16 @@ func getAllocator(ctx context.Context) cache.Allocator {
 	return alloc.(cache.Allocator)
 }
 
+func getCacheOptions(ctx context.Context) []cache.Option {
+	var opts []cache.Option
+	alloc := getAllocator(ctx)
+	if alloc != nil {
+		opts = append(opts, cache.WithAllocator(alloc))
+	}
+
+	return opts
+}
+
 // CachingBucket implementation that provides some caching features, based on passed configuration.
 type CachingBucket struct {
 	objstore.Bucket
@@ -243,14 +253,9 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 
 	contentKey := cachingKeyContent(name)
 	existsKey := cachingKeyExists(name)
+	cacheOpts := getCacheOptions(ctx)
 
-	var opts []cache.Option
-	alloc := getAllocator(ctx)
-	if alloc != nil {
-		opts = append(opts, cache.WithAllocator(alloc))
-	}
-
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, opts...)
+	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
 	if hits[contentKey] != nil {
 		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 		return objstore.NopCloserWithSize(bytes.NewBuffer(hits[contentKey])), nil
@@ -302,13 +307,8 @@ func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length 
 		return cb.Bucket.GetRange(ctx, name, off, length)
 	}
 
-	var opts []cache.Option
-	alloc := getAllocator(ctx)
-	if alloc != nil {
-		opts = append(opts, cache.WithAllocator(alloc))
-	}
-
-	return cb.cachedGetRange(ctx, name, off, length, cfgName, cfg, opts...)
+	cacheOpts := getCacheOptions(ctx)
+	return cb.cachedGetRange(ctx, name, off, length, cfgName, cfg, cacheOpts...)
 }
 
 func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
