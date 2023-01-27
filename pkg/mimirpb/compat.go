@@ -315,6 +315,32 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 }
 
+func FromPromCommonToMimirSampleHistogram(src *model.SampleHistogram) *SampleHistogram {
+	return (*SampleHistogram)(unsafe.Pointer(src))
+}
+
+func FromMimirSampleToPromCommonHistogram(src *SampleHistogram) *model.SampleHistogram {
+	return (*model.SampleHistogram)(unsafe.Pointer(src))
+}
+
+func (vs *SampleHistogramPair) UnmarshalJSON(b []byte) error {
+	s := model.SampleHistogramPair{}
+	if err := stdjson.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	vs.Timestamp = int64(s.Timestamp)
+	vs.Histogram = FromPromCommonToMimirSampleHistogram(s.Histogram)
+	return nil
+}
+
+func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
+	s := model.SampleHistogramPair{
+		Timestamp: model.Time(vs.Timestamp),
+		Histogram: FromMimirSampleToPromCommonHistogram(vs.Histogram),
+	}
+	return stdjson.Marshal(s)
+}
+
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
