@@ -8,6 +8,7 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"github.com/weaveworks/common/user"
 	"os"
 	"path/filepath"
 	"sync"
@@ -287,6 +288,18 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) error {
 	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
 	defer spanLog.Span.Finish()
+
+	if orgId, err := user.ExtractOrgID(spanCtx); err != nil {
+		level.Error(u.logger).Log("err", err.Error())
+	} else {
+		level.Warn(u.logger).Log("orgId", orgId)
+	}
+
+	if meta, ok := metadata.FromIncomingContext(spanCtx); ok {
+		for k, v := range meta {
+			level.Warn(u.logger).Log(k, v)
+		}
+	}
 
 	userID := getUserIDFromGRPCContext(spanCtx)
 	if userID == "" {

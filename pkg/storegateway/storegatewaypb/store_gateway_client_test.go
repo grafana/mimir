@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package querier
+package storegatewaypb
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -29,7 +28,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	defer grpcServer.GracefulStop()
 
 	srv := &mockStoreGatewayServer{}
-	storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
+	RegisterStoreGatewayServer(grpcServer, srv)
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -44,7 +43,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := newStoreGatewayClientFactory(cfg, reg)
+	factory := NewStoreGatewayClientFactory(cfg, reg)
 
 	for i := 0; i < 2; i++ {
 		client, err := factory(listener.Addr().String())
@@ -52,7 +51,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		defer client.Close() //nolint:errcheck
 
 		ctx := user.InjectOrgID(context.Background(), "test")
-		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
+		stream, err := client.(*StoreGatewayClientImpl).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
 		// Read the entire response from the stream.
@@ -74,7 +73,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv StoreGateway_SeriesServer) error {
 	return nil
 }
 

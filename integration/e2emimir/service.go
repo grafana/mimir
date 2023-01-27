@@ -21,8 +21,12 @@ func NewMimirService(
 	readiness e2e.ReadinessProbe,
 	httpPort int,
 	grpcPort int,
+	exposeGRPCPort bool,
 	otherPorts ...int,
 ) *MimirService {
+	if exposeGRPCPort {
+		otherPorts = append(otherPorts, grpcPort)
+	}
 	s := &MimirService{
 		// We don't expose the gRPC port cause we don't need to access it from the host
 		// (exposing ports have a negative performance impact on starting/stopping containers).
@@ -40,6 +44,10 @@ func NewMimirService(
 
 func (s *MimirService) NetworkGRPCEndpoint() string {
 	return s.NetworkEndpoint(s.grpcPort)
+}
+
+func (s *MimirService) GRPCEndpoint() string {
+	return s.Endpoint(s.grpcPort)
 }
 
 // CompositeMimirService abstract an higher-level service composed, under the hood,
