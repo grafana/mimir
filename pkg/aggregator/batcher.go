@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/weaveworks/common/user"
@@ -26,6 +28,27 @@ type Batcher struct {
 	aggregationResults chan aggregationResultWithUser
 	userBatches        userBatches
 	push               Push
+	metrics            batcherMetrics
+}
+
+type batcherMetrics struct {
+	ingestedAggregationResults *prometheus.CounterVec
+	flushes                    prometheus.Counter
+}
+
+func newBatcherMetrics(reg prometheus.Registerer) batcherMetrics {
+	return batcherMetrics{
+		ingestedAggregationResults: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "aggregation_batcher_ingested_aggregation_results_total",
+			Help:      "The total number of aggregation results that have been ingested by this aggregation result batcher.",
+		}, []string{"user"}),
+		flushes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "aggregation_batcher_flushes_total",
+			Help:      "The total number of flushes that have been performed by this aggregation result batcher.",
+		}),
+	}
 }
 
 type aggregationResultWithUser struct {
@@ -38,7 +61,7 @@ type aggregationResult struct {
 	sample           mimirpb.Sample
 }
 
-func NewBatcher(cfg Config, push Push, logger log.Logger) *Batcher {
+func NewBatcher(cfg Config, push Push, reg prometheus.Registerer, logger log.Logger) *Batcher {
 	b := &Batcher{
 		cfg:                cfg,
 		shutdownCh:         make(chan struct{}),
@@ -46,6 +69,7 @@ func NewBatcher(cfg Config, push Push, logger log.Logger) *Batcher {
 		aggregationResults: make(chan aggregationResultWithUser, cfg.ResultChanSize),
 		userBatches:        newUserBatches(),
 		push:               push,
+		metrics:            newBatcherMetrics(reg),
 	}
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 	return b
@@ -85,8 +109,10 @@ func (b *Batcher) run() {
 			if err != nil {
 				level.Error(b.logger).Log("msg", "failed to handle aggregation result", "err", err, "result", result)
 			}
+			b.metrics.ingestedAggregationResults.WithLabelValues(result.user).Add(1)
 		case <-ticker.C:
 			b.flush()
+			b.metrics.flushes.Add(1)
 		case <-b.shutdownCh:
 			ticker.Stop()
 			return

@@ -26,6 +26,7 @@ type KafkaConsumer struct {
 	logger             log.Logger
 	cfg                Config
 	shutdownCh         chan struct{}
+	reg                prometheus.Registerer
 	kafkaReaders       []*kafka.Reader
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
@@ -34,7 +35,7 @@ type KafkaConsumer struct {
 
 func NewKafkaConsumer(cfg Config, push Push, logger log.Logger, reg prometheus.Registerer) (*KafkaConsumer, error) {
 	var err error
-	batcher := NewBatcher(cfg, push, logger)
+	batcher := NewBatcher(cfg, push, reg, logger)
 	subservices := []services.Service(nil)
 	subservices = append(subservices, batcher)
 
@@ -42,6 +43,7 @@ func NewKafkaConsumer(cfg Config, push Push, logger log.Logger, reg prometheus.R
 		logger:     logger,
 		cfg:        cfg,
 		shutdownCh: make(chan struct{}),
+		reg:        reg,
 	}
 
 	kc.aggregateHandler = batcher.AddSample
@@ -75,7 +77,7 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 
 		kc.kafkaReaders = append(kc.kafkaReaders, reader)
 
-		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, kc.shutdownCh, kc.logger)
+		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, kc.shutdownCh, kc.logger, kc.reg)
 	}
 
 	return nil
@@ -119,10 +121,10 @@ type partitionConsumer struct {
 	aggregateHandler AggregateHandler
 }
 
-func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, shutdownCh chan struct{}, logger log.Logger) {
+func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, shutdownCh chan struct{}, logger log.Logger, reg prometheus.Registerer) {
 	partitionConsumer{
 		cfg:              cfg,
-		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay),
+		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay, reg),
 		shutdownCh:       shutdownCh,
 		logger:           logger,
 		aggregateHandler: handler,

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // userAggregations contains the aggregation state for all users.
@@ -13,6 +15,27 @@ type userAggregations struct {
 	interval int64
 	delay    int64
 	byUser   map[string]*aggregations
+	metrics  aggregationMetrics
+}
+
+type aggregationMetrics struct {
+	ingestedRawSamples *prometheus.CounterVec
+	aggregatedSamples  *prometheus.CounterVec
+}
+
+func newAggregationMetrics(reg prometheus.Registerer) aggregationMetrics {
+	return aggregationMetrics{
+		ingestedRawSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_ingested_raw_samples_total",
+			Help:      "The total number of raw samples that the aggregator has ingested.",
+		}, []string{"user"}),
+		aggregatedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_aggregated_samples_total",
+			Help:      "The total number of aggregation results that the aggregator has generated.",
+		}, []string{"user"}),
+	}
 }
 
 // newUserAggregations creates a new userAggregations object, following is a description of the parameters.
@@ -26,17 +49,20 @@ type userAggregations struct {
 // delay:
 // The delay to wait before generating an aggregated sample based on a raw sample,
 // this is the tolerance for samples to arrive late.
-func newUserAggregations(interval, delay time.Duration) userAggregations {
+func newUserAggregations(interval, delay time.Duration, reg prometheus.Registerer) userAggregations {
 	return userAggregations{
 		interval: interval.Milliseconds(),
 		delay:    delay.Milliseconds(),
 		byUser:   map[string]*aggregations{},
+		metrics:  newAggregationMetrics(reg),
 	}
 }
 
 // ingest ingests a sample for aggregation.
 // It might return an aggregated sample if this ingestion has resulted in one, otherwise it will return a sample with a NaN value.
 func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, sample mimirpb.Sample) mimirpb.Sample {
+	u.metrics.ingestedRawSamples.WithLabelValues(user).Inc()
+
 	aggs, ok := u.byUser[user]
 	if !ok {
 		aggs = newAggregations()
@@ -44,6 +70,10 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 	}
 
 	aggSample := aggs.ingest(u.interval, u.delay, aggregatedLabels, rawLabels, sample)
+
+	if !math.IsNaN(aggSample.Value) {
+		u.metrics.aggregatedSamples.WithLabelValues(user).Inc()
+	}
 
 	return aggSample
 }
