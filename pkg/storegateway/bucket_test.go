@@ -1846,11 +1846,41 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 }
 
 func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.Append(0, lset, ts, float64(ts))
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncXOR)
+}
+
+func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
+	histograms := tsdb.GenerateTestHistograms(10000)
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.AppendHistogram(0, lset, ts, histograms[ts], nil)
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncHistogram)
+}
+
+func TestBucketStore_Series_BlockWithMultipleFloatHistogramChunks(t *testing.T) {
+	histograms := tsdb.GenerateTestFloatHistograms(10000)
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.AppendHistogram(0, lset, ts, nil, histograms[ts])
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncFloatHistogram)
+}
+
+func testBucketStoreSeriesBlockWithMultipleChunks(
+	t *testing.T,
+	appendF func(storage.Appender, labels.Labels, int64) error,
+	encoding chunkenc.Encoding) {
 	tmpDir := t.TempDir()
 
 	// Create a block with 1 series but an high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
@@ -1863,7 +1893,7 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 		// Appending a single sample is very unoptimised, but guarantees each chunk is always MaxSamplesPerChunk
 		// (except the last one, which could be smaller).
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, series, ts, float64(ts))
+		err := appendF(app, series, ts)
 		assert.NoError(t, err)
 		assert.NoError(t, app.Commit())
 	}
@@ -1961,7 +1991,7 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 			// Count the number of samples in the returned chunks.
 			numSamples := 0
 			for _, rawChunk := range srv.SeriesSet[0].Chunks {
-				decodedChunk, err := chunkenc.FromData(chunkenc.EncXOR, rawChunk.Raw.Data)
+				decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
 				assert.NoError(t, err)
 
 				numSamples += decodedChunk.NumSamples()
