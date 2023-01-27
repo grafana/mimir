@@ -397,16 +397,18 @@ func (r *request) do() {
 		return
 	}
 
-	r.requests.Inc()
-	r.samples.Add(float64(r.counts.SampleCount))
-	r.exemplars.Add(float64(r.counts.ExemplarCount))
-
 	beforeTs := time.Now()
 	err = r.kafkaWriter.WriteMessages(ctx, r.messages...)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
+		r.errors.WithLabelValues("failed").Inc()
 		r.handleError(ctx, http.StatusInternalServerError, err)
+		return
 	}
+
+	r.requests.Inc()
+	r.samples.Add(float64(r.counts.SampleCount))
+	r.exemplars.Add(float64(r.counts.ExemplarCount))
 }
 
 func (r *request) buildKafkaMessages() error {
