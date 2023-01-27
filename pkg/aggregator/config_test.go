@@ -22,45 +22,45 @@ func TestPartitions(t *testing.T) {
 
 		"8 partitions, 3 readers, reader-0": {
 			cfg: Config{
-				KafkaPartitionsTotal:   8,
-				KafkaPartitionsReaders: 3,
-				KafkaReaderID:          "reader-0",
+				KafkaPartitionsTotal:  8,
+				KafkaAggregatorsTotal: 3,
+				KafkaReaderID:         "reader-0",
 			},
 			expPartitions: []int{0, 3, 6},
 		},
 		"8 partitions, 3 readers, reader-1": {
 			cfg: Config{
-				KafkaPartitionsTotal:   8,
-				KafkaPartitionsReaders: 3,
-				KafkaReaderID:          "reader-1",
+				KafkaPartitionsTotal:  8,
+				KafkaAggregatorsTotal: 3,
+				KafkaReaderID:         "reader-1",
 			},
 			expPartitions: []int{1, 4, 7},
 		},
 		"8 partitions, 3 readers, reader-2": {
 			cfg: Config{
-				KafkaPartitionsTotal:   8,
-				KafkaPartitionsReaders: 3,
-				KafkaReaderID:          "reader-2",
+				KafkaPartitionsTotal:  8,
+				KafkaAggregatorsTotal: 3,
+				KafkaReaderID:         "reader-2",
 			},
 			expPartitions: []int{2, 5},
 		},
 
 		"8 partitions, 4 readers, reader-0": {
 			cfg: Config{
-				KafkaPartitionsTotal:   8,
-				KafkaPartitionsReaders: 4,
-				KafkaReaderID:          "reader-0",
+				KafkaPartitionsTotal:  8,
+				KafkaAggregatorsTotal: 4,
+				KafkaReaderID:         "reader-0",
 			},
 			expPartitions: []int{0, 4},
 		},
 
 		"4 readers, too high reader id": {
 			cfg: Config{
-				KafkaPartitionsTotal:   8,
-				KafkaPartitionsReaders: 4,
-				KafkaReaderID:          "reader-10",
+				KafkaPartitionsTotal:  8,
+				KafkaAggregatorsTotal: 4,
+				KafkaReaderID:         "reader-10",
 			},
-			expError: "invalid aggregator.kafka-reader-id: reader-10 (readers: 4)",
+			expError: "invalid aggregator.kafka-reader-id: reader-10 (aggregators: 4)",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
