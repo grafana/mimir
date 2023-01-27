@@ -1012,8 +1012,10 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
-		var errCh <-chan error
-		if req.Source != mimirpb.AGGREGATOR {
+		var errCh chan error
+		if req.Source == mimirpb.AGGREGATOR {
+			close(errCh)
+		} else {
 			req.Timeseries, errCh = d.forwardSamples(ctx, userID, req.Timeseries)
 		}
 		resp, nextErr := next(ctx, pushReq)
@@ -1193,7 +1195,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 	}
 }
 
-func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
+func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	forwardingErrCh := make(chan error)
 	forwardingRules := d.limits.ForwardingRules(userID)
 	if len(forwardingRules) == 0 {

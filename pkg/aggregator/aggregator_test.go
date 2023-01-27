@@ -152,7 +152,7 @@ func TestPerformingAggregations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			aggs := newUserAggregations(tc.aggInterval, tc.aggDelay)
+			aggs := newUserAggregations(tc.aggInterval, tc.aggDelay, nil)
 
 			for callIdx, call := range tc.ingestCalls {
 				t.Run("call "+strconv.Itoa(callIdx), func(t *testing.T) {
