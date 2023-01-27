@@ -345,13 +345,33 @@ func newLoadingSeriesChunksSetIterator(
 }
 
 func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
-	if c.err != nil {
+	var next *seriesChunksSet
+	tryNext := true
+
+	for tryNext {
+		var err error
+		next, tryNext, err = c.getNext()
+		if err != nil {
+			c.err = err
+			return false
+		}
+	}
+
+	if next == nil {
 		return false
 	}
 
+	c.current = *next
+	return true
+}
+
+func (c *loadingSeriesChunksSetIterator) getNext() (next *seriesChunksSet, tryNext bool, err error) {
+	if c.err != nil {
+		return nil, false, c.err
+	}
+
 	if !c.from.Next() {
-		c.err = c.from.Err()
-		return false
+		return nil, false, c.from.Err()
 	}
 
 	nextUnloaded := c.from.At()
@@ -365,7 +385,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	// Release the set if an error occurred.
 	defer func() {
-		if !retHasNext && c.err != nil {
+		if next == nil && err != nil {
 			nextSet.release()
 		}
 	}()
@@ -392,7 +412,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
-					return false
+					return nil, false, errors.Wrap(err, "preloading chunks")
 				}
 				seriesChunkIdx++
 			}
@@ -402,10 +422,9 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	// Create a batched memory pool that can be released all at once.
 	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
-	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
+	err = c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {
-		c.err = errors.Wrap(err, "loading chunks")
-		return false
+		return nil, false, errors.Wrap(err, "loading chunks")
 	}
 
 	nextSet.chunksReleaser = chunksPool
@@ -433,12 +452,11 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 		if len(nextSet.series) == 0 {
 			nextSet.release()
-			return c.Next()
+			return nil, true, nil
 		}
 	}
 
-	c.current = nextSet
-	return true
+	return &nextSet, false, nil
 }
 
 func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
