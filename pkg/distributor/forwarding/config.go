@@ -42,10 +42,10 @@ func (c *Config) Validate() error {
 		return errors.New("distributor.forwarding.kafka-topic must be set")
 	}
 
-	c.kafkaBrokers = strings.Split(c.KafkaBrokers, ",")
-	if len(c.kafkaBrokers) == 0 {
+	if len(c.KafkaBrokers) == 0 {
 		return errors.New("distributor.forwarding.kafka-brokers must be set")
 	}
+	c.kafkaBrokers = strings.Split(c.KafkaBrokers, ",")
 
 	return nil
 }
