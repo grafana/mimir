@@ -3,6 +3,7 @@
 package ephemeral
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -107,6 +108,17 @@ func (c *LabelMatchers) UnmarshalYAML(value *yaml.Node) error {
 	return err
 }
 
+func (c *LabelMatchers) UnmarshalJSON(data []byte) error {
+	m := map[Source][]string{}
+	err := json.Unmarshal(data, &m)
+	if err != nil {
+		return err
+	}
+
+	*c, err = parseLabelMatchers(m)
+	return err
+}
+
 func (c *LabelMatchers) ForSource(source mimirpb.WriteRequest_SourceEnum) MatcherSetsForSource {
 	return c.bySource[convertMimirpbSource(source)]
 }
@@ -208,8 +220,15 @@ func matchersConfigString(matchers map[Source][]string) string {
 	return sb.String()
 }
 
-// MarshalYAML implements yaml.Marshaler.
-func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
+func (c LabelMatchers) MarshalYAML() (interface{}, error) {
+	return c.getMap(), nil
+}
+
+func (c LabelMatchers) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.getMap())
+}
+
+func (c LabelMatchers) getMap() map[Source][]string {
 	res := map[Source][]string{}
 
 	for _, source := range ValidSources {
@@ -220,5 +239,5 @@ func (c *LabelMatchers) MarshalYAML() (interface{}, error) {
 		res[source] = c.raw[source]
 	}
 
-	return res, nil
+	return res
 }
