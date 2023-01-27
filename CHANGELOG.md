@@ -9,6 +9,7 @@
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
+* [ENHANCEMENT] Query-frontend: log caller user agent in query stats logs. #4093
 
 ### Mixin
 
