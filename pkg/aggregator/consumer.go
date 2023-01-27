@@ -2,19 +2,21 @@ package aggregator
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	util_kafka "github.com/grafana/mimir/pkg/util/kafka"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	util_kafka "github.com/grafana/mimir/pkg/util/kafka"
 )
 
 type AggregateHandler func(user, aggregatedLabels string, aggSample mimirpb.Sample)
@@ -59,6 +61,8 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 	if err := services.StartManagerAndAwaitHealthy(ctx, kc.subservices); err != nil {
 		return errors.Wrap(err, "unable to start kafka consumer subservices")
 	}
+
+	level.Info(kc.logger).Log("msg", "starting readers for partitions", "partitions", fmt.Sprintf("%v", kc.cfg.kafkaPartitions))
 
 	for _, partition := range kc.cfg.kafkaPartitions {
 		reader := kafka.NewReader(kafka.ReaderConfig{
