@@ -72,6 +72,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				}
 				r := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
 				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
 			expectedParams: url.Values{
@@ -175,6 +176,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, "query-frontend", msg["component"])
 				require.Equal(t, req.Method, msg["method"])
 				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
