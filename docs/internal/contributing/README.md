@@ -4,11 +4,15 @@ Welcome! We're excited that you're interested in contributing. Below are some ba
 
 Grafana Mimir follows a standard GitHub pull request workflow. If you're unfamiliar with this workflow, read the very helpful [Understanding the GitHub flow](https://guides.github.com/introduction/flow/) guide from GitHub.
 
-You are welcome to create draft PRs at any stage of readiness - this
-can be helpful to ask for assistance or to develop an idea. But before
-a piece of work is finished it should:
+You are welcome to create draft PRs at any stage of readiness.
 
-- Be organised into one or more commits, each of which has a commit message that describes all changes made in that commit ('why' more than 'what' - we can read the diffs to see the code that changed).
+Doing so can be a helpful way of asking for assistance or to develop an idea.
+
+When you open a PR as a draft, add a short description of what you’re still working on, what you are seeking assistance with, or both.
+
+Before a piece of work is finished:
+
+- Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
@@ -59,6 +63,16 @@ Example:
 make CONTAINER_MOUNT_OPTIONS=delegated
 ```
 
+### Run Grafana Mimir locally
+
+To easily run Grafana Mimir locally during development, use the docker-compose setup at `development/<deployment-mode>/`:
+
+```bash
+development/mimir-read-write-mode/compose-up.sh -d
+```
+
+Doing so builds the local version of the code and starts the Mimir components that are part of the chosen deployment mode as a set of containers. Use the `compose-down.sh` script to tear down the containers when you no longer need them.
+
 ### Dependency management
 
 We uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages.
@@ -91,7 +105,8 @@ Please see the dedicated "[Design patterns and Code conventions](design-patterns
 
 ## Documentation
 
-The Grafana Mimir documentation is compiled into a website published at [grafana.com](https://grafana.com/). Run `make docs` to build and serve the documentation locally.
+The Grafana Mimir documentation and the Helm chart _documentation_ for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
+For more detail on style and organisation of the documentation, refer to the dedicated page "[How to write documenentation](how-to-write-documentation.md)".
 
 Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
 

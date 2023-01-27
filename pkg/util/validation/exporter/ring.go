@@ -6,20 +6,17 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -48,82 +45,55 @@ var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
 // RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
+	// Whether the ring is enabled for overrides-exporters.
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
-	// KV store details
-	KVStore          kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances."`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
-	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	// Use common config shared with other components' ring config.
+	Common util.CommonRingConfig `yaml:",inline"`
 
-	// Ring stability (used to decrease token reshuffling on scale-up)
+	// Ring stability (used to decrease token reshuffling on scale-up).
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
 	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
-
-	// Instance details
-	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
-	InstanceInterfaceNames []string `yaml:"instance_interface_names" doc:"default=[<private network interfaces>]"`
-	InstancePort           int      `yaml:"instance_port" category:"advanced"`
-	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
-
-	// Injected internally
-	ListenPort int `yaml:"-"`
 }
 
 // RegisterFlags configures this RingConfig to the given flag set and sets defaults.
 func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const flagNamePrefix = "overrides-exporter.ring."
-	hostname, err := os.Hostname()
-	if err != nil {
-		_ = level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
-		os.Exit(1)
-	}
+	const kvStorePrefix = "collectors/"
+	const componentPlural = "overrides-exporters"
+
 	f.BoolVar(&c.Enabled, flagNamePrefix+"enabled", false, "Enable the ring used by override-exporters to deduplicate exported limit metrics.")
 
-	// Ring flags
-	c.KVStore.Store = "memberlist" // Override default value.
-	c.KVStore.RegisterFlagsWithPrefix(flagNamePrefix, "collectors/", f)
-	f.DurationVar(&c.HeartbeatPeriod, flagNamePrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&c.HeartbeatTimeout, flagNamePrefix+"heartbeat-timeout", 60*time.Second, "The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring.")
+	c.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Ring stability flags.
 	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")
 	f.DurationVar(&c.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.")
-
-	// Instance flags
-	c.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
-	f.Var((*flagext.StringSlice)(&c.InstanceInterfaceNames), flagNamePrefix+"instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
-	f.StringVar(&c.InstanceAddr, flagNamePrefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
-	f.IntVar(&c.InstancePort, flagNamePrefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
-	f.StringVar(&c.InstanceID, flagNamePrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 }
 
 // toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
 func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(c.InstanceAddr, c.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(c.Common.InstanceAddr, c.Common.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
 
-	instancePort := ring.GetInstancePort(c.InstancePort, c.ListenPort)
+	instancePort := ring.GetInstancePort(c.Common.InstancePort, c.Common.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                              c.InstanceID,
+		ID:                              c.Common.InstanceID,
 		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		HeartbeatPeriod:                 c.HeartbeatPeriod,
-		HeartbeatTimeout:                c.HeartbeatTimeout,
+		HeartbeatPeriod:                 c.Common.HeartbeatPeriod,
+		HeartbeatTimeout:                c.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: true,
 	}, nil
 }
 
-// toRingConfig transforms a RingConfig into a configuration that can be used to create a ring client
 func (c *RingConfig) toRingConfig() ring.Config {
-	rc := ring.Config{}
-	flagext.DefaultValues(&rc)
+	rc := c.Common.ToRingConfig()
 
-	rc.KVStore = c.KVStore
-	rc.HeartbeatTimeout = c.HeartbeatTimeout
 	rc.ReplicationFactor = 1
 	rc.SubringCacheDisabled = true
 
@@ -160,7 +130,7 @@ type overridesExporterRing struct {
 func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*overridesExporterRing, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(
-		config.KVStore,
+		config.Common.KVStore,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(reg, "overrides-exporter-lifecycler"),
 		logger,
@@ -171,7 +141,7 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.HeartbeatTimeout, delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.Common.HeartbeatTimeout, delegate, logger)
 
 	lifecyclerConfig, err := config.toBasicLifecyclerConfig(logger)
 	if err != nil {

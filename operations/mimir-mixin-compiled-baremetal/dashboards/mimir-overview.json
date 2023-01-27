@@ -667,28 +667,32 @@
                         "color": "#F1C731"
                      },
                      {
-                        "alias": "label queries",
+                        "alias": "\"label names\" queries",
                         "color": "#2A66CF"
                      },
                      {
-                        "alias": "series queries",
+                        "alias": "\"label values\" queries",
                         "color": "#9E44C1"
                      },
                      {
-                        "alias": "remote read queries",
+                        "alias": "series queries",
                         "color": "#FFAB57"
                      },
                      {
-                        "alias": "metadata queries",
+                        "alias": "remote read queries",
                         "color": "#C79424"
                      },
                      {
-                        "alias": "exemplar queries",
+                        "alias": "metadata queries",
                         "color": "#84D586"
                      },
                      {
-                        "alias": "other",
+                        "alias": "exemplar queries",
                         "color": "#A1C4FC"
+                     },
+                     {
+                        "alias": "other",
+                        "color": "#C788DE"
                      }
                   ],
                   "spaceLength": 10,
@@ -713,10 +717,18 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label.*\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_labels\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "label queries",
+                        "legendFormat": "\"label names\" queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label_name_values\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "\"label values\" queries",
                         "legendLink": null,
                         "step": 10
                      },

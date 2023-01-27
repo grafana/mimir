@@ -3,7 +3,7 @@
 # The default values specified in this file are enough to deploy all of the
 # Grafana Mimir or Grafana Enterprise Metrics microservices but are not suitable for
 # production load.
-# To configure the resources for production load, refer to the the small.yaml or
+# To configure the resources for production load, refer to the small.yaml or
 # large.yaml values files.
 
 # Note: The values in this file are not backward compatible. Copying and pasting the values is discouraged, but if you do so,
@@ -366,7 +366,7 @@ mimir:
             timeout: 1s
     {{- end}}
 
-  # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
+  # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 
 # runtimeConfig provides a reloadable runtime configuration file for some specific configuration.
@@ -380,7 +380,7 @@ rbac:
 
 alertmanager:
   enabled: true
-  # -- Total number of replicas for the alertmanager accross all availability zones
+  # -- Total number of replicas for the alertmanager across all availability zones
   # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
@@ -417,7 +417,7 @@ alertmanager:
   # Pod Annotations
   podAnnotations: {}
 
-  # -- Pod Disruption Budget for alertmanager, this will be applied accross availability zones to prevent losing redundancy
+  # -- Pod Disruption Budget for alertmanager, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget: {}
 
   # -- The name of the PriorityClass for alertmanager pods
@@ -682,7 +682,7 @@ distributor:
   extraEnvFrom: []
 
 ingester:
-  # -- Total number of replicas for the ingester accross all availability zones
+  # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
@@ -714,7 +714,7 @@ ingester:
   # -- The name of the PriorityClass for ingester pods
   priorityClassName: null
 
-  # -- Pod Disruption Budget for ingester, this will be applied accross availability zones to prevent losing redundancy
+  # -- Pod Disruption Budget for ingester, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
 
@@ -1258,7 +1258,7 @@ query_scheduler:
   extraEnvFrom: []
 
 store_gateway:
-  # -- Total number of replicas for the store-gateway accross all availability zones
+  # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
@@ -1285,7 +1285,7 @@ store_gateway:
   # Pod Annotations
   podAnnotations: {}
 
-  # -- Pod Disruption Budget for store-gateway, this will be applied accross availability zones to prevent losing redundancy
+  # -- Pod Disruption Budget for store-gateway, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
 
@@ -2730,7 +2730,7 @@ metaMonitoring:
     # -- SecurityContext of Grafana Agent pods. This is different from the SecurityContext that the operator pod runs with.
     # The operator pod SecurityContext is configured in the grafana-agent-operator.podSecurityContext value.
     # As of mimir-distributed 4.0.0 the Agent DaemonSet that collects logs needs to run as root and be able to access the
-    # pod logs on each host. Because of that the agent subchart is incompabitble with the PodSecurityPolicy of the
+    # pod logs on each host. Because of that the agent subchart is incompatible with the PodSecurityPolicy of the
     # mimir-distributed chart and with the Restricted policy of Pod Security Standards https://kubernetes.io/docs/concepts/security/pod-security-standards/
     podSecurityContext:
     #  fsGroup: 10001

@@ -4,19 +4,32 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
+* [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
+* [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
+* [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
 
 ### Mixin
 
+* [CHANGE] Move auto-scaling panel rows down beneath logical network path in Reads and Writes dashboards. #4049
 * [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
+* [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049
+* [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
+* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 
 ### Jsonnet
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+
+### Documentation
+
+* [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
 
 ## 2.6.0-rc.0
 
@@ -63,6 +76,7 @@
 * [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.max-total-query-length` and its associated YAML configuration is now stable. #3882
 * [ENHANCEMENT] Ruler: rule groups now support optional and experimental `align_evaluation_time_on_interval` field, which causes all evaluations to happen on interval-aligned timestamp. #4013
 * [ENHANCEMENT] Query-scheduler: ring-based service discovery is now stable. #4028
+* [ENHANCEMENT] Store-gateway: improved performance of prefix matching on the labels. #4055 #4080
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675

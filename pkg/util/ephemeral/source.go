@@ -52,3 +52,16 @@ func (s *Source) UnmarshalYAML(value *yaml.Node) error {
 	*s = source
 	return nil
 }
+
+func (s Source) MarshalText() (text []byte, err error) {
+	return []byte(s.String()), nil
+}
+
+func (s *Source) UnmarshalText(text []byte) error {
+	source, err := convertStringToSource(string(text))
+	if err != nil {
+		return errors.Wrapf(err, "can't unmarshal source %q", string(text))
+	}
+	*s = source
+	return nil
+}

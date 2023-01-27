@@ -6,12 +6,14 @@
 package storegateway
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/status"
 )
 
 func TestLimiter(t *testing.T) {
@@ -24,9 +26,33 @@ func TestLimiter(t *testing.T) {
 	assert.NoError(t, l.Reserve(5))
 	assert.Equal(t, float64(0), prom_testutil.ToFloat64(c))
 
-	assert.Error(t, l.Reserve(1))
+	err := l.Reserve(1)
+	assert.Error(t, err)
 	assert.Equal(t, float64(1), prom_testutil.ToFloat64(c))
+	checkErrorStatusCode(t, err)
 
-	assert.Error(t, l.Reserve(2))
+	err = l.Reserve(2)
+	assert.Error(t, err)
 	assert.Equal(t, float64(1), prom_testutil.ToFloat64(c))
+	checkErrorStatusCode(t, err)
+}
+
+func checkErrorStatusCode(t *testing.T, err error) {
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(http.StatusUnprocessableEntity), uint32(st.Code()))
+}
+
+// newStaticChunksLimiterFactory makes a new ChunksLimiterFactory with a static limit.
+func newStaticChunksLimiterFactory(limit uint64) ChunksLimiterFactory {
+	return func(failedCounter prometheus.Counter) ChunksLimiter {
+		return NewLimiter(limit, failedCounter)
+	}
+}
+
+// newStaticSeriesLimiterFactory makes a new ChunksLimiterFactory with a static limit.
+func newStaticSeriesLimiterFactory(limit uint64) SeriesLimiterFactory {
+	return func(failedCounter prometheus.Counter) SeriesLimiter {
+		return NewLimiter(limit, failedCounter)
+	}
 }

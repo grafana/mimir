@@ -3,6 +3,7 @@
 package ephemeral
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,6 +18,7 @@ func TestParseLabelMatchers(t *testing.T) {
 		name           string
 		inputStringArg string
 		inputYamlBlob  string
+		inputJSONBlob  string
 		expect         LabelMatchers
 		expectErr      bool
 	}
@@ -28,6 +30,7 @@ func TestParseLabelMatchers(t *testing.T) {
 			inputYamlBlob: `api:
     - '{__name__="foo"}'
 `,
+			inputJSONBlob: `{"api":["{__name__=\"foo\"}"]}`,
 			expect: LabelMatchers{
 				raw: map[Source][]string{API: {`{__name__="foo"}`}},
 				bySource: map[Source]MatcherSetsForSource{
@@ -58,6 +61,7 @@ rule:
     - '{__name__="foo_rule", testLabel1="testValue1"}'
     - '{__name__="bar_rule", testLabel2="testValue2"}'
 `,
+			inputJSONBlob: `{"any":["{__name__=\"foo_any\", testLabel1=\"testValue1\"}","{__name__=\"bar_any\", testLabel2=\"testValue2\"}"],"api":["{__name__=\"bar_api\", testLabel2=\"testValue2\"}","{__name__=\"foo_api\", testLabel1=\"testValue1\"}"],"rule":["{__name__=\"foo_rule\", testLabel1=\"testValue1\"}","{__name__=\"bar_rule\", testLabel2=\"testValue2\"}"]}`,
 			expect: LabelMatchers{
 				raw: map[Source][]string{
 					API:  {`{__name__="bar_api", testLabel2="testValue2"}`, `{__name__="foo_api", testLabel1="testValue1"}`},
@@ -65,155 +69,51 @@ rule:
 					ANY:  {`{__name__="foo_any", testLabel1="testValue1"}`, `{__name__="bar_any", testLabel2="testValue2"}`},
 				},
 				bySource: map[Source]MatcherSetsForSource{
-					API: {
-						{
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_api",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_api",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						},
-					},
-					RULE: {
-						{
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_rule",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_rule",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						},
-					},
-					ANY: {
-						{
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_any",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_api",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_api",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "foo_rule",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel1",
-								Value: "testValue1",
-							},
-						}, {
-							{
-								Type:  labels.MatchEqual,
-								Name:  "__name__",
-								Value: "bar_rule",
-							}, {
-								Type:  labels.MatchEqual,
-								Name:  "testLabel2",
-								Value: "testValue2",
-							},
-						},
-					},
+					API: {{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_any"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_any"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_api"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_api"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}},
+					RULE: {{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_any"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_any"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_rule"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_rule"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}},
+					ANY: {{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_any"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_any"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_api"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_api"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo_rule"},
+						{Type: labels.MatchEqual, Name: "testLabel1", Value: "testValue1"},
+					}, {
+						{Type: labels.MatchEqual, Name: "__name__", Value: "bar_rule"},
+						{Type: labels.MatchEqual, Name: "testLabel2", Value: "testValue2"},
+					}},
 				},
 				string: `any:{__name__="foo_any", testLabel1="testValue1"};any:{__name__="bar_any", testLabel2="testValue2"};api:{__name__="bar_api", testLabel2="testValue2"};api:{__name__="foo_api", testLabel1="testValue1"};rule:{__name__="foo_rule", testLabel1="testValue1"};rule:{__name__="bar_rule", testLabel2="testValue2"}`,
 			},
@@ -249,8 +149,33 @@ api:
 					t.Run("marshal yaml", func(t *testing.T) {
 						gotYaml, err := yaml.Marshal(&got)
 						require.NoError(t, err)
-
 						require.Equal(t, tc.inputYamlBlob, string(gotYaml))
+					})
+
+					t.Run("marshal yaml (non-pointer)", func(t *testing.T) {
+						gotYaml, err := yaml.Marshal(got)
+						require.NoError(t, err)
+						require.Equal(t, tc.inputYamlBlob, string(gotYaml))
+					})
+				}
+			})
+
+			t.Run("unmarshal json", func(t *testing.T) {
+				got := LabelMatchers{}
+				gotErr := json.Unmarshal([]byte(tc.inputJSONBlob), &got)
+				check(t, tc.expect, got, tc.expectErr, gotErr)
+
+				if !tc.expectErr {
+					t.Run("marshal json", func(t *testing.T) {
+						gotJSON, err := json.Marshal(&got)
+						require.NoError(t, err)
+						require.Equal(t, tc.inputJSONBlob, string(gotJSON))
+					})
+
+					t.Run("marshal json (non-pointer)", func(t *testing.T) {
+						gotJSON, err := json.Marshal(got)
+						require.NoError(t, err)
+						require.Equal(t, tc.inputJSONBlob, string(gotJSON))
 					})
 				}
 			})

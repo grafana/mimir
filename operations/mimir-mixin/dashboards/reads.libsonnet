@@ -78,12 +78,23 @@ local filename = 'mimir-reads.json';
         ),
       )
       .addPanel(
-        $.panel('Label queries / sec') +
-        $.statPanel($.queries.query_frontend.labelQueriesPerSecond, format='reqps') +
+        $.panel('Label names queries / sec') +
+        $.statPanel($.queries.query_frontend.labelNamesQueriesPerSecond, format='reqps') +
         $.panelDescription(
-          'Label queries per second',
+          '"Label names" queries per second',
           |||
-            Rate of label queries per second being made to
+            Rate of "label names" endpoint queries per second being made to
+            %(product)s via the <tt>/prometheus</tt> API.
+          ||| % $._config
+        ),
+      )
+      .addPanel(
+        $.panel('Label values queries / sec') +
+        $.statPanel($.queries.query_frontend.labelValuesQueriesPerSecond, format='reqps') +
+        $.panelDescription(
+          '"Label values" queries per second',
+          |||
+            Rate of specific "label values" endpoint queries per second being made to
             %(product)s via the <tt>/prometheus</tt> API.
           ||| % $._config
         ),
@@ -204,6 +215,44 @@ local filename = 'mimir-reads.json';
         )
       )
     )
+    .addRow(
+      $.row('Ingester')
+      .addPanel(
+        $.panel('Requests / sec') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
+        )
+      )
+    )
+    .addRow(
+      $.row('Store-gateway')
+      .addPanel(
+        $.panel('Requests / sec') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
+        )
+      )
+    )
+    .addRowIf(
+      $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+    )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
       $.row('Querier - autoscaling')
@@ -304,40 +353,6 @@ local filename = 'mimir-reads.json';
             metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
           |||
         ),
-      )
-    )
-    .addRow(
-      $.row('Ingester')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        )
-      )
-    )
-    .addRow(
-      $.row('Store-gateway')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
-        )
       )
     )
     .addRow(

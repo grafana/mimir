@@ -245,7 +245,7 @@ else
 	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
 endif
 
-lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
+lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir/preremove.sh
 	shellcheck $?
 
 lint: ## Run lints to check for style issues.
@@ -600,63 +600,11 @@ integration-tests: cmd/mimir/$(UPTODATE)
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
 
-# Generate packages for a Mimir release.
-FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "AGPL 3.0" \
-	--url "https://grafana.com/oss/mimir/" \
-	--description "Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus." \
-	--maintainer "contact@grafana.com" \
-	--vendor "Grafana Labs"
+# Those vars are needed for packages target
+export VERSION
 
-PACKAGE_IN_CONTAINER := true
-PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
-ifeq ($(PACKAGE_IN_CONTAINER), true)
-
-.PHONY: packages
-packages: dist packaging/fpm/$(UPTODATE)
-	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
-		-i $(PACKAGE_IMAGE) $@;
-
-else
-
-packages: dist/$(UPTODATE)-packages
-
-dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
-	for arch in amd64 arm64; do \
-		rpm_arch=x86_64; \
-		deb_arch=x86_64; \
-		if [ "$$arch" = "arm64" ]; then \
-			rpm_arch=aarch64; \
-			deb_arch=arm64; \
-		fi; \
-		$(FPM_OPTS) -t deb \
-			--architecture $$deb_arch \
-			--after-install packaging/deb/control/postinst \
-			--before-remove packaging/deb/control/prerm \
-			--package dist/mimir-$(VERSION)_$$arch.deb \
-			--deb-default packaging/deb/default/mimir \
-			--deb-systemd packaging/deb/systemd/mimir.service \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
-		$(FPM_OPTS) -t rpm  \
-			--architecture $$rpm_arch \
-			--rpm-os linux \
-			--after-install packaging/rpm/control/post \
-			--before-remove packaging/rpm/control/preun \
-			--package dist/mimir-$(VERSION)_$$arch.rpm \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml \
-			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
-			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-	done
-	for pkg in dist/*.deb dist/*.rpm; do \
-		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-	done; \
-	touch $@
-
-endif
+packages: dist
+	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
 packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile

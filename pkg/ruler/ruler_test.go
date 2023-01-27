@@ -68,11 +68,11 @@ func defaultRulerConfig(t testing.TB) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.RulePath = rulesDir
-	cfg.Ring.KVStore.Mock = consul
+	cfg.Ring.Common.KVStore.Mock = consul
 	cfg.Ring.NumTokens = 1
-	cfg.Ring.ListenPort = 0
-	cfg.Ring.InstanceAddr = "localhost"
-	cfg.Ring.InstanceID = "localhost"
+	cfg.Ring.Common.ListenPort = 0
+	cfg.Ring.Common.InstanceAddr = "localhost"
+	cfg.Ring.Common.InstanceID = "localhost"
 	cfg.EnableQueryStats = false
 
 	return cfg
@@ -384,10 +384,12 @@ func TestGetRules(t *testing.T) {
 				cfg := defaultRulerConfig(t)
 
 				cfg.Ring = RingConfig{
-					InstanceID:   id,
-					InstanceAddr: id,
-					KVStore: kv.Config{
-						Mock: kvStore,
+					Common: util.CommonRingConfig{
+						InstanceID:   id,
+						InstanceAddr: id,
+						KVStore: kv.Config{
+							Mock: kvStore,
+						},
 					},
 				}
 
@@ -822,13 +824,15 @@ func TestSharding(t *testing.T) {
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
 					Ring: RingConfig{
-						InstanceID:   id,
-						InstanceAddr: host,
-						InstancePort: port,
-						KVStore: kv.Config{
-							Mock: kvStore,
+						Common: util.CommonRingConfig{
+							InstanceID:   id,
+							InstanceAddr: host,
+							InstancePort: port,
+							KVStore: kv.Config{
+								Mock: kvStore,
+							},
+							HeartbeatTimeout: 1 * time.Minute,
 						},
-						HeartbeatTimeout: 1 * time.Minute,
 					},
 					EnabledTenants:  tc.enabledUsers,
 					DisabledTenants: tc.disabledUsers,

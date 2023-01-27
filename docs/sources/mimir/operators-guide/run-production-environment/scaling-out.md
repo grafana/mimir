@@ -20,6 +20,16 @@ However, be careful when scaling down some of the stateful components as these a
 When running Grafana Mimir in monolithic mode, you can safely scale up to any number of instances.
 To scale down the Grafana Mimir cluster, see [Scaling down ingesters](#scaling-down-ingesters).
 
+## Read-write mode
+
+When running Grafana Mimir in read-write mode, you can safely scale up any of the three components:
+
+- You can safely scale the Mimir read component up or down because it is stateless. You could also use an autoscaler.
+
+- You can safely scale the Mimir backend component down within one zone at a time. Because it contains the store-gateway, for more information see [Scaling down store-gateways](#scaling-down-store-gateways).
+
+- To scale down the Mimir write component, see [Scaling down ingesters](#scaling-down-ingesters).
+
 ## Microservices mode
 
 When running Grafana Mimir in microservices mode, you can safely scale up any component.
