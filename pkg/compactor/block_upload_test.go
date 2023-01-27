@@ -1063,6 +1063,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
 	validationPath := path.Join(tenantID, blockID, validationFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
+	injectedError := fmt.Errorf("injected error")
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID: ulid.MustParse(blockID),
@@ -1088,12 +1089,14 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		name                   string
 		tenantID               string
 		blockID                string
+		setUpBucket            func(*testing.T, objstore.Bucket)
+		errorInjector          func(op bucket.Operation, name string) error
 		disableBlockUpload     bool
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
 		expInternalServerError bool
-		setUpBucketMock        func(bkt *bucket.ClientMock)
+		expBlockState          string
 	}{
 		{
 			name:          "without tenant ID",
@@ -1122,94 +1125,115 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			name:     "complete block already exists",
 			tenantID: tenantID,
 			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, true, nil)
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, metaPath, validMeta)
+				require.NoError(t, err)
 			},
 			expConflict: "block already exists",
 		},
 		{
-			name:     "checking for complete block fails",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, fmt.Errorf("test"))
-			},
+			name:                   "checking for complete block fails",
+			tenantID:               tenantID,
+			blockID:                blockID,
+			errorInjector:          bucket.InjectErrorOn(bucket.OpExists, metaPath, injectedError),
 			expInternalServerError: true,
 		},
 		{
-			name:     "missing in-flight meta file",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, uploadingMetaPath, nil, bucket.ErrObjectDoesNotExist)
-			},
+			name:        "missing in-flight meta file",
+			tenantID:    tenantID,
+			blockID:     blockID,
 			expNotFound: "block upload not started",
 		},
 		{
 			name:     "downloading in-flight meta file fails",
 			tenantID: tenantID,
 			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, uploadingMetaPath, nil, fmt.Errorf("test"))
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
+				require.NoError(t, err)
 			},
+			errorInjector:          bucket.InjectErrorOn(bucket.OpGet, uploadingMetaPath, injectedError),
 			expInternalServerError: true,
 		},
 		{
 			name:     "corrupt in-flight meta file",
 			tenantID: tenantID,
 			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, uploadingMetaPath, []byte("{"), nil)
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := bkt.Upload(context.Background(), uploadingMetaPath, bytes.NewReader([]byte("{")))
+				require.NoError(t, err)
 			},
 			expInternalServerError: true,
+		},
+		{
+			name:     "uploading meta file fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
+				require.NoError(t, err)
+			},
+			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
+		},
+		{
+			name:     "removing in-flight meta file fails",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
+				require.NoError(t, err)
+			},
+			errorInjector: bucket.InjectErrorOn(bucket.OpDelete, metaPath, injectedError),
+		},
+		{
+			name:     "valid request",
+			tenantID: tenantID,
+			blockID:  blockID,
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
+				require.NoError(t, err)
+			},
 		},
 		{
 			name:     "uploading validation file fails",
 			tenantID: tenantID,
 			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				metaJSON, err := json.Marshal(validMeta)
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
 				require.NoError(t, err)
-				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
-				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
-
-				bkt.MockUpload(validationPath, fmt.Errorf("fail"))
 			},
+			errorInjector:          bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
 			expInternalServerError: true,
 		},
 		{
 			name:     "valid request",
 			tenantID: tenantID,
 			blockID:  blockID,
-			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				metaJSON, err := json.Marshal(validMeta)
+			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
+				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
 				require.NoError(t, err)
-				bkt.MockExists(metaPath, false, nil)
-				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
-				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
-
-				bkt.MockUpload(validationPath, nil)
 			},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var bkt bucket.ClientMock
-			if tc.setUpBucketMock != nil {
-				tc.setUpBucketMock(&bkt)
+			bkt := objstore.NewInMemBucket()
+			injectedBkt := bucket.ErrorInjectedBucketClient{
+				Bucket:   bkt,
+				Injector: tc.errorInjector,
 			}
+			if tc.setUpBucket != nil {
+				tc.setUpBucket(t, bkt)
+			}
+
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
-				bucketClient: &bkt,
+				bucketClient: &injectedBkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.disableCompleteBlockUpload = true
+
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
@@ -1240,9 +1264,8 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
-			}
 
-			bkt.AssertExpectations(t)
+			}
 		})
 	}
 }
