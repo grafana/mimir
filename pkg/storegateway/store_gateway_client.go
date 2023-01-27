@@ -13,12 +13,13 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
 func NewStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
@@ -35,7 +36,7 @@ func NewStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	}
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*StoreGatewayClientImpl, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*ClientImpl, error) {
 	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
@@ -46,28 +47,28 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDur
 		return nil, errors.Wrapf(err, "failed to dial store-gateway %s", addr)
 	}
 
-	return &StoreGatewayClientImpl{
+	return &ClientImpl{
 		StoreGatewayClient: storegatewaypb.NewStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
 	}, nil
 }
 
-type StoreGatewayClientImpl struct {
+type ClientImpl struct {
 	storegatewaypb.StoreGatewayClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }
 
-func (c *StoreGatewayClientImpl) Close() error {
+func (c *ClientImpl) Close() error {
 	return c.conn.Close()
 }
 
-func (c *StoreGatewayClientImpl) String() string {
+func (c *ClientImpl) String() string {
 	return c.RemoteAddress()
 }
 
-func (c *StoreGatewayClientImpl) RemoteAddress() string {
+func (c *ClientImpl) RemoteAddress() string {
 	return c.conn.Target()
 }
 

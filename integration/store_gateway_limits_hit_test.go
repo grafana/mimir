@@ -16,9 +16,6 @@ import (
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
-	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,6 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 	grpc_metadata "google.golang.org/grpc/metadata"
+
+	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 const (
@@ -34,7 +35,7 @@ const (
 	distributorTag   = "distributor"
 	storeGatewayTag  = "store-gateway"
 	querierTag       = "querier"
-	orgId            = "test"
+	orgID            = "test"
 	series1          = "series_1"
 	series2          = "series_2"
 	series3          = "series_3"
@@ -70,7 +71,7 @@ func TestStoreGateway_StoreGatewayLimitHit(t *testing.T) {
 			{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_.+"},
 		},
 	}
-	stream, err := storeGatewayClient.(*storegateway.StoreGatewayClientImpl).Series(ctx, req)
+	stream, err := storeGatewayClient.(*storegateway.ClientImpl).Series(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, stream)
 
@@ -94,7 +95,7 @@ func TestStoreGateway_QuerierLimitHit(t *testing.T) {
 	waitUntilShippedToStorage(t, mimirServices, 1)
 
 	// Verify we can successfully read the data we have just pushed
-	rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps12[series2].Add(1*time.Hour), time.Second)
+	rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps12[series2].Add(1*time.Hour), time.Second)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode)
 
@@ -106,17 +107,17 @@ func TestStoreGateway_QuerierLimitHit(t *testing.T) {
 	waitUntilShippedToStorage(t, mimirServices, 2)
 
 	// Verify we cannot read the data we just pushed because the limit is hit, and the status code 422 is returned
-	rangeResultResponse, rangeResultBody, err = client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps34[series4].Add(1*time.Hour), time.Second)
+	rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps34[series4].Add(1*time.Hour), time.Second)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode)
 	require.JSONEq(t, `{"status":"error","errorType":"execution","error":"expanding series: the query exceeded the maximum number of series (limit: 3 series) (err-mimir-max-series-per-query). To adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."}`, string(rangeResultBody))
 }
 
 func prepareGRPCContext() context.Context {
-	ctx := user.InjectOrgID(context.Background(), orgId)
+	ctx := user.InjectOrgID(context.Background(), orgID)
 	// We have to store userID in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, orgId)
+	return grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, orgID)
 }
 
 func createTimeSeries(t *testing.T, tags []string) (map[string]time.Time, map[string][]prompb.TimeSeries) {
@@ -193,7 +194,7 @@ func createClient(t *testing.T, otherFlags map[string]string) (*e2e.Scenario, ma
 
 	require.NoError(t, scenario.StartAndWaitReady(querier))
 
-	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", orgId)
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", orgID)
 	require.NoError(t, err)
 
 	return scenario, mimirServices, client

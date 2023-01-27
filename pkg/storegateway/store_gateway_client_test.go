@@ -12,13 +12,14 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -52,7 +53,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		defer client.Close() //nolint:errcheck
 
 		ctx := user.InjectOrgID(context.Background(), "test")
-		stream, err := client.(*StoreGatewayClientImpl).Series(ctx, &storepb.SeriesRequest{})
+		stream, err := client.(*ClientImpl).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
 		// Read the entire response from the stream.
