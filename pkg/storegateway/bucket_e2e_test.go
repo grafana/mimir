@@ -212,7 +212,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		cfg.tempDir,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
-		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.Config{},
@@ -230,7 +230,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s.store = store
 
 	if cfg.manyParts {
-		s.store.partitioner = naivePartitioner{}
+		s.store.partitioners = blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

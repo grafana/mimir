@@ -64,8 +64,8 @@ type BucketStores struct {
 	// Chunks bytes pool shared across all tenants.
 	chunksPool pool.Bytes
 
-	// Partitioner shared across all tenants.
-	partitioner Partitioner
+	// partitioners shared across all tenants.
+	partitioners blockPartitioners
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
@@ -105,7 +105,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
-		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
+		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
@@ -471,7 +471,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		u.syncDirForUser(userID),
 		newChunksLimiterFactory(u.limits, userID),
 		NewSeriesLimiterFactory(0), // No series limiter.
-		u.partitioner,
+		u.partitioners,
 		u.cfg.BucketStore.BlockSyncConcurrency,
 		u.cfg.BucketStore.PostingOffsetsInMemSampling,
 		u.cfg.BucketStore.IndexHeader,

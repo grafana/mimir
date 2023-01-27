@@ -13,6 +13,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+type blockPartitioners struct {
+	Chunks, Series, Postings Partitioner
+}
+
+func newGapBasedPartitioners(maxGapBytes uint64, reg prometheus.Registerer) blockPartitioners {
+	return blockPartitioners{
+		Chunks:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "chunks"}, reg)),
+		Series:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "series"}, reg)),
+		Postings: newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "postings"}, reg)),
+	}
+}
+
 type gapBasedPartitioner struct {
 	maxGapBytes uint64
 
