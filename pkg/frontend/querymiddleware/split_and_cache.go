@@ -8,8 +8,6 @@ package querymiddleware
 
 import (
 	"context"
-	"encoding/hex"
-	"hash/fnv"
 	"sync"
 	"time"
 
@@ -614,13 +612,4 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
-}
-
-// cacheHashKey hashes key into something you can store in the results cache.
-func cacheHashKey(key string) string {
-	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(key)) // This'll never error.
-
-	// Hex because memcache errors for the bytes produced by the hash.
-	return hex.EncodeToString(hasher.Sum(nil))
 }

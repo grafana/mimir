@@ -60,7 +60,7 @@ func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
 	return &new
 }
 
-// WithQuery clones the current `PrometheusRangeQueryRequest` with new hints.
+// WithHints clones the current `PrometheusRangeQueryRequest` with new hints.
 func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
 	new := *q
 	new.Hints = hints

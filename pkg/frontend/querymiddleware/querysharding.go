@@ -270,6 +270,10 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
 
+	if estimate := hints.GetEstimatedCardinality(); estimate > 0 {
+		// TODO do something with this information
+	}
+
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.
 	if hints != nil && hints.TotalQueries > 0 && maxShardedQueries > 0 {

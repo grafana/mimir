@@ -100,4 +100,6 @@ message Options {
 message Hints {
   // Total number of queries that are expected to to be executed to serve the original request.
   int32 TotalQueries = 1;
+  // Estimated total number of series that a request might return.
+  uint64 EstimatedCardinality = 2;
 }

@@ -173,9 +173,9 @@ func newQueryTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
 	}
 
+	var c cache.Cache
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		var c cache.Cache
 
 		// Init the cache client.
 		if cfg.CacheResults {
@@ -221,6 +221,8 @@ func newQueryTripperware(
 	)
 
 	if cfg.ShardedQueries {
+		cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c)
+
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			engine,
@@ -229,11 +231,15 @@ func newQueryTripperware(
 		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
+			newInstrumentMiddleware("cardinality_estimation", metrics, log),
+			cardinalityEstimationMiddleware,
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
+			newInstrumentMiddleware("cardinality_estimation", metrics, log),
+			cardinalityEstimationMiddleware,
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
