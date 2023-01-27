@@ -317,7 +317,7 @@ func getBucketBoundaries(bucket histogram.Bucket[float64]) int32 {
 }
 
 // FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
-func FromFloatHistogramToSampleHistogramProto(h histogram.FloatHistogram) SampleHistogram {
+func FromFloatHistogramToSampleHistogramProto(h *histogram.FloatHistogram) *SampleHistogram {
 	buckets := make([]*HistogramBucket, 0)
 	it := h.AllBucketIterator()
 	for it.Next() {
@@ -332,7 +332,7 @@ func FromFloatHistogramToSampleHistogramProto(h histogram.FloatHistogram) Sample
 			Count:      bucket.Count,
 		})
 	}
-	return SampleHistogram{
+	return &SampleHistogram{
 		Count:   h.Count,
 		Sum:     h.Sum,
 		Buckets: buckets,
@@ -347,10 +347,10 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 		if h == nil {
 			continue
 		}
-		histogram := FromFloatHistogramToSampleHistogramProto(*h)
+		histogram := FromFloatHistogramToSampleHistogramProto(h)
 		samples = append(samples, SampleHistogramPair{
 			Timestamp: point.T,
-			Histogram: &histogram,
+			Histogram: histogram,
 		})
 	}
 	return samples
@@ -501,6 +501,24 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		TimestampMs: int64(t),
 		Value:       v,
 	}
+}
+
+func (vs *SampleHistogramPair) UnmarshalJSON(b []byte) error {
+	s := model.SampleHistogramPair{}
+	if err := stdjson.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	vs.Timestamp = int64(s.Timestamp)
+	vs.Histogram = FromPromCommonToMimirSampleHistogram(s.Histogram)
+	return nil
+}
+
+func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
+	s := model.SampleHistogramPair{
+		Timestamp: model.Time(vs.Timestamp),
+		Histogram: FromMimirSampleToPromCommonHistogram(vs.Histogram),
+	}
+	return stdjson.Marshal(s)
 }
 
 func init() {

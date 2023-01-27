@@ -463,16 +463,16 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 				})
 			case chunkenc.ValHistogram:
 				t, v := it.AtHistogram()
-				histogram := mimirpb.FromFloatHistogramToSampleHistogramProto(*v.ToFloat())
+				histogram := mimirpb.FromFloatHistogramToSampleHistogramProto(v.ToFloat())
 				stream.Histograms = append(stream.Histograms, mimirpb.SampleHistogramPair{
-					Histogram: &histogram,
+					Histogram: histogram,
 					Timestamp: t,
 				})
 			case chunkenc.ValFloatHistogram:
 				t, v := it.AtFloatHistogram()
-				histogram := mimirpb.FromFloatHistogramToSampleHistogramProto(*v)
+				histogram := mimirpb.FromFloatHistogramToSampleHistogramProto(v)
 				stream.Histograms = append(stream.Histograms, mimirpb.SampleHistogramPair{
-					Histogram: &histogram,
+					Histogram: histogram,
 					Timestamp: t,
 				})
 			default:
