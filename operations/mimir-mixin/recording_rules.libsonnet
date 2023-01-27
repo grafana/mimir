@@ -349,4 +349,129 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     ],
   },
+
+  lokiRecordingRules+:: if !$._config.experimental_query_loki_recording_rules_enabled then {} else {
+    local matcher =
+      '%s, job=~".*/%s"' % [$._config.loki_recording_rules_matcher, $._config.job_names.query_frontend],
+
+    local histogramLokiRules(prefix, query, quantiles, rate) = [
+      {
+        local vars = {
+          quantile: quantile,
+          rate: rate,
+          prefix: prefix,
+          matcher: matcher,
+        },
+        record: '%(prefix)s_p%(quantile)s:rate%(rate)s' % vars,
+        expr: query % vars,
+      }
+      for quantile in quantiles
+    ],
+
+    groups+:
+      [
+        {
+          local rate = '5m',
+          local quantiles = [99, 90, 50],
+
+          name: 'mimir_query_stats_metrics',
+          interval: '1m',
+          rules: [
+                   {
+                     record: 'mimir_user:queries:rate%s' % rate,
+                     expr: |||
+                       sum(
+                         rate(
+                           {%(matcher)s}
+                             |= "msg=\"query stats\""
+                             | logfmt
+                             | __error__=""[%(rate)s]
+                         )
+                       ) by (cluster, namespace, user, status)
+                     ||| % { matcher: matcher, rate: rate },
+                   },
+                   // Measuring wall time as a rate is useful to estimate how much querier
+                   // capacity is being consumed by a particular tenant.
+                   {
+                     record: 'mimir_user:query_wall_time_seconds:rate%s' % rate,
+                     expr: |||
+                       sum(
+                         rate(
+                           {%(matcher)s}
+                             |= "msg=\"query stats\""
+                             | logfmt
+                             | unwrap query_wall_time_seconds
+                             | __error__=""[%(rate)s]
+                         )
+                       ) by (cluster, namespace, user, status)
+                     ||| % { matcher: matcher, rate: rate },
+                   },
+                   {
+                     record: 'mimir_user:query_fetched_chunk_bytes:rate%s' % rate,
+                     expr: |||
+                       sum(
+                         rate(
+                           {%(matcher)s}
+                             |= "msg=\"query stats\""
+                             | logfmt
+                             | unwrap fetched_chunk_bytes
+                             | __error__=""[%(rate)s]
+                         )
+                       ) by (cluster, namespace, user, status)
+                     ||| % { matcher: matcher, rate: rate },
+                   },
+                   {
+                     record: 'mimir_user:query_fetched_index_bytes:rate%s' % rate,
+                     expr: |||
+                       sum(
+                         rate(
+                           {%(matcher)s}
+                             |= "msg=\"query stats\""
+                             | logfmt
+                             | unwrap fetched_index_bytes
+                             | __error__=""[%(rate)s]
+                         )
+                       ) by (cluster, namespace, user, status)
+                     ||| % { matcher: matcher, rate: rate },
+                   },
+                 ]
+                 + histogramLokiRules('mimir_user:query_response_time_seconds', |||
+                   quantile_over_time(0.%(quantile)s,
+                     {%(matcher)s}
+                       |= "msg=\"query stats\""
+                       | logfmt
+                       | unwrap duration(response_time)
+                       | __error__=""[%(rate)s]
+                   ) by (cluster, namespace, user)
+                 |||, quantiles, rate)
+                 + histogramLokiRules('mimir_user:query_wall_time_seconds', |||
+                   quantile_over_time(0.%(quantile)s,
+                     {%(matcher)s}
+                       |= "msg=\"query stats\""
+                       | logfmt
+                       | unwrap query_wall_time_seconds
+                       | __error__=""[%(rate)s]
+                   ) by (cluster, namespace, user)
+                 |||, quantiles, rate)
+                 + histogramLokiRules('mimir_user:query_fetched_chunk_bytes', |||
+                   quantile_over_time(0.%(quantile)s,
+                     {%(matcher)s}
+                       |= "msg=\"query stats\""
+                       | logfmt
+                       | unwrap fetched_chunk_bytes
+                       | __error__=""[%(rate)s]
+                   ) by (cluster, namespace, user)
+                 |||, quantiles, rate)
+                 + histogramLokiRules('mimir_user:query_fetched_index_bytes', |||
+                   quantile_over_time(0.%(quantile)s,
+                     {%(matcher)s}
+                       |= "msg=\"query stats\""
+                       | logfmt
+                       | unwrap fetched_index_bytes
+                       | __error__=""[%(rate)s]
+                   ) by (cluster, namespace, user)
+                 |||, quantiles, rate),
+        },
+      ],
+  },
 }

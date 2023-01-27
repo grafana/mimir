@@ -28,5 +28,9 @@
        (import 'dashboards/writes-networking.libsonnet') +
        (import 'dashboards/alertmanager-resources.libsonnet')) +
 
+    (if !$._config.experimental_query_loki_recording_rules_enabled then {} else
+       (import 'dashboards/tenants-queries.libsonnet') +
+       (import 'dashboards/top-tenants-queries.libsonnet')) +
+
     { _config:: $._config + $._group_config },
 }
