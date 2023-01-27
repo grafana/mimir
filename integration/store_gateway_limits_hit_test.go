@@ -160,10 +160,11 @@ func createClient(t *testing.T, otherFlags map[string]string) (*e2e.Scenario, ma
 			"-ingester.ring.replication-factor": "1",
 
 			// Frequently compact and ship blocks to storage so we can query them through the store gateway.
-			"-blocks-storage.tsdb.block-ranges-period":          "2s",
-			"-blocks-storage.tsdb.ship-interval":                "1s",
-			"-blocks-storage.tsdb.retention-period":             "3s",
+			"-blocks-storage.bucket-store.sync-interval":        "1s",
+			"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
 			"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
+			"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod - 1) * 2).String(),
+			"-blocks-storage.tsdb.ship-interval":                "1s",
 		},
 		otherFlags,
 	)
