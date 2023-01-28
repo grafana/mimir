@@ -2168,14 +2168,14 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
-	// If no fallback config is set, it should return a valid empty config.
+	// If no fallback configration is set, it returns a valid empty configuration.
 	fallbackConfig, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
 	_, err = amconfig.Load(string(fallbackConfig))
 	require.NoError(t, err)
 
-	// If a fallback config file is set, it should return it's content.
+	// If a fallback configuration file is set, it returns its content.
 	configDir := t.TempDir()
 	configFile := filepath.Join(configDir, "test.yaml")
 	err = os.WriteFile(configFile, []byte(simpleConfigOne), 0664)
