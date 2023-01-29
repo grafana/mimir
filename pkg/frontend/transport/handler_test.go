@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -172,8 +173,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
+				require.Len(t, msg, 16+len(tt.expectedParams))
+				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
+				require.Equal(t, "success", msg["status"])
+				require.Equal(t, "12345", msg["user"])
 				require.Equal(t, req.Method, msg["method"])
 				require.Equal(t, req.URL.Path, msg["path"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
