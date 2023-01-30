@@ -4,6 +4,7 @@ package forwarding
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/compress"
 	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -103,16 +103,26 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
 	}
 
-	f.kafkaWriter = kafka.NewWriter(kafka.WriterConfig{
-		Brokers:          cfg.kafkaBrokers,
-		Topic:            cfg.KafkaTopic,
-		CompressionCodec: &compress.SnappyCodec,
-		Balancer:         kafka.Murmur2Balancer{},
-	})
+	f.kafkaWriter = &kafka.Writer{
+		Addr:        kafka.TCP(cfg.kafkaBrokers...),
+		Topic:       cfg.KafkaTopic,
+		Compression: kafka.Snappy,
+		Balancer:    cfg.kafkaBalancer,
+		Logger:      logger{level.Info(log)},
+		ErrorLogger: logger{level.Error(log)},
+	}
 
 	f.Service = services.NewIdleService(f.start, f.stop)
 
 	return f
+}
+
+type logger struct {
+	log.Logger
+}
+
+func (l logger) Printf(msg string, args ...interface{}) {
+	l.Log("msg", fmt.Sprintf(msg, args...))
 }
 
 func (f *forwarder) DeleteMetricsForUser(user string) {
