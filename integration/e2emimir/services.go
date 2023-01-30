@@ -63,7 +63,6 @@ func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]stri
 		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
 		o.HTTPPort,
 		o.GRPCPort,
-		o.ExposeGRPCPort,
 		o.OtherPorts...,
 	)
 }
@@ -281,7 +280,6 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		e2e.NewTCPReadinessProbe(o.HTTPPort),
 		o.HTTPPort,
 		o.GRPCPort,
-		o.ExposeGRPCPort,
 		o.OtherPorts...,
 	)
 }
@@ -315,12 +313,11 @@ func NewOverridesExporter(name string, consulAddress string, flags map[string]st
 
 // Options holds a set of options for running services, they can be altered passing Option funcs.
 type Options struct {
-	Image          string
-	MapFlags       FlagMapper
-	OtherPorts     []int
-	HTTPPort       int
-	GRPCPort       int
-	ExposeGRPCPort bool
+	Image      string
+	MapFlags   FlagMapper
+	OtherPorts []int
+	HTTPPort   int
+	GRPCPort   int
 }
 
 // Option modifies options.
@@ -383,13 +380,6 @@ func WithConfigFile(configFile string) Option {
 
 // WithNoopOption returns an option that doesn't change anything.
 func WithNoopOption() Option { return func(options *Options) {} }
-
-// WithGRPCPortExposed returns an option that exposes the GRPC port.
-func WithGRPCPortExposed() Option {
-	return func(options *Options) {
-		options.ExposeGRPCPort = true
-	}
-}
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string

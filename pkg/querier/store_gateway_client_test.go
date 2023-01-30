@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package querier
 
 import (
 	"context"
@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -45,7 +44,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := NewStoreGatewayClientFactory(cfg, reg)
+	factory := newStoreGatewayClientFactory(cfg, reg)
 
 	for i := 0; i < 2; i++ {
 		client, err := factory(listener.Addr().String())
@@ -53,7 +52,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		defer client.Close() //nolint:errcheck
 
 		ctx := user.InjectOrgID(context.Background(), "test")
-		stream, err := client.(*ClientImpl).Series(ctx, &storepb.SeriesRequest{})
+		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
 		// Read the entire response from the stream.

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package querier
 
 import (
 	"flag"
@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
-func NewStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "cortex",
 		Name:        "storegateway_client_request_duration_seconds",
@@ -36,7 +36,7 @@ func NewStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	}
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*ClientImpl, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
 	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
@@ -47,32 +47,32 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDur
 		return nil, errors.Wrapf(err, "failed to dial store-gateway %s", addr)
 	}
 
-	return &ClientImpl{
+	return &storeGatewayClient{
 		StoreGatewayClient: storegatewaypb.NewStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
 	}, nil
 }
 
-type ClientImpl struct {
+type storeGatewayClient struct {
 	storegatewaypb.StoreGatewayClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }
 
-func (c *ClientImpl) Close() error {
+func (c *storeGatewayClient) Close() error {
 	return c.conn.Close()
 }
 
-func (c *ClientImpl) String() string {
+func (c *storeGatewayClient) String() string {
 	return c.RemoteAddress()
 }
 
-func (c *ClientImpl) RemoteAddress() string {
+func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-func NewStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	// We prefer sane defaults instead of exposing further config options.
 	clientCfg := grpcclient.Config{
 		MaxRecvMsgSize:      100 << 20,
@@ -97,7 +97,7 @@ func NewStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, NewStoreGatewayClientFactory(clientCfg, reg), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg), clientsCount, logger)
 }
 
 type ClientConfig struct {

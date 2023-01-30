@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
-	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -47,7 +46,7 @@ type Config struct {
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
 
-	StoreGatewayClient storegateway.ClientConfig `yaml:"store_gateway_client"`
+	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 

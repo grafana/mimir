@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -718,7 +720,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 			stream, err := c.Series(gCtx, req)
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				if shouldStopQueryFunc(err) {
 					return err
 				}
 
@@ -743,7 +745,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					break
 				}
 				if err != nil {
-					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					if shouldStopQueryFunc(err) {
 						return err
 					}
 
@@ -835,6 +837,20 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	}
 
 	return seriesSets, queriedBlocks, warnings, int(numChunks.Load()), nil
+}
+
+func shouldStopQueryFunc(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	if st, ok := status.FromError(errors.Cause(err)); ok {
+		if int(st.Code()) == http.StatusUnprocessableEntity {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
