@@ -228,6 +228,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
+		"user_agent", r.UserAgent(),
 		"response_time", queryResponseTime,
 		"query_wall_time_seconds", wallTime.Seconds(),
 		"fetched_series_count", numSeries,
