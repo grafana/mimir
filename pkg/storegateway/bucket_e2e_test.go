@@ -827,6 +827,43 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 	})
 }
 
+func TestBucketStore_ValueTypes_e2e(t *testing.T) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		s := newSuite()
+
+		mint, maxt := s.store.TimeRange()
+		assert.Equal(t, s.minTime, mint)
+		assert.Equal(t, s.maxTime, maxt)
+
+		req := &storepb.SeriesRequest{
+			MinTime: mint,
+			MaxTime: maxt,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+			},
+			SkipChunks: false,
+		}
+		srv := newBucketStoreSeriesServer(ctx)
+
+		assert.NoError(t, s.store.Series(req, srv))
+
+		counts := map[storepb.Chunk_Encoding]int{}
+		for _, series := range srv.SeriesSet {
+			for _, chunk := range series.Chunks {
+				counts[chunk.Raw.Type]++
+			}
+		}
+		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
+			count, ok := counts[storepb.Chunk_Encoding(chunkType)]
+			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
+			assert.NotEmpty(t, count)
+		}
+	})
+}
+
 func emptyToNil(values []string) []string {
 	if len(values) == 0 {
 		return nil

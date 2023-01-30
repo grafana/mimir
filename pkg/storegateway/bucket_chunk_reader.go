@@ -202,12 +202,21 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 }
 
 func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
-	if in.Encoding() == chunkenc.EncXOR {
-		b := saveChunk(in.Bytes(), chunksPool)
-		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		return nil
+	var enc storepb.Chunk_Encoding
+	switch in.Encoding() {
+	case chunkenc.EncXOR:
+		enc = storepb.Chunk_XOR
+	case chunkenc.EncHistogram:
+		enc = storepb.Chunk_Histogram
+	case chunkenc.EncFloatHistogram:
+		enc = storepb.Chunk_FloatHistogram
+	default:
+		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}
-	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
+
+	b := saveChunk(in.Bytes(), chunksPool)
+	out.Raw = &storepb.Chunk{Type: enc, Data: b}
+	return nil
 }
 
 // saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.

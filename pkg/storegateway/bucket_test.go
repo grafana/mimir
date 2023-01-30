@@ -1846,11 +1846,41 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 }
 
 func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.Append(0, lset, ts, float64(ts))
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncXOR)
+}
+
+func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
+	histograms := tsdb.GenerateTestHistograms(10000)
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.AppendHistogram(0, lset, ts, histograms[ts], nil)
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncHistogram)
+}
+
+func TestBucketStore_Series_BlockWithMultipleFloatHistogramChunks(t *testing.T) {
+	histograms := tsdb.GenerateTestFloatHistograms(10000)
+	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
+		_, err := app.AppendHistogram(0, lset, ts, nil, histograms[ts])
+		return err
+	}
+	testBucketStoreSeriesBlockWithMultipleChunks(t, appendF, chunkenc.EncFloatHistogram)
+}
+
+func testBucketStoreSeriesBlockWithMultipleChunks(
+	t *testing.T,
+	appendF func(storage.Appender, labels.Labels, int64) error,
+	encoding chunkenc.Encoding) {
 	tmpDir := t.TempDir()
 
 	// Create a block with 1 series but an high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
@@ -1863,7 +1893,7 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 		// Appending a single sample is very unoptimised, but guarantees each chunk is always MaxSamplesPerChunk
 		// (except the last one, which could be smaller).
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, series, ts, float64(ts))
+		err := appendF(app, series, ts)
 		assert.NoError(t, err)
 		assert.NoError(t, app.Commit())
 	}
@@ -1961,7 +1991,7 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 			// Count the number of samples in the returned chunks.
 			numSamples := 0
 			for _, rawChunk := range srv.SeriesSet[0].Chunks {
-				decodedChunk, err := chunkenc.FromData(chunkenc.EncXOR, rawChunk.Raw.Data)
+				decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
 				assert.NoError(t, err)
 
 				numSamples += decodedChunk.NumSamples()
@@ -1992,12 +2022,14 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
+		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
+		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
@@ -2020,24 +2052,24 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 		expectedSeries int
 	}{
 		"should fail if the number of unique series queried is greater than the configured series limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			seriesLimit: 1,
 			expectedErr: errSeriesLimitMessage,
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
-			seriesLimit:    2,
-			expectedSeries: 2,
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			seriesLimit:    3,
+			expectedSeries: 3,
 		},
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			chunksLimit: 3,
 			expectedErr: errChunksLimitMessage,
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
-			chunksLimit:    4,
-			expectedSeries: 2,
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			chunksLimit:    6,
+			expectedSeries: 3,
 		},
 	}
 

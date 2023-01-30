@@ -25,6 +25,8 @@ option (gogoproto.goproto_sizecache_all) = false;
 message Chunk {
   enum Encoding {
     Chunk_XOR = 0;
+    Chunk_Histogram = 1;
+    Chunk_FloatHistogram = 2;
   }
   Encoding type  = 1;
   bytes data     = 2;
