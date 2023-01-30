@@ -30,6 +30,8 @@ We recommend that you use memberlist to run Grafana Mimir.
 
 To configure memberlist, refer to [configuring hash rings]({{< relref "../configure/configure-hash-rings.md" >}}).
 
+> **Note:** The Gossip-based memberlist protocol is not supported for the [optional distributor high-availability tracker]({{< relref "../configure/configure-high-availability-deduplication.md" >}}).
+
 ### Consul
 
 Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
