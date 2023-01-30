@@ -116,7 +116,7 @@ type BucketStore struct {
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
 	// or LabelName and LabelValues calls when used with matchers.
 	seriesLimiterFactory SeriesLimiterFactory
-	partitioner          Partitioner
+	partitioners         blockPartitioners
 
 	// Every how many posting offset entry we pool in heap memory. Default in Prometheus is 32.
 	postingOffsetsInMemSampling int
@@ -214,7 +214,7 @@ func NewBucketStore(
 	dir string,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
-	partitioner Partitioner,
+	partitioners blockPartitioners,
 	blockSyncConcurrency int,
 	postingOffsetsInMemSampling int,
 	indexHeaderCfg indexheader.Config,
@@ -237,7 +237,7 @@ func NewBucketStore(
 		queryGate:                   gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
-		partitioner:                 partitioner,
+		partitioners:                partitioners,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 		indexHeaderCfg:              indexHeaderCfg,
 		seriesHashCache:             seriesHashCache,
@@ -422,7 +422,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.indexCache,
 		s.chunkPool,
 		indexHeaderReader,
-		s.partitioner,
+		s.partitioners,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -1638,7 +1638,7 @@ type bucketBlock struct {
 
 	pendingReaders sync.WaitGroup
 
-	partitioner Partitioner
+	partitioners blockPartitioners
 
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
@@ -1658,7 +1658,7 @@ func newBucketBlock(
 	indexCache indexcache.IndexCache,
 	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
-	p Partitioner,
+	p blockPartitioners,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
 		userID:            userID,
@@ -1668,7 +1668,7 @@ func newBucketBlock(
 		indexCache:        indexCache,
 		chunkPool:         chunkPool,
 		dir:               dir,
-		partitioner:       p,
+		partitioners:      p,
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.

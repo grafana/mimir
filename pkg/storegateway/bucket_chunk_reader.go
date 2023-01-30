@@ -74,7 +74,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPoo
 		sort.Slice(pIdxs, func(i, j int) bool {
 			return pIdxs[i].offset < pIdxs[j].offset
 		})
-		parts := r.block.partitioner.Partition(len(pIdxs), func(i int) (start, end uint64) {
+		parts := r.block.partitioners.chunks.Partition(len(pIdxs), func(i int) (start, end uint64) {
 			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + mimir_tsdb.EstimatedMaxChunkSize
 		})
 
