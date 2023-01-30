@@ -159,6 +159,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-store-gateway.ignore-native-histograms-on-read":              "false",
 			})
 
 			// Start store-gateways.

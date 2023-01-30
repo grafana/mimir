@@ -736,31 +736,7 @@ func blockSeries(
 	}
 
 	if ignoreNativeHistograms {
-		seriesWriteIdx := 0
-		for _, series := range res {
-			chksWriteIdx := 0
-			for i := range series.chks {
-				ref := series.refs[i]
-				chk := series.chks[i]
-
-				if chk.Raw == nil {
-					continue
-				}
-
-				series.refs[chksWriteIdx] = ref
-				series.chks[chksWriteIdx] = chk
-				chksWriteIdx++
-			}
-			series.refs = series.refs[:chksWriteIdx]
-			series.chks = series.chks[:chksWriteIdx]
-
-			if len(series.chks) == 0 {
-				continue
-			}
-			res[seriesWriteIdx] = series
-			seriesWriteIdx++
-		}
-		res = res[:seriesWriteIdx]
+		res = filterNativeHistogramChunks(res)
 	}
 
 	reqStats.merge(&seriesCacheStats)

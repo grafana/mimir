@@ -345,6 +345,10 @@ func newLoadingSeriesChunksSetIterator(
 }
 
 func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
+	if c.err != nil {
+		return false
+	}
+
 	var next *seriesChunksSet
 	tryNext := true
 
@@ -366,10 +370,6 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 }
 
 func (c *loadingSeriesChunksSetIterator) getNext() (next *seriesChunksSet, tryNext bool, err error) {
-	if c.err != nil {
-		return nil, false, c.err
-	}
-
 	if !c.from.Next() {
 		return nil, false, c.from.Err()
 	}
@@ -430,26 +430,7 @@ func (c *loadingSeriesChunksSetIterator) getNext() (next *seriesChunksSet, tryNe
 	nextSet.chunksReleaser = chunksPool
 
 	if c.ignoreNativeHistograms {
-		seriesWriteIdx := 0
-		for _, series := range nextSet.series {
-			chksWriteIdx := 0
-			for _, chk := range series.chks {
-				if chk.Raw == nil {
-					continue
-				}
-				series.chks[chksWriteIdx] = chk
-				chksWriteIdx++
-			}
-			series.chks = series.chks[:chksWriteIdx]
-
-			if len(series.chks) == 0 {
-				continue
-			}
-			nextSet.series[seriesWriteIdx] = series
-			seriesWriteIdx++
-		}
-		nextSet.series = nextSet.series[:seriesWriteIdx]
-
+		nextSet.series = filterNativeHistogramChunks(nextSet.series)
 		if len(nextSet.series) == 0 {
 			nextSet.release()
 			return nil, true, nil
@@ -457,6 +438,39 @@ func (c *loadingSeriesChunksSetIterator) getNext() (next *seriesChunksSet, tryNe
 	}
 
 	return &nextSet, false, nil
+}
+
+func filterNativeHistogramChunks(seriesEntries []seriesEntry) []seriesEntry {
+	seriesWriteIdx := 0
+	for _, series := range seriesEntries {
+		chksWriteIdx := 0
+		for i, chk := range series.chks {
+			// The bucketChunkReader will skip populating native histogram chunks when ignoreNativeHistograms is true,
+			// leaving chk.Raw as nil.
+			if chk.Raw == nil {
+				continue
+			}
+
+			series.chks[chksWriteIdx] = chk
+			if series.refs != nil {
+				// Not all callers will have series.refs set, but when it is set we expect refs and chks to have a
+				// one-to-one relationship.
+				series.refs[chksWriteIdx] = series.refs[i]
+			}
+
+			chksWriteIdx++
+		}
+		series.chks = series.chks[:chksWriteIdx]
+
+		if len(series.chks) == 0 {
+			continue
+		}
+		seriesEntries[seriesWriteIdx] = series
+		seriesWriteIdx++
+	}
+	seriesEntries = seriesEntries[:seriesWriteIdx]
+
+	return seriesEntries
 }
 
 func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {

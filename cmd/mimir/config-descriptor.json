@@ -3102,7 +3102,7 @@
           "required": false,
           "desc": "To stop processing native histograms as soon as possible, set to true",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "store-gateway.ignore-native-histograms-on-read",
           "fieldType": "boolean",
           "fieldCategory": "experimental"

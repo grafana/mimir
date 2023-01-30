@@ -2825,6 +2825,7 @@ func TestBlockSeries_IgnoreNativeHistograms(t *testing.T) {
 		_, chks := ss.At()
 		for _, chk := range chks {
 			require.Equal(t, storepb.Chunk_XOR, chk.Raw.Type)
+			require.NotNil(t, chk.Raw)
 		}
 	}
 }

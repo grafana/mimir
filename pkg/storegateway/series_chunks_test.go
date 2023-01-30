@@ -508,27 +508,40 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 	}
 
 	// block3 contains native histogram chunks (denoted by the chk.Raw being nil)
-	se := generateSeriesEntriesWithChunks(t, 10, 50)
-	for i := range se {
-		for j := range se[i].chks {
+	se1 := generateSeriesEntriesWithChunks(t, 10, 50)
+	for i := range se1 {
+		for j := range se1[i].chks {
 			if j%2 == 0 {
-				se[i].chks[j].Raw = nil
+				se1[i].chks[j].Raw = nil
 			}
 		}
 	}
 	block3 := testBlock{
 		ulid:   ulid.MustNew(3, nil),
-		series: se,
+		series: se1,
+	}
+
+	// block4 contains only native histogram chunks
+	se2 := generateSeriesEntriesWithChunks(t, 10, 50)
+	for i := range se2 {
+		for j := range se2[i].chks {
+			se2[i].chks[j].Raw = nil
+		}
+	}
+	block4 := testBlock{
+		ulid:   ulid.MustNew(4, nil),
+		series: se2,
 	}
 
 	type loadRequest struct {
-		existingBlocks         []testBlock
-		setsToLoad             []seriesChunkRefsSet
-		ignoreNativeHistograms bool
-		expectedSets           []seriesChunksSet
-		minT, maxT             int64 // optional; if empty, select a wide time range
-		addLoadErr, loadErr    error
-		expectedErr            string
+		existingBlocks                   []testBlock
+		setsToLoad                       []seriesChunkRefsSet
+		ignoreNativeHistograms           bool
+		expectNoChunkBytesSlicePoolLoads bool
+		expectedSets                     []seriesChunksSet
+		minT, maxT                       int64 // optional; if empty, select a wide time range
+		addLoadErr, loadErr              error
+		expectedErr                      string
 	}
 
 	testCases := map[string]loadRequest{
@@ -698,19 +711,19 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					series: func() []seriesEntry {
 						seriesEntries := make([]seriesEntry, 0, len(block3.series))
 
-						for i := range block3.series[0:2] {
-							refs := make([]chunks.ChunkRef, 0, len(block3.series[i].chks))
-							chks := make([]storepb.AggrChunk, 0, len(block3.series[i].chks))
+						for _, s := range block3.series[0:2] {
+							refs := make([]chunks.ChunkRef, 0, len(s.chks))
+							chks := make([]storepb.AggrChunk, 0, len(s.chks))
 
-							for j := range block3.series[i].chks {
-								if j%2 != 0 {
-									refs = append(refs, block3.series[i].refs[j])
-									chks = append(chks, block3.series[i].chks[j])
+							for j := range s.chks {
+								if s.chks[j].Raw != nil {
+									refs = append(refs, s.refs[j])
+									chks = append(chks, s.chks[j])
 								}
 							}
 
 							seriesEntries = append(seriesEntries, seriesEntry{
-								lset: block3.series[i].lset,
+								lset: s.lset,
 								refs: refs,
 								chks: chks,
 							})
@@ -720,6 +733,15 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					}(),
 				},
 			},
+		},
+		"loads single set from a single block with all ignored histogram chunks": {
+			existingBlocks: []testBlock{block4},
+			setsToLoad: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{block4.toSeriesChunkRefs(0), block4.toSeriesChunkRefs(1)}},
+			},
+			ignoreNativeHistograms:           true,
+			expectNoChunkBytesSlicePoolLoads: true,
+			expectedSets:                     []seriesChunksSet{},
 		},
 	}
 
@@ -750,6 +772,12 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				assert.ErrorContains(t, set.Err(), testCase.expectedErr)
 			} else {
 				assert.NoError(t, set.Err())
+
+				if testCase.expectNoChunkBytesSlicePoolLoads {
+					assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
+				} else {
+					assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
+				}
 			}
 			// Check that chunk bytes are what we expect
 			require.Len(t, loadedSets, len(testCase.expectedSets))
@@ -771,7 +799,11 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			if testCase.expectedErr != "" {
 				assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
 			} else {
-				assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
+				if testCase.expectNoChunkBytesSlicePoolLoads {
+					assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
+				} else {
+					assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
+				}
 			}
 			assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Balance.Load())
 			assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())

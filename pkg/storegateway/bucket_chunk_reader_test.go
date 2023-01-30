@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -18,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -33,28 +32,28 @@ func TestLoad_IgnoreNativeHistogramChunks(t *testing.T) {
 			name: "some chunks are histogram chunks",
 			chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(10, 10, nil, nil),
+					sample{10, 10, nil, nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(20, 20, nil, nil),
+					sample{20, 20, nil, nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(30, 30, nil, nil),
+					sample{30, 30, nil, nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(40, 0, tsdb.GenerateTestHistogram(1), nil),
+					sample{40, 0, tsdb.GenerateTestHistogram(1), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(50, 50, nil, nil),
+					sample{50, 50, nil, nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(60, 0, tsdb.GenerateTestHistogram(2), nil),
+					sample{60, 0, tsdb.GenerateTestHistogram(2), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(70, 0, tsdb.GenerateTestHistogram(3), nil),
+					sample{70, 0, tsdb.GenerateTestHistogram(3), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(80, 80, nil, nil),
+					sample{80, 80, nil, nil},
 				}),
 			},
 			expectedNumNilChunks: 3,
@@ -63,10 +62,10 @@ func TestLoad_IgnoreNativeHistogramChunks(t *testing.T) {
 			name: "all chunks are histogram chunks",
 			chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(10, 0, tsdb.GenerateTestHistogram(1), nil),
+					sample{10, 0, tsdb.GenerateTestHistogram(1), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					newSample(20, 0, tsdb.GenerateTestHistogram(2), nil),
+					sample{20, 0, tsdb.GenerateTestHistogram(2), nil},
 				}),
 			},
 			expectedNumNilChunks: 2,
@@ -130,13 +129,11 @@ func TestLoad_IgnoreNativeHistogramChunks(t *testing.T) {
 			for _, chk := range res[0].chks {
 				if chk.Raw == nil {
 					numNilChunks++
+					continue
 				}
+				require.Equal(t, storepb.Chunk_XOR, chk.Raw.Type)
 			}
 			require.Equal(t, tc.expectedNumNilChunks, numNilChunks)
 		})
 	}
-}
-
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
-	return sample{t, v, h, fh}
 }

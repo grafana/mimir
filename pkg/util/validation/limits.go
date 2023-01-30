@@ -252,7 +252,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
-	f.BoolVar(&l.IgnoreNativeHistogramsOnRead, "store-gateway.ignore-native-histograms-on-read", false, "To stop processing native histograms as soon as possible, set to true")
+	f.BoolVar(&l.IgnoreNativeHistogramsOnRead, "store-gateway.ignore-native-histograms-on-read", true, "To stop processing native histograms as soon as possible, set to true")
 
 	// Alertmanager.
 	f.Var(&l.AlertmanagerReceiversBlockCIDRNetworks, "alertmanager.receivers-firewall-block-cidr-networks", "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.")
