@@ -14,14 +14,14 @@ import (
 )
 
 type blockPartitioners struct {
-	Chunks, Series, Postings Partitioner
+	chunks, series, postings Partitioner
 }
 
 func newGapBasedPartitioners(maxGapBytes uint64, reg prometheus.Registerer) blockPartitioners {
 	return blockPartitioners{
-		Chunks:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "chunks"}, reg)),
-		Series:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "series"}, reg)),
-		Postings: newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "postings"}, reg)),
+		chunks:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "chunks"}, reg)),
+		series:   newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "series"}, reg)),
+		postings: newGapBasedPartitioner(maxGapBytes, prometheus.WrapRegistererWith(map[string]string{"data_type": "postings"}, reg)),
 	}
 }
 
