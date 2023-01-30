@@ -104,12 +104,15 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 	}
 
 	f.kafkaWriter = &kafka.Writer{
-		Addr:        kafka.TCP(cfg.kafkaBrokers...),
-		Topic:       cfg.KafkaTopic,
-		Compression: kafka.Snappy,
-		Balancer:    cfg.kafkaBalancer,
-		Logger:      logger{level.Info(log)},
-		ErrorLogger: logger{level.Error(log)},
+		Addr:         kafka.TCP(cfg.kafkaBrokers...),
+		Topic:        cfg.KafkaTopic,
+		Compression:  kafka.Snappy,
+		Balancer:     cfg.kafkaBalancer,
+		BatchBytes:   cfg.KafkaBatchBytes,
+		BatchSize:    cfg.KafkaBatchSize,
+		BatchTimeout: cfg.KafkaBatchTimeout,
+		Logger:       logger{level.Info(log)},
+		ErrorLogger:  logger{level.Error(log)},
 	}
 
 	f.Service = services.NewIdleService(f.start, f.stop)
