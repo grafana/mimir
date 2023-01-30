@@ -31,7 +31,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.PropagateErrors, "distributor.forwarding.propagate-errors", true, "If disabled then forwarding requests are always considered to be successful, errors are ignored.")
 	f.StringVar(&c.KafkaTopic, "distributor.forwarding.kafka-topic", "aggregations", "Kafka topic to which metrics are forwarded.")
 	f.StringVar(&c.KafkaBrokers, "distributor.forwarding.kafka-brokers", "localhost:9092", "Kafka brokers to which metrics are forwarded, separated by \",\".")
-	f.StringVar(&c.KafkaBalancerFunction, "distributor.forwarding.kafka-balancer-function", "murmur3", "Hash function to use for sharding among Kafka partitions, must be either \"murmur3\" or \"crc32\".")
+	f.StringVar(&c.KafkaBalancerFunction, "distributor.forwarding.kafka-balancer-function", "murmur2", "Hash function to use for sharding among Kafka partitions, must be either \"murmur3\" or \"crc32\".")
 }
 
 func (c *Config) Validate() error {
@@ -52,7 +52,7 @@ func (c *Config) Validate() error {
 	}
 	c.kafkaBrokers = strings.Split(c.KafkaBrokers, ",")
 
-	if c.KafkaBalancerFunction == "murmur3" {
+	if c.KafkaBalancerFunction == "murmur2" {
 		c.kafkaBalancer = kafka.Murmur2Balancer{}
 	} else if c.KafkaBalancerFunction == "crc32" {
 		c.kafkaBalancer = kafka.CRC32Balancer{}
