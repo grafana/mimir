@@ -87,7 +87,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, blockPartitioners{})
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, nil, blockPartitioners{})
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -199,10 +199,11 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 				ULID: ulid.MustNew(1, nil),
 			},
 		},
-		bkt:        bkt,
-		logger:     log.NewNopLogger(),
-		metrics:    s,
-		indexCache: noopCache{},
+		bkt:         bkt,
+		logger:      log.NewNopLogger(),
+		metrics:     s,
+		indexCache:  noopCache{},
+		chunksCache: noopCache{},
 	}
 
 	buf := encoding.Encbuf{}
@@ -869,6 +870,7 @@ func newBucketBlockFactory(bkt objstore.BucketReader, r indexheader.Reader, id u
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
+			chunksCache:       noopCache{},
 			bkt:               bkt,
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1500,6 +1502,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
+			chunksCache:  noopCache{},
 			chunkPool:    chunkPool,
 		}
 		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.Config{})
@@ -1540,6 +1543,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:    chunkPool,
+			chunksCache:  noopCache{},
 		}
 		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.Config{})
 		assert.NoError(t, err)
@@ -2430,7 +2434,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, blockPartitioners{})
+	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, newInmemoryChunksCache(), chunkPool, nil, blockPartitioners{})
 	assert.NoError(b, err)
 
 	b.ResetTimer()
@@ -2508,8 +2512,10 @@ func prepareBucket(b *testing.B) (*bucketBlock, *metadata.Meta) {
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.DefaultInMemoryIndexCacheConfig)
 	assert.NoError(b, err)
 
+	chunksCache := newInmemoryChunksCache()
+
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunkPool, indexHeaderReader, partitioner)
+	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunksCache, chunkPool, indexHeaderReader, partitioner)
 	assert.NoError(b, err)
 	return blk, blockMeta
 }

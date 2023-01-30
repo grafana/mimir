@@ -44,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
@@ -92,6 +93,7 @@ type BucketStore struct {
 	dir             string
 	indexCache      indexcache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
+	chunksCache     chunkscache.ChunksCache
 	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
 
@@ -168,6 +170,13 @@ func (noopCache) FetchLabelValues(_ context.Context, _ string, _ ulid.ULID, _ st
 	return nil, false
 }
 
+func (noopCache) StoreChunk(ctx context.Context, userID string, blockID ulid.ULID, ref chunks.ChunkRef, data []byte) {
+}
+
+func (noopCache) FetchMultiChunks(ctx context.Context, userID string, blockID ulid.ULID, refs []chunks.ChunkRef, bytesPool *pool.SafeSlabPool[byte]) (hits map[chunks.ChunkRef][]byte) {
+	return nil
+}
+
 // BucketStoreOption are functions that configure BucketStore.
 type BucketStoreOption func(s *BucketStore)
 
@@ -182,6 +191,13 @@ func WithLogger(logger log.Logger) BucketStoreOption {
 func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.indexCache = cache
+	}
+}
+
+// WithChunksCache sets a indexCache to use instead of a noopCache.
+func WithChunksCache(cache chunkscache.ChunksCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.chunksCache = cache
 	}
 }
 
@@ -230,6 +246,7 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
+		chunksCache:                 noopCache{},
 		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),
@@ -420,6 +437,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.bkt,
 		dir,
 		s.indexCache,
+		s.chunksCache,
 		s.chunkPool,
 		indexHeaderReader,
 		s.partitioners,
@@ -1623,14 +1641,15 @@ func (s *bucketBlockSet) getFor(mint, maxt int64, blockMatchers []*labels.Matche
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
-	userID     string
-	logger     log.Logger
-	metrics    *BucketStoreMetrics
-	bkt        objstore.BucketReader
-	meta       *metadata.Meta
-	dir        string
-	indexCache indexcache.IndexCache
-	chunkPool  pool.Bytes
+	userID      string
+	logger      log.Logger
+	metrics     *BucketStoreMetrics
+	bkt         objstore.BucketReader
+	meta        *metadata.Meta
+	dir         string
+	indexCache  indexcache.IndexCache
+	chunksCache chunkscache.ChunksCache
+	chunkPool   pool.Bytes
 
 	indexHeaderReader indexheader.Reader
 
@@ -1656,6 +1675,7 @@ func newBucketBlock(
 	bkt objstore.BucketReader,
 	dir string,
 	indexCache indexcache.IndexCache,
+	chunksCache chunkscache.ChunksCache,
 	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
@@ -1666,6 +1686,7 @@ func newBucketBlock(
 		metrics:           metrics,
 		bkt:               bkt,
 		indexCache:        indexCache,
+		chunksCache:       chunksCache,
 		chunkPool:         chunkPool,
 		dir:               dir,
 		partitioners:      p,
@@ -1756,9 +1777,9 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 	return newBucketIndexReader(b)
 }
 
-func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
+func (b *bucketBlock) chunkReader(ctx context.Context) chunkReader {
 	b.pendingReaders.Add(1)
-	return newBucketChunkReader(ctx, b)
+	return newCachedChunkReader(ctx, b.userID, b.meta.ULID, newBucketChunkReader(ctx, b), b.chunksCache)
 }
 
 // matchLabels verifies whether the block matches the given matchers.
