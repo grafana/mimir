@@ -19,7 +19,7 @@ type kafkaKeyTestCase struct {
 
 var kafkaKeyTestCases = []kafkaKeyTestCase{
 	{
-		name: "normal happy case",
+		name: "simple happy case",
 		buf:  nil,
 		user: []byte("user"),
 		labels: []mimirpb.LabelAdapter{
@@ -39,7 +39,44 @@ var kafkaKeyTestCases = []kafkaKeyTestCase{
 				DropLabels: []string{"baz"},
 			},
 		},
-		expectKey: []byte("user\xfe{__dropped_labels__=\"baz\", __name__=\"test_metric\", foo=\"bar\"}"),
+		expectKey: []byte("user\xfetest_metric{__dropped_labels__=\"baz\",foo=\"bar\"}"),
+	}, {
+		name: "more complicated happy case",
+		buf:  nil,
+		user: []byte("user"),
+		labels: []mimirpb.LabelAdapter{
+			{
+				Name:  "label5",
+				Value: "value5",
+			}, {
+				Name:  "label4",
+				Value: "value4",
+			}, {
+				Name:  "__000__",
+				Value: "special_label",
+			}, {
+				Name:  "label3",
+				Value: "value3",
+			}, {
+				Name:  "__name__",
+				Value: "test_metric",
+			}, {
+				Name:  "label2",
+				Value: "value2",
+			}, {
+				Name:  "label1",
+				Value: "value1",
+			}, {
+				Name:  "label0",
+				Value: "value0",
+			},
+		},
+		rules: validation.ForwardingRules{
+			"test_metric": {
+				DropLabels: []string{"label5", "label3", "label0"},
+			},
+		},
+		expectKey: []byte("user\xfetest_metric{__000__=\"special_label\",__dropped_labels__=\"label0,label3,label5\",label1=\"value1\",label2=\"value2\",label4=\"value4\"}"),
 	}, {
 		name: "dropping all labels",
 		buf:  nil,
@@ -58,7 +95,7 @@ var kafkaKeyTestCases = []kafkaKeyTestCase{
 				DropLabels: []string{"foo"},
 			},
 		},
-		expectKey: []byte("user\xfe{__dropped_labels__=\"foo\", __name__=\"test_metric\"}"),
+		expectKey: []byte("user\xfetest_metric{__dropped_labels__=\"foo\"}"),
 	}, {
 		name: "dropping multiple labels",
 		buf:  nil,
@@ -80,29 +117,41 @@ var kafkaKeyTestCases = []kafkaKeyTestCase{
 				DropLabels: []string{"foo", "baz"},
 			},
 		},
-		expectKey: []byte("user\xfe{__dropped_labels__=\"baz,foo\", __name__=\"test_metric\"}"),
+		expectKey: []byte("user\xfetest_metric{__dropped_labels__=\"baz,foo\"}"),
 	},
 }
 
 func TestComposeKafkaKey(t *testing.T) {
 	for _, tc := range kafkaKeyTestCases {
 		t.Run(tc.name, func(t *testing.T) {
+			tc.rules = prepareRules(tc.rules)
 			gotKey, err := ComposeKafkaKey(tc.buf, tc.user, tc.labels, tc.rules)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectKey, gotKey)
+			require.Equal(t, string(tc.expectKey), string(gotKey))
 		})
 	}
 }
 
 func BenchmarkComposeKafkaKey(b *testing.B) {
 	for _, tc := range kafkaKeyTestCases {
+		tc.rules = prepareRules(tc.rules)
+
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := ComposeKafkaKey(tc.buf, tc.user, tc.labels, tc.rules)
-				if err != nil {
-					b.Fatal(err)
-				}
+				tc.buf, _ = ComposeKafkaKey(tc.buf, tc.user, tc.labels, tc.rules)
+
+				// We validate for correctness in the test, no need to skew the benchmark to validate correctness again.
+				// require.NoError(b, err)
+				// require.Equal(b, tc.expectKey, tc.buf)
 			}
 		})
 	}
+}
+
+func prepareRules(rules validation.ForwardingRules) validation.ForwardingRules {
+	for metric, rule := range rules {
+		rule.Prepare()
+		rules[metric] = rule
+	}
+	return rules
 }
