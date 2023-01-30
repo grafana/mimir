@@ -72,6 +72,14 @@ type queryStats struct {
 	// The Series() request timing breakdown when streaming store-gateway is disabled.
 	synchronousSeriesGetAllDuration time.Duration
 	synchronousSeriesMergeDuration  time.Duration
+
+	// Temporary
+	slabPoolBytesReleased          int
+	slabPoolBytesDirectlyAllocated int
+	slabPoolBytesFromExistingSlab  int
+	slabPoolBytesFromPooledSlab    int
+	slabPoolBytesFromNewSlab       int
+	slabPoolBytesAddedToHeap       int
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -124,6 +132,13 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.synchronousSeriesGetAllDuration += o.synchronousSeriesGetAllDuration
 	s.synchronousSeriesMergeDuration += o.synchronousSeriesMergeDuration
+
+	s.slabPoolBytesReleased += o.slabPoolBytesReleased
+	s.slabPoolBytesDirectlyAllocated += o.slabPoolBytesDirectlyAllocated
+	s.slabPoolBytesFromExistingSlab += o.slabPoolBytesFromExistingSlab
+	s.slabPoolBytesFromPooledSlab += o.slabPoolBytesFromPooledSlab
+	s.slabPoolBytesFromNewSlab += o.slabPoolBytesFromNewSlab
+	s.slabPoolBytesAddedToHeap += o.slabPoolBytesAddedToHeap
 
 	return &s
 }

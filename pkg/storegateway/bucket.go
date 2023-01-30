@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-
 	"io"
 	"math"
 	"os"
@@ -1181,6 +1180,14 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 		s.metrics.synchronousSeriesGetAllDuration.Observe(stats.synchronousSeriesGetAllDuration.Seconds())
 		s.metrics.synchronousSeriesMergeDuration.Observe(stats.synchronousSeriesMergeDuration.Seconds())
 	}
+
+	// Temporary
+	s.metrics.slabPoolBytesReleased.Add(float64(stats.slabPoolBytesReleased))
+	s.metrics.slabPoolBytesDirectlyAllocated.Add(float64(stats.slabPoolBytesDirectlyAllocated))
+	s.metrics.slabPoolBytesFromExistingSlab.Add(float64(stats.slabPoolBytesFromExistingSlab))
+	s.metrics.slabPoolBytesFromPooledSlab.Add(float64(stats.slabPoolBytesFromPooledSlab))
+	s.metrics.slabPoolBytesFromNewSlab.Add(float64(stats.slabPoolBytesFromNewSlab))
+	s.metrics.slabPoolBytesAddedToHeap.Add(float64(stats.slabPoolBytesAddedToHeap))
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {

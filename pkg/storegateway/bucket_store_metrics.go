@@ -57,6 +57,14 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	// Temporary
+	slabPoolBytesReleased          prometheus.Counter
+	slabPoolBytesDirectlyAllocated prometheus.Counter
+	slabPoolBytesFromExistingSlab  prometheus.Counter
+	slabPoolBytesFromPooledSlab    prometheus.Counter
+	slabPoolBytesFromNewSlab       prometheus.Counter
+	slabPoolBytesAddedToHeap       prometheus.Counter
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -204,6 +212,31 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name:    "cortex_bucket_store_series_refs_fetch_duration_seconds",
 		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request. This metric is tracked only if streaming store-gateway is enabled.",
 		Buckets: durationBuckets,
+	})
+
+	m.slabPoolBytesReleased = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_released_total",
+		Help: "",
+	})
+	m.slabPoolBytesDirectlyAllocated = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_directly_allocated_total",
+		Help: "",
+	})
+	m.slabPoolBytesFromExistingSlab = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_from_existing_slab_total",
+		Help: "",
+	})
+	m.slabPoolBytesFromPooledSlab = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_from_pooled_slab_total",
+		Help: "",
+	})
+	m.slabPoolBytesFromNewSlab = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_from_new_slab_total",
+		Help: "",
+	})
+	m.slabPoolBytesAddedToHeap = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_slab_pool_bytes_added_to_heap_total",
+		Help: "",
 	})
 
 	return &m

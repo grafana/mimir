@@ -107,6 +107,27 @@ type chunksReleaser interface {
 	Release()
 }
 
+type chunkReleaserFunc func()
+
+func (f chunkReleaserFunc) Release() {
+	f()
+}
+
+func instrumentedChunkReleaser(stats *safeQueryStats, pool *pool.SafeSlabPool[byte]) chunkReleaserFunc {
+	return func() {
+		pool.Release()
+
+		stats.merge(&queryStats{
+			slabPoolBytesReleased:          int(pool.GetBytesReleased()),
+			slabPoolBytesDirectlyAllocated: int(pool.GetBytesDirectlyAllocated()),
+			slabPoolBytesFromExistingSlab:  int(pool.GetBytesFromExistingSlab()),
+			slabPoolBytesFromPooledSlab:    int(pool.GetBytesFromPooledSlab()),
+			slabPoolBytesFromNewSlab:       int(pool.GetBytesFromNewSlab()),
+			slabPoolBytesAddedToHeap:       int(pool.GetBytesAddedToHeap()),
+		})
+	}
+}
+
 // release the internal series and chunks slices to a memory pool, and call the chunksReleaser.Release().
 // The series and chunks slices won't be released to a memory pool if seriesChunksSet was created to be not releasable.
 //
@@ -380,7 +401,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		return false
 	}
 
-	nextSet.chunksReleaser = chunksPool
+	nextSet.chunksReleaser = instrumentedChunkReleaser(c.stats, chunksPool)
 	c.current = nextSet
 	return true
 }
