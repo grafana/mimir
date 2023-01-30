@@ -168,11 +168,13 @@ func (c partitionConsumer) handleMessage(message kafka.Message) {
 	}
 
 	c.handleTimeseries(user, aggregatedLabels, value)
+
+	mimirpb.ReuseTimeseries(value.TimeSeries)
 }
 
 func (c partitionConsumer) handleTimeseries(user, aggregatedLabels string, value mimirpb.PreallocTimeseries) {
-	if len(value.Samples) == 0 {
-		// No value, ignoring.
+	if len(value.Samples) == 0 || len(value.Labels) == 0 {
+		level.Error(c.logger).Log("msg", "value without samples or without labels, dropping")
 		return
 	}
 
