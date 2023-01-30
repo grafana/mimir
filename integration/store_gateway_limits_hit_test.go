@@ -16,6 +16,10 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storegateway"
+
+	"github.com/grafana/mimir/pkg/util/globalerror"
+
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
@@ -40,11 +44,11 @@ func Test_MaxSeriesPerQueryLimitHit(t *testing.T) {
 	}{
 		"when store-gateway hits max_fetched_series_per_query, 'exceeded series limit' is returned": {
 			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-series-per-query": "3"},
-			expectedErrorKey:            "exceeded series limit",
+			expectedErrorKey:            storegateway.ErrSeriesLimitMessage,
 		},
 		"when querier hits max_fetched_series_per_query, 'err-mimir-max-series-per-query' is returned": {
 			additionalQuerierFlags: map[string]string{"-querier.max-fetched-series-per-query": "3"},
-			expectedErrorKey:       "err-mimir-max-series-per-query",
+			expectedErrorKey:       string(globalerror.MaxSeriesPerQuery),
 		},
 	}
 
@@ -89,11 +93,11 @@ func Test_MaxChunksPerQueryLimitHit(t *testing.T) {
 	}{
 		"when store-gateway hits max_fetched_chunks_per_query, 'exceeded chunks limit' is returned": {
 			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "2"},
-			expectedErrorKey:            "exceeded chunks limit",
+			expectedErrorKey:            storegateway.ErrChunksLimitMessage,
 		},
 		"when querier hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
 			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "4"},
-			expectedErrorKey:       "err-mimir-max-chunks-per-query",
+			expectedErrorKey:       string(globalerror.MaxChunksPerQuery),
 		},
 	}
 
@@ -194,7 +198,7 @@ func createClient(t *testing.T, additionalStoreGatewayFlags, additionalQuerierFl
 	ingester := e2emimir.NewIngester(ingesterTag, consul.NetworkHTTPEndpoint(), flags)
 	mimirServices[ingesterTag] = ingester
 
-	if additionalStoreGatewayFlags == nil || len(additionalStoreGatewayFlags) == 0 {
+	if len(additionalStoreGatewayFlags) == 0 {
 		additionalStoreGatewayFlags = flags
 	} else {
 		additionalStoreGatewayFlags = mergeFlags(flags, additionalStoreGatewayFlags)
@@ -204,7 +208,7 @@ func createClient(t *testing.T, additionalStoreGatewayFlags, additionalQuerierFl
 
 	require.NoError(t, scenario.StartAndWaitReady(distributor, ingester, storeGateway))
 
-	if additionalQuerierFlags == nil || len(additionalQuerierFlags) == 0 {
+	if len(additionalQuerierFlags) == 0 {
 		additionalQuerierFlags = flags
 	} else {
 		additionalQuerierFlags = mergeFlags(flags, additionalQuerierFlags)
