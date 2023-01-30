@@ -6,6 +6,8 @@ package encoding
 // tools/payload-size-stats.
 var KnownCodecs = map[string]Codec{
 	"original JSON":                                                       OriginalJsonCodec{},
+	"gzipped original JSON":                                               GzipWrapperCodec{OriginalJsonCodec{}},
+	"snappy compressed original JSON":                                     SnappyWrapperCodec{OriginalJsonCodec{}},
 	"original query middleware protobuf":                                  OriginalQueryMiddlewareProtobufCodec{},
 	"snappy compressed original query middleware protobuf":                SnappyWrapperCodec{OriginalQueryMiddlewareProtobufCodec{}},
 	"uninterned protobuf":                                                 UninternedProtobufCodec{},
