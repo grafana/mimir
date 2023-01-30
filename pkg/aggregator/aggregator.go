@@ -20,7 +20,9 @@ type userAggregations struct {
 
 type aggregationMetrics struct {
 	ingestedRawSamples *prometheus.CounterVec
+	ingestedRawSeries  *prometheus.GaugeVec
 	aggregatedSamples  *prometheus.CounterVec
+	aggregatedSeries   *prometheus.GaugeVec
 }
 
 func newAggregationMetrics(reg prometheus.Registerer) aggregationMetrics {
@@ -30,10 +32,20 @@ func newAggregationMetrics(reg prometheus.Registerer) aggregationMetrics {
 			Name:      "aggregator_ingested_raw_samples_total",
 			Help:      "The total number of raw samples that the aggregator has ingested.",
 		}, []string{"user"}),
+		ingestedRawSeries: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_ingested_raw_series",
+			Help:      "The current number of raw series that the aggregator is ingesting.",
+		}, []string{"user"}),
 		aggregatedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "aggregator_aggregated_samples_total",
 			Help:      "The total number of aggregation results that the aggregator has generated.",
+		}, []string{"user"}),
+		aggregatedSeries: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_aggregated_series",
+			Help:      "The current number of aggregated series that the aggregator is generating.",
 		}, []string{"user"}),
 	}
 }
@@ -69,7 +81,13 @@ func (u *userAggregations) ingest(user, aggregatedLabels, rawLabels string, samp
 		u.byUser[user] = aggs
 	}
 
-	aggSample := aggs.ingest(u.interval, u.delay, aggregatedLabels, rawLabels, sample)
+	aggSample, newRawSeries, newAggSeries := aggs.ingest(u.interval, u.delay, aggregatedLabels, rawLabels, sample)
+	if newRawSeries {
+		u.metrics.ingestedRawSeries.WithLabelValues(user).Inc()
+	}
+	if newAggSeries {
+		u.metrics.aggregatedSeries.WithLabelValues(user).Inc()
+	}
 
 	if !math.IsNaN(aggSample.Value) {
 		u.metrics.aggregatedSamples.WithLabelValues(user).Inc()
@@ -90,16 +108,21 @@ func newAggregations() *aggregations {
 	}
 }
 
-func (a *aggregations) ingest(interval, delay int64, aggregatedLabels, rawLabels string, sample mimirpb.Sample) mimirpb.Sample {
+// ingest ingests a sample for aggregation.
+// It might return an aggregated sample if this ingestion has resulted in one, otherwise it will return a sample with a NaN value.
+// The second return value indicates whether this raw series is new.
+// The third return value indicates whether this aggregated series is new.
+func (a *aggregations) ingest(interval, delay int64, aggregatedLabels, rawLabels string, sample mimirpb.Sample) (aggSample mimirpb.Sample, newRawSeries bool, newAggSeries bool) {
 	agg, ok := a.aggregations[aggregatedLabels]
 	if !ok {
 		agg = newAggregation()
 		a.aggregations[aggregatedLabels] = agg
+		newAggSeries = true
 	}
 
-	aggSample := agg.ingest(interval, delay, rawLabels, sample)
+	aggSample, newRawSeries = agg.ingest(interval, delay, rawLabels, sample)
 
-	return aggSample
+	return
 }
 
 // aggregation is the state of one aggregated series (not an aggregated metrics).
@@ -120,7 +143,10 @@ func newAggregation() *aggregation {
 	}
 }
 
-func (a *aggregation) ingest(interval, delay int64, rawLabels string, sample mimirpb.Sample) (aggSample mimirpb.Sample) {
+// ingest ingests a sample for aggregation.
+// It might return an aggregated sample if this ingestion has resulted in one, otherwise it will return a sample with a NaN value.
+// The second return value indicates whether this raw series is new.
+func (a *aggregation) ingest(interval, delay int64, rawLabels string, sample mimirpb.Sample) (aggSample mimirpb.Sample, newSeries bool) {
 	lastEligbleTs := getAggregationTs(sample.TimestampMs-delay-interval, interval)
 	aggSample = mimirpb.Sample{
 		TimestampMs: lastEligbleTs,
@@ -138,6 +164,7 @@ func (a *aggregation) ingest(interval, delay int64, rawLabels string, sample mim
 	if !ok {
 		rawSeries = newTimeBuckets(bucketCount(interval, delay))
 		a.rawSeries[rawLabels] = rawSeries
+		newSeries = true
 	}
 	rawSeries.ingest(sample, interval)
 
