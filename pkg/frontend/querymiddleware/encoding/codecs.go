@@ -10,6 +10,7 @@ var KnownCodecs = map[string]Codec{
 	"snappy compressed original query middleware protobuf":                SnappyWrapperCodec{OriginalQueryMiddlewareProtobufCodec{}},
 	"uninterned protobuf":                                                 UninternedProtobufCodec{},
 	"interned protobuf":                                                   InternedProtobufCodec{},
+	"snappy compressed interned protobuf":                                 SnappyWrapperCodec{InternedProtobufCodec{}},
 	"interned protobuf with single string symbol table":                   InternedProtobufWithSingleStringCodec{},
 	"packed interned protobuf":                                            PackedInternedProtobufCodec{},
 	"packed interned protobuf with relative timestamps":                   PackedInternedProtobufWithRelativeTimestampsCodec{},
@@ -19,4 +20,5 @@ var KnownCodecs = map[string]Codec{
 	"gzipped uninterned protobuf":                                         GzipWrapperCodec{UninternedProtobufCodec{}},
 	"snappy compressed uninterned protobuf":                               SnappyWrapperCodec{UninternedProtobufCodec{}},
 	"Arrow":                                                               NewArrowCodec(),
+	"snappy compressed Arrow":                                             SnappyWrapperCodec{NewArrowCodec()},
 }

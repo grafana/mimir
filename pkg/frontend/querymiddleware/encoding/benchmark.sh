@@ -11,15 +11,14 @@ codecs=(
   "snappy compressed original query middleware protobuf"
   "uninterned protobuf"
   "interned protobuf"
+  "snappy compressed interned protobuf"
   "interned protobuf with single string symbol table"
   "packed interned protobuf"
-#  "snappy compressed packed interned protobuf"
   "packed interned protobuf with single string symbol table"
   "packed interned protobuf with relative timestamps"
   "snappy compressed packed interned protobuf with relative timestamps"
-#  "gzipped uninterned protobuf"
-#  "snappy compressed uninterned protobuf"
   "Arrow"
+  "snappy compressed Arrow"
 )
 
 mkdir -p "$OUTPUT_DIR"
