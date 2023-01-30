@@ -7,6 +7,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,6 +73,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				}
 				r := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
 				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
 			expectedParams: url.Values{
@@ -141,7 +144,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, at.Close()) })
 
-			handler := NewHandler(tt.cfg, roundTripper, log.NewNopLogger(), reg, at)
+			logger := &testLogger{}
+			handler := NewHandler(tt.cfg, roundTripper, logger, reg, at)
 
 			req := tt.request().WithContext(user.InjectOrgID(context.Background(), "12345"))
 			resp := httptest.NewRecorder()
@@ -164,6 +168,37 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
 			require.NoError(t, err)
 			require.Empty(t, activities)
+
+			if tt.cfg.QueryStatsEnabled {
+				require.Len(t, logger.logMessages, 1)
+
+				msg := logger.logMessages[0]
+				require.Len(t, msg, 16+len(tt.expectedParams))
+				require.Equal(t, level.InfoValue(), msg["level"])
+				require.Equal(t, "query stats", msg["msg"])
+				require.Equal(t, "query-frontend", msg["component"])
+				require.Equal(t, "success", msg["status"])
+				require.Equal(t, "12345", msg["user"])
+				require.Equal(t, req.Method, msg["method"])
+				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, req.UserAgent(), msg["user_agent"])
+				require.Contains(t, msg, "response_time")
+				require.Contains(t, msg, "query_wall_time_seconds")
+				require.EqualValues(t, 0, msg["fetched_series_count"])
+				require.EqualValues(t, 0, msg["fetched_chunk_bytes"])
+				require.EqualValues(t, 0, msg["fetched_chunks_count"])
+				require.EqualValues(t, 0, msg["fetched_index_bytes"])
+				require.EqualValues(t, 0, msg["sharded_queries"])
+				require.EqualValues(t, 0, msg["split_queries"])
+
+				for name, values := range tt.expectedParams {
+					logMessageKey := fmt.Sprintf("param_%v", name)
+					expectedValues := strings.Join(values, ",")
+					require.Equal(t, expectedValues, msg[logMessageKey])
+				}
+			} else {
+				require.Empty(t, logger.logMessages)
+			}
 		})
 	}
 }
@@ -230,4 +265,27 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			assert.Equal(t, test.expectedMetrics, count)
 		})
 	}
+}
+
+type testLogger struct {
+	logMessages []map[string]interface{}
+}
+
+func (t *testLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("received uneven number of key/value pairs for log line")
+	}
+
+	entryCount := len(keyvals) / 2
+	msg := make(map[string]interface{}, entryCount)
+
+	for i := 0; i < entryCount; i++ {
+		name := keyvals[2*i].(string)
+		value := keyvals[2*i+1]
+
+		msg[name] = value
+	}
+
+	t.logMessages = append(t.logMessages, msg)
+	return nil
 }

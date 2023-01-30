@@ -180,7 +180,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		cfg.tempDir,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
-		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.Config{},
@@ -198,7 +198,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s.store = store
 
 	if cfg.manyParts {
-		s.store.partitioner = naivePartitioner{}
+		s.store.partitioners = blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -823,6 +823,43 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 
 				assert.Equal(t, tc.expected, emptyToNil(vals.Values))
 			})
+		}
+	})
+}
+
+func TestBucketStore_ValueTypes_e2e(t *testing.T) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		s := newSuite()
+
+		mint, maxt := s.store.TimeRange()
+		assert.Equal(t, s.minTime, mint)
+		assert.Equal(t, s.maxTime, maxt)
+
+		req := &storepb.SeriesRequest{
+			MinTime: mint,
+			MaxTime: maxt,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+			},
+			SkipChunks: false,
+		}
+		srv := newBucketStoreSeriesServer(ctx)
+
+		assert.NoError(t, s.store.Series(req, srv))
+
+		counts := map[storepb.Chunk_Encoding]int{}
+		for _, series := range srv.SeriesSet {
+			for _, chunk := range series.Chunks {
+				counts[chunk.Raw.Type]++
+			}
+		}
+		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
+			count, ok := counts[storepb.Chunk_Encoding(chunkType)]
+			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
+			assert.NotEmpty(t, count)
 		}
 	})
 }

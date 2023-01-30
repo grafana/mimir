@@ -24,6 +24,7 @@ import (
 )
 
 // CreateBlock writes a block with the given series and numSamples samples each.
+// Timeseries i%3==0 will contain floats, i%3==1 will contain histograms and i%3==2 will contain float histograms
 // Samples will be in the time range [mint, maxt).
 func CreateBlock(
 	ctx context.Context,
@@ -33,9 +34,14 @@ func CreateBlock(
 	mint, maxt int64,
 	extLset labels.Labels,
 ) (id ulid.ULID, err error) {
+	if len(series) < 3 {
+		return id, errors.Errorf("not enough series to test different value types: floats, histograms, float histograms")
+	}
+
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = math.MaxInt64
+	headOpts.EnableNativeHistograms.Store(true)
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create head block")
@@ -51,12 +57,20 @@ func CreateBlock(
 	var timeStepSize = (maxt - mint) / int64(numSamples+1)
 	var batchSize = len(series) / runtime.GOMAXPROCS(0)
 
+	// For calculating the next series value type (float, histogram, etc)
+	batchOffset := 0
+	// prep some histogram test data
+	testHistorams := tsdb.GenerateTestHistograms(numSamples)
+	testFloatHistograms := tsdb.GenerateTestFloatHistograms(numSamples)
+
 	for len(series) > 0 {
 		l := batchSize
 		if len(series) < 1000 {
 			l = len(series)
 		}
 		batch := series[:l]
+		batchValueTypeOffset := batchOffset
+		batchOffset += batchSize
 		series = series[l:]
 
 		g.Go(func() error {
@@ -65,8 +79,16 @@ func CreateBlock(
 			for i := 0; i < numSamples; i++ {
 				app := h.Appender(ctx)
 
-				for _, lset := range batch {
-					_, err := app.Append(0, lset, t, rand.Float64())
+				for j, lset := range batch {
+					var err error
+					switch (batchValueTypeOffset + j) % 3 {
+					case 0:
+						_, err = app.Append(0, lset, t, rand.Float64())
+					case 1:
+						_, err = app.AppendHistogram(0, lset, t, testHistorams[i], nil)
+					case 2:
+						_, err = app.AppendHistogram(0, lset, t, nil, testFloatHistograms[i])
+					}
 					if err != nil {
 						if rerr := app.Rollback(); rerr != nil {
 							err = errors.Wrapf(err, "rollback failed: %v", rerr)
