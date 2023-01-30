@@ -2022,12 +2022,14 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
+		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
+		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, nil)
 	require.NoError(t, err)
 
@@ -2050,24 +2052,24 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 		expectedSeries int
 	}{
 		"should fail if the number of unique series queried is greater than the configured series limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			seriesLimit: 1,
 			expectedErr: errSeriesLimitMessage,
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
-			seriesLimit:    2,
-			expectedSeries: 2,
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			seriesLimit:    3,
+			expectedSeries: 3,
 		},
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			chunksLimit: 3,
 			expectedErr: errChunksLimitMessage,
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[12]"}},
-			chunksLimit:    4,
-			expectedSeries: 2,
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			chunksLimit:    6,
+			expectedSeries: 3,
 		},
 	}
 
