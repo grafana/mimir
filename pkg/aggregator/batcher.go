@@ -8,13 +8,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type Push func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
@@ -128,12 +129,10 @@ func (b *Batcher) flush() {
 			level.Info(b.logger).Log("msg", "skipping empty request", "user", username)
 			continue
 		}
-		level.Info(b.logger).Log("msg", "pushing request", "req", writeReq, "user", username)
 		_, err := b.push(ctx, writeReq)
 		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to push aggregation result", "err", err)
 		}
-		mimirpb.ReuseSlice(writeReq.Timeseries)
 	}
 }
 
@@ -201,11 +200,13 @@ func (b *batch) writeReq(user string) *mimirpb.WriteRequest {
 		Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
 		Source:     mimirpb.AGGREGATOR,
 	}
+	req.Timeseries = req.Timeseries[:0]
 
 	for i, s := range b.samples {
 		ts := mimirpb.TimeseriesFromPool()
 		ts.Labels = ts.Labels[:0]
 		ts.Samples = ts.Samples[:0]
+		ts.Exemplars = ts.Exemplars[:0]
 
 		// Copy labels because we want to reuse b.labels.
 		for _, label := range b.labels[i] {

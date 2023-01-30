@@ -335,6 +335,7 @@ func ClearExemplars(ts *TimeSeries) {
 func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 	if ts.TimeSeries != nil {
 		ReuseTimeseries(ts.TimeSeries)
+		ts.TimeSeries = nil
 	}
 
 	if ts.yoloSlice != nil {
