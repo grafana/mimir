@@ -203,7 +203,7 @@ func newMemcachedClient(
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.NewWithRegisterers(
 			[]prometheus.Registerer{
-				prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix+getMultiPrefix, reg),
+				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
 				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
 			},
 			config.MaxGetMultiConcurrency,
@@ -212,7 +212,7 @@ func newMemcachedClient(
 
 	//lint:ignore faillint need to apply the metric to multiple registerer
 	c.clientInfo = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "memcached_client_info",
+		Name: "client_info",
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
 			"timeout":                      config.Timeout.String(),
