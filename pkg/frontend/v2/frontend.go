@@ -135,7 +135,7 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
-		requests:                newRequestsInProgress(log),
+		requests:                newRequestsInProgress(),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -177,7 +177,9 @@ func (f *Frontend) running(ctx context.Context) error {
 
 func (f *Frontend) stopping(_ error) error {
 	// Wait on any in-flight requests
+	level.Info(f.log).Log("msg", "waiting for in-flight queries to finish...")
 	f.requests.Wait()
+	level.Info(f.log).Log("msg", "finished waiting for in-flight queries")
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
@@ -310,23 +312,18 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 type requestsInProgress struct {
 	mu       sync.Mutex
 	requests map[uint64]*frontendRequest
-	logger   log.Logger
 	wg       sync.WaitGroup
 }
 
-func newRequestsInProgress(logger log.Logger) *requestsInProgress {
+func newRequestsInProgress() *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
-		logger:   logger,
 	}
 }
 
 // Wait waits for any in-flight requests to finish.
 func (r *requestsInProgress) Wait() {
-	level.Info(r.logger).Log("msg", "waiting for in-flight queries to finish...")
 	r.wg.Wait()
-
-	level.Info(r.logger).Log("msg", "finished waiting for in-flight queries")
 }
 
 func (r *requestsInProgress) count() int {
