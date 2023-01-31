@@ -22,12 +22,6 @@ import (
 
 const (
 	blockRangePeriod = 5 * time.Second
-	querierTag       = "querier"
-	orgID            = "test"
-	series1          = "series_1"
-	series2          = "series_2"
-	series3          = "series_3"
-	series4          = "series_4"
 )
 
 func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
@@ -42,10 +36,9 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 				"-ingester.ring.replication-factor": "1",
 
 				// Frequently compact and ship blocks to storage so we can query them through the store gateway.
-				"-blocks-storage.bucket-store.sync-interval":        "1s",
 				"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
 				"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
-				"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod * 2) - 1).String(),
+				"-blocks-storage.tsdb.retention-period":             ((2 * blockRangePeriod) - 1).String(),
 				"-blocks-storage.tsdb.ship-interval":                "1s",
 			},
 		)
@@ -65,11 +58,11 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		require.NoError(t, scenario.StartAndWaitReady(distributor, ingester, storeGateway))
 
 		additionalQuerierFlags = mergeFlags(flags, additionalQuerierFlags)
-		querier := e2emimir.NewQuerier(querierTag, consul.NetworkHTTPEndpoint(), additionalQuerierFlags)
+		querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), additionalQuerierFlags)
 
 		require.NoError(t, scenario.StartAndWaitReady(querier))
 
-		client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", orgID)
+		client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
 		require.NoError(t, err)
 		return
 	}
@@ -102,47 +95,39 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			scenario, ingester, storeGateway, client := setup(t, testData.additionalStoreGatewayFlags, testData.additionalQuerierFlags)
 			defer scenario.Close()
 
-			timeStamps12, timeSeries12 := createTimeSeries(t, []string{series1, series2})
-			pushTimeSeries(t, client, timeSeries12[series1])
-			pushTimeSeries(t, client, timeSeries12[series2])
+			timeStamp1 := time.Now()
+			timeStamp2 := timeStamp1
+			timeStamp3 := timeStamp2.Add(2 * blockRangePeriod)
+			timeStamp4 := timeStamp3
+			timeSeries1, _, _ := generateSeries("series_1", timeStamp1, prompb.Label{Name: "series_1", Value: "series_1"})
+			timeSeries2, _, _ := generateSeries("series_2", timeStamp2, prompb.Label{Name: "series_2", Value: "series_2"})
+			timeSeries3, _, _ := generateSeries("series_3", timeStamp3, prompb.Label{Name: "series_3", Value: "series_3"})
+			timeSeries4, _, _ := generateSeries("series_4", timeStamp4, prompb.Label{Name: "series_4", Value: "series_4"})
+
+			pushTimeSeries(t, client, timeSeries1)
+			pushTimeSeries(t, client, timeSeries2)
 
 			// ensures that data will be queried from store-gateway, and not from ingester: at this stage 1 block of data should be stored
 			waitUntilShippedToStorage(t, ingester, storeGateway, 1)
 
 			// Verify we can successfully read the data we have just pushed
-			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps12[series2].Add(1*time.Hour), time.Second)
+			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(1*time.Hour), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode)
 
-			timeStamps34, timeSeries34 := createTimeSeries(t, []string{series3, series4})
-			pushTimeSeries(t, client, timeSeries34[series3])
-			pushTimeSeries(t, client, timeSeries34[series4])
+			pushTimeSeries(t, client, timeSeries3)
+			pushTimeSeries(t, client, timeSeries4)
 
 			// ensures that data will be queried from store-gateway, and not from ingester: at this stage 2 blocks of data should be stored
 			waitUntilShippedToStorage(t, ingester, storeGateway, 2)
 
 			// Verify we cannot read the data we just pushed because the limit is hit, and the status code 422 is returned
-			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamps12[series1], timeStamps34[series4].Add(1*time.Hour), time.Second)
+			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp4.Add(1*time.Hour), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode)
 			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey))
 		})
 	}
-}
-
-func createTimeSeries(t *testing.T, tags []string) (map[string]time.Time, map[string][]prompb.TimeSeries) {
-	timeStamps := make(map[string]time.Time)
-	timeSeries := make(map[string][]prompb.TimeSeries)
-	timeStamp := time.Now()
-
-	for i, tag := range tags {
-		timeStamp.Add(blockRangePeriod * time.Duration(i))
-		timeStamps[tag] = timeStamp
-		series, _, _ := generateSeries(tag, timeStamp, prompb.Label{Name: tag, Value: tag})
-		timeSeries[tag] = series
-	}
-
-	return timeStamps, timeSeries
 }
 
 func pushTimeSeries(t *testing.T, client *e2emimir.Client, timeSeries []prompb.TimeSeries) {
