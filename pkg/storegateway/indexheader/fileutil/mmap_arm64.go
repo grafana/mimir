@@ -4,7 +4,6 @@
 // Provenance-includes-copyright: The Prometheus Authors.
 
 //go:build windows
-// +build windows
 
 package fileutil
 

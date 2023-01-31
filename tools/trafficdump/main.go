@@ -4,7 +4,6 @@
 // don't have libpcap installed (eg. when running "go test ./..." from Mimir root).
 //
 //go:build requires_libpcap
-// +build requires_libpcap
 
 package main
 
