@@ -67,6 +67,10 @@ func (cfg *Config) Validate() error {
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid ResultsCache config")
 		}
+	} else {
+		if cfg.MaxSeriesPerShard > 0 {
+			return errors.New("-query-frontend.max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results.")
+		}
 	}
 	return nil
 }
@@ -223,7 +227,6 @@ func newQueryTripperware(
 	)
 
 	if cfg.ShardedQueries {
-		cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c)
 
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
@@ -232,17 +235,27 @@ func newQueryTripperware(
 			cfg.MaxSeriesPerShard,
 			registerer,
 		)
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("cardinality_estimation", metrics, log),
-			cardinalityEstimationMiddleware,
+
+		if cfg.MaxSeriesPerShard > 0 {
+			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c)
+			queryRangeMiddleware = append(
+				queryRangeMiddleware,
+				newInstrumentMiddleware("cardinality_estimation", metrics, log),
+				cardinalityEstimationMiddleware,
+			)
+			queryInstantMiddleware = append(
+				queryInstantMiddleware,
+				newInstrumentMiddleware("cardinality_estimation", metrics, log),
+				cardinalityEstimationMiddleware,
+			)
+		}
+	
+		queryRangeMiddleware = append(queryRangeMiddleware,
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newInstrumentMiddleware("cardinality_estimation", metrics, log),
-			cardinalityEstimationMiddleware,
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
