@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../../visualizing-metrics/dashboards/compactor-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/compactor-resources/
+  - ../../monitoring-grafana-mimir/dashboards/compactor-resources/
 description: View an example Compactor resources dashboard.
 menuTitle: Compactor resources
 title: Grafana Mimir Compactor resources dashboard
