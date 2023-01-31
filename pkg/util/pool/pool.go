@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"go.uber.org/atomic"
 )
 
 // Interface defines the same functions of sync.Pool.
@@ -162,10 +161,8 @@ func NewSlabPool[T any](delegate Interface, slabSize int) *SlabPool[T] {
 // Release all slices returned by Get. It's unsafe to access slices previously returned by Get
 // after calling Release().
 func (b *SlabPool[T]) Release() {
-	released := 0
 	for _, slab := range b.slabs {
 		// The slab length will be reset to 0 in the Get().
-		released += cap(*slab)
 		b.delegate.Put(slab)
 	}
 
