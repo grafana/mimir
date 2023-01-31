@@ -108,7 +108,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			estimate, ok := (&cardinalityEstimation{cache: tt.cache}).lookupCardinalityForKey(ctx, tt.key)
 			if tt.cache != nil {
-				expectedFetchCount += 1
+				expectedFetchCount++
 			}
 			assert.Equal(t, expectedFetchCount, c.CountFetchCalls())
 			assert.Equal(t, tt.wantCardinality, estimate)
@@ -246,7 +246,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
 				c.Store(ctx, tt.cacheContent, time.Minute)
-				numSetupStoreCalls += 1
+				numSetupStoreCalls++
 			}
 
 			_, err := handler.Do(ctx, request)

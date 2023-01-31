@@ -69,7 +69,7 @@ func (cfg *Config) Validate() error {
 		}
 	} else {
 		if cfg.MaxSeriesPerShard > 0 {
-			return errors.New("-query-frontend.max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results.")
+			return errors.New("-query-frontend.max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results")
 		}
 	}
 	return nil
