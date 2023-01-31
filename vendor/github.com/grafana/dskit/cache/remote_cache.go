@@ -15,6 +15,15 @@ var (
 	_ Cache = (*RedisCache)(nil)
 )
 
+const (
+	labelName        = "name"
+	labelBackend     = "backend"
+	backendRedis     = "redis"
+	backendMemcached = "memcached"
+	cachePrefix      = "cache_"
+	getMultiPrefix   = "getMulti_"
+)
+
 // MemcachedCache is a memcached-based cache.
 type MemcachedCache struct {
 	*remoteCache
@@ -27,7 +36,9 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			prometheus.WrapRegistererWithPrefix("cache_memcached_", reg),
+			prometheus.WrapRegistererWith(
+				prometheus.Labels{labelBackend: backendMemcached},
+				prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
 		),
 	}
 }
@@ -44,7 +55,9 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			prometheus.WrapRegistererWithPrefix("cache_redis_", reg),
+			prometheus.WrapRegistererWith(
+				prometheus.Labels{labelBackend: backendRedis},
+				prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
 		),
 	}
 }
@@ -69,13 +82,13 @@ func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClie
 	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "requests_total",
 		Help:        "Total number of items requests to cache.",
-		ConstLabels: prometheus.Labels{"name": name},
+		ConstLabels: prometheus.Labels{labelName: name},
 	})
 
 	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
-		ConstLabels: prometheus.Labels{"name": name},
+		ConstLabels: prometheus.Labels{labelName: name},
 	})
 
 	level.Info(logger).Log("msg", "created remote cache")

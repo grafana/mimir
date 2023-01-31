@@ -164,9 +164,6 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client.Timeout = config.Timeout
 	client.MaxIdleConns = config.MaxIdleConnections
 
-	if reg != nil {
-		reg = prometheus.WrapRegistererWith(prometheus.Labels{"name": name}, reg)
-	}
 	return newMemcachedClient(logger, client, selector, config, reg, name)
 }
 
@@ -178,15 +175,20 @@ func newMemcachedClient(
 	reg prometheus.Registerer,
 	name string,
 ) (*memcachedClient, error) {
+	if reg != nil {
+		reg = prometheus.WrapRegistererWith(
+			prometheus.Labels{labelName: name, labelBackend: backendMemcached},
+			prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
+	}
+
 	addressProvider := dns.NewProvider(
 		logger,
-		prometheus.WrapRegistererWithPrefix("memcached_", reg),
+		reg,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(
-		prometheus.WrapRegistererWithPrefix("memcached_", reg),
-	)
+	metrics := newClientMetrics(reg)
+
 	c := &memcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		logger:          log.With(logger, "name", name),
@@ -196,7 +198,7 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			prometheus.WrapRegistererWithPrefix("memcached_getmulti_", reg),
+			prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
 			config.MaxGetMultiConcurrency,
 		),
 	}
