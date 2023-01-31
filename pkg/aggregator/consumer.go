@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"unsafe"
 
 	"github.com/go-kit/log"
@@ -11,6 +12,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/segmentio/kafka-go"
@@ -31,6 +33,46 @@ type KafkaConsumer struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 	aggregateHandler   AggregateHandler
+}
+
+type consumerMetrics struct {
+	highWatermark  *prometheus.GaugeVec
+	offsetConsumed *prometheus.GaugeVec
+}
+
+func newConsumerMetrics(reg prometheus.Registerer) consumerMetrics {
+	return consumerMetrics{
+		highWatermark: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_kafka_consumer_high_watermark",
+			Help:      "The high watermark of a kafka partition consumed by the aggregator",
+		}, []string{"partition"}),
+		offsetConsumed: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "cortex",
+			Name:      "aggregator_kafka_consumer_offset_consumed",
+			Help:      "The last offset of a kafka partition consumed by the aggregator",
+		}, []string{"partition"}),
+	}
+}
+
+type consumerMetricsForPartition struct {
+	consumerMetrics
+	partition string
+}
+
+func newConsumerMetricsForPartition(m consumerMetrics, partition string) consumerMetricsForPartition {
+	return consumerMetricsForPartition{
+		consumerMetrics: m,
+		partition:       partition,
+	}
+}
+
+func (m consumerMetricsForPartition) SetHighWatermark(offset int64) {
+	m.highWatermark.WithLabelValues(m.partition).Set(float64(offset))
+}
+
+func (m consumerMetricsForPartition) SetOffsetConsumed(offset int64) {
+	m.offsetConsumed.WithLabelValues(m.partition).Set(float64(offset))
 }
 
 func NewKafkaConsumer(cfg Config, push Push, logger log.Logger, reg prometheus.Registerer) (*KafkaConsumer, error) {
@@ -66,7 +108,8 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 
 	level.Info(kc.logger).Log("msg", "starting readers for partitions", "partitions", fmt.Sprintf("%v", kc.cfg.kafkaPartitions))
 
-	metrics := newAggregationMetrics(kc.reg)
+	aggMetrics := newAggregationMetrics(kc.reg)
+	consMetrics := newConsumerMetrics(kc.reg)
 	for _, partition := range kc.cfg.kafkaPartitions {
 		reader := kafka.NewReader(kafka.ReaderConfig{
 			Brokers:   kc.cfg.kafkaBrokers,
@@ -77,8 +120,8 @@ func (kc *KafkaConsumer) starting(ctx context.Context) error {
 		})
 
 		kc.kafkaReaders = append(kc.kafkaReaders, reader)
-
-		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, metrics, kc.shutdownCh, kc.logger)
+		consMetricsPart := newConsumerMetricsForPartition(consMetrics, strconv.Itoa(partition))
+		go newPartitionConsumer(kc.cfg, reader, kc.aggregateHandler, consMetricsPart, aggMetrics, kc.shutdownCh, kc.logger)
 	}
 
 	return nil
@@ -116,16 +159,18 @@ func (kc *KafkaConsumer) stopping(_ error) error {
 
 type partitionConsumer struct {
 	cfg              Config
+	consMetrics      consumerMetricsForPartition
 	aggs             userAggregations
 	shutdownCh       chan struct{}
 	logger           log.Logger
 	aggregateHandler AggregateHandler
 }
 
-func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, metrics aggregationMetrics, shutdownCh chan struct{}, logger log.Logger) {
+func newPartitionConsumer(cfg Config, reader *kafka.Reader, handler AggregateHandler, consMetrics consumerMetricsForPartition, aggMetrics aggregationMetrics, shutdownCh chan struct{}, logger log.Logger) {
 	partitionConsumer{
 		cfg:              cfg,
-		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay, metrics),
+		consMetrics:      consMetrics,
+		aggs:             newUserAggregations(cfg.AggregationInterval, cfg.AggregationDelay, aggMetrics),
 		shutdownCh:       shutdownCh,
 		logger:           logger,
 		aggregateHandler: handler,
@@ -159,6 +204,9 @@ func (c partitionConsumer) handleMessage(message kafka.Message) {
 		level.Error(c.logger).Log("msg", "failed to decompose kafka key, dropping message", "err", err)
 		return
 	}
+
+	c.consMetrics.SetHighWatermark(message.HighWaterMark)
+	c.consMetrics.SetOffsetConsumed(message.Offset)
 
 	var value mimirpb.PreallocTimeseries
 	err = value.Unmarshal(message.Value)
