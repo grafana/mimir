@@ -1130,11 +1130,11 @@ func NewReaderWithCache(b ByteSlice, cacheProvider ReaderCacheProvider) (*Reader
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string) (*Reader, error) {
-	return NewFileReaderWithCache(path, nil)
+	return NewFileReaderWithOptions(path, nil)
 }
 
-// NewFileReaderWithCache is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithCache(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
+// NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider and sharding function.
+func NewFileReaderWithOptions(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
@@ -1771,7 +1771,7 @@ func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Post
 				return ErrPostings(errors.Errorf("series %d not found", id))
 			}
 
-			hash = bufLbls.Labels().Hash()
+			hash = labels.StableHash(bufLbls.Labels())
 			if seriesHashCache != nil {
 				seriesHashCache.Store(id, hash)
 			}

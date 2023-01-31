@@ -6,6 +6,7 @@
 
 * [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
+* [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
@@ -14,6 +15,7 @@
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 * [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
+* [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
 
 ### Mixin
 
@@ -28,6 +30,10 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+
+### Mimirtool
+
+* * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 
 ### Documentation
 

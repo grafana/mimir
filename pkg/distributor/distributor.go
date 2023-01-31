@@ -1787,7 +1787,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp.(*ingester_client.MetricsForLabelMatchersResponse))
 		for _, m := range ms {
-			metrics[m.Hash()] = m
+			metrics[labels.StableHash(m)] = m
 		}
 	}
 

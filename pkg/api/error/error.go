@@ -46,7 +46,9 @@ func (e *apiError) statusCode() int {
 		return http.StatusBadRequest
 	case TypeExec:
 		return http.StatusUnprocessableEntity
-	case TypeCanceled, TypeTimeout:
+	case TypeCanceled:
+		return 499
+	case TypeTimeout:
 		return http.StatusServiceUnavailable
 	case TypeInternal:
 		return http.StatusInternalServerError

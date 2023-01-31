@@ -322,7 +322,7 @@ func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 		Route: &amconfig.Route{
 			Receiver: "empty-receiver",
 		},
-		Receivers: []*amconfig.Receiver{
+		Receivers: []amconfig.Receiver{
 			{
 				Name: "empty-receiver",
 			},
