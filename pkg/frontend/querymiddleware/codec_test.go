@@ -21,6 +21,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -171,8 +172,6 @@ func TestResponseRoundtrip(t *testing.T) {
 		},
 	}
 
-	codec := newTestPrometheusCodec()
-
 	for _, tc := range []struct {
 		name        string
 		resp        prometheusAPIResponse
@@ -302,6 +301,9 @@ func TestResponseRoundtrip(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg)
+
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{
@@ -319,6 +321,11 @@ func TestResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, decoded)
 
+			metrics := gatherMetrics(t, reg)
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_duration_seconds_count{format="json",operation="decode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_payload_bytes_count{format="json",operation="decode"}`])
+			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_payload_codec_payload_bytes_sum{format="json",operation="decode"}`])
+
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
 				StatusCode:    200,
@@ -328,6 +335,11 @@ func TestResponseRoundtrip(t *testing.T) {
 			}
 			encoded, err := codec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
+
+			metrics = gatherMetrics(t, reg)
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_duration_seconds_count{format="json",operation="encode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_payload_bytes_count{format="json",operation="encode"}`])
+			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_payload_codec_payload_bytes_sum{format="json",operation="encode"}`])
 
 			expectedJSON, err := bodyBuffer(httpResponse)
 			require.NoError(t, err)
@@ -792,4 +804,34 @@ func Test_DecodeOptions(t *testing.T) {
 
 func newTestPrometheusCodec() Codec {
 	return NewPrometheusCodec(prometheus.NewPedanticRegistry())
+}
+
+func gatherMetrics(t *testing.T, g prometheus.Gatherer) map[string]float64 {
+	metricFamilies, err := g.Gather()
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+
+	for _, metricFamily := range metricFamilies {
+		_, err := expfmt.MetricFamilyToText(buf, metricFamily)
+		require.NoError(t, err)
+	}
+
+	lines := strings.Split(buf.String(), "\n")
+	metrics := map[string]float64{}
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+
+		endOfName := strings.LastIndexByte(line, ' ')
+		name := line[:endOfName]
+		value, err := strconv.ParseFloat(line[endOfName+1:], 64)
+		require.NoError(t, err)
+
+		metrics[name] = value
+	}
+
+	return metrics
 }
