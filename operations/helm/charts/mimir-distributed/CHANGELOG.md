@@ -39,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851
 * [BUGFIX] Use alertmanager headless service in `gateway` NGINX configuration. #3851
 * [BUGFIX] Use `50Gi` persistent volume for ingesters in `capped-small.yaml`. #3919
+* [BUGFIX] Set server variables in NGINX configuration so that IP addresses are re-resolved when TTLs expire. #4124
 
 ## 4.0.1
 
