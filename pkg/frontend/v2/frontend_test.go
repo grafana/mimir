@@ -76,6 +76,8 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	logger := log.NewLogfmtLogger(os.Stdout)
 	f, err := NewFrontend(cfg, logger, reg)
 	require.NoError(t, err)
+	// Inject a fake WaitGroup, so we can test the Frontend's use of it
+	f.requests.wg = &fakeWaitGroup{}
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
 
@@ -341,6 +343,55 @@ func TestFrontendFailedCancellation(t *testing.T) {
 	ms.checkWithLock(func() {
 		require.Len(t, ms.msgs, 1)
 	})
+}
+
+// Test that the front-end shuts down gracefully, i.e. waits for in-flight queries to finish.
+func TestFrontend_GracefulShutdown(t *testing.T) {
+	const (
+		userID = "test"
+		body   = "all good"
+	)
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+		// It first needs to be told that enqueuing has succeeded.
+		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+			Code: 200,
+			Body: []byte(body),
+		})
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+	require.Equal(t, []byte(body), resp.Body)
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
+
+	wg := f.requests.wg.(*fakeWaitGroup)
+	require.True(t, wg.addCalled)
+	require.Equal(t, 0, wg.count)
+	require.True(t, wg.waitCalled)
+}
+
+type fakeWaitGroup struct {
+	count      int
+	addCalled  bool
+	waitCalled bool
+}
+
+func (g *fakeWaitGroup) Add(delta int) {
+	g.addCalled = true
+	g.count += delta
+}
+
+func (g *fakeWaitGroup) Done() {
+	g.count--
+}
+
+func (g *fakeWaitGroup) Wait() {
+	g.waitCalled = true
 }
 
 type mockScheduler struct {

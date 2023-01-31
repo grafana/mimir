@@ -311,15 +311,23 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 	return errors.New(msg)
 }
 
+// waitGroup abstracts sync.WaitGroup, for testability.
+type waitGroup interface {
+	Add(delta int)
+	Done()
+	Wait()
+}
+
 type requestsInProgress struct {
 	mu       sync.Mutex
 	requests map[uint64]*frontendRequest
-	wg       sync.WaitGroup
+	wg       waitGroup
 }
 
 func newRequestsInProgress() *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
+		wg:       &sync.WaitGroup{},
 	}
 }
 
