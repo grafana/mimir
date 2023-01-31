@@ -71,16 +71,6 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	return res, err
 }
 
-// injectCardinalityEstimate injects a given estimate into the request's hints.
-func injectCardinalityEstimate(request Request, estimate uint64) Request {
-	if hints := request.GetHints(); hints != nil {
-		hints.EstimatedCardinality = estimate
-	} else {
-		request = request.WithHints(&Hints{EstimatedCardinality: estimate})
-	}
-	return request
-}
-
 // lookupCardinalityForKey fetches a cardinality estimate for the given key from
 // the results cache.
 func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key string) (uint64, bool) {
@@ -102,6 +92,16 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 		return
 	}
 	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshalBinary(count)}, cardinalityEstimateTTL)
+}
+
+// injectCardinalityEstimate injects a given estimate into the request's hints.
+func injectCardinalityEstimate(request Request, estimate uint64) Request {
+	if hints := request.GetHints(); hints != nil {
+		hints.EstimatedCardinality = estimate
+	} else {
+		request = request.WithHints(&Hints{EstimatedCardinality: estimate})
+	}
+	return request
 }
 
 // marshalBinary marshals a cardinality estimate value for storage in the cache.
