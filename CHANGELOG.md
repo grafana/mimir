@@ -31,6 +31,10 @@
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 
+### Mimirtool
+
+* * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
+
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
