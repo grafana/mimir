@@ -11,6 +11,9 @@
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
 * [ENHANCEMENT] Query-frontend: log caller user agent in query stats logs. #4093
 * [ENHANCEMENT] Store-gateway: add `data_type` label with values on `cortex_bucket_store_partitioner_extended_ranges_total`, `cortex_bucket_store_partitioner_expanded_ranges_total`, `cortex_bucket_store_partitioner_requested_ranges_total`, `cortex_bucket_store_partitioner_expanded_bytes_total`, `cortex_bucket_store_partitioner_requested_bytes_total` for `postings`, `series`, and `chunks`. #4095
+* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
+* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 
 ### Mixin
 
@@ -21,9 +24,6 @@
 * [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
-* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
-* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
-* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 
 ### Jsonnet
 
