@@ -191,15 +191,6 @@ func TestReadWriteModeAlertingRule(t *testing.T) {
 		},
 	)
 
-	// Set up alertmanager config for tenant
-	alertmanagerConfig := `
-route:
-  receiver: test-receiver
-receivers:
-  - name: test-receiver
-`
-	require.NoError(t, client.SetAlertmanagerConfig(context.Background(), alertmanagerConfig, map[string]string{}))
-
 	// Create alerting rule
 	alert := yaml.Node{}
 	testAlertName := "test_alert"
@@ -307,6 +298,15 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 		[]string{"cortex_ring_members"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"), labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE")),
 	))
+
+	// Set up alertmanager config for tenant
+	alertmanagerConfig := `
+route:
+  receiver: test-receiver
+receivers:
+  - name: test-receiver
+`
+	require.NoError(t, client.SetAlertmanagerConfig(context.Background(), alertmanagerConfig, map[string]string{}))
 
 	return client, cluster
 }
