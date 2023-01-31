@@ -185,9 +185,12 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 	require.NoError(t, err)
 
-	_, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
+	// When no config is set yet it should use the default fallback config.
+	cfg, err := c.GetAlertmanagerConfig(context.Background())
+	require.NoError(t, err)
+	require.Len(t, cfg.Receivers, 1)
+	require.Equal(t, "empty-receiver", cfg.Route.Receiver)
+	require.Equal(t, "empty-receiver", cfg.Receivers[0].Name)
 
 	err = c.SetAlertmanagerConfig(context.Background(), mimirAlertmanagerUserConfigYaml, map[string]string{})
 	require.NoError(t, err)
@@ -199,7 +202,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "user-1")),
 		e2e.WaitMissingMetrics))
 
-	cfg, err := c.GetAlertmanagerConfig(context.Background())
+	cfg, err = c.GetAlertmanagerConfig(context.Background())
 	require.NoError(t, err)
 
 	// Ensure the returned status config matches the loaded config
@@ -227,10 +230,12 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, am.WaitRemovedMetric("cortex_alertmanager_config_last_reload_successful_seconds", e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
+	// Getting the config after the delete call should return the fallback config.
 	cfg, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.Nil(t, cfg)
-	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
+	require.NoError(t, err)
+	require.Len(t, cfg.Receivers, 1)
+	require.Equal(t, "empty-receiver", cfg.Route.Receiver)
+	require.Equal(t, "empty-receiver", cfg.Receivers[0].Name)
 }
 
 func TestAlertmanagerSharding(t *testing.T) {
