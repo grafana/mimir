@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -323,6 +324,29 @@ func TestTripperware_Metrics(t *testing.T) {
 			`, testData.expectedNotAlignedCount)),
 				"cortex_query_frontend_non_step_aligned_queries_total",
 			))
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		config        Config
+		expectedError error
+	}{
+		"happy path": {
+			config:        Config{QueryResultPayloadFormat: formatJSON},
+			expectedError: nil,
+		},
+		"unknown query result payload format": {
+			config:        Config{QueryResultPayloadFormat: "something-else"},
+			expectedError: errors.New("unknown query result payload format 'something-else'. Supported values: json, protobuf"),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := test.config.Validate()
+			require.Equal(t, test.expectedError, err)
 		})
 	}
 }
