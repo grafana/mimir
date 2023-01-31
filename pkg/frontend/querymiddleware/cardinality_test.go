@@ -258,7 +258,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 }
 
-func Test_cardinalityEstimateBucket_GenerateCacheKey(t *testing.T) {
+func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.T) {
 	splitter := cardinalityEstimateBucket(24 * time.Hour)
 	rangeQuery := &PrometheusRangeQueryRequest{
 		Start: parseTimeRFC3339(t, "2023-01-31T09:00:00Z").Unix() * 1000,

@@ -1202,6 +1202,11 @@ results_cache:
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
+# (experimental) How many series a single sharded sub-request should load at
+# most. 0 to disable cardinality-based sharding.
+# CLI flag: -query-frontend.max-series-per-shard
+[max_series_per_shard: <int> | default = 0]
+
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]
