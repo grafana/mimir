@@ -3351,3 +3351,13 @@ continuous_test:
 
   tolerations: []
   terminationGracePeriodSeconds: 30
+
+# -- Add dynamic manifests via values. Example:
+# extraObjects:
+# - kind: ConfigMap
+#   apiVersion: v1
+#   metadata:
+#     name: extra-cm-{{ .Release.Name }}
+#   data: |
+#     extra.yml: "does-my-install-need-extra-info: true"
+extraObjects: []
