@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/dns/godns"
 	"github.com/grafana/dskit/dns/miekgdns"
@@ -54,29 +53,52 @@ func (t ResolverType) ToResolver(logger log.Logger) ipLookupResolver {
 	return r
 }
 
+// NewProviderWithRegisterers returns a new empty provider with a given resolver type.
+// If empty resolver type is net.DefaultResolver. This accepts multiple prometheus Registerers.
+func NewProviderWithRegisterers(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
+	if len(regs) == 0 {
+		regs = []prometheus.Registerer{prometheus.DefaultRegisterer}
+	}
+	if len(regs) == 1 {
+		return newProvider(logger, []prometheus.Registerer{regs[0]}, resolverType)
+	}
+
+	return newProvider(logger, regs, resolverType)
+}
+
 // NewProvider returns a new empty provider with a given resolver type.
 // If empty resolver type is net.DefaultResolver.
 func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType ResolverType) *Provider {
+	return newProvider(logger, []prometheus.Registerer{reg}, resolverType)
+}
+
+func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
 	p := &Provider{
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
 		logger:   logger,
+		//lint:ignore faillint need to apply the metric to multiple registerer
 		resolverAddrsDesc: prometheus.NewDesc(
 			"dns_provider_results",
 			"The number of resolved endpoints for each configured address",
 			[]string{"addr"},
 			nil),
-		resolverLookupsCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		resolverLookupsCount: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "dns_lookups_total",
 			Help: "The number of DNS lookups resolutions attempts",
 		}),
-		resolverFailuresCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		resolverFailuresCount: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "dns_failures_total",
 			Help: "The number of DNS lookup failures",
 		}),
 	}
-	if reg != nil {
-		reg.MustRegister(p)
+
+	for _, reg := range regs {
+		if reg != nil {
+			reg.MustRegister(p)
+		}
 	}
 
 	return p

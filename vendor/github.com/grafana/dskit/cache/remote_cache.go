@@ -7,7 +7,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
@@ -16,12 +15,13 @@ var (
 )
 
 const (
-	labelName        = "name"
-	labelBackend     = "backend"
-	backendRedis     = "redis"
-	backendMemcached = "memcached"
-	cachePrefix      = "cache_"
-	getMultiPrefix   = "getMulti_"
+	labelName             = "name"
+	labelBackend          = "backend"
+	backendRedis          = "redis"
+	backendMemcached      = "memcached"
+	cachePrefix           = "cache_"
+	getMultiPrefix        = "getMulti_"
+	legacyMemcachedPrefix = "memcached_"
 )
 
 // MemcachedCache is a memcached-based cache.
@@ -36,9 +36,12 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			prometheus.WrapRegistererWith(
-				prometheus.Labels{labelBackend: backendMemcached},
-				prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+			[]prometheus.Registerer{
+				prometheus.WrapRegistererWithPrefix(cachePrefix+legacyMemcachedPrefix, reg),
+				prometheus.WrapRegistererWith(
+					prometheus.Labels{labelBackend: backendMemcached},
+					prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+			},
 		),
 	}
 }
@@ -55,9 +58,11 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			prometheus.WrapRegistererWith(
-				prometheus.Labels{labelBackend: backendRedis},
-				prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+			[]prometheus.Registerer{
+				prometheus.WrapRegistererWith(
+					prometheus.Labels{labelBackend: backendRedis},
+					prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+			},
 		),
 	}
 }
@@ -72,24 +77,30 @@ type remoteCache struct {
 	hits     prometheus.Counter
 }
 
-func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClient, reg prometheus.Registerer) *remoteCache {
+func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClient, regs []prometheus.Registerer) *remoteCache {
 	c := &remoteCache{
 		logger:       logger,
 		remoteClient: remoteClient,
 		name:         name,
 	}
 
-	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	//lint:ignore faillint need to apply the metric to multiple registerer
+	c.requests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name:        "requests_total",
 		Help:        "Total number of items requests to cache.",
 		ConstLabels: prometheus.Labels{labelName: name},
 	})
 
-	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	//lint:ignore faillint need to apply the metric to multiple registerer
+	c.hits = prometheus.NewCounter(prometheus.CounterOpts{
 		Name:        "hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
 		ConstLabels: prometheus.Labels{labelName: name},
 	})
+
+	for _, reg := range regs {
+		reg.MustRegister(c.requests, c.hits)
+	}
 
 	level.Info(logger).Log("msg", "created remote cache")
 

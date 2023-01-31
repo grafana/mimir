@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
@@ -51,27 +50,54 @@ func New(reg prometheus.Registerer, maxConcurrent int) Gate {
 	return NewInstrumented(reg, maxConcurrent, NewBlocking(maxConcurrent))
 }
 
+// NewWithRegisterers returns an instrumented gate limiting the number of requests being
+// executed concurrently.
+//
+// The gate implementation is based on the
+// github.com/prometheus/prometheus/util/gate package.
+//
+// It can be called several times but not with the same registerer otherwise it
+// will panic when trying to register the same metric multiple times.
+func NewWithRegisterers(regs []prometheus.Registerer, maxConcurrent int) Gate {
+	return NewInstrumentedWithRegisterers(regs, maxConcurrent, NewBlocking(maxConcurrent))
+}
+
 // NewInstrumented wraps a Gate implementation with one that records max number of inflight
 // requests, currently inflight requests, and the duration of calls to the Start method.
 func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
+	return NewInstrumentedWithRegisterers([]prometheus.Registerer{reg}, maxConcurrent, gate)
+}
+
+// NewInstrumentedWithRegisterers wraps a Gate implementation with one that records max number of inflight
+// requests, currently inflight requests, and the duration of calls to the Start method. The constructor accept multiple
+// prometheus Registerer.
+func NewInstrumentedWithRegisterers(regs []prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
 	g := &instrumentedGate{
 		gate: gate,
-		max: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		max: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gate_queries_concurrent_max",
 			Help: "Number of maximum concurrent queries allowed.",
 		}),
-		inflight: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		inflight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gate_queries_in_flight",
 			Help: "Number of queries that are currently in flight.",
 		}),
-		duration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		//lint:ignore faillint need to apply the metric to multiple registerer
+		duration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "gate_duration_seconds",
 			Help:    "How many seconds it took for queries to wait at the gate.",
 			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 		}),
 	}
-
 	g.max.Set(float64(maxConcurrent))
+
+	for _, reg := range regs {
+		if reg != nil {
+			reg.MustRegister(g.max, g.inflight, g.duration)
+		}
+	}
 	return g
 }
 
