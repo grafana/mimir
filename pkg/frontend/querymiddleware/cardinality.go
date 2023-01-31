@@ -18,10 +18,13 @@ const (
 	// TODO think about a reasonable value for cardinalityEstimateTTL.
 	cardinalityEstimateTTL = 7 * 24 * time.Hour
 
-	// cardinalityEstimateBucketSize is the size of the buckets that two requests must fall into to have the same estimated cardinality.
+	// cardinalityEstimateBucketSize is the size of the buckets that two requests
+	// must fall into to have the same estimated cardinality.
 	cardinalityEstimateBucketSize = 24 * time.Hour
 )
 
+// cardinalityEstimation is a Middleware that caches estimates for a query's
+// cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
 	cache cache.Cache
 	next  Handler
@@ -43,7 +46,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	if err != nil {
 		return c.next.Do(ctx, request)
 	}
-	k := cardinalityEstimateBucket(cardinalityEstimateBucketSize).GenerateCacheKey(tenant.JoinTenantIDs(tenants), request)
+	k := cardinalityEstimateBucket(cardinalityEstimateBucketSize).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
 	estimatedCardinality, ok := c.lookupCardinalityForKey(ctx, k)
 	if ok {
 		request = injectCardinalityEstimate(request, estimatedCardinality)
@@ -98,19 +101,24 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshalBinary(count)}, cardinalityEstimateTTL)
 }
 
+// marshalBinary marshals a cardinality estimate value for storage in the cache.
 func marshalBinary(in uint64) []byte {
 	marshaled := make([]byte, 8)
 	binary.LittleEndian.PutUint64(marshaled, in)
 	return marshaled
 }
 
+// unmarshalBinary unmarshals the cached representation of a cardinality estimate.
 func unmarshalBinary(data []byte) uint64 {
 	return binary.LittleEndian.Uint64(data)
 }
 
+// cardinalityEstimateBucket is a utility to allow splitting cardinality estimate
+// keys into buckets of fixed width (time).
 type cardinalityEstimateBucket time.Duration
 
-func (s cardinalityEstimateBucket) GenerateCacheKey(userID string, r Request) string {
+// generateCacheKey generates a key for a request's cardinality estimate.
+func (s cardinalityEstimateBucket) generateCacheKey(userID string, r Request) string {
 	startInterval := r.GetStart() / time.Duration(s).Milliseconds()
 	rangeSizeSeconds := (r.GetEnd() - r.GetStart()) / 1000
 	if rangeSizeSeconds == 0 {
