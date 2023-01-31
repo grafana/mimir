@@ -1202,6 +1202,11 @@ results_cache:
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
+# (experimental) Format to use when retrieving query results from queriers.
+# Supported values: json, protobuf
+# CLI flag: -query-frontend.query-result-payload-format
+[query_result_payload_format: <string> | default = "json"]
+
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]

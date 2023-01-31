@@ -39,6 +39,7 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	allFormats        = []string{formatJSON, formatProtobuf}
 )
 
 const (
@@ -55,7 +56,8 @@ const (
 	operationEncode = "encode"
 	operationDecode = "decode"
 
-	formatJSON = "json"
+	formatJSON     = "json"
+	formatProtobuf = "protobuf"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
