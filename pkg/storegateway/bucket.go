@@ -1180,14 +1180,6 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 		s.metrics.synchronousSeriesGetAllDuration.Observe(stats.synchronousSeriesGetAllDuration.Seconds())
 		s.metrics.synchronousSeriesMergeDuration.Observe(stats.synchronousSeriesMergeDuration.Seconds())
 	}
-
-	// Temporary
-	s.metrics.slabPoolBytesReleased.Add(float64(stats.slabPoolBytesReleased))
-	s.metrics.slabPoolBytesDirectlyAllocated.Add(float64(stats.slabPoolBytesDirectlyAllocated))
-	s.metrics.slabPoolBytesFromExistingSlab.Add(float64(stats.slabPoolBytesFromExistingSlab))
-	s.metrics.slabPoolBytesFromPooledSlab.Add(float64(stats.slabPoolBytesFromPooledSlab))
-	s.metrics.slabPoolBytesFromNewSlab.Add(float64(stats.slabPoolBytesFromNewSlab))
-	s.metrics.slabPoolBytesAddedToHeap.Add(float64(stats.slabPoolBytesAddedToHeap))
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
@@ -1726,13 +1718,12 @@ func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]
 	return buf.Bytes(), nil
 }
 
-func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges, chunksPool *pool.SafeSlabPool[byte]) (*[]byte, error) {
+func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges) (*[]byte, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
-	// Get a reader for the required range.
-	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunksPool})
+	ctx = bucketcache.WithMemoryPool(ctx, chunkBytesSlicePool, chunkBytesSlabSize)
 	reader, err := b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 	if err != nil {
 		return nil, errors.Wrap(err, "get range reader")
@@ -1753,12 +1744,12 @@ func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length i
 	return chunkBuffer, nil
 }
 
-func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64, chunksPool *pool.SafeSlabPool[byte]) (io.ReadCloser, error) {
+func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64) (io.ReadCloser, error) {
 	if seq < 0 || seq >= len(b.chunkObjs) {
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
-	ctx = bucketcache.WithAllocator(ctx, &slabPoolAdapter{chunksPool})
+	ctx = bucketcache.WithMemoryPool(ctx, chunkBytesSlicePool, chunkBytesSlabSize)
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
@@ -1882,17 +1873,4 @@ func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 		return sharding.ShardSelector{}
 	}
 	return *shard
-}
-
-type slabPoolAdapter struct {
-	pool *pool.SafeSlabPool[byte]
-}
-
-func (s *slabPoolAdapter) Get(sz int) *[]byte {
-	b := s.pool.Get(sz)
-	return &b
-}
-
-func (s *slabPoolAdapter) Put(_ *[]byte) {
-	// no-op
 }

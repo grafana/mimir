@@ -2429,9 +2429,6 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	chunkPool, err := pool.NewBucketedBytes(8, 32*1024, 2, 1e10)
 	assert.NoError(b, err)
 
-	// Create a chunk slab pool with 16KB slabs
-	chunkSlabs := pool.NewSafeSlabPool[byte](pool.Interface(&sync.Pool{New: nil}), 16*1024)
-
 	// Create a bucket block with only the dependencies we need for the benchmark.
 	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, blockPartitioners{})
 	assert.NoError(b, err)
@@ -2442,7 +2439,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 		offset := int64(0)
 		length := readLengths[n%len(readLengths)]
 
-		_, err := blk.readChunkRange(ctx, 0, offset, length, byteRanges{{offset: 0, length: int(length)}}, chunkSlabs)
+		_, err := blk.readChunkRange(ctx, 0, offset, length, byteRanges{{offset: 0, length: int(length)}})
 		if err != nil {
 			b.Fatal(err.Error())
 		}
