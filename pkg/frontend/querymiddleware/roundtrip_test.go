@@ -66,7 +66,7 @@ func TestRangeTripperware(t *testing.T) {
 	tw, err := NewTripperware(Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		nil,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
@@ -109,6 +109,7 @@ func TestInstantTripperware(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	codec := newTestPrometheusCodec()
 
 	tw, err := NewTripperware(
 		Config{
@@ -116,7 +117,7 @@ func TestInstantTripperware(t *testing.T) {
 		},
 		log.NewNopLogger(),
 		mockLimits{totalShards: totalShards},
-		PrometheusCodec,
+		codec,
 		nil,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
@@ -136,7 +137,7 @@ func TestInstantTripperware(t *testing.T) {
 			return nil, err
 		}
 
-		return PrometheusCodec.EncodeResponse(r.Context(), &PrometheusResponse{
+		return codec.EncodeResponse(r.Context(), &PrometheusResponse{
 			Status: "success",
 			Data: &PrometheusData{
 				ResultType: "vector",
@@ -288,7 +289,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			tw, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
-				PrometheusCodec,
+				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
 					Logger:     log.NewNopLogger(),

@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,8 @@ var (
 )
 
 func TestRequest(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	for i, tc := range []struct {
 		url         string
 		expected    Request
@@ -90,14 +93,14 @@ func TestRequest(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "1")
 			r = r.WithContext(ctx)
 
-			req, err := PrometheusCodec.DecodeRequest(ctx, r)
+			req, err := codec.DecodeRequest(ctx, r)
 			if err != nil {
 				require.EqualValues(t, tc.expectedErr, err)
 				return
 			}
 			require.EqualValues(t, tc.expected, req)
 
-			rdash, err := PrometheusCodec.EncodeRequest(context.Background(), req)
+			rdash, err := codec.EncodeRequest(context.Background(), req)
 			require.NoError(t, err)
 			require.EqualValues(t, tc.url, rdash.RequestURI)
 		})
@@ -118,8 +121,10 @@ type prometeheusResponseData struct {
 }
 
 func TestDecodeFailedResponse(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	t.Run("internal error", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -131,7 +136,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 
 	t.Run("too many requests", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -144,7 +149,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 
 	t.Run("too large entry", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusRequestEntityTooLarge,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -165,6 +170,8 @@ func TestResponseRoundtrip(t *testing.T) {
 			Values: []string{"application/json"},
 		},
 	}
+
+	codec := newTestPrometheusCodec()
 
 	for _, tc := range []struct {
 		name        string
@@ -303,7 +310,7 @@ func TestResponseRoundtrip(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			decoded, err := PrometheusCodec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			if tc.expectedErr != nil {
 				assert.Equal(t, tc.expectedErr, err)
 				return
@@ -319,7 +326,7 @@ func TestResponseRoundtrip(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := PrometheusCodec.EncodeResponse(context.Background(), decoded)
+			encoded, err := codec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
 
 			expectedJSON, err := bodyBuffer(httpResponse)
@@ -334,6 +341,8 @@ func TestResponseRoundtrip(t *testing.T) {
 }
 
 func TestMergeAPIResponses(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	for _, tc := range []struct {
 		name     string
 		input    []Response
@@ -549,7 +558,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 		}} {
 		t.Run(tc.name, func(t *testing.T) {
-			output, err := PrometheusCodec.MergeResponse(tc.input...)
+			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
 		})
@@ -565,7 +574,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 
-		_, err := PrometheusCodec.MergeResponse(successful, unsuccessful)
+		_, err := codec.MergeResponse(successful, unsuccessful)
 		require.Error(t, err)
 	})
 
@@ -580,7 +589,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Status: statusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
 			Data:   nil,
 		}
-		_, err := PrometheusCodec.MergeResponse(successful, nilData)
+		_, err := codec.MergeResponse(successful, nilData)
 		require.Error(t, err)
 	})
 
@@ -593,7 +602,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: model.ValVector.String()},
 		}
-		_, err := PrometheusCodec.MergeResponse(matrixResponse, vectorResponse)
+		_, err := codec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
 }
@@ -612,6 +621,8 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 		numSamplesPerSeries = 1000
 	)
 
+	codec := newTestPrometheusCodec()
+
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 	encodedRes, err := json.Marshal(res)
@@ -622,7 +633,7 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
@@ -637,6 +648,8 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 		numSamplesPerSeries = 1000
 	)
 
+	codec := newTestPrometheusCodec()
+
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 
@@ -644,7 +657,7 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := PrometheusCodec.EncodeResponse(context.Background(), res)
+		_, err := codec.EncodeResponse(context.Background(), res)
 		require.NoError(b, err)
 	}
 }
@@ -775,4 +788,8 @@ func Test_DecodeOptions(t *testing.T) {
 			require.Equal(t, tt.expected, actual)
 		})
 	}
+}
+
+func newTestPrometheusCodec() Codec {
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry())
 }
