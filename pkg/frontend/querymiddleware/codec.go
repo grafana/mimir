@@ -55,7 +55,7 @@ const (
 	operationEncode = "encode"
 	operationDecode = "decode"
 
-	formatJson = "json"
+	formatJSON = "json"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -350,8 +350,8 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationDecode, formatJson).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationDecode, formatJson).Observe(float64(len(buf)))
+	c.metrics.duration.WithLabelValues(operationDecode, formatJSON).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, formatJSON).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -380,8 +380,8 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatJson).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatJson).Observe(float64(len(b)))
+	c.metrics.duration.WithLabelValues(operationEncode, formatJSON).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, formatJSON).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{
