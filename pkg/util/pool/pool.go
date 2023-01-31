@@ -150,13 +150,6 @@ type SlabPool[T any] struct {
 	delegate Interface
 	slabSize int
 	slabs    []*[]T
-
-	bytesReleased          atomic.Uint64
-	bytesDirectlyAllocated atomic.Uint64
-	bytesFromExistingSlab  atomic.Uint64
-	bytesFromPooledSlab    atomic.Uint64
-	bytesFromNewSlab       atomic.Uint64
-	bytesAddedToHeap       atomic.Uint64
 }
 
 func NewSlabPool[T any](delegate Interface, slabSize int) *SlabPool[T] {
@@ -177,7 +170,6 @@ func (b *SlabPool[T]) Release() {
 	}
 
 	b.slabs = b.slabs[:0]
-	b.bytesReleased.Add(uint64(released))
 }
 
 // Get returns a slice of T with the given length and capacity (both matches).
@@ -191,8 +183,6 @@ func (b *SlabPool[T]) Get(size int) []T {
 	// If the requested size is bigger than the slab size, then the slice
 	// can't be handled by this pool and will be allocated outside it.
 	if size > b.slabSize {
-		b.bytesDirectlyAllocated.Add(uint64(size))
-		b.bytesAddedToHeap.Add(uint64(size))
 		return make([]T, size)
 	}
 
@@ -201,7 +191,6 @@ func (b *SlabPool[T]) Get(size int) []T {
 	// Look in the last few slabs if there's any space left.
 	for i := len(b.slabs) - 1; i >= len(b.slabs)-lookback && i >= 0; i-- {
 		if cap(*b.slabs[i])-len(*b.slabs[i]) >= size {
-			b.bytesFromExistingSlab.Add(uint64(size))
 			slab = b.slabs[i]
 			break
 		}
@@ -210,17 +199,14 @@ func (b *SlabPool[T]) Get(size int) []T {
 	// Get a new one if there's no space available in the last few slabs.
 	if slab == nil {
 		if reused := b.delegate.Get(); reused != nil {
-			b.bytesFromPooledSlab.Add(uint64(size))
 			slab = reused.(*[]T)
 			*slab = (*slab)[:0]
 		} else {
-			b.bytesFromNewSlab.Add(uint64(size))
 			newSlab := make([]T, 0, b.slabSize)
 			slab = &newSlab
 		}
 
 		// Add the slab to the list of slabs.
-		b.bytesAddedToHeap.Add(uint64(cap(*slab)))
 		b.slabs = append(b.slabs, slab)
 	}
 
@@ -254,27 +240,4 @@ func (b *SafeSlabPool[T]) Get(size int) []T {
 	defer b.wrappedMx.Unlock()
 
 	return b.wrapped.Get(size)
-}
-
-func (b *SafeSlabPool[T]) GetBytesDirectlyAllocated() uint64 {
-	return b.wrapped.bytesDirectlyAllocated.Load()
-}
-
-func (b *SafeSlabPool[T]) GetBytesFromExistingSlab() uint64 {
-	return b.wrapped.bytesFromExistingSlab.Load()
-}
-
-func (b *SafeSlabPool[T]) GetBytesFromPooledSlab() uint64 {
-	return b.wrapped.bytesFromPooledSlab.Load()
-}
-func (b *SafeSlabPool[T]) GetBytesFromNewSlab() uint64 {
-	return b.wrapped.bytesFromNewSlab.Load()
-}
-
-func (b *SafeSlabPool[T]) GetBytesReleased() uint64 {
-	return b.wrapped.bytesReleased.Load()
-}
-
-func (b *SafeSlabPool[T]) GetBytesAddedToHeap() uint64 {
-	return b.wrapped.bytesAddedToHeap.Load()
 }
