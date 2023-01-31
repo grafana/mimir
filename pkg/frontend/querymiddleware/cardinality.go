@@ -46,9 +46,11 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	if err != nil {
 		return c.next.Do(ctx, request)
 	}
+
 	k := cardinalityEstimateBucket(cardinalityEstimateBucketSize).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
-	estimatedCardinality, ok := c.lookupCardinalityForKey(ctx, k)
-	if ok {
+
+	var estimatedCardinality uint64
+	if estimatedCardinality, ok := c.lookupCardinalityForKey(ctx, k); ok {
 		request = injectCardinalityEstimate(request, estimatedCardinality)
 	}
 
