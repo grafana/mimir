@@ -176,7 +176,9 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	// Wait on any in-flight requests
+	// Wait on any in-flight requests.
+	// We don't expect any new queries to be added to requests once stopping is called,
+	// since RoundTripGRPC only accepts incoming requests in the running state.
 	level.Info(f.log).Log("msg", "waiting for in-flight queries to finish...")
 	f.requests.Wait()
 	level.Info(f.log).Log("msg", "finished waiting for in-flight queries")
