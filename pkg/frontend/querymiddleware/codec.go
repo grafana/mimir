@@ -125,7 +125,6 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 	factory := promauto.With(registerer)
 	ms := 1.0 / 1000
 	us := ms / 1000
-	ns := us / 1000
 	kb := 1024.0
 	mb := 1024 * kb
 
@@ -135,7 +134,7 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 			Name:      "frontend_query_payload_codec_duration_seconds",
 			Help:      "Total time spent encoding or decoding query result payloads, in seconds.",
 			// We need a wide range of buckets here because encoding protobuf payloads can take as little as 80ns, and decoding very large JSON payloads can take many milliseconds.
-			Buckets: []float64{50 * ns, 100 * ns, 500 * ns, 1 * us, 5 * us, 10 * us, 25 * us, 50 * us, 100 * us, 250 * us, 500 * us, 1 * ms, 2.5 * ms, 5 * ms, 10 * ms, 20 * ms},
+			Buckets: []float64{1 * us, 10 * us, 100 * us, 500 * us, 1 * ms, 5 * ms, 10 * ms, 20 * ms},
 		}, []string{"operation", "format"}),
 		size: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
