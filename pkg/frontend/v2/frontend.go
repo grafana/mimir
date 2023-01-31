@@ -323,11 +323,6 @@ func newRequestsInProgress(logger log.Logger) *requestsInProgress {
 
 // Wait waits for any in-flight requests to finish.
 func (r *requestsInProgress) Wait() {
-	if r.count() == 0 {
-		level.Info(r.logger).Log("msg", "ready to terminate, no in-flight queries remain")
-		return
-	}
-
 	level.Info(r.logger).Log("msg", "waiting for in-flight queries to finish...")
 	r.wg.Wait()
 
