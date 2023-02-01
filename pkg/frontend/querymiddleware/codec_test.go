@@ -26,7 +26,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
@@ -197,13 +196,15 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name        string
-		resp        prometheusAPIResponse
-		expected    *PrometheusResponse
-		expectedErr error
+		name            string
+		responseHeaders http.Header
+		resp            prometheusAPIResponse
+		expected        *PrometheusResponse
+		expectedErr     error
 	}{
 		{
-			name: "successful string response",
+			name:            "successful string response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -226,7 +227,8 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "successful scalar response",
+			name:            "successful scalar response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -249,7 +251,8 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "successful instant response",
+			name:            "successful instant response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -273,7 +276,8 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "successful range response",
+			name:            "successful range response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -297,7 +301,8 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "successful empty matrix response",
+			name:            "successful empty matrix response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -315,13 +320,26 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "error response",
+			name:            "error response",
+			responseHeaders: headers,
 			resp: prometheusAPIResponse{
 				Status:    statusError,
 				ErrorType: "expected",
 				Error:     "failed",
 			},
 			expectedErr: apierror.New(apierror.Type("expected"), "failed"),
+		},
+		{
+			name:            "unknown content type in response",
+			responseHeaders: http.Header{"Content-Type": []string{"something/else"}},
+			resp:            prometheusAPIResponse{},
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type 'something/else'"),
+		},
+		{
+			name:            "no content type in response",
+			responseHeaders: http.Header{},
+			resp:            prometheusAPIResponse{},
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type ''"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -332,18 +350,18 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			httpResponse := &http.Response{
 				StatusCode:    200,
-				Header:        headers,
+				Header:        tc.responseHeaders,
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
 			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-			if tc.expectedErr != nil {
-				assert.Equal(t, tc.expectedErr, err)
+			if err != nil || tc.expectedErr != nil {
+				require.Equal(t, tc.expectedErr, err)
 				return
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, tc.expected, decoded)
+			require.Equal(t, tc.expected, decoded)
 
 			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -358,7 +376,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
 				StatusCode:    200,
-				Header:        headers,
+				Header:        tc.responseHeaders,
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
@@ -381,7 +399,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 
 			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
-			assert.Equal(t, httpResponse, encoded)
+			require.Equal(t, httpResponse, encoded)
 		})
 	}
 }
