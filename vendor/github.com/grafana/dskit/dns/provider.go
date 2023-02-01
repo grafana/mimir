@@ -75,7 +75,6 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 			Help: "The number of DNS lookup failures",
 		}),
 	}
-
 	if reg != nil {
 		reg.MustRegister(p)
 	}

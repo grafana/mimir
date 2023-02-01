@@ -215,7 +215,6 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	},
 		func() float64 { return 1 },
 	)
-
 	return c, nil
 }
 

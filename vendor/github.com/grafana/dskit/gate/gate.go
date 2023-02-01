@@ -71,7 +71,6 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 		}),
 	}
 	g.max.Set(float64(maxConcurrent))
-
 	return g
 }
 
