@@ -7,6 +7,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/dskit/promregistry"
 )
 
 var (
@@ -36,12 +39,14 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			[]prometheus.Registerer{
-				prometheus.WrapRegistererWithPrefix(cachePrefix+legacyMemcachedPrefix, reg),
-				prometheus.WrapRegistererWith(
-					prometheus.Labels{labelBackend: backendMemcached},
-					prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
-			},
+			promregistry.TeeRegisterer(
+				[]prometheus.Registerer{
+					prometheus.WrapRegistererWithPrefix(cachePrefix+legacyMemcachedPrefix, reg),
+					prometheus.WrapRegistererWith(
+						prometheus.Labels{labelBackend: backendMemcached},
+						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+				},
+			),
 		),
 	}
 }
@@ -58,11 +63,13 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			[]prometheus.Registerer{
-				prometheus.WrapRegistererWith(
-					prometheus.Labels{labelBackend: backendRedis},
-					prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
-			},
+			promregistry.TeeRegisterer(
+				[]prometheus.Registerer{
+					prometheus.WrapRegistererWith(
+						prometheus.Labels{labelBackend: backendRedis},
+						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
+				},
+			),
 		),
 	}
 }
@@ -77,30 +84,24 @@ type remoteCache struct {
 	hits     prometheus.Counter
 }
 
-func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClient, regs []prometheus.Registerer) *remoteCache {
+func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClient, reg prometheus.Registerer) *remoteCache {
 	c := &remoteCache{
 		logger:       logger,
 		remoteClient: remoteClient,
 		name:         name,
 	}
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	c.requests = prometheus.NewCounter(prometheus.CounterOpts{
+	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "requests_total",
 		Help:        "Total number of items requests to cache.",
 		ConstLabels: prometheus.Labels{labelName: name},
 	})
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	c.hits = prometheus.NewCounter(prometheus.CounterOpts{
+	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
 		ConstLabels: prometheus.Labels{labelName: name},
 	})
-
-	for _, reg := range regs {
-		reg.MustRegister(c.requests, c.hits)
-	}
 
 	level.Info(logger).Log("msg", "created remote cache")
 

@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/dskit/dns/godns"
 	"github.com/grafana/dskit/dns/miekgdns"
@@ -60,26 +61,23 @@ func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType Reso
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
 		logger:   logger,
-		//lint:ignore faillint need to apply the metric to multiple registerer
 		resolverAddrsDesc: prometheus.NewDesc(
 			"dns_provider_results",
 			"The number of resolved endpoints for each configured address",
 			[]string{"addr"},
 			nil),
-		//lint:ignore faillint need to apply the metric to multiple registerer
-		resolverLookupsCount: prometheus.NewCounter(prometheus.CounterOpts{
+		resolverLookupsCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "dns_lookups_total",
 			Help: "The number of DNS lookups resolutions attempts",
 		}),
-		//lint:ignore faillint need to apply the metric to multiple registerer
-		resolverFailuresCount: prometheus.NewCounter(prometheus.CounterOpts{
+		resolverFailuresCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "dns_failures_total",
 			Help: "The number of DNS lookup failures",
 		}),
 	}
 
 	if reg != nil {
-		reg.MustRegister(p, p.resolverLookupsCount, p.resolverFailuresCount)
+		reg.MustRegister(p)
 	}
 
 	return p

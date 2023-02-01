@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
@@ -55,18 +56,15 @@ func New(reg prometheus.Registerer, maxConcurrent int) Gate {
 func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
 	g := &instrumentedGate{
 		gate: gate,
-		//lint:ignore faillint need to apply the metric to multiple registerer
-		max: prometheus.NewGauge(prometheus.GaugeOpts{
+		max: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "gate_queries_concurrent_max",
 			Help: "Number of maximum concurrent queries allowed.",
 		}),
-		//lint:ignore faillint need to apply the metric to multiple registerer
-		inflight: prometheus.NewGauge(prometheus.GaugeOpts{
+		inflight: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "gate_queries_in_flight",
 			Help: "Number of queries that are currently in flight.",
 		}),
-		//lint:ignore faillint need to apply the metric to multiple registerer
-		duration: prometheus.NewHistogram(prometheus.HistogramOpts{
+		duration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "gate_duration_seconds",
 			Help:    "How many seconds it took for queries to wait at the gate.",
 			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
@@ -74,9 +72,6 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 	}
 	g.max.Set(float64(maxConcurrent))
 
-	if reg != nil {
-		reg.MustRegister(g.max, g.inflight, g.duration)
-	}
 	return g
 }
 

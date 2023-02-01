@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -35,49 +36,46 @@ type clientMetrics struct {
 }
 
 func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	operations := prometheus.NewCounterVec(prometheus.CounterOpts{
+	cm := &clientMetrics{}
+
+	cm.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",
 		Help: "Total number of operations against cache.",
 	}, []string{"operation"})
-	operations.WithLabelValues(opGetMulti)
-	operations.WithLabelValues(opSet)
-	operations.WithLabelValues(opDelete)
+	cm.operations.WithLabelValues(opGetMulti)
+	cm.operations.WithLabelValues(opSet)
+	cm.operations.WithLabelValues(opDelete)
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	failures := prometheus.NewCounterVec(prometheus.CounterOpts{
+	cm.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_failures_total",
 		Help: "Total number of operations against cache that failed.",
 	}, []string{"operation", "reason"})
 	for _, op := range []string{opGetMulti, opSet, opDelete} {
-		failures.WithLabelValues(op, reasonTimeout)
-		failures.WithLabelValues(op, reasonMalformedKey)
-		failures.WithLabelValues(op, reasonServerError)
-		failures.WithLabelValues(op, reasonNetworkError)
-		failures.WithLabelValues(op, reasonOther)
+		cm.failures.WithLabelValues(op, reasonTimeout)
+		cm.failures.WithLabelValues(op, reasonMalformedKey)
+		cm.failures.WithLabelValues(op, reasonServerError)
+		cm.failures.WithLabelValues(op, reasonNetworkError)
+		cm.failures.WithLabelValues(op, reasonOther)
 	}
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	skipped := prometheus.NewCounterVec(prometheus.CounterOpts{
+	cm.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_skipped_total",
 		Help: "Total number of operations against cache that have been skipped.",
 	}, []string{"operation", "reason"})
-	skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
-	skipped.WithLabelValues(opSet, reasonMaxItemSize)
-	skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
+	cm.skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
+	cm.skipped.WithLabelValues(opSet, reasonMaxItemSize)
+	cm.skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	duration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	cm.duration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "operation_duration_seconds",
 		Help:    "Duration of operations against cache.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
 	}, []string{"operation"})
-	duration.WithLabelValues(opGetMulti)
-	duration.WithLabelValues(opSet)
-	duration.WithLabelValues(opDelete)
+	cm.duration.WithLabelValues(opGetMulti)
+	cm.duration.WithLabelValues(opSet)
+	cm.duration.WithLabelValues(opDelete)
 
-	//lint:ignore faillint need to apply the metric to multiple registerer
-	dataSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	cm.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "operation_data_size_bytes",
 		Help: "Tracks the size of the data stored in and fetched from cache.",
 		Buckets: []float64{
@@ -86,20 +84,10 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	},
 		[]string{"operation"},
 	)
-	dataSize.WithLabelValues(opGetMulti)
-	dataSize.WithLabelValues(opSet)
+	cm.dataSize.WithLabelValues(opGetMulti)
+	cm.dataSize.WithLabelValues(opSet)
 
-	if reg != nil {
-		reg.MustRegister(operations, failures, skipped, duration, dataSize)
-	}
-
-	return &clientMetrics{
-		operations: operations,
-		failures:   failures,
-		skipped:    skipped,
-		duration:   duration,
-		dataSize:   dataSize,
-	}
+	return cm
 }
 
 type baseClient struct {
