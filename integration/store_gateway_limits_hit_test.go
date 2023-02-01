@@ -22,7 +22,7 @@ import (
 
 func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 	const (
-		blockRangePeriod = 5 * time.Second
+		blockRangePeriod = 500 * time.Millisecond
 	)
 
 	setup := func(t *testing.T, additionalStoreGatewayFlags, additionalQuerierFlags map[string]string) (scenario *e2e.Scenario, ingester, storeGateway *e2emimir.MimirService, client *e2emimir.Client) {
@@ -41,6 +41,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 				"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
 				"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod * 2) - 1).String(),
 				"-blocks-storage.tsdb.ship-interval":                "1s",
+				"-blocks-storage.tsdb.head-compaction-interval":     "500ms",
 			},
 		)
 
@@ -86,7 +87,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			expectedErrorKey:            storegateway.ErrChunksLimitMessage,
 		},
 		"when querier hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
-			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "2"},
+			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "1"},
 			expectedErrorKey:       string(globalerror.MaxChunksPerQuery),
 		},
 	}
@@ -97,27 +98,30 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			defer scenario.Close()
 
 			timeStamp1 := time.Now()
-			timeStamp2 := timeStamp1.Add(blockRangePeriod * 2)
+			timeStamp2 := timeStamp1.Add(blockRangePeriod * 3)
 			timeSeries1, _, _ := generateSeries("series_1", timeStamp1, prompb.Label{Name: "series_1", Value: "series_1"})
 			timeSeries2, _, _ := generateSeries("series_2", timeStamp2, prompb.Label{Name: "series_2", Value: "series_2"})
 
 			pushTimeSeries(t, client, timeSeries1)
+			pushTimeSeries(t, client, timeSeries2)
 
-			// ensures that data will be queried from store-gateway, and not from ingester: at this stage 1 block of data should be stored
-			waitUntilShippedToStorage(t, ingester, storeGateway, 1)
+			// ensures that first 2 blocks will be shipped to the storage and queried from the store-gateway
+			waitUntilShippedToStorage(t, ingester, storeGateway, 2)
 
-			// Verify we can successfully read the data we have just pushed
-			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(1*time.Hour), time.Second)
+			// Push another series in order to trigger deletion of the previous 2 blocks from the ingester due to expired retention.
+			// 2 retention periods should expire between timeStamp1 and timeStamp3
+			timeStamp3 := timeStamp2.Add(blockRangePeriod * 6)
+			timeSeries3, _, _ := generateSeries("series_3", timeStamp3, prompb.Label{Name: "series_3", Value: "series_3"})
+			pushTimeSeries(t, client, timeSeries3)
+			waitUntilShippedToStorage(t, ingester, storeGateway, 3)
+
+			// Verify we can successfully query timeseries between timeStamp1 and timeStamp2 (excluded)
+			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode)
 
-			pushTimeSeries(t, client, timeSeries2)
-
-			// ensures that data will be queried from store-gateway, and not from ingester: at this stage 2 blocks of data should be stored
-			waitUntilShippedToStorage(t, ingester, storeGateway, 2)
-
-			// Verify we cannot read the data we just pushed because the limit is hit, and the status code 422 is returned
-			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(1*time.Hour), time.Second)
+			// Verify we cannot successfully query timeseries between timeSeries1 and timeSeries2 (included) because the limit is hit, and the status code 422 is returned
+			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode)
 			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey))
