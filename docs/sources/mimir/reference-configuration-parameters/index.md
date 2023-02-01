@@ -2969,11 +2969,6 @@ bucket_store:
     # blocks-storage.bucket-store.chunks-cache
     [memcached: <memcached>]
 
-    # (advanced) Size of each subrange that bucket object is split into for
-    # better caching.
-    # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-size
-    [subrange_size: <int> | default = 16000]
-
     # (advanced) Maximum number of sub-GetRange requests that a single GetRange
     # request can be split into when fetching chunks. Zero or negative value =
     # unlimited number of sub-requests.

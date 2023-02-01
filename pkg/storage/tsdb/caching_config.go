@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
@@ -27,22 +28,25 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
+// subrangeSize is the size of each subrange that bucket objects are split into for better caching
+const subrangeSize int64 = 16000
+
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
-	SubrangeSize               int64         `yaml:"subrange_size" category:"advanced"`
 	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
 	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
 	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
 	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
 }
 
-func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string, logger log.Logger) {
 	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", cache.BackendMemcached))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
 
-	f.Int64Var(&cfg.SubrangeSize, prefix+"subrange-size", 16000, "Size of each subrange that bucket object is split into for better caching.")
+	// TODO: Deprecated in Mimir 2.7, remove in Mimir 2.9
+	flagext.DeprecatedFlag(f, prefix+"subrange-size", fmt.Sprintf("Deprecated, %d bytes is now always used. Size of each subrange that bucket object is split into for better caching.", subrangeSize), logger)
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
@@ -138,7 +142,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 			}
 		}
 
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {
