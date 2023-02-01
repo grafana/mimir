@@ -442,27 +442,33 @@ func (c *loadingSeriesChunksSetIterator) getNext() (next *seriesChunksSet, tryNe
 
 func filterNativeHistogramChunks(seriesEntries []seriesEntry) []seriesEntry {
 	seriesWriteIdx := 0
-	for _, series := range seriesEntries {
+	for i, series := range seriesEntries {
 		chksWriteIdx := 0
-		for i, chk := range series.chks {
+		for j, chk := range series.chks {
 			// The bucketChunkReader will skip populating native histogram chunks when ignoreNativeHistograms is true,
 			// leaving chk.Raw as nil.
 			if chk.Raw == nil {
+				chk.Reset()
 				continue
 			}
 
-			series.chks[chksWriteIdx] = chk
+			series.chks[chksWriteIdx] = series.chks[j]
 			if series.refs != nil {
 				// Not all callers will have series.refs set, but when it is set we expect refs and chks to have a
 				// one-to-one relationship.
-				series.refs[chksWriteIdx] = series.refs[i]
+				series.refs[chksWriteIdx] = series.refs[j]
 			}
 
 			chksWriteIdx++
 		}
+		// Any remaining chunks are to be discarded but we need to reset them first.
+		for k := chksWriteIdx; k < len(series.chks); k++ {
+			series.chks[k].Reset()
+		}
 		series.chks = series.chks[:chksWriteIdx]
 
 		if len(series.chks) == 0 {
+			seriesEntries[i] = seriesEntry{}
 			continue
 		}
 		seriesEntries[seriesWriteIdx] = series
