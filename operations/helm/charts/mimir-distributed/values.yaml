@@ -1047,7 +1047,6 @@ querier:
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 70
 
-
   service:
     annotations: {}
     labels: {}
