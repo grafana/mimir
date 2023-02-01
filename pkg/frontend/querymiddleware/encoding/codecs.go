@@ -11,6 +11,7 @@ var KnownCodecs = map[string]Codec{
 	"original query middleware protobuf":                                  OriginalQueryMiddlewareProtobufCodec{},
 	"snappy compressed original query middleware protobuf":                SnappyWrapperCodec{OriginalQueryMiddlewareProtobufCodec{}},
 	"uninterned protobuf":                                                 UninternedProtobufCodec{},
+	"uninterned protobuf with enums":                                      UninternedProtobufWithEnumCodec{},
 	"interned protobuf":                                                   InternedProtobufCodec{},
 	"snappy compressed interned protobuf":                                 SnappyWrapperCodec{InternedProtobufCodec{}},
 	"interned protobuf with single string symbol table":                   InternedProtobufWithSingleStringCodec{},

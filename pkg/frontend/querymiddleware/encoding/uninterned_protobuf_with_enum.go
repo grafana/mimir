@@ -8,14 +8,14 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/uninternedquerypb"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/encoding/uninternedquerywithenumpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type UninternedProtobufCodec struct{}
+type UninternedProtobufWithEnumCodec struct{}
 
-func (c UninternedProtobufCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
-	var resp uninternedquerypb.QueryResponse
+func (c UninternedProtobufWithEnumCodec) Decode(b []byte) (querymiddleware.PrometheusResponse, error) {
+	var resp uninternedquerywithenumpb.QueryResponse
 
 	if err := resp.Unmarshal(b); err != nil {
 		return querymiddleware.PrometheusResponse{}, err
@@ -24,25 +24,35 @@ func (c UninternedProtobufCodec) Decode(b []byte) (querymiddleware.PrometheusRes
 	var prometheusData querymiddleware.PrometheusData
 
 	switch d := resp.Data.(type) {
-	case *uninternedquerypb.QueryResponse_Scalar:
+	case *uninternedquerywithenumpb.QueryResponse_Scalar:
 		prometheusData = c.decodeScalar(d.Scalar)
-	case *uninternedquerypb.QueryResponse_Vector:
+	case *uninternedquerywithenumpb.QueryResponse_Vector:
 		prometheusData = c.decodeVector(d.Vector)
-	case *uninternedquerypb.QueryResponse_Matrix:
+	case *uninternedquerywithenumpb.QueryResponse_Matrix:
 		prometheusData = c.decodeMatrix(d.Matrix)
 	default:
 		return querymiddleware.PrometheusResponse{}, fmt.Errorf("unknown data type %T", resp.Data)
 	}
 
+	status, err := resp.Status.ToPrometheusString()
+	if err != nil {
+		return querymiddleware.PrometheusResponse{}, err
+	}
+
+	errorType, err := resp.ErrorType.ToPrometheusString()
+	if err != nil {
+		return querymiddleware.PrometheusResponse{}, err
+	}
+
 	return querymiddleware.PrometheusResponse{
-		Status:    resp.Status,
+		Status:    status,
 		Data:      &prometheusData,
-		ErrorType: resp.ErrorType,
+		ErrorType: errorType,
 		Error:     resp.Error,
 	}, nil
 }
 
-func (c UninternedProtobufCodec) decodeScalar(d *uninternedquerypb.ScalarData) querymiddleware.PrometheusData {
+func (c UninternedProtobufWithEnumCodec) decodeScalar(d *uninternedquerywithenumpb.ScalarData) querymiddleware.PrometheusData {
 	return querymiddleware.PrometheusData{
 		ResultType: model.ValScalar.String(),
 		Result: []querymiddleware.SampleStream{
@@ -50,7 +60,7 @@ func (c UninternedProtobufCodec) decodeScalar(d *uninternedquerypb.ScalarData) q
 				Samples: []mimirpb.Sample{
 					{
 						Value:       d.Value,
-						TimestampMs: d.Timestamp,
+						TimestampMs: d.TimestampMilliseconds,
 					},
 				},
 			},
@@ -58,7 +68,7 @@ func (c UninternedProtobufCodec) decodeScalar(d *uninternedquerypb.ScalarData) q
 	}
 }
 
-func (c UninternedProtobufCodec) decodeVector(d *uninternedquerypb.VectorData) querymiddleware.PrometheusData {
+func (c UninternedProtobufWithEnumCodec) decodeVector(d *uninternedquerywithenumpb.VectorData) querymiddleware.PrometheusData {
 	result := make([]querymiddleware.SampleStream, len(d.Samples))
 
 	for sampleIdx, sample := range d.Samples {
@@ -77,7 +87,7 @@ func (c UninternedProtobufCodec) decodeVector(d *uninternedquerypb.VectorData) q
 			Samples: []mimirpb.Sample{
 				{
 					Value:       sample.Value,
-					TimestampMs: sample.Timestamp,
+					TimestampMs: sample.TimestampMilliseconds,
 				},
 			},
 		}
@@ -89,7 +99,7 @@ func (c UninternedProtobufCodec) decodeVector(d *uninternedquerypb.VectorData) q
 	}
 }
 
-func (c UninternedProtobufCodec) decodeMatrix(d *uninternedquerypb.MatrixData) querymiddleware.PrometheusData {
+func (c UninternedProtobufWithEnumCodec) decodeMatrix(d *uninternedquerywithenumpb.MatrixData) querymiddleware.PrometheusData {
 	result := make([]querymiddleware.SampleStream, len(d.Series))
 
 	for seriesIdx, series := range d.Series {
@@ -108,7 +118,7 @@ func (c UninternedProtobufCodec) decodeMatrix(d *uninternedquerypb.MatrixData) q
 		for sampleIdx, sample := range series.Samples {
 			samples[sampleIdx] = mimirpb.Sample{
 				Value:       sample.Value,
-				TimestampMs: sample.Timestamp,
+				TimestampMs: sample.TimestampMilliseconds,
 			}
 		}
 
@@ -124,23 +134,33 @@ func (c UninternedProtobufCodec) decodeMatrix(d *uninternedquerypb.MatrixData) q
 	}
 }
 
-func (c UninternedProtobufCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
-	resp := uninternedquerypb.QueryResponse{
-		Status:    prometheusResponse.Status,
-		ErrorType: prometheusResponse.ErrorType,
+func (c UninternedProtobufWithEnumCodec) Encode(prometheusResponse querymiddleware.PrometheusResponse) ([]byte, error) {
+	status, err := uninternedquerywithenumpb.StatusFromPrometheusString(prometheusResponse.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	errorType, err := uninternedquerywithenumpb.ErrorTypeFromPrometheusString(prometheusResponse.ErrorType)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := uninternedquerywithenumpb.QueryResponse{
+		Status:    status,
+		ErrorType: errorType,
 		Error:     prometheusResponse.Error,
 	}
 
 	switch prometheusResponse.Data.ResultType {
 	case model.ValScalar.String():
 		scalar := c.encodePrometheusScalar(prometheusResponse.Data)
-		resp.Data = &uninternedquerypb.QueryResponse_Scalar{Scalar: &scalar}
+		resp.Data = &uninternedquerywithenumpb.QueryResponse_Scalar{Scalar: &scalar}
 	case model.ValVector.String():
 		vector := c.encodePrometheusVector(prometheusResponse.Data)
-		resp.Data = &uninternedquerypb.QueryResponse_Vector{Vector: &vector}
+		resp.Data = &uninternedquerywithenumpb.QueryResponse_Vector{Vector: &vector}
 	case model.ValMatrix.String():
 		matrix := c.encodePrometheusMatrix(prometheusResponse.Data)
-		resp.Data = &uninternedquerypb.QueryResponse_Matrix{Matrix: &matrix}
+		resp.Data = &uninternedquerywithenumpb.QueryResponse_Matrix{Matrix: &matrix}
 	default:
 		return nil, fmt.Errorf("unknown result type %v", prometheusResponse.Data.ResultType)
 	}
@@ -148,7 +168,7 @@ func (c UninternedProtobufCodec) Encode(prometheusResponse querymiddleware.Prome
 	return resp.Marshal()
 }
 
-func (c UninternedProtobufCodec) encodePrometheusScalar(data *querymiddleware.PrometheusData) uninternedquerypb.ScalarData {
+func (c UninternedProtobufWithEnumCodec) encodePrometheusScalar(data *querymiddleware.PrometheusData) uninternedquerywithenumpb.ScalarData {
 	if len(data.Result) != 1 {
 		panic(fmt.Sprintf("scalar data should have 1 stream, but has %v", len(data.Result)))
 	}
@@ -161,14 +181,14 @@ func (c UninternedProtobufCodec) encodePrometheusScalar(data *querymiddleware.Pr
 
 	sample := stream.Samples[0]
 
-	return uninternedquerypb.ScalarData{
-		Value:     sample.Value,
-		Timestamp: sample.TimestampMs,
+	return uninternedquerywithenumpb.ScalarData{
+		Value:                 sample.Value,
+		TimestampMilliseconds: sample.TimestampMs,
 	}
 }
 
-func (c UninternedProtobufCodec) encodePrometheusVector(data *querymiddleware.PrometheusData) uninternedquerypb.VectorData {
-	samples := make([]uninternedquerypb.VectorSample, len(data.Result))
+func (c UninternedProtobufWithEnumCodec) encodePrometheusVector(data *querymiddleware.PrometheusData) uninternedquerywithenumpb.VectorData {
+	samples := make([]uninternedquerywithenumpb.VectorSample, len(data.Result))
 
 	for sampleIdx, stream := range data.Result {
 		if len(stream.Samples) != 1 {
@@ -182,20 +202,20 @@ func (c UninternedProtobufCodec) encodePrometheusVector(data *querymiddleware.Pr
 			metric[2*labelIdx+1] = label.Value
 		}
 
-		samples[sampleIdx] = uninternedquerypb.VectorSample{
-			Metric:    metric,
-			Value:     stream.Samples[0].Value,
-			Timestamp: stream.Samples[0].TimestampMs,
+		samples[sampleIdx] = uninternedquerywithenumpb.VectorSample{
+			Metric:                metric,
+			Value:                 stream.Samples[0].Value,
+			TimestampMilliseconds: stream.Samples[0].TimestampMs,
 		}
 	}
 
-	return uninternedquerypb.VectorData{
+	return uninternedquerywithenumpb.VectorData{
 		Samples: samples,
 	}
 }
 
-func (c UninternedProtobufCodec) encodePrometheusMatrix(data *querymiddleware.PrometheusData) uninternedquerypb.MatrixData {
-	series := make([]uninternedquerypb.MatrixSeries, len(data.Result))
+func (c UninternedProtobufWithEnumCodec) encodePrometheusMatrix(data *querymiddleware.PrometheusData) uninternedquerywithenumpb.MatrixData {
+	series := make([]uninternedquerywithenumpb.MatrixSeries, len(data.Result))
 
 	for seriesIdx, stream := range data.Result {
 		metric := make([]string, len(stream.Labels)*2)
@@ -205,22 +225,22 @@ func (c UninternedProtobufCodec) encodePrometheusMatrix(data *querymiddleware.Pr
 			metric[2*labelIdx+1] = label.Value
 		}
 
-		samples := make([]uninternedquerypb.MatrixSample, len(stream.Samples))
+		samples := make([]uninternedquerywithenumpb.MatrixSample, len(stream.Samples))
 
 		for sampleIdx, sample := range stream.Samples {
-			samples[sampleIdx] = uninternedquerypb.MatrixSample{
-				Value:     sample.Value,
-				Timestamp: sample.TimestampMs,
+			samples[sampleIdx] = uninternedquerywithenumpb.MatrixSample{
+				Value:                 sample.Value,
+				TimestampMilliseconds: sample.TimestampMs,
 			}
 		}
 
-		series[seriesIdx] = uninternedquerypb.MatrixSeries{
+		series[seriesIdx] = uninternedquerywithenumpb.MatrixSeries{
 			Metric:  metric,
 			Samples: samples,
 		}
 	}
 
-	return uninternedquerypb.MatrixData{
+	return uninternedquerywithenumpb.MatrixData{
 		Series: series,
 	}
 }

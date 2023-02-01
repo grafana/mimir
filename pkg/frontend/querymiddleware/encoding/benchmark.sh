@@ -12,6 +12,7 @@ codecs=(
   "original query middleware protobuf"
   "snappy compressed original query middleware protobuf"
   "uninterned protobuf"
+  "uninterned protobuf with enums"
   "interned protobuf"
   "snappy compressed interned protobuf"
   "interned protobuf with single string symbol table"
