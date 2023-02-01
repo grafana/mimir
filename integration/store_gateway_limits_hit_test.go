@@ -138,6 +138,5 @@ func waitUntilShippedToStorage(t *testing.T, ingester, storeGateway *e2emimir.Mi
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(blockCount), "cortex_ingester_memory_series_created_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(blockCount), "cortex_ingester_memory_series_removed_total"))
-	//require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_tsdb_time_retentions_total"))
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(blockCount), "cortex_bucket_store_blocks_loaded"))
 }
