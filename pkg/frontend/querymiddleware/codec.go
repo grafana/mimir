@@ -319,7 +319,7 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	var resp PrometheusResponse
+
 	if r.StatusCode/100 == 5 {
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
@@ -343,7 +343,8 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
 	start := time.Now()
-	if err := json.Unmarshal(buf, &resp); err != nil {
+	resp, err := c.decodeJSONResponse(buf)
+	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
@@ -359,6 +360,17 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	}
 	return &resp, nil
 }
+
+func (c prometheusCodec) decodeJSONResponse(buf []byte) (PrometheusResponse, error) {
+	var resp PrometheusResponse
+
+	if err := json.Unmarshal(buf, &resp); err != nil {
+		return PrometheusResponse{}, err
+	}
+
+	return resp, nil
+}
+
 func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
