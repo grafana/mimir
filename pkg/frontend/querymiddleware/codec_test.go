@@ -120,7 +120,7 @@ type prometheusAPIResponse struct {
 	Warnings  []string     `json:"warnings,omitempty"`
 }
 
-type prometeheusResponseData struct {
+type prometheusResponseData struct {
 	Type   model.ValueType `json:"resultType"`
 	Result model.Value     `json:"result"`
 }
@@ -186,7 +186,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			name: "successful string response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
-				Data: prometeheusResponseData{
+				Data: prometheusResponseData{
 					Type:   model.ValString,
 					Result: &model.String{Value: "foo", Timestamp: 1_500},
 				},
@@ -209,7 +209,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			name: "successful scalar response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
-				Data: prometeheusResponseData{
+				Data: prometheusResponseData{
 					Type: model.ValScalar,
 					Result: &model.Scalar{
 						Value:     200,
@@ -232,7 +232,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			name: "successful instant response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
-				Data: prometeheusResponseData{
+				Data: prometheusResponseData{
 					Type: model.ValVector,
 					Result: model.Vector{
 						{Metric: model.Metric{"foo": "bar"}, Timestamp: 1_000, Value: 200},
@@ -256,7 +256,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			name: "successful range response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
-				Data: prometeheusResponseData{
+				Data: prometheusResponseData{
 					Type: model.ValMatrix,
 					Result: model.Matrix{
 						{Metric: model.Metric{"foo": "bar"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 100}, {Timestamp: 2_000, Value: 200}}},
@@ -280,7 +280,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			name: "successful empty matrix response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
-				Data: prometeheusResponseData{
+				Data: prometheusResponseData{
 					Type:   model.ValMatrix,
 					Result: model.Matrix{},
 				},
