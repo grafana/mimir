@@ -123,23 +123,21 @@ type prometheusCodecMetrics struct {
 
 func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCodecMetrics {
 	factory := promauto.With(registerer)
-	ms := 1.0 / 1000
-	us := ms / 1000
+	second := 1.0
+	ms := second / 1000
 	kb := 1024.0
 	mb := 1024 * kb
 
 	return &prometheusCodecMetrics{
 		duration: factory.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "cortex_frontend_query_response_codec_duration_seconds",
-			Help: "Total time spent encoding or decoding query result payloads, in seconds.",
-			// We need a wide range of buckets here because encoding protobuf payloads can take as little as 80ns, and decoding very large JSON payloads can take many milliseconds.
-			Buckets: []float64{1 * us, 10 * us, 100 * us, 500 * us, 1 * ms, 5 * ms, 10 * ms, 20 * ms},
+			Name:    "cortex_frontend_query_response_codec_duration_seconds",
+			Help:    "Total time spent encoding or decoding query result payloads, in seconds.",
+			Buckets: prometheus.ExponentialBuckets(1*ms, 2*second, 10),
 		}, []string{"operation", "format"}),
 		size: factory.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "cortex_frontend_query_response_codec_payload_bytes",
-			Help: "Total size of encoded or decoded query result payloads, in bytes.",
-			// Protobuf payloads can be as small as a few bytes, and payloads in either format with a large number of labels can easily be 30+ MB.
-			Buckets: []float64{8, 16, 32, 256, 512, kb, 32 * kb, 256 * kb, 512 * kb, mb, 8 * mb, 16 * mb, 32 * mb, 64 * mb, 256 * mb},
+			Name:    "cortex_frontend_query_response_codec_payload_bytes",
+			Help:    "Total size of encoded or decoded query result payloads, in bytes.",
+			Buckets: prometheus.ExponentialBucketsRange(1*kb, 512*mb, 10),
 		}, []string{"operation", "format"}),
 	}
 }
