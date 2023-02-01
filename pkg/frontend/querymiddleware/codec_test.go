@@ -322,9 +322,9 @@ func TestResponseRoundtrip(t *testing.T) {
 			assert.Equal(t, tc.expected, decoded)
 
 			metrics := gatherMetrics(t, reg)
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_duration_seconds_count{format="json",operation="decode"}`])
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_payload_bytes_count{format="json",operation="decode"}`])
-			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_payload_codec_payload_bytes_sum{format="json",operation="decode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_duration_seconds_count{format="json",operation="decode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_payload_bytes_count{format="json",operation="decode"}`])
+			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_response_codec_payload_bytes_sum{format="json",operation="decode"}`])
 
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
@@ -337,9 +337,9 @@ func TestResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 
 			metrics = gatherMetrics(t, reg)
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_duration_seconds_count{format="json",operation="encode"}`])
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_payload_codec_payload_bytes_count{format="json",operation="encode"}`])
-			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_payload_codec_payload_bytes_sum{format="json",operation="encode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_duration_seconds_count{format="json",operation="encode"}`])
+			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_payload_bytes_count{format="json",operation="encode"}`])
+			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_response_codec_payload_bytes_sum{format="json",operation="encode"}`])
 
 			expectedJSON, err := bodyBuffer(httpResponse)
 			require.NoError(t, err)
