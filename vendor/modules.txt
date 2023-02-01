@@ -525,8 +525,8 @@ github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
-# github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
-## explicit; go 1.17
+# github.com/grafana/e2e v0.1.1-0.20230201085544-cbe2e4360c52
+## explicit; go 1.18
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
@@ -765,7 +765,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.3.0
 ## explicit; go 1.9
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.39.0
+# github.com/prometheus/common v0.39.1-0.20230126140546-ca1f99be33b3
 ## explicit; go 1.17
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt

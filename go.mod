@@ -17,7 +17,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20230120165636-649501dde2ca
-	github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
+	github.com/grafana/e2e v0.1.1-0.20230201085544-cbe2e4360c52
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.45
@@ -30,7 +30,7 @@ require (
 	github.com/prometheus/alertmanager v0.25.0-rc.0.0.20221216141313-26cbd6bd862e
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
-	github.com/prometheus/common v0.39.0
+	github.com/prometheus/common v0.39.1-0.20230126140546-ca1f99be33b3
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sirupsen/logrus v1.9.0
