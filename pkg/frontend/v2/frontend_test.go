@@ -370,28 +370,28 @@ func TestFrontend_GracefulShutdown(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
 
 	wg := f.requests.wg.(*fakeWaitGroup)
-	require.True(t, wg.addCalled)
-	require.Equal(t, 0, wg.count)
-	require.True(t, wg.waitCalled)
+	require.True(t, wg.addCalled.Load())
+	require.Equal(t, int32(0), wg.count.Load())
+	require.True(t, wg.waitCalled.Load())
 }
 
 type fakeWaitGroup struct {
-	count      int
-	addCalled  bool
-	waitCalled bool
+	count      atomic.Int32
+	addCalled  atomic.Bool
+	waitCalled atomic.Bool
 }
 
 func (g *fakeWaitGroup) Add(delta int) {
-	g.addCalled = true
-	g.count += delta
+	g.addCalled.Store(true)
+	g.count.Add(int32(delta))
 }
 
 func (g *fakeWaitGroup) Done() {
-	g.count--
+	g.count.Dec()
 }
 
 func (g *fakeWaitGroup) Wait() {
-	g.waitCalled = true
+	g.waitCalled.Store(true)
 }
 
 type mockScheduler struct {
