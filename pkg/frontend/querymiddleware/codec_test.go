@@ -99,7 +99,7 @@ func TestRequest(t *testing.T) {
 			r = r.WithContext(ctx)
 
 			req, err := codec.DecodeRequest(ctx, r)
-			if err != nil {
+			if err != nil || tc.expectedErr != nil {
 				require.EqualValues(t, tc.expectedErr, err)
 				return
 			}
