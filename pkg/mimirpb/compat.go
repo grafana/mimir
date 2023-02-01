@@ -315,6 +315,73 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 }
 
+func FromPromToMimirSampleHistogram(src *model.SampleHistogram) *SampleHistogram {
+	return (*SampleHistogram)(unsafe.Pointer(src))
+}
+
+func FromMimirSampleToPromHistogram(src *SampleHistogram) *model.SampleHistogram {
+	return (*model.SampleHistogram)(unsafe.Pointer(src))
+}
+
+// FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
+func FromFloatHistogramToSampleHistogramProto(h *histogram.FloatHistogram) *SampleHistogram {
+	// The extra +1 in the capacity is for the zero count bucket (which may optionally exist).
+	buckets := make([]*HistogramBucket, 0, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
+
+	it := h.AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
+		buckets = append(buckets, &HistogramBucket{
+			Boundaries: getBucketBoundaries(bucket),
+			Lower:      bucket.Lower,
+			Upper:      bucket.Upper,
+			Count:      bucket.Count,
+		})
+	}
+	return &SampleHistogram{
+		Count:   h.Count,
+		Sum:     h.Sum,
+		Buckets: buckets,
+	}
+}
+
+func getBucketBoundaries(bucket histogram.Bucket[float64]) int32 {
+	var boundaries int32 = 2 // Exclusive on both sides AKA open interval.
+	if bucket.LowerInclusive {
+		if bucket.UpperInclusive {
+			boundaries = 3 // Inclusive on both sides AKA closed interval.
+		} else {
+			boundaries = 1 // Inclusive only on lower end AKA right open.
+		}
+	} else {
+		if bucket.UpperInclusive {
+			boundaries = 0 // Inclusive only on upper end AKA left open.
+		}
+	}
+	return boundaries
+}
+
+func (vs *SampleHistogramPair) UnmarshalJSON(b []byte) error {
+	s := model.SampleHistogramPair{}
+	if err := stdjson.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	vs.Timestamp = int64(s.Timestamp)
+	vs.Histogram = FromPromToMimirSampleHistogram(s.Histogram)
+	return nil
+}
+
+func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
+	s := model.SampleHistogramPair{
+		Timestamp: model.Time(vs.Timestamp),
+		Histogram: FromMimirSampleToPromHistogram(vs.Histogram),
+	}
+	return stdjson.Marshal(s)
+}
+
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)

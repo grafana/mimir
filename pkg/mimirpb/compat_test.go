@@ -6,7 +6,6 @@
 package mimirpb
 
 import (
-	"encoding/json"
 	stdlibjson "encoding/json"
 	"math"
 	"testing"
@@ -58,7 +57,7 @@ func TestJsoniterUnmarshalForSample(t *testing.T) {
 }
 
 func TestStdlibJsonUnmarshalForSample(t *testing.T) {
-	testUnmarshalling(t, json.Unmarshal, "test sample")
+	testUnmarshalling(t, stdlibjson.Unmarshal, "test sample")
 }
 
 func testUnmarshalling(t *testing.T, unmarshalFn func(data []byte, v interface{}) error, expectedError string) {
@@ -79,6 +78,71 @@ func testUnmarshalling(t *testing.T, unmarshalFn func(data []byte, v interface{}
 	require.NoError(t, err)
 	require.Equal(t, int64(0), sample.TimestampMs)
 	require.True(t, math.IsNaN(sample.Value))
+}
+
+func TestMarshalSampleHistogramPair(t *testing.T) {
+	tests := map[string]struct {
+		marshaller func(any) ([]byte, error)
+	}{
+		"standard": {
+			marshaller: stdlibjson.Marshal,
+		},
+		"jsoniter": {
+			marshaller: jsoniter.Marshal,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			shp := SampleHistogramPair{
+				Timestamp: 1234,
+				Histogram: &SampleHistogram{
+					Count: 10,
+					Sum:   18.4,
+					Buckets: []*HistogramBucket{
+						{1, -4, -2.82842712474619, 1},
+						{1, -2.82842712474619, -2, 1},
+					},
+				},
+			}
+			expected := `[1.234,{"count":"10","sum":"18.4","buckets":[[1,"-4","-2.82842712474619","1"],[1,"-2.82842712474619","-2","1"]]}]`
+			data, err := test.marshaller(shp)
+			require.NoError(t, err)
+			require.Equal(t, expected, string(data))
+		})
+	}
+}
+
+func TestUnmarshalSampleHistogramPair(t *testing.T) {
+	tests := map[string]struct {
+		marshaller func([]byte, any) error
+	}{
+		"standard": {
+			marshaller: stdlibjson.Unmarshal,
+		},
+		"jsoniter": {
+			marshaller: jsoniter.Unmarshal,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			plain := `[1.234,{"count":"10","sum":"18.4","buckets":[[1,"-4","-2.82842712474619","1"],[1,"-2.82842712474619","-2","1"]]}]`
+			expected := SampleHistogramPair{
+				Timestamp: 1234,
+				Histogram: &SampleHistogram{
+					Count: 10,
+					Sum:   18.4,
+					Buckets: []*HistogramBucket{
+						{1, -4, -2.82842712474619, 1},
+						{1, -2.82842712474619, -2, 1},
+					},
+				},
+			}
+			shp := SampleHistogramPair{}
+			err := test.marshaller([]byte(plain), &shp)
+			require.NoError(t, err)
+			require.Equal(t, expected, shp)
+		})
+	}
 }
 
 func TestMetricMetadataToMetricTypeToMetricType(t *testing.T) {

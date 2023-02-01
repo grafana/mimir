@@ -144,3 +144,26 @@ message BucketSpan {
   sint32 offset = 1;
   uint32 length = 2;
 }
+
+// SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
+// for compatibility with PromQL API results
+// Must keep the same order and type of fields for casting
+message SampleHistogram {
+  double count = 1;
+  double sum = 2;
+  repeated HistogramBucket buckets = 3;
+}
+
+// Must keep the same order and type of fields for casting, see SampleHistogram
+message HistogramBucket {
+  int32 boundaries = 1;
+  double lower = 2;
+  double upper = 3;
+  double count = 4;
+}
+
+// Must keep the same order and type of fields for casting, see SampleHistogram
+message SampleHistogramPair {
+  int64 timestamp = 2;
+  SampleHistogram histogram = 1;
+}
