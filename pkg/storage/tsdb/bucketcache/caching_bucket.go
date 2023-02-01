@@ -271,8 +271,9 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	cacheOpts := getCacheOptions(slabs)
 	releaseSlabs := true
 
-	// If there's an error after fetching things from cache but before we return the
-	// reader we're responsible for releasing any memory used by the slab pool.
+	// On cache hit, the returned reader is responsible for freeing any allocated
+	// slabs. However, if the content key isn't a hit the client still might have
+	// allocated memory for the exists key, and we need to free it in that case.
 	if slabs != nil {
 		defer func() {
 			if releaseSlabs {
@@ -309,14 +310,11 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	}
 
 	storeExistsCacheEntry(ctx, existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
-
-	releaseSlabs = false
 	return &getReader{
 		c:         cfg.cache,
 		ctx:       ctx,
 		r:         reader,
 		buf:       new(bytes.Buffer),
-		slabs:     slabs,
 		startTime: getTime,
 		ttl:       cfg.contentTTL,
 		cacheKey:  contentKey,
@@ -666,7 +664,6 @@ type getReader struct {
 	ctx       context.Context
 	r         io.ReadCloser
 	buf       *bytes.Buffer
-	slabs     *pool.SafeSlabPool[byte]
 	startTime time.Time
 	ttl       time.Duration
 	cacheKey  string
@@ -674,10 +671,6 @@ type getReader struct {
 }
 
 func (g *getReader) Close() error {
-	if g.slabs != nil {
-		g.slabs.Release()
-	}
-
 	// We don't know if entire object was read, don't store it here.
 	g.buf = nil
 	return g.r.Close()
