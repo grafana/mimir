@@ -6,3 +6,23 @@
 package querymiddleware
 
 const jsonMimeType = "application/json"
+
+type jsonFormat struct{}
+
+func (j jsonFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
+	return json.Marshal(resp)
+}
+
+func (j jsonFormat) DecodeResponse(buf []byte) (PrometheusResponse, error) {
+	var resp PrometheusResponse
+
+	if err := json.Unmarshal(buf, &resp); err != nil {
+		return PrometheusResponse{}, err
+	}
+
+	return resp, nil
+}
+
+func (j jsonFormat) Name() string {
+	return formatJSON
+}

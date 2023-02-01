@@ -149,6 +149,16 @@ type prometheusCodec struct {
 	requestProtobufFormat bool
 }
 
+type format interface {
+	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
+	DecodeResponse([]byte) (PrometheusResponse, error)
+	Name() string
+}
+
+var knownFormats = map[string]format{
+	jsonMimeType: jsonFormat{},
+}
+
 func NewPrometheusCodec(registerer prometheus.Registerer, cfg Config) Codec {
 	return prometheusCodec{
 		metrics:               newPrometheusCodecMetrics(registerer),
@@ -349,14 +359,21 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	}
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
+	contentType := r.Header.Get("Content-Type")
+	f, ok := knownFormats[contentType]
+
+	if !ok {
+		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
+	}
+
 	start := time.Now()
-	resp, err := c.decodeJSONResponse(buf)
+	resp, err := f.DecodeResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationDecode, formatJSON).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationDecode, formatJSON).Observe(float64(len(buf)))
+	c.metrics.duration.WithLabelValues(operationDecode, f.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, f.Name()).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -366,16 +383,6 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		resp.Headers = append(resp.Headers, &PrometheusResponseHeader{Name: h, Values: hv})
 	}
 	return &resp, nil
-}
-
-func (c prometheusCodec) decodeJSONResponse(buf []byte) (PrometheusResponse, error) {
-	var resp PrometheusResponse
-
-	if err := json.Unmarshal(buf, &resp); err != nil {
-		return PrometheusResponse{}, err
-	}
-
-	return resp, nil
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
@@ -390,14 +397,16 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
+	f := knownFormats[jsonMimeType]
+
 	start := time.Now()
-	b, err := json.Marshal(a)
+	b, err := f.EncodeResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatJSON).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatJSON).Observe(float64(len(b)))
+	c.metrics.duration.WithLabelValues(operationEncode, f.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, f.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{

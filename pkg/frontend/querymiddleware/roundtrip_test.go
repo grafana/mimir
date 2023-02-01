@@ -44,6 +44,7 @@ func TestRangeTripperware(t *testing.T) {
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var err error
 				if r.RequestURI == query {
+					w.Header().Set("Content-Type", jsonMimeType)
 					_, err = w.Write([]byte(responseBody))
 				} else {
 					_, err = w.Write([]byte("bar"))
@@ -269,6 +270,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", jsonMimeType)
 				_, err := w.Write([]byte("{}"))
 				require.NoError(t, err)
 			}),

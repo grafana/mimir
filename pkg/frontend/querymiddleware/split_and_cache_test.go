@@ -70,8 +70,10 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 				require.NoError(t, err)
 
 				if req.GetStart() == startTime.Unix()*1000 {
+					w.Header().Set("Content-Type", jsonMimeType)
 					_, _ = w.Write([]byte(firstDayDownstreamResponse))
 				} else if req.GetStart() == startTime.Add(24*time.Hour).Unix()*1000 {
+					w.Header().Set("Content-Type", jsonMimeType)
 					_, _ = w.Write([]byte(secondDayDownstreamResponse))
 				} else {
 					_, _ = w.Write([]byte("unexpected request"))
