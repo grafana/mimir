@@ -1,0 +1,31 @@
+{{- if .Values.querier.autoscaling.enabled }}
+{{- if eq (include "mimir.hpa.version" .) "autoscaling/v2beta1" }}
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
+  minReplicas: {{ .Values.querier.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.querier.autoscaling.maxReplicas }}
+  metrics:
+  {{- with .Values.querier.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        targetAverageUtilization: {{ . }}
+  {{- end }}
+  {{- with .Values.querier.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: {{ . }}
+  {{- end }}
+{{- end -}}
+{{- end -}}

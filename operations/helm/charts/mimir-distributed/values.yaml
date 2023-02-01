@@ -609,6 +609,14 @@ alertmanager:
 distributor:
   replicas: 1
 
+  # -- HorizontalPodAutoscaler
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 70
+
   service:
     annotations: {}
     labels: {}
@@ -1030,6 +1038,15 @@ ruler:
 
 querier:
   replicas: 2
+
+  # -- HorizontalPodAutoscaler
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 70
+
 
   service:
     annotations: {}
