@@ -136,7 +136,7 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 		}, []string{"operation", "format"}),
 		size: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_query_response_codec_payload_bytes",
-			Help:    "Total size of encoded or decoded query result payloads, in bytes.",
+			Help:    "Total size of query result payloads, in bytes.",
 			Buckets: prometheus.ExponentialBucketsRange(1*kb, 512*mb, 10),
 		}, []string{"operation", "format"}),
 	}
