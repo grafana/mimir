@@ -90,6 +90,8 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
+
+	wg *sync.WaitGroup
 }
 
 type frontendRequest struct {
@@ -129,13 +131,15 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		return nil, err
 	}
 
+	var wg sync.WaitGroup
 	f := &Frontend{
 		cfg:                     cfg,
 		log:                     log,
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
-		requests:                newRequestsInProgress(),
+		wg:                      &wg,
+		requests:                newRequestsInProgress(&wg),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -163,10 +167,11 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 func (f *Frontend) starting(ctx context.Context) error {
 	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
 
-	return errors.Wrap(services.StartAndAwaitRunning(ctx, f.schedulerWorkers), "failed to start frontend scheduler workers")
+	return errors.Wrap(services.StartAndAwaitRunning(withWaitGroup(ctx, f.wg, f.log), f.schedulerWorkers), "failed to start frontend scheduler workers")
 }
 
 func (f *Frontend) running(ctx context.Context) error {
+	ctx = withWaitGroup(ctx, f.wg, f.log)
 	select {
 	case <-ctx.Done():
 		return nil
@@ -176,13 +181,44 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	// Wait on any in-flight requests.
-	// We don't expect any new queries to be added to requests once stopping is called,
-	// since RoundTripGRPC only accepts incoming requests in the running state.
-	level.Info(f.log).Log("msg", "waiting for in-flight queries to finish...")
-	f.requests.Wait()
-	level.Info(f.log).Log("msg", "finished waiting for in-flight queries")
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
+}
+
+// gracefulContext waits on a sync.WaitGroup before considering itself done.
+type gracefulContext struct {
+	context.Context
+
+	wg     *sync.WaitGroup
+	logger log.Logger
+	done   chan struct{}
+}
+
+func withWaitGroup(ctx context.Context, wg *sync.WaitGroup, logger log.Logger) *gracefulContext {
+	c := &gracefulContext{
+		Context: ctx,
+		wg:      wg,
+		logger:  logger,
+		done:    make(chan struct{}),
+	}
+	go func() {
+		<-c.Context.Done()
+
+		// Wait on any in-flight requests.
+		// We don't expect any new queries to be added to requests once stopping is called,
+		// since RoundTripGRPC only accepts incoming requests in the running state.
+		level.Debug(c.logger).Log("msg", "waiting for in-flight queries to finish...")
+		c.wg.Wait()
+		level.Debug(c.logger).Log("msg", "finished waiting for in-flight queries")
+		close(c.done)
+		c.done = nil
+	}()
+
+	return c
+}
+
+// Done returns a channel that is closed when the underlying context is done.
+func (c *gracefulContext) Done() <-chan struct{} {
+	return c.done
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
@@ -311,29 +347,17 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 	return errors.New(msg)
 }
 
-// waitGroup abstracts sync.WaitGroup, for testability.
-type waitGroup interface {
-	Add(delta int)
-	Done()
-	Wait()
-}
-
 type requestsInProgress struct {
 	mu       sync.Mutex
 	requests map[uint64]*frontendRequest
-	wg       waitGroup
+	wg       *sync.WaitGroup
 }
 
-func newRequestsInProgress() *requestsInProgress {
+func newRequestsInProgress(wg *sync.WaitGroup) *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
-		wg:       &sync.WaitGroup{},
+		wg:       wg,
 	}
-}
-
-// Wait waits for any in-flight requests to finish.
-func (r *requestsInProgress) Wait() {
-	r.wg.Wait()
 }
 
 func (r *requestsInProgress) count() int {

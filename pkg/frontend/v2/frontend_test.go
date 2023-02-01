@@ -76,8 +76,6 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	logger := log.NewLogfmtLogger(os.Stdout)
 	f, err := NewFrontend(cfg, logger, reg)
 	require.NoError(t, err)
-	// Inject a fake WaitGroup, so we can test the Frontend's use of it
-	f.requests.wg = &fakeWaitGroup{}
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
 
@@ -351,47 +349,73 @@ func TestFrontend_GracefulShutdown(t *testing.T) {
 		userID = "test"
 		body   = "all good"
 	)
+	ctx := context.Background()
+
+	setupDone := make(chan uint64)
+	t.Cleanup(func() {
+		close(setupDone)
+	})
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
-		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		})
+		go func() {
+			// Allow for the service to register a successful enqueuing
+			time.Sleep(100 * time.Millisecond)
+			setupDone <- msg.QueryID
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		t.Helper()
+
+		t.Log("sending request")
+		resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, userID), &httpgrpc.HTTPRequest{})
+		require.NoError(t, err)
+		t.Log("received response", "code", resp.Code)
+		require.Equal(t, int32(200), resp.Code)
+		require.Equal(t, []byte(body), resp.Body)
+		wg.Done()
+	}()
+
+	t.Log("waiting on service to register enqueuing")
+	queryID := <-setupDone
+	t.Log("finished waiting on enqueuing")
+
+	// Wait for the request to be handled, and make sure the service doesn't terminate until the request
+	// is no longer in flight.
+
+	var serviceStopped atomic.Bool
+	wg.Add(1)
+	go func() {
+		t.Helper()
+		t.Log("waiting on service to stop")
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, f))
+		t.Log("service stopped")
+		serviceStopped.Store(true)
+		wg.Done()
+	}()
+
+	const delay = 1 * time.Second
+	t.Log("waiting before sending response, delay:", delay)
+	time.Sleep(delay)
+	require.False(t, serviceStopped.Load(), "Service terminated with in-flight request")
+
+	ctx = user.InjectOrgID(ctx, userID)
+	t.Log("sending response")
+	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+		QueryID: queryID,
+		HttpResponse: &httpgrpc.HTTPResponse{
+			Code: 200,
+			Body: []byte(body),
+		},
+		Stats: &stats.Stats{},
+	})
 	require.NoError(t, err)
-	require.Equal(t, int32(200), resp.Code)
-	require.Equal(t, []byte(body), resp.Body)
 
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
-
-	wg := f.requests.wg.(*fakeWaitGroup)
-	require.True(t, wg.addCalled.Load())
-	require.Equal(t, int32(0), wg.count.Load())
-	require.True(t, wg.waitCalled.Load())
-}
-
-type fakeWaitGroup struct {
-	count      atomic.Int32
-	addCalled  atomic.Bool
-	waitCalled atomic.Bool
-}
-
-func (g *fakeWaitGroup) Add(delta int) {
-	g.addCalled.Store(true)
-	g.count.Add(int32(delta))
-}
-
-func (g *fakeWaitGroup) Done() {
-	g.count.Dec()
-}
-
-func (g *fakeWaitGroup) Wait() {
-	g.waitCalled.Store(true)
+	t.Log("waiting on goroutines")
+	wg.Wait()
 }
 
 type mockScheduler struct {
