@@ -39,6 +39,9 @@ const (
 
 var errObjNotFound = errors.Errorf("object not found")
 
+// WithMemoryPool returns a new context with a slab pool to be used as a cache.Allocator
+// implementation by the underlying cache client. Slabs are released back to p when the
+// io.ReadCloser associated with the Get or GetRange call is closed.
 func WithMemoryPool(ctx context.Context, p pool.Interface, slabSize int) context.Context {
 	return context.WithValue(ctx, memoryPoolContextKey, pool.NewSafeSlabPool[byte](p, slabSize))
 }
