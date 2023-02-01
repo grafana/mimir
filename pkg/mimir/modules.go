@@ -549,7 +549,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
-		querymiddleware.NewPrometheusCodec(t.Registerer),
+		querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware),
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
