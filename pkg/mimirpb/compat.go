@@ -315,17 +315,19 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 }
 
-func FromPromCommonToMimirSampleHistogram(src *model.SampleHistogram) *SampleHistogram {
+func FromPromToMimirSampleHistogram(src *model.SampleHistogram) *SampleHistogram {
 	return (*SampleHistogram)(unsafe.Pointer(src))
 }
 
-func FromMimirSampleToPromCommonHistogram(src *SampleHistogram) *model.SampleHistogram {
+func FromMimirSampleToPromHistogram(src *SampleHistogram) *model.SampleHistogram {
 	return (*model.SampleHistogram)(unsafe.Pointer(src))
 }
 
 // FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
 func FromFloatHistogramToSampleHistogramProto(h *histogram.FloatHistogram) *SampleHistogram {
-	buckets := make([]*HistogramBucket, 0)
+	// The extra +1 in the capacity is for the zero count bucket (which may optionally exist).
+	buckets := make([]*HistogramBucket, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
+
 	it := h.AllBucketIterator()
 	for it.Next() {
 		bucket := it.At()
@@ -368,14 +370,14 @@ func (vs *SampleHistogramPair) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	vs.Timestamp = int64(s.Timestamp)
-	vs.Histogram = FromPromCommonToMimirSampleHistogram(s.Histogram)
+	vs.Histogram = FromPromToMimirSampleHistogram(s.Histogram)
 	return nil
 }
 
 func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
 	s := model.SampleHistogramPair{
 		Timestamp: model.Time(vs.Timestamp),
-		Histogram: FromMimirSampleToPromCommonHistogram(vs.Histogram),
+		Histogram: FromMimirSampleToPromHistogram(vs.Histogram),
 	}
 	return stdjson.Marshal(s)
 }
