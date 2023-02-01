@@ -167,7 +167,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 }
 
-func TestResponseRoundtrip(t *testing.T) {
+func TestJSONResponseRoundtrip(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
 	expectedRespHeaders := []*PrometheusResponseHeader{
 		{
