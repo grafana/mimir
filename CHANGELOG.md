@@ -6,11 +6,16 @@
 
 * [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
+* [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
 * [ENHANCEMENT] Query-frontend: log caller user agent in query stats logs. #4093
 * [ENHANCEMENT] Store-gateway: add `data_type` label with values on `cortex_bucket_store_partitioner_extended_ranges_total`, `cortex_bucket_store_partitioner_expanded_ranges_total`, `cortex_bucket_store_partitioner_requested_ranges_total`, `cortex_bucket_store_partitioner_expanded_bytes_total`, `cortex_bucket_store_partitioner_requested_bytes_total` for `postings`, `series`, and `chunks`. #4095
+* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
+* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
+* [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
 
 ### Mixin
 
@@ -21,13 +26,14 @@
 * [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
-* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
-* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
-* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 
 ### Jsonnet
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+
+### Mimirtool
+
+* * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 
 ### Documentation
 
@@ -41,6 +47,7 @@
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [CHANGE] Ingester: If shipping is enabled block retention will now be relative to the upload time to cloud storage. If shipping is disabled block retention will be relative to the creation time of the block instead of the mintime of the last block created. #3816
 * [CHANGE] Query-frontend: Deprecated CLI flag `-query-frontend.align-querier-with-step` has been removed. #3982
+* [CHANGE] Alertmanager: added default configuration for `-alertmanager.configs.fallback`. Allows tenants to send alerts without first uploading an Alertmanager configuration. #3541
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3606 #3611 #3620 #3645 #3355 #3697 #3666 #3687 #3728 #3739 #3751 #3779 #3839
 * [FEATURE] Alertmanager: Added support for the Webex receiver. #3758
 * [FEATURE] Limits: Added the `-validation.separate-metrics-group-label` flag. This allows further separation of the `cortex_discarded_samples_total` metric by an additional `group` label - which is configured by this flag to be the value of a specific label on an incoming timeseries. Active groups are tracked and inactive groups are cleaned up on a defined interval. The maximum number of groups tracked is controlled by the `-max-separate-metrics-groups-per-user` flag. #3439

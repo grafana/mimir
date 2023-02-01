@@ -18,8 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/grafana/e2e"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 
@@ -378,7 +376,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 			_, err := app.Append(0, l, int64(ts), float64(ts))
 			require.NoError(t, err)
 		case chunkenc.ValHistogram:
-			_, err := app.AppendHistogram(0, l, int64(ts), e2e.GenerateTestHistogram(int(ts)), nil)
+			_, err := app.AppendHistogram(0, l, int64(ts), tsdb.GenerateTestHistogram(int(ts)), nil)
 			require.NoError(t, err)
 		default:
 			panic("Unknown chunk type")

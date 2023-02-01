@@ -4,7 +4,6 @@
 // Provenance-includes-copyright: The Prometheus Authors.
 
 //go:build !darwin && !windows && !plan9
-// +build !darwin,!windows,!plan9
 
 package fileutil
 

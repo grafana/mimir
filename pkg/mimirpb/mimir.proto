@@ -165,6 +165,7 @@ message HistogramBucket {
   double count = 4;
 }
 
+// Must keep the same order and type of fields for casting, see SampleHistogram
 message SampleHistogramPair {
   int64 timestamp = 2;
   SampleHistogram histogram = 1;

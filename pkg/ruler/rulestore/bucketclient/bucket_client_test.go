@@ -96,8 +96,9 @@ func TestLoadRules(t *testing.T) {
 	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 	groups := []testGroup{
 		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
-			For:    model.Duration(5 * time.Minute),
-			Labels: map[string]string{"label1": "value1"},
+			For:           model.Duration(5 * time.Minute),
+			KeepFiringFor: model.Duration(2 * time.Minute),
+			Labels:        map[string]string{"label1": "value1"},
 		}}}},
 		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
 		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
@@ -141,8 +142,9 @@ func TestLoadRules(t *testing.T) {
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup", Interval: time.Minute, Rules: []*rulespb.RuleDesc{
 				{
-					For:    5 * time.Minute,
-					Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+					For:           5 * time.Minute,
+					KeepFiringFor: 2 * time.Minute,
+					Labels:        []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
 				},
 			}},
 			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},

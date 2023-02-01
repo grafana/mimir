@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
-	"github.com/grafana/e2e"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -36,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -66,7 +66,7 @@ import (
 var (
 	errFail               = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
 	emptyResponse         = &mimirpb.WriteResponse{}
-	generateTestHistogram = e2e.GenerateTestHistogram
+	generateTestHistogram = tsdb.GenerateTestHistogram
 )
 
 func TestConfig_Validate(t *testing.T) {

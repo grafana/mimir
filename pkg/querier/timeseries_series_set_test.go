@@ -8,7 +8,7 @@ package querier
 import (
 	"testing"
 
-	"github.com/grafana/e2e"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	generateTestHistogram      = e2e.GenerateTestHistogram
-	generateTestFloatHistogram = e2e.GenerateTestFloatHistogram
+	generateTestHistogram      = tsdb.GenerateTestHistogram
+	generateTestFloatHistogram = tsdb.GenerateTestFloatHistogram
 )
 
 func TestTimeSeriesSeriesSet(t *testing.T) {

@@ -951,6 +951,7 @@ func (m *HistogramBucket) GetCount() float64 {
 	return 0
 }
 
+// Must keep the same order and type of fields for casting, see SampleHistogram
 type SampleHistogramPair struct {
 	Timestamp int64            `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Histogram *SampleHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`

@@ -10,14 +10,9 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/e2e"
-)
-
-var (
-	generateTestHistogram = e2e.GenerateTestHistogram
 )
 
 func TestLabelAdapter_Marshal(t *testing.T) {
@@ -126,7 +121,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
-			Histograms: []Histogram{FromHistogramToHistogramProto(2, generateTestHistogram(0))},
+			Histograms: []Histogram{FromHistogramToHistogramProto(2, tsdb.GenerateTestHistogram(0))},
 		},
 	}
 	dst := PreallocTimeseries{}

@@ -802,24 +802,26 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 				alerts := []*AlertStateDesc{}
 				for _, a := range rule.ActiveAlerts() {
 					alerts = append(alerts, &AlertStateDesc{
-						State:       a.State.String(),
-						Labels:      mimirpb.FromLabelsToLabelAdapters(a.Labels),
-						Annotations: mimirpb.FromLabelsToLabelAdapters(a.Annotations),
-						Value:       a.Value,
-						ActiveAt:    a.ActiveAt,
-						FiredAt:     a.FiredAt,
-						ResolvedAt:  a.ResolvedAt,
-						LastSentAt:  a.LastSentAt,
-						ValidUntil:  a.ValidUntil,
+						State:           a.State.String(),
+						Labels:          mimirpb.FromLabelsToLabelAdapters(a.Labels),
+						Annotations:     mimirpb.FromLabelsToLabelAdapters(a.Annotations),
+						Value:           a.Value,
+						ActiveAt:        a.ActiveAt,
+						FiredAt:         a.FiredAt,
+						ResolvedAt:      a.ResolvedAt,
+						LastSentAt:      a.LastSentAt,
+						ValidUntil:      a.ValidUntil,
+						KeepFiringSince: a.KeepFiringSince,
 					})
 				}
 				ruleDesc = &RuleStateDesc{
 					Rule: &rulespb.RuleDesc{
-						Expr:        rule.Query().String(),
-						Alert:       rule.Name(),
-						For:         rule.HoldDuration(),
-						Labels:      mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
-						Annotations: mimirpb.FromLabelsToLabelAdapters(rule.Annotations()),
+						Expr:          rule.Query().String(),
+						Alert:         rule.Name(),
+						For:           rule.HoldDuration(),
+						KeepFiringFor: rule.KeepFiringFor(),
+						Labels:        mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
+						Annotations:   mimirpb.FromLabelsToLabelAdapters(rule.Annotations()),
 					},
 					State:               rule.State().String(),
 					Health:              string(rule.Health()),
