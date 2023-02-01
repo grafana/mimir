@@ -50,28 +50,9 @@ func New(reg prometheus.Registerer, maxConcurrent int) Gate {
 	return NewInstrumented(reg, maxConcurrent, NewBlocking(maxConcurrent))
 }
 
-// NewWithRegisterers returns an instrumented gate limiting the number of requests being
-// executed concurrently.
-//
-// The gate implementation is based on the
-// github.com/prometheus/prometheus/util/gate package.
-//
-// It can be called several times but not with the same registerer otherwise it
-// will panic when trying to register the same metric multiple times.
-func NewWithRegisterers(regs []prometheus.Registerer, maxConcurrent int) Gate {
-	return NewInstrumentedWithRegisterers(regs, maxConcurrent, NewBlocking(maxConcurrent))
-}
-
 // NewInstrumented wraps a Gate implementation with one that records max number of inflight
 // requests, currently inflight requests, and the duration of calls to the Start method.
 func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
-	return NewInstrumentedWithRegisterers([]prometheus.Registerer{reg}, maxConcurrent, gate)
-}
-
-// NewInstrumentedWithRegisterers wraps a Gate implementation with one that records max number of inflight
-// requests, currently inflight requests, and the duration of calls to the Start method. The constructor accept multiple
-// prometheus Registerer.
-func NewInstrumentedWithRegisterers(regs []prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
 	g := &instrumentedGate{
 		gate: gate,
 		//lint:ignore faillint need to apply the metric to multiple registerer
@@ -93,10 +74,8 @@ func NewInstrumentedWithRegisterers(regs []prometheus.Registerer, maxConcurrent 
 	}
 	g.max.Set(float64(maxConcurrent))
 
-	for _, reg := range regs {
-		if reg != nil {
-			reg.MustRegister(g.max, g.inflight, g.duration)
-		}
+	if reg != nil {
+		reg.MustRegister(g.max, g.inflight, g.duration)
 	}
 	return g
 }

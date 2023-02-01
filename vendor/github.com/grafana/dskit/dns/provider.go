@@ -53,23 +53,9 @@ func (t ResolverType) ToResolver(logger log.Logger) ipLookupResolver {
 	return r
 }
 
-// NewProviderWithRegisterers returns a new empty provider with a given resolver type.
-// If empty resolver type is net.DefaultResolver. This accepts multiple prometheus Registerers.
-func NewProviderWithRegisterers(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
-	if len(regs) == 0 {
-		regs = []prometheus.Registerer{prometheus.DefaultRegisterer}
-	}
-
-	return newProvider(logger, regs, resolverType)
-}
-
 // NewProvider returns a new empty provider with a given resolver type.
 // If empty resolver type is net.DefaultResolver.
 func NewProvider(logger log.Logger, reg prometheus.Registerer, resolverType ResolverType) *Provider {
-	return newProvider(logger, []prometheus.Registerer{reg}, resolverType)
-}
-
-func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType ResolverType) *Provider {
 	p := &Provider{
 		resolver: NewResolver(resolverType.ToResolver(logger), logger),
 		resolved: make(map[string][]string),
@@ -92,10 +78,8 @@ func newProvider(logger log.Logger, regs []prometheus.Registerer, resolverType R
 		}),
 	}
 
-	for _, reg := range regs {
-		if reg != nil {
-			reg.MustRegister(p, p.resolverLookupsCount, p.resolverFailuresCount)
-		}
+	if reg != nil {
+		reg.MustRegister(p, p.resolverLookupsCount, p.resolverFailuresCount)
 	}
 
 	return p

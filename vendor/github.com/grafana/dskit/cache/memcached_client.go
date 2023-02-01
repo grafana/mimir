@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/promregistry"
 )
 
 var (
@@ -184,14 +185,15 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 
 	backwardCompatibleRegs := []prometheus.Registerer{reg, newRegisterer}
+	teeRegisterer := promregistry.TeeRegisterer{Regs: backwardCompatibleRegs}
 
-	addressProvider := dns.NewProviderWithRegisterers(
+	addressProvider := dns.NewProvider(
 		logger,
-		backwardCompatibleRegs,
+		teeRegisterer,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(backwardCompatibleRegs)
+	metrics := newClientMetrics(teeRegisterer)
 
 	c := &memcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
@@ -201,10 +203,12 @@ func newMemcachedClient(
 		selector:        selector,
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
-		getMultiGate: gate.NewWithRegisterers(
-			[]prometheus.Registerer{
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
-				prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
+		getMultiGate: gate.New(
+			promregistry.TeeRegisterer{
+				Regs: []prometheus.Registerer{
+					prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+					prometheus.WrapRegistererWithPrefix(getMultiPrefix, newRegisterer),
+				},
 			},
 			config.MaxGetMultiConcurrency,
 		),

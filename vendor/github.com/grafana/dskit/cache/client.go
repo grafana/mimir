@@ -34,7 +34,7 @@ type clientMetrics struct {
 	dataSize   *prometheus.HistogramVec
 }
 
-func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
+func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	//lint:ignore faillint need to apply the metric to multiple registerer
 	operations := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",
@@ -89,10 +89,8 @@ func newClientMetrics(regs []prometheus.Registerer) *clientMetrics {
 	dataSize.WithLabelValues(opGetMulti)
 	dataSize.WithLabelValues(opSet)
 
-	for _, reg := range regs {
-		if reg != nil {
-			reg.MustRegister(operations, failures, skipped, duration, dataSize)
-		}
+	if reg != nil {
+		reg.MustRegister(operations, failures, skipped, duration, dataSize)
 	}
 
 	return &clientMetrics{

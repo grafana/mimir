@@ -183,7 +183,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 			prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
 	}
 
-	metrics := newClientMetrics([]prometheus.Registerer{reg})
+	metrics := newClientMetrics(reg)
 
 	c := &redisClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
