@@ -24,14 +24,64 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+type contextKey int
 
 const (
 	originCache  = "cache"
 	originBucket = "bucket"
+
+	memoryPoolContextKey contextKey = 0
 )
 
 var errObjNotFound = errors.Errorf("object not found")
+
+// WithMemoryPool returns a new context with a slab pool to be used as a cache.Allocator
+// implementation by the underlying cache client. Slabs are released back to p when the
+// io.ReadCloser associated with the Get or GetRange call is closed.
+func WithMemoryPool(ctx context.Context, p pool.Interface, slabSize int) context.Context {
+	return context.WithValue(ctx, memoryPoolContextKey, pool.NewSafeSlabPool[byte](p, slabSize))
+}
+
+func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
+	val := ctx.Value(memoryPoolContextKey)
+	if val == nil {
+		return nil
+	}
+
+	slabs, ok := val.(*pool.SafeSlabPool[byte])
+	if !ok {
+		return nil
+	}
+
+	return slabs
+}
+
+func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
+	var opts []cache.Option
+
+	if slabs != nil {
+		opts = append(opts, cache.WithAllocator(&slabPoolAdapter{pool: slabs}))
+	}
+
+	return opts
+}
+
+type slabPoolAdapter struct {
+	pool *pool.SafeSlabPool[byte]
+}
+
+func (s *slabPoolAdapter) Get(sz int) *[]byte {
+	b := s.pool.Get(sz)
+	return &b
+}
+
+func (s *slabPoolAdapter) Put(_ *[]byte) {
+	// no-op
+}
 
 // CachingBucket implementation that provides some caching features, based on passed configuration.
 type CachingBucket struct {
@@ -220,11 +270,27 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 
 	contentKey := cachingKeyContent(name)
 	existsKey := cachingKeyExists(name)
+	slabs := getMemoryPool(ctx)
+	cacheOpts := getCacheOptions(slabs)
+	releaseSlabs := true
 
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey})
+	// On cache hit, the returned reader is responsible for freeing any allocated
+	// slabs. However, if the content key isn't a hit the client still might have
+	// allocated memory for the exists key, and we need to free it in that case.
+	if slabs != nil {
+		defer func() {
+			if releaseSlabs {
+				slabs.Release()
+			}
+		}()
+	}
+
+	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
 	if hits[contentKey] != nil {
 		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
-		return objstore.NopCloserWithSize(bytes.NewBuffer(hits[contentKey])), nil
+
+		releaseSlabs = false
+		return &sizedSlabGetReader{bytes.NewBuffer(hits[contentKey]), slabs}, nil
 	}
 
 	// If we know that file doesn't exist, we can return that. Useful for deletion marks.
@@ -363,9 +429,23 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		offsetKeys[off] = k
 	}
 
+	releaseSlabs := true
+	slabs := getMemoryPool(ctx)
+	cacheOpts := getCacheOptions(slabs)
+
+	// If there's an error after fetching things from cache but before we return the subrange
+	// reader we're responsible for releasing any memory used by the slab pool.
+	if slabs != nil {
+		defer func() {
+			if releaseSlabs {
+				slabs.Release()
+			}
+		}()
+	}
+
 	// Try to get all subranges from the cache.
 	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys)
+	hits := cfg.cache.Fetch(ctx, keys, cacheOpts...)
 	for _, b := range hits {
 		totalCachedBytes += int64(len(b))
 	}
@@ -383,7 +463,8 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 	}
 
-	return io.NopCloser(newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length)), nil
+	releaseSlabs = false
+	return newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length, slabs), nil
 }
 
 type rng struct {
@@ -515,9 +596,12 @@ type subrangesReader struct {
 
 	// Remaining data to return from this reader. Once zero, this reader reports EOF.
 	remaining int64
+
+	// Pool of bytes used for cache results
+	slabs *pool.SafeSlabPool[byte]
 }
 
-func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64) *subrangesReader {
+func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64, slabs *pool.SafeSlabPool[byte]) *subrangesReader {
 	return &subrangesReader{
 		subrangeSize: subrangeSize,
 		offsetsKeys:  offsetsKeys,
@@ -525,7 +609,17 @@ func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subran
 
 		readOffset: readOffset,
 		remaining:  remaining,
+
+		slabs: slabs,
 	}
+}
+
+func (c *subrangesReader) Close() error {
+	if c.slabs != nil {
+		c.slabs.Release()
+	}
+
+	return nil
 }
 
 func (c *subrangesReader) Read(p []byte) (n int, err error) {
@@ -606,6 +700,25 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 	}
 
 	return n, err
+}
+
+// sizedSlabGetReader wraps an existing io.Reader with a cleanup method to release
+// any allocated slabs back to a pool.SafeSlabPool when closed.
+type sizedSlabGetReader struct {
+	io.Reader
+	slabs *pool.SafeSlabPool[byte]
+}
+
+func (s *sizedSlabGetReader) Close() error {
+	if s.slabs != nil {
+		s.slabs.Release()
+	}
+
+	return nil
+}
+
+func (s *sizedSlabGetReader) ObjectSize() (int64, error) {
+	return objstore.TryToGetSize(s.Reader)
 }
 
 // JSONIterCodec encodes iter results into JSON. Suitable for root dir.
