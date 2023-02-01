@@ -326,7 +326,7 @@ func FromMimirSampleToPromHistogram(src *SampleHistogram) *model.SampleHistogram
 // FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
 func FromFloatHistogramToSampleHistogramProto(h *histogram.FloatHistogram) *SampleHistogram {
 	// The extra +1 in the capacity is for the zero count bucket (which may optionally exist).
-	buckets := make([]*HistogramBucket, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
+	buckets := make([]*HistogramBucket, 0, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
 
 	it := h.AllBucketIterator()
 	for it.Next() {
