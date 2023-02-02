@@ -72,6 +72,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			bucketSize := cardinalityEstimateBucket(24 * time.Hour)
 			assert.Equal(t, tt.want, bucketSize.generateCacheKey(tt.args.userID, tt.args.r))
 		})
@@ -163,6 +164,7 @@ func Test_injectCardinalityEstimate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, injectCardinalityEstimate(tt.args.request, tt.args.estimate))
 		})
 	}
@@ -251,6 +253,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := cache.NewInstrumentedMockCache()
 			mw := newCardinalityEstimationMiddleware(c)
 			handler := mw.Wrap(tt.downstreamHandler)
@@ -340,6 +343,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			keyA := splitter.generateCacheKey(tt.tenantA, tt.requestA)
 			keyB := splitter.generateCacheKey(tt.tenantB, tt.requestB)
 			if tt.wantEqual {
