@@ -41,7 +41,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-a:up:%d:%d", daysSinceEpoch, 0),
+			want: fmt.Sprintf("tenant-a:up:%d", daysSinceEpoch),
 		},
 		{
 			name: "range query",
@@ -49,21 +49,30 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 				userID: "tenant-b",
 				r: &PrometheusRangeQueryRequest{
 					Start: requestTime.UnixMilli(),
-					// Over two hours, should truncate to two hours in the key
-					End:   requestTime.Add(125 * time.Minute).UnixMilli(),
+					End:   requestTime.Add(2 * time.Hour).UnixMilli(),
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-b:up:%d:%d", daysSinceEpoch, int((125 * time.Minute).Truncate(time.Hour).Seconds())),
+			want: fmt.Sprintf("tenant-b:up:%d", daysSinceEpoch),
+		},
+		{
+			name: "range query with large range",
+			args: args{
+				userID: "tenant-b",
+				r: &PrometheusRangeQueryRequest{
+					Start: requestTime.UnixMilli(),
+					// Over 24 hours, should add range part to key
+					End:   requestTime.Add(25 * time.Hour).UnixMilli(),
+					Query: "up",
+				},
+			},
+			want: fmt.Sprintf("tenant-b:up:%d:%d", daysSinceEpoch, 1),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bucketSize := cardinalityEstimateBuckets{
-				offsetBucketSize: 24 * time.Hour,
-				rangeBucketSize:  time.Hour,
-			}
+			bucketSize := cardinalityEstimateBucket(24 * time.Hour)
 			assert.Equal(t, tt.want, bucketSize.generateCacheKey(tt.args.userID, tt.args.r))
 		})
 	}
@@ -177,10 +186,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		}
 	}
 
-	bucketSize := cardinalityEstimateBuckets{
-		offsetBucketSize: 24 * time.Hour,
-		rangeBucketSize:  time.Hour,
-	}
+	bucketSize := cardinalityEstimateBucket(24 * time.Hour)
 
 	tests := []struct {
 		name              string
@@ -269,10 +275,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 }
 
 func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.T) {
-	splitter := cardinalityEstimateBuckets{
-		offsetBucketSize: 24 * time.Hour,
-		rangeBucketSize:  time.Hour,
-	}
+	splitter := cardinalityEstimateBucket(24 * time.Hour)
 	rangeQuery := &PrometheusRangeQueryRequest{
 		Start: util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
 		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
@@ -331,7 +334,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 			tenantA:   "1",
 			tenantB:   "1",
 			requestA:  rangeQuery,
-			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+2*time.Hour.Milliseconds()),
+			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+25*time.Hour.Milliseconds()),
 			wantEqual: false,
 		},
 	}

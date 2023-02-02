@@ -19,10 +19,7 @@ const (
 	cardinalityEstimateTTL = 7 * 24 * time.Hour
 
 	// offsetBucketSize is the size of buckets that query start times are bucketed into
-	offsetBucketSize = 24 * time.Hour
-
-	// rangeBucketSize is the size of buckets that query ranges are bucketed into
-	rangeBucketSize = time.Hour
+	cardinalityEstimateBucketSize = 24 * time.Hour
 )
 
 // cardinalityEstimation is a Middleware that caches estimates for a query's
@@ -30,8 +27,6 @@ const (
 type cardinalityEstimation struct {
 	cache cache.Cache
 	next  Handler
-
-	bucketSize cardinalityEstimateBuckets
 }
 
 func newCardinalityEstimationMiddleware(cache cache.Cache) Middleware {
@@ -39,10 +34,6 @@ func newCardinalityEstimationMiddleware(cache cache.Cache) Middleware {
 		return &cardinalityEstimation{
 			cache: cache,
 			next:  next,
-			bucketSize: cardinalityEstimateBuckets{
-				offsetBucketSize: offsetBucketSize,
-				rangeBucketSize:  rangeBucketSize,
-			},
 		}
 	})
 }
@@ -55,7 +46,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		return c.next.Do(ctx, request)
 	}
 
-	k := c.bucketSize.generateCacheKey(tenant.JoinTenantIDs(tenants), request)
+	k := cardinalityEstimateBucket(24*time.Hour).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
 
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
@@ -124,17 +115,17 @@ func unmarshalBinary(data []byte) uint64 {
 	return binary.LittleEndian.Uint64(data)
 }
 
-// cardinalityEstimateBuckets is a utility to allow splitting cardinality estimate
-// keys into buckets of fixed width (time).
-type cardinalityEstimateBuckets struct {
-	offsetBucketSize time.Duration
-	rangeBucketSize  time.Duration
-}
+// cardinalityEstimateBucket is a utility to allow splitting cardinality estimate
+// keys into buckets of fixed width of time.
+type cardinalityEstimateBucket time.Duration
 
 // generateCacheKey generates a key for a request's cardinality estimate.
-func (s cardinalityEstimateBuckets) generateCacheKey(userID string, r Request) string {
-	startBucket := r.GetStart() / s.offsetBucketSize.Milliseconds()
-	rangeSize := time.UnixMilli(r.GetEnd()).Sub(time.UnixMilli(r.GetStart()))
+func (s cardinalityEstimateBucket) generateCacheKey(userID string, r Request) string {
+	offsetBucket := r.GetStart() / time.Duration(s).Milliseconds()
+	rangeBucket := (r.GetEnd() - r.GetStart()) / time.Duration(s).Milliseconds()
 
-	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), startBucket, int(rangeSize.Truncate(s.rangeBucketSize).Seconds()))
+	if rangeBucket == 0 {
+		return fmt.Sprintf("%s:%s:%d", userID, r.GetQuery(), offsetBucket)
+	}
+	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), offsetBucket, rangeBucket)
 }
