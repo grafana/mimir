@@ -2054,7 +2054,7 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 		"should fail if the number of unique series queried is greater than the configured series limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			seriesLimit: 1,
-			expectedErr: errSeriesLimitMessage,
+			expectedErr: ErrSeriesLimitMessage,
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
@@ -2064,7 +2064,7 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			chunksLimit: 3,
-			expectedErr: errChunksLimitMessage,
+			expectedErr: ErrChunksLimitMessage,
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
