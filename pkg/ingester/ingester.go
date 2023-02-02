@@ -881,28 +881,43 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.failedSamplesCount))
-	i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
-	i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
-
-	if ephemeralStats.floatStats.succeededSamplesCount > 0 || ephemeralStats.floatStats.failedSamplesCount > 0 {
-		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.succeededSamplesCount))
-		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.failedSamplesCount))
-
-		i.appendedSamplesStats.Inc(int64(ephemeralStats.floatStats.succeededSamplesCount))
+	// Protect every increase with if now that we have histograms as well to avoid overhead of adding 0 to counters
+	if persistentStats.floatStats.succeededSamplesCount > 0 {
+		i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.succeededSamplesCount))
+		i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
+	}
+	if persistentStats.floatStats.failedSamplesCount > 0 {
+		i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.failedSamplesCount))
+	}
+	if persistentStats.histogramStats.succeededSamplesCount > 0 {
+		i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.succeededSamplesCount))
+		i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
+	}
+	if persistentStats.histogramStats.failedSamplesCount > 0 {
+		i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.failedSamplesCount))
+	}
+	if persistentStats.succeededExemplarsCount > 0 {
+		i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
+		i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
+	}
+	if persistentStats.failedExemplarsCount > 0 {
+		i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
 	}
 
-	if ephemeralStats.histogramStats.succeededSamplesCount > 0 || ephemeralStats.histogramStats.failedSamplesCount > 0 {
-		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.succeededSamplesCount))
-		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.failedSamplesCount))
+	if ephemeralStats.floatStats.succeededSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.succeededSamplesCount))
+		i.appendedSamplesStats.Inc(int64(ephemeralStats.floatStats.succeededSamplesCount))
+	}
+	if ephemeralStats.floatStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.failedSamplesCount))
+	}
 
+	if ephemeralStats.histogramStats.succeededSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.succeededSamplesCount))
 		i.appendedHistogramsStats.Inc(int64(ephemeralStats.histogramStats.succeededSamplesCount))
+	}
+	if ephemeralStats.histogramStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.failedSamplesCount))
 	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
