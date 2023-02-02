@@ -310,7 +310,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(blockLogger log.Lo
 	defer cancel()
 
 	if c.compactorCfg.BlockUpload.ValidationHeartbeatInterval > 0 {
-		// start go routine that updates validation file timestamp once per minute
+		// start a go routine that updates the validation file's timestamp every heartbeat interval
 		wg.Add(1)
 		go c.periodicValidationUpdater(ctx, blockLogger, blockID, userBkt, ch, &wg, cancel)
 	}

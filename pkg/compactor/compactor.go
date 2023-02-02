@@ -117,7 +117,7 @@ type Config struct {
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
 
-	BlockUpload BlockUploadConfig `yaml:"block_upload" category:"experimental"`
+	BlockUpload BlockUploadConfig `yaml:"block_upload"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
