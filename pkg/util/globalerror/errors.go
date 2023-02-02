@@ -71,11 +71,6 @@ const (
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
 
-	HistogramSpansBucketsMismatch ID = "histogram-spans-buckets-mismatch"
-	HistogramSpanNegativeOffset   ID = "histogram-span-negative-offset"
-	HistogramNegativeBucketCount  ID = "histogram-negative-bucket-count"
-	HistogramCountNotBigEnough    ID = "histogram-count-not-big-enough"
-
 	EphemeralStorageNotEnabledForUser ID = "ephemeral-storage-not-enabled-for-user"
 )
 
