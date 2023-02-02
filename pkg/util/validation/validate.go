@@ -36,7 +36,6 @@ var (
 	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
 	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
 	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
-	reasonLabelsNotSorted        = metricReasonFromErrorID(globalerror.SeriesLabelsNotSorted)
 	reasonTooFarInFuture         = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
 
 	// Discarded exemplars reasons.
@@ -121,7 +120,6 @@ type SampleValidationMetrics struct {
 	labelNameTooLong       *prometheus.CounterVec
 	labelValueTooLong      *prometheus.CounterVec
 	duplicateLabelNames    *prometheus.CounterVec
-	labelsNotSorted        *prometheus.CounterVec
 	tooFarInFuture         *prometheus.CounterVec
 }
 
@@ -135,7 +133,6 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
-	m.labelsNotSorted.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
 
@@ -147,7 +144,6 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
-	m.labelsNotSorted.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
 
@@ -160,7 +156,6 @@ func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetric
 		labelNameTooLong:       DiscardedSamplesCounter(r, reasonLabelNameTooLong),
 		labelValueTooLong:      DiscardedSamplesCounter(r, reasonLabelValueTooLong),
 		duplicateLabelNames:    DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		labelsNotSorted:        DiscardedSamplesCounter(r, reasonLabelsNotSorted),
 		tooFarInFuture:         DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
