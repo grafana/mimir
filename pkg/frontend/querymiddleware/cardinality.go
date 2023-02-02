@@ -46,7 +46,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		return c.next.Do(ctx, request)
 	}
 
-	k := cardinalityEstimateBucket(24*time.Hour).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
+	k := cardinalityEstimateBucket(cardinalityEstimateBucketSize).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
 
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
