@@ -246,6 +246,20 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 	return nil
 }
 
+// ValidateSampleHistogram returns an err if the sample is invalid.
+// The returned error may retain the provided series labels.
+// It uses the passed 'now' time to measure the relative time of the sample.
+func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) ValidationError {
+	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+
+	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
+		m.tooFarInFuture.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Inc()
+		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.Timestamp)
+	}
+
+	return nil
+}
+
 // ValidateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
 func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
@@ -292,74 +306,6 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 	if !foundValidLabel {
 		m.labelsBlank.WithLabelValues(userID).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
-	}
-
-	return nil
-}
-
-// ValidateHistogram returns an err if the histogram is invalid.
-// The returned error may retain the provided series labels.
-// It uses the passed 'now' time to measure the relative time of the histogram.
-func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, h mimirpb.Histogram) ValidationError {
-	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
-	if model.Time(h.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
-		m.tooFarInFuture.WithLabelValues(userID).Inc()
-		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
-	}
-
-	checkSpans := func(spans []*mimirpb.BucketSpan, numBuckets int) error {
-		var spanBuckets int
-		for n, span := range spans {
-			if n > 0 && span.Offset < 0 {
-				m.spanNegativeOffset.WithLabelValues(userID).Inc()
-				return newHistogramSpanNegativeOffsetError(n+1, span.Offset, h.Timestamp, unsafeMetricName)
-			}
-			spanBuckets += int(span.Length)
-		}
-		if spanBuckets != numBuckets {
-			m.spansBucketsMismatch.WithLabelValues(userID).Inc()
-			return newHistogramDifferentNumberSpansBucketsError(spanBuckets, numBuckets, h.Timestamp, unsafeMetricName)
-		}
-		return nil
-	}
-
-	if err := checkSpans(h.NegativeSpans, len(h.NegativeDeltas)); err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	if err := checkSpans(h.PositiveSpans, len(h.PositiveDeltas)); err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-
-	checkBuckets := func(buckets []int64) (uint64, error) {
-		if len(buckets) == 0 {
-			return 0, nil
-		}
-		var count uint64
-		var last int64
-		for i := 0; i < len(buckets); i++ {
-			last += buckets[i]
-			if last < 0 {
-				m.negativeBucketCount.WithLabelValues(userID).Inc()
-				return 0, newHistogramNegativeBucketCountError(i+1, last, h.Timestamp, unsafeMetricName)
-			}
-			count += uint64(last)
-		}
-		return count, nil
-	}
-
-	negativeCount, err := checkBuckets(h.NegativeDeltas)
-	if err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	positiveCount, err := checkBuckets(h.PositiveDeltas)
-	if err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-
-	if c := negativeCount + positiveCount; c > h.GetCountInt() {
-		m.countNotBigEnough.WithLabelValues(userID).Inc()
-		return newHistogramCountNotBigEnoughError(c, h.GetCountInt(), h.Timestamp, unsafeMetricName)
 	}
 
 	return nil
