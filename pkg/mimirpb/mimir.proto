@@ -115,7 +115,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8;
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -123,7 +123,7 @@ message Histogram {
   repeated double negative_counts    = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
-  repeated BucketSpan positive_spans = 11;
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
