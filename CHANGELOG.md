@@ -4,14 +4,18 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
+* [CHANGE] Querier: Errors with status code `422` coming from the store-gateway are propagated and not converted to the consistency check error anymore. #4100
+* [CHANGE] Store-gateway: When a query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits, an error with the status code `422` is created and returned. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
+* [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
 * [ENHANCEMENT] Query-frontend: log caller user agent in query stats logs. #4093
 * [ENHANCEMENT] Store-gateway: add `data_type` label with values on `cortex_bucket_store_partitioner_extended_ranges_total`, `cortex_bucket_store_partitioner_expanded_ranges_total`, `cortex_bucket_store_partitioner_requested_ranges_total`, `cortex_bucket_store_partitioner_expanded_bytes_total`, `cortex_bucket_store_partitioner_requested_bytes_total` for `postings`, `series`, and `chunks`. #4095
+* [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
+* [ENHANCEMENT] Query-frontend: track `cortex_frontend_query_response_codec_duration_seconds` and `cortex_frontend_query_response_codec_payload_bytes` metrics to measure the time taken and bytes read / written while encoding and decoding query result payloads. #4110
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 * [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
@@ -30,6 +34,7 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+* [ENHANCEMENT] Add optional `weight` param to `newQuerierScaledObject` and `newRulerQuerierScaledObject` to allow running multiple querier deployments on different node types. #4141
 
 ### Mimirtool
 
@@ -39,7 +44,7 @@
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
 
-## 2.6.0-rc.0
+## 2.6.0
 
 ### Grafana Mimir
 

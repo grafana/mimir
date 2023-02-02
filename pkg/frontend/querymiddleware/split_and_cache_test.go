@@ -115,6 +115,8 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 				},
 			},
 		))
+
+		codec = newTestPrometheusCodec()
 	)
 
 	var actualCount atomic.Int32
@@ -123,7 +125,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				actualCount.Inc()
 
-				req, err := prometheusCodec{}.DecodeRequest(r.Context(), r)
+				req, err := codec.DecodeRequest(r.Context(), r)
 				require.NoError(t, err)
 
 				if req.GetStart() == dayOneStartTime.Unix()*1000 {
@@ -152,7 +154,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		24*time.Hour,
 		false,
 		mockLimits{},
-		PrometheusCodec,
+		codec,
 		nil,
 		nil,
 		nil,
@@ -171,7 +173,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	roundtripper := newRoundTripper(singleHostRoundTripper{
 		host: downstreamURL.Host,
 		next: http.DefaultTransport,
-	}, PrometheusCodec, log.NewNopLogger(), middlewares...)
+	}, codec, log.NewNopLogger(), middlewares...)
 
 	// Execute a query range request.
 	req, err := http.NewRequest("GET", queryURL, http.NoBody)
@@ -217,7 +219,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		24*time.Hour,
 		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
@@ -326,7 +328,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		24*time.Hour,
 		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
@@ -430,7 +432,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		24*time.Hour,
 		true, // caching of step-unaligned requests is enabled in this test.
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
@@ -586,7 +588,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				24*time.Hour,
 				false,
 				mockLimits{maxCacheFreshness: maxCacheFreshness},
-				PrometheusCodec,
+				newTestPrometheusCodec(),
 				cacheBackend,
 				cacheSplitter,
 				PrometheusResponseExtractor{},
@@ -798,7 +800,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
 					},
-					PrometheusCodec,
+					newTestPrometheusCodec(),
 					cache.NewMockCache(),
 					ConstSplitter(day),
 					PrometheusResponseExtractor{},
@@ -1034,7 +1036,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				24*time.Hour,
 				false,
 				mockLimits{},
-				PrometheusCodec,
+				newTestPrometheusCodec(),
 				cacheBackend,
 				cacheSplitter,
 				PrometheusResponseExtractor{},
@@ -1079,7 +1081,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		24*time.Hour,
 		false,
 		mockLimits{},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
@@ -1126,7 +1128,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		24*time.Hour,
 		false,
 		mockLimits{},
-		PrometheusCodec,
+		newTestPrometheusCodec(),
 		cache.NewMockCache(),
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},

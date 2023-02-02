@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/reference-configuration-parameters/
-  - /docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/
+  - operators-guide/configuring/reference-configuration-parameters/
+  - operators-guide/configure/reference-configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration
 title: Grafana Mimir configuration reference
@@ -2972,11 +2972,6 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.chunks-cache
     [memcached: <memcached>]
-
-    # (advanced) Size of each subrange that bucket object is split into for
-    # better caching.
-    # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-size
-    [subrange_size: <int> | default = 16000]
 
     # (advanced) Maximum number of sub-GetRange requests that a single GetRange
     # request can be split into when fetching chunks. Zero or negative value =

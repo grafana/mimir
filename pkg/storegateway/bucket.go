@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -1722,7 +1723,7 @@ func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length i
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
-	// Get a reader for the required range.
+	ctx = bucketcache.WithMemoryPool(ctx, chunkBytesSlicePool, chunkBytesSlabSize)
 	reader, err := b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 	if err != nil {
 		return nil, errors.Wrap(err, "get range reader")
@@ -1748,6 +1749,7 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 		return nil, errors.Errorf("unknown segment file for index %d", seq)
 	}
 
+	ctx = bucketcache.WithMemoryPool(ctx, chunkBytesSlicePool, chunkBytesSlabSize)
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 

@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/securing/encrypting-data-at-rest/
+  - ../securing/encrypting-data-at-rest/
 description: Learn how to configure object storage encryption.
 menuTitle: Encrypting data at rest
 title: Encrypting Grafana Mimir data at rest

@@ -381,7 +381,8 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
+	codec := newTestPrometheusCodec()
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -390,7 +391,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
@@ -424,7 +425,8 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
+	codec := newTestPrometheusCodec()
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -433,7 +435,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				// fire up work and we don't wait.
@@ -464,7 +466,8 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
+	codec := newTestPrometheusCodec()
+	r, err := codec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -473,7 +476,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
