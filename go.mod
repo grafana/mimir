@@ -61,7 +61,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.69.0
-	github.com/thanos-io/objstore v0.0.0-20221213124554-e4d8ba6bc6f3
+	github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
 	go.opentelemetry.io/collector/pdata v1.0.0-rc3.0.20230109164642-7d168dd20efd
 	go.opentelemetry.io/otel v1.11.2
 	go.opentelemetry.io/otel/trace v1.11.2
