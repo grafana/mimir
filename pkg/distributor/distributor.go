@@ -280,7 +280,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
 			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_exemplars_total",
@@ -300,7 +300,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
 			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_exemplars_in_total",
@@ -315,12 +315,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_non_ha_samples_received_total",
 			Help:      "The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		dedupedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_deduped_samples_total",
 			Help:      "The total number of deduplicated samples.",
-		}, []string{"user", "cluster", "type"}),
+		}, []string{"user", "cluster", mimirpb.SampleMetricTypeLabel}),
 		labelsHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "labels_per_sample",
