@@ -123,9 +123,7 @@ type SampleValidationMetrics struct {
 	tooFarInFuture         *prometheus.CounterVec
 }
 
-func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
-	filter := prometheus.Labels{"user": userID}
-
+func (m *SampleValidationMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.missingMetricName.DeletePartialMatch(filter)
 	m.invalidMetricName.DeletePartialMatch(filter)
 	m.maxLabelNamesPerSeries.DeletePartialMatch(filter)
@@ -136,15 +134,12 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
 
+func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
+	m.DeletePartialMatch(prometheus.Labels{"user": userID})
+}
+
 func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string) {
-	m.missingMetricName.DeleteLabelValues(userID, group)
-	m.invalidMetricName.DeleteLabelValues(userID, group)
-	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
-	m.invalidLabel.DeleteLabelValues(userID, group)
-	m.labelNameTooLong.DeleteLabelValues(userID, group)
-	m.labelValueTooLong.DeleteLabelValues(userID, group)
-	m.duplicateLabelNames.DeleteLabelValues(userID, group)
-	m.tooFarInFuture.DeleteLabelValues(userID, group)
+	m.DeletePartialMatch(prometheus.Labels{"user": userID, "group": group})
 }
 
 func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {

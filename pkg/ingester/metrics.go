@@ -387,12 +387,8 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
-	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
-	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
-	m.sampleTooOld.DeleteLabelValues(userID, group)
-	m.newValueForTimestamp.DeleteLabelValues(userID, group)
-	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
-	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
+	filter := prometheus.Labels{"user": userID, "group": group}
+	m.DeletePartialMatch(filter)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.

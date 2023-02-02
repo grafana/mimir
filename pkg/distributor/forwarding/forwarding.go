@@ -145,7 +145,8 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 }
 
 func (f *forwarder) DeleteMetricsForUser(user string) {
-	f.discardedSamplesTooOld.DeleteLabelValues(user)
+	filter := prometheus.Labels{"user": user}
+	f.discardedSamplesTooOld.DeletePartialMatch(filter)
 }
 
 func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
