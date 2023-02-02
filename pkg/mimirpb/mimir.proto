@@ -167,3 +167,82 @@ message SampleHistogramPair {
   int64 timestamp = 2;
   SampleHistogram histogram = 1;
 }
+
+message QueryResponse {
+  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum Status {
+    option (gogoproto.goproto_enum_prefix) = true;
+    ERROR = 0;
+    SUCCESS = 1;
+  }
+
+  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum ErrorType {
+    option (gogoproto.goproto_enum_prefix) = true;
+    NONE = 0;
+    TIMEOUT = 1;
+    CANCELED = 2;
+    EXECUTION = 3;
+    BAD_DATA = 4;
+    INTERNAL = 5;
+    UNAVAILABLE = 6;
+    NOT_FOUND = 7;
+  }
+
+  Status status = 1;
+  ErrorType error_type = 2;
+  string error = 3;
+
+  oneof data {
+    StringData string = 4;
+    VectorData vector = 5;
+    ScalarData scalar = 6;
+    MatrixData matrix = 7;
+  }
+}
+
+message StringData {
+  string value = 1;
+}
+
+message VectorData {
+  repeated VectorSample samples = 1 [(gogoproto.nullable) = false];
+  repeated VectorHistogram histograms = 2 [(gogoproto.nullable) = false];
+}
+
+message VectorSample {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  double value = 2;
+  int64 timestamp_milliseconds = 3;
+}
+
+message VectorHistogram {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  Histogram histogram = 2 [(gogoproto.nullable) = false];
+}
+
+message ScalarData {
+  double value = 1;
+  int64 timestamp_milliseconds = 2;
+}
+
+message MatrixData {
+  repeated MatrixSeries series = 1 [(gogoproto.nullable) = false];
+}
+
+message MatrixSeries {
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated string metric = 1;
+
+  repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+}
+
+message MatrixSample {
+  double value = 1;
+  int64 timestamp_milliseconds = 2;
+}
