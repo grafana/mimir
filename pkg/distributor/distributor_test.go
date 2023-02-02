@@ -2354,12 +2354,11 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 
 func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 	type testcase struct {
-		name                   string
-		request                *mimirpb.WriteRequest
-		ingestSample           bool
-		expectIngestedMetrics  []string
-		expectedMissingMetrics []string
-		expectedMetrics        string
+		name                  string
+		request               *mimirpb.WriteRequest
+		ingestSample          bool
+		expectIngestedMetrics []string
+		expectedMetrics       string
 	}
 
 	metric := "test_metric"
@@ -2376,54 +2375,29 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{type="float",user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{type="float",user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
+			`,
 		}, {
-			name:                   "don't ingest with only samples",
-			request:                makeWriteRequest(123456789000, 5, 0, false, false, metric),
-			ingestSample:           false,
-			expectIngestedMetrics:  []string{},
-			expectedMissingMetrics: []string{"cortex_distributor_received_samples_total"},
+			name:                  "don't ingest with only samples",
+			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
+			ingestSample:          false,
+			expectIngestedMetrics: []string{},
 			expectedMetrics: `
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{type="float",user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
+			`,
 		}, {
 			name:                  "do ingest with metadata",
 			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
@@ -2436,9 +2410,6 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{type="float",user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
@@ -2448,26 +2419,19 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{type="float",user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 			# TYPE cortex_distributor_metadata_in_total counter
 			cortex_distributor_metadata_in_total{user="user"} 5
-`,
+			`,
 		}, {
-			name:                   "don't ingest with metadata",
-			request:                makeWriteRequest(123456789000, 5, 5, false, false, metric),
-			ingestSample:           false,
-			expectIngestedMetrics:  []string{},
-			expectedMissingMetrics: []string{"cortex_distributor_received_samples_total"},
+			name:                  "don't ingest with metadata",
+			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
+			ingestSample:          false,
+			expectIngestedMetrics: []string{},
 			expectedMetrics: `
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
@@ -2477,13 +2441,10 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{type="float",user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 			# TYPE cortex_distributor_metadata_in_total counter
 			cortex_distributor_metadata_in_total{user="user"} 5
-`,
+			`,
 		}, {
 			name:                  "do ingest with exemplars",
 			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
@@ -2499,9 +2460,6 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 5
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
@@ -2511,26 +2469,16 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
+			`,
 		}, {
-			name:                   "don't ingest with exemplars",
-			request:                makeWriteRequest(123456789000, 5, 0, true, false, metric),
-			ingestSample:           false,
-			expectIngestedMetrics:  []string{},
-			expectedMissingMetrics: []string{"cortex_distributor_received_samples_total"},
+			name:                  "don't ingest with exemplars",
+			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
+			ingestSample:          false,
+			expectIngestedMetrics: []string{},
 			expectedMetrics: `
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
@@ -2540,10 +2488,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
+			`,
 		},
 	}
 
@@ -2599,14 +2544,6 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 				"cortex_distributor_exemplars_in_total",
 				"cortex_distributor_metadata_in_total",
 			))
-
-			if len(tc.expectedMissingMetrics) > 0 {
-				require.NoError(t, testutil.GatherAndCompare(
-					regs[0],
-					strings.NewReader(""),
-					tc.expectedMissingMetrics...,
-				))
-			}
 		})
 	}
 }
@@ -4839,8 +4776,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		receivedHistograms int
 		receivedMetadata   int
 	}
-	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string, []string) {
-		missingMetrics := []string{}
+	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		text := fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
@@ -4874,17 +4810,19 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				cortex_distributor_received_samples_total{type="histogram",user="%s"} %d
 				`, tenant, cfg.receivedHistograms)
 			}
-		} else {
-			missingMetrics = append(missingMetrics, "cortex_distributor_received_samples_total")
 		}
-		text += fmt.Sprintf(`
+		if cfg.receivedExemplars > 0 {
+			text += fmt.Sprintf(`
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="%s"} %d
+		`, tenant, cfg.receivedExemplars)
+		}
+		text += fmt.Sprintf(`
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
 		cortex_distributor_received_metadata_total{user="%s"} %d
-		`, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata)
+		`, tenant, cfg.receivedMetadata)
 
 		metrics := []string{
 			"cortex_distributor_requests_in_total",
@@ -4896,7 +4834,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			"cortex_distributor_received_exemplars_total",
 			"cortex_distributor_received_metadata_total",
 		}
-		return text, metrics, missingMetrics
+		return text, metrics
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}
@@ -4920,7 +4858,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -4937,11 +4875,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			strings.NewReader(expectedMetrics),
 			metricNames...,
 		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
-		))
 	})
 
 	t.Run("Drop samples via relabel rules", func(t *testing.T) {
@@ -4957,7 +4890,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -4974,11 +4907,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			strings.NewReader(expectedMetrics),
 			metricNames...,
 		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
-		))
 	})
 
 	t.Run("Drop samples via drop_label rule", func(t *testing.T) {
@@ -4989,7 +4917,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -5005,11 +4933,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			reg,
 			strings.NewReader(expectedMetrics),
 			metricNames...,
-		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
 		))
 	})
 
@@ -5039,7 +4962,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         4,
 			samplesIn:          40,
 			exemplarsIn:        40,
@@ -5055,11 +4978,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			reg,
 			strings.NewReader(expectedMetrics),
 			metricNames...,
-		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
 		))
 	})
 
@@ -5082,7 +5000,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -5099,11 +5017,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			strings.NewReader(expectedMetrics),
 			metricNames...,
 		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
-		))
 	})
 
 	t.Run("Drop examplars via limit", func(t *testing.T) {
@@ -5115,7 +5028,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -5131,11 +5044,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			reg,
 			strings.NewReader(expectedMetrics),
 			metricNames...,
-		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
 		))
 	})
 
@@ -5159,7 +5067,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -5175,11 +5083,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			reg,
 			strings.NewReader(expectedMetrics),
 			metricNames...,
-		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
 		))
 	})
 
@@ -5217,7 +5120,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames, missingMetrics := getExpectedMetrics(expectedMetricsCfg{
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:         1,
 			samplesIn:          10,
 			exemplarsIn:        10,
@@ -5233,11 +5136,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			reg,
 			strings.NewReader(expectedMetrics),
 			metricNames...,
-		))
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(""),
-			missingMetrics...,
 		))
 	})
 }

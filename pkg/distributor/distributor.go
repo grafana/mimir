@@ -795,8 +795,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+				if numSamples > 0 {
+					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
+				}
+				if numHistograms > 0 {
+					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+				}
 
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
@@ -1009,10 +1013,18 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedHistograms + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(validatedSamples))
-			d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(validatedHistograms))
-			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+			if validatedSamples > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(validatedSamples))
+			}
+			if validatedHistograms > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(validatedHistograms))
+			}
+			if validatedExemplars > 0 {
+				d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
+			}
+			if validatedMetadata > 0 {
+				d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+			}
 			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
@@ -1168,8 +1180,12 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		if numHistograms > 0 {
 			d.incomingSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
 		}
-		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
-		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+		if numExemplars > 0 {
+			d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+		}
+		if len(req.Metadata) > 0 {
+			d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+		}
 
 		cleanupInDefer = false
 		return next(ctx, pushReq)
@@ -1416,8 +1432,12 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	if receivedHistograms > 0 {
 		d.receivedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(receivedHistograms))
 	}
-	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
-	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+	if receivedExemplars > 0 {
+		d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	}
+	if receivedMetadata > 0 {
+		d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+	}
 }
 
 func copyString(s string) string {
