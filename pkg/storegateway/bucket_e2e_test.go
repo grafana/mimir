@@ -482,32 +482,12 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors labels.Labels) []*dto.Metric {
 	var result []*dto.Metric
 	for _, m := range mf.GetMetric() {
-		if !matchesSelectors(m, selectors) {
+		if !util.MatchesSelectors(m, selectors) {
 			continue
 		}
 		result = append(result, m)
 	}
 	return result
-}
-
-func matchesSelectors(m *dto.Metric, selectors labels.Labels) bool {
-	for _, l := range selectors {
-		found := false
-		for _, lp := range m.GetLabel() {
-			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
-				continue
-			}
-
-			found = true
-			break
-		}
-
-		if !found {
-			return false
-		}
-	}
-
-	return true
 }
 
 func TestBucketStore_e2e(t *testing.T) {

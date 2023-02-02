@@ -9,6 +9,8 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -21,8 +23,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/expfmt"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -30,6 +33,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -321,10 +325,15 @@ func TestResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, decoded)
 
-			metrics := gatherMetrics(t, reg)
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_duration_seconds_count{format="json",operation="decode"}`])
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_payload_bytes_count{format="json",operation="decode"}`])
-			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_response_codec_payload_bytes_sum{format="json",operation="decode"}`])
+			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
@@ -336,10 +345,15 @@ func TestResponseRoundtrip(t *testing.T) {
 			encoded, err := codec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
 
-			metrics = gatherMetrics(t, reg)
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_duration_seconds_count{format="json",operation="encode"}`])
-			require.Equal(t, 1.0, metrics[`cortex_frontend_query_response_codec_payload_bytes_count{format="json",operation="encode"}`])
-			require.Equal(t, float64(len(body)), metrics[`cortex_frontend_query_response_codec_payload_bytes_sum{format="json",operation="encode"}`])
+			metrics, err = util.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			payloadSizeHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 
 			expectedJSON, err := bodyBuffer(httpResponse)
 			require.NoError(t, err)
@@ -350,6 +364,34 @@ func TestResponseRoundtrip(t *testing.T) {
 			assert.Equal(t, httpResponse, encoded)
 		})
 	}
+}
+
+func findHistogramMatchingLabels(metrics util.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
+	metricFamily, ok := metrics[name]
+	if !ok {
+		return nil, fmt.Errorf("no metric with name %v found", name)
+	}
+
+	l := labels.FromStrings(labelValuePairs...)
+	var matchingMetrics []*dto.Metric
+
+	for _, metric := range metricFamily.Metric {
+		if util.MatchesSelectors(metric, l) {
+			matchingMetrics = append(matchingMetrics, metric)
+		}
+	}
+
+	if len(matchingMetrics) != 1 {
+		return nil, fmt.Errorf("wanted exactly one matching metric, but found %v", len(matchingMetrics))
+	}
+
+	metric := matchingMetrics[0]
+
+	if metric.Histogram == nil {
+		return nil, errors.New("found a single matching metric, but it is not a histogram")
+	}
+
+	return metric.Histogram, nil
 }
 
 func TestMergeAPIResponses(t *testing.T) {
@@ -804,34 +846,4 @@ func Test_DecodeOptions(t *testing.T) {
 
 func newTestPrometheusCodec() Codec {
 	return NewPrometheusCodec(prometheus.NewPedanticRegistry())
-}
-
-func gatherMetrics(t *testing.T, g prometheus.Gatherer) map[string]float64 {
-	metricFamilies, err := g.Gather()
-	require.NoError(t, err)
-
-	buf := &bytes.Buffer{}
-
-	for _, metricFamily := range metricFamilies {
-		_, err := expfmt.MetricFamilyToText(buf, metricFamily)
-		require.NoError(t, err)
-	}
-
-	lines := strings.Split(buf.String(), "\n")
-	metrics := map[string]float64{}
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-
-		endOfName := strings.LastIndexByte(line, ' ')
-		name := line[:endOfName]
-		value, err := strconv.ParseFloat(line[endOfName+1:], 64)
-		require.NoError(t, err)
-
-		metrics[name] = value
-	}
-
-	return metrics
 }
