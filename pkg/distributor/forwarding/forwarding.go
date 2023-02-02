@@ -74,8 +74,7 @@ type forwarder struct {
 	requestLatencyHistogram prometheus.Histogram
 	grpcClientsGauge        prometheus.Gauge
 
-	discardedSamplesTooOld    *prometheus.CounterVec
-	discardedHistogramsTooOld *prometheus.CounterVec
+	discardedSamplesTooOld *prometheus.CounterVec
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -136,8 +135,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
 
-		discardedSamplesTooOld:    validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
-		discardedHistogramsTooOld: validation.DiscardedHistogramsCounter(reg, "forwarded-histogram-too-old"),
+		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
@@ -148,7 +146,6 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 
 func (f *forwarder) DeleteMetricsForUser(user string) {
 	f.discardedSamplesTooOld.DeleteLabelValues(user)
-	f.discardedHistogramsTooOld.DeleteLabelValues(user)
 }
 
 func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
@@ -364,12 +361,12 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
+					f.discardedSamplesTooOld.WithLabelValues(user, group, mimirpb.SampleMetricTypeFloat).Add(float64(filteredSamples))
 				}
 			} else if filteredHistograms > 0 {
 				err = errHistogramsTooOld
 				if !ingest {
-					f.discardedHistogramsTooOld.WithLabelValues(user).Add(float64(filteredHistograms))
+					f.discardedSamplesTooOld.WithLabelValues(user, group, mimirpb.SampleMetricTypeHistogram).Add(float64(filteredHistograms))
 				}
 			}
 
