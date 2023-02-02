@@ -43,7 +43,7 @@
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
 
-## 2.6.0-rc.0
+## 2.6.0
 
 ### Grafana Mimir
 
