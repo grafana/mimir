@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/thanos-io/objstore/tracing"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -726,6 +727,8 @@ func newLoadingSeriesChunkRefsSetIterator(
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
+	sp, ctx := tracing.StartSpan(s.ctx, "loadingSeriesChunkRefsSetIterator.Next.r223")
+	defer sp.Finish()
 	if s.err != nil {
 		return false
 	}
@@ -745,7 +748,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -766,7 +769,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		loadStats.merge(&unsafeStats)
 	}
 
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
+	loadedSeries, err := s.indexr.preloadSeries(ctx, nextPostings, s.stats)
 	if err != nil {
 		s.err = errors.Wrap(err, "preload series")
 		return false
@@ -811,7 +814,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	s.currentSet = nextSet
 	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
