@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -45,12 +44,6 @@ var (
 	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ExemplarTimestampInvalid)
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
-
-	// Discarded histograms reasons.
-	reasonHistogramSpansBucketsMismatch = metricReasonFromErrorID(globalerror.HistogramSpansBucketsMismatch)
-	reasonHistogramSpanNegativeOffset   = metricReasonFromErrorID(globalerror.HistogramSpanNegativeOffset)
-	reasonHistogramNegativeBucketCount  = metricReasonFromErrorID(globalerror.HistogramNegativeBucketCount)
-	reasonHistogramCountNotBigEnough    = metricReasonFromErrorID(globalerror.HistogramCountNotBigEnough)
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
@@ -88,7 +81,7 @@ func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *promethe
 		ConstLabels: map[string]string{
 			discardReasonLabel: reason,
 		},
-	}, []string{"user", "group"})
+	}, []string{"user", "group", mimirpb.SampleMetricTypeLabel})
 }
 
 // DiscardedExemplarsCounter creates per-user counter vector for exemplars discarded for a given reason.
@@ -96,17 +89,6 @@ func DiscardedExemplarsCounter(reg prometheus.Registerer, reason string) *promet
 	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_exemplars_total",
 		Help: "The total number of exemplars that were discarded.",
-		ConstLabels: map[string]string{
-			discardReasonLabel: reason,
-		},
-	}, []string{"user"})
-}
-
-// DiscardedHistogramsCounter creates per-user counter vector for histograms discarded for a given reason.
-func DiscardedHistogramsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_discarded_histograms_total",
-		Help: "The total number of histograms that were discarded.",
 		ConstLabels: map[string]string{
 			discardReasonLabel: reason,
 		},
@@ -205,33 +187,6 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 	}
 }
 
-// HistogramValidationMetrics is a collection of metrics used during histogram validation.
-type HistogramValidationMetrics struct {
-	tooFarInFuture       *prometheus.CounterVec
-	spansBucketsMismatch *prometheus.CounterVec
-	spanNegativeOffset   *prometheus.CounterVec
-	negativeBucketCount  *prometheus.CounterVec
-	countNotBigEnough    *prometheus.CounterVec
-}
-
-func (m *HistogramValidationMetrics) DeleteUserMetrics(userID string) {
-	m.tooFarInFuture.DeleteLabelValues(userID)
-	m.spansBucketsMismatch.DeleteLabelValues(userID)
-	m.spanNegativeOffset.DeleteLabelValues(userID)
-	m.negativeBucketCount.DeleteLabelValues(userID)
-	m.countNotBigEnough.DeleteLabelValues(userID)
-}
-
-func NewHistogramValidationMetrics(r prometheus.Registerer) *HistogramValidationMetrics {
-	return &HistogramValidationMetrics{
-		tooFarInFuture:       DiscardedHistogramsCounter(r, reasonTooFarInFuture),
-		spansBucketsMismatch: DiscardedHistogramsCounter(r, reasonHistogramSpansBucketsMismatch),
-		spanNegativeOffset:   DiscardedHistogramsCounter(r, reasonHistogramSpanNegativeOffset),
-		negativeBucketCount:  DiscardedHistogramsCounter(r, reasonHistogramNegativeBucketCount),
-		countNotBigEnough:    DiscardedHistogramsCounter(r, reasonHistogramCountNotBigEnough),
-	}
-}
-
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
@@ -239,7 +194,7 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
-		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
+		m.tooFarInFuture.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Inc()
 		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.TimestampMs)
 	}
 
@@ -330,21 +285,21 @@ type LabelValidationConfig interface {
 
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
+func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool, sampleType string) ValidationError {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
-		m.missingMetricName.WithLabelValues(userID, group).Inc()
+		m.missingMetricName.WithLabelValues(userID, group, sampleType).Inc()
 		return newNoMetricNameError()
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-		m.invalidMetricName.WithLabelValues(userID, group).Inc()
+		m.invalidMetricName.WithLabelValues(userID, group, sampleType).Inc()
 		return newInvalidMetricNameError(unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
 	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
-		m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
+		m.maxLabelNamesPerSeries.WithLabelValues(userID, group, sampleType).Inc()
 		return newTooManyLabelsError(ls, cfg.MaxLabelNamesPerSeries(userID))
 	}
 
@@ -353,16 +308,16 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	lastLabelName := ""
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
-			m.invalidLabel.WithLabelValues(userID, group).Inc()
+			m.invalidLabel.WithLabelValues(userID, group, sampleType).Inc()
 			return newInvalidLabelError(ls, l.Name)
 		} else if len(l.Name) > maxLabelNameLength {
-			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
+			m.labelNameTooLong.WithLabelValues(userID, group, sampleType).Inc()
 			return newLabelNameTooLongError(ls, l.Name)
 		} else if len(l.Value) > maxLabelValueLength {
-			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
+			m.labelValueTooLong.WithLabelValues(userID, group, sampleType).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
 		} else if lastLabelName == l.Name {
-			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
+			m.duplicateLabelNames.WithLabelValues(userID, group, sampleType).Inc()
 			return newDuplicatedLabelError(ls, l.Name)
 		}
 
