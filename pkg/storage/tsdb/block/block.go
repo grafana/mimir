@@ -109,6 +109,13 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return errors.Wrap(err, "gather meta file stats")
 	}
 
+	// Set out of order labels
+	// TODO: check if feature flag is enabled
+	if meta.Compaction.FromOutOfOrder() {
+		// TODO: this key/value should probably be exported constants
+		meta.Thanos.Labels["out-of-order"] = "true"
+	}
+
 	metaEncoded := strings.Builder{}
 	if err := meta.Write(&metaEncoded); err != nil {
 		return errors.Wrap(err, "encode meta file")
