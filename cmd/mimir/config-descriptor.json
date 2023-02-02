@@ -5270,17 +5270,6 @@
                 },
                 {
                   "kind": "field",
-                  "name": "subrange_size",
-                  "required": false,
-                  "desc": "Size of each subrange that bucket object is split into for better caching.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 16000,
-                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.subrange-size",
-                  "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
                   "name": "max_get_range_requests",
                   "required": false,
                   "desc": "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.",
