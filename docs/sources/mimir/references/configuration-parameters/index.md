@@ -3464,6 +3464,17 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+block_upload:
+  # (experimental) Duration of time between heartbeats of an in-progress block
+  # upload validation. <= 0 to disable heartbeating.
+  # CLI flag: -compactor.block-upload.validation-heartbeat-interval
+  [validation_heartbeat_interval: <duration> | default = 1m]
+
+  # (experimental) Maximum duration of time to wait for a block upload
+  # validation to complete. <= 0 to disable.
+  # CLI flag: -compactor.block-upload.validation-heartbeat-timeout
+  [validation_heartbeat_timeout: <duration> | default = 5m]
 ```
 
 ### store_gateway

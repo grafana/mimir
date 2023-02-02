@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -37,7 +38,22 @@ import (
 const (
 	uploadingMetaFilename = "uploading-meta.json"
 	validationFilename    = "validation.json"
-	validationUpdateDelay = 1 * time.Minute
+)
+
+type BlockUploadConfig struct {
+	ValidationType              int           `yaml:"-"`
+	ValidationHeartbeatInterval time.Duration `yaml:"validation_heartbeat_interval" category:"experimental"`
+	ValidationHeartbeatTimeout  time.Duration `yaml:"validation_heartbeat_timeout" category:"experimental"`
+}
+
+func (cfg *BlockUploadConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
+	f.DurationVar(&cfg.ValidationHeartbeatInterval, prefix+".validation-heartbeat-interval", 1*time.Minute, "Duration of time between heartbeats of an in-progress block upload validation. <= 0 to disable heartbeating.")
+	f.DurationVar(&cfg.ValidationHeartbeatTimeout, prefix+".validation-heartbeat-timeout", 5*time.Minute, "Maximum duration of time to wait for a block upload validation to complete. <= 0 to disable.")
+}
+
+const (
+	AsynchronousValidation = iota
+	SynchronousValidation  // for unit testing
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -109,8 +125,14 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if !c.compactorCfg.disableCompleteBlockUpload {
+	switch c.compactorCfg.BlockUpload.ValidationType {
+	case AsynchronousValidation:
 		go c.validateAndCompleteBlockUpload(blockLogger, userBkt, blockID, *m)
+	case SynchronousValidation:
+		c.validateAndCompleteBlockUpload(blockLogger, userBkt, blockID, *m)
+	default:
+		http.Error(w, "invalid block validation configured", http.StatusInternalServerError)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -274,12 +296,24 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 func (c *MultitenantCompactor) validateAndCompleteBlockUpload(blockLogger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta metadata.Meta) {
 	level.Debug(blockLogger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
-	// start go routine that updates validation file timestamp once per minute
 	ch := make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(1)
-	ctx, cancel := context.WithCancel(context.Background())
-	go c.periodicValidationUpdater(ctx, blockLogger, blockID, userBkt, ch, &wg, cancel)
+
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	if c.compactorCfg.BlockUpload.ValidationHeartbeatTimeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.compactorCfg.BlockUpload.ValidationHeartbeatTimeout)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+	defer cancel()
+
+	if c.compactorCfg.BlockUpload.ValidationHeartbeatInterval > 0 {
+		// start go routine that updates validation file timestamp once per minute
+		wg.Add(1)
+		go c.periodicValidationUpdater(ctx, blockLogger, blockID, userBkt, ch, &wg, cancel)
+	}
 
 	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
 		level.Error(blockLogger).Log("msg", "error while validating block", "err", err)
@@ -410,20 +444,14 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, blockLogger log.L
 }
 
 func (c *MultitenantCompactor) createTemporaryBlockDirectory() (dir string, err error) {
-	// TODO: Set c.compactorCfg.DataDir to a temporary directory in tests to remove a conditional tmpDir
-	tmpDir := ""
-	if _, err := os.Stat(c.compactorCfg.DataDir); !os.IsNotExist(err) {
-		tmpDir = c.compactorCfg.DataDir
-	}
-
-	blockDir, err := os.MkdirTemp(tmpDir, "upload")
+	blockDir, err := os.MkdirTemp(c.compactorCfg.DataDir, "upload")
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to create temporary block directory", "err", err)
 		return "", errors.New("failed to create temporary block directory")
 	}
 
 	level.Debug(c.logger).Log("msg", "created temporary block directory", "dir", blockDir)
-	return tmpDir, nil
+	return blockDir, nil
 }
 
 func (c *MultitenantCompactor) removeTemporaryBlockDirectory(blockDir string) {
@@ -522,7 +550,10 @@ type validationFile struct {
 	Error      string // Error message if validation failed.
 }
 
-const validationFileStaleTimeout = 5 * time.Minute
+type BlockUploadStateResult struct {
+	State string `json:"result"`
+	Error string `json:"error,omitempty"`
+}
 
 type blockUploadState int
 
@@ -555,12 +586,7 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 		return
 	}
 
-	type result struct {
-		State string `json:"result"`
-		Error string `json:"error,omitempty"`
-	}
-
-	res := result{}
+	res := BlockUploadStateResult{}
 
 	switch s {
 	case blockIsComplete:
@@ -641,7 +667,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	if v.Error != "" {
 		return blockValidationFailed, meta, v, err
 	}
-	if time.Since(time.UnixMilli(v.LastUpdate)) < validationFileStaleTimeout {
+	if time.Since(time.UnixMilli(v.LastUpdate)) < c.compactorCfg.BlockUpload.ValidationHeartbeatTimeout {
 		return blockValidationInProgress, meta, v, nil
 	}
 	return blockValidationStale, meta, v, nil
@@ -706,11 +732,13 @@ func (c *MultitenantCompactor) uploadValidation(ctx context.Context, blockLogger
 func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, blockLogger log.Logger, blockID ulid.ULID,
 	userBkt objstore.Bucket, ch chan struct{}, wg *sync.WaitGroup, cancelFn func()) {
 	defer wg.Done()
-	ticker := time.NewTicker(validationUpdateDelay)
+	ticker := time.NewTicker(c.compactorCfg.BlockUpload.ValidationHeartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ch:
+			return
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			if err := c.uploadValidation(ctx, blockLogger, blockID, userBkt); err != nil {

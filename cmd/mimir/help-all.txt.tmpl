@@ -629,6 +629,10 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload.validation-heartbeat-interval duration
+    	[experimental] Duration of time between heartbeats of an in-progress block upload validation. <= 0 to disable heartbeating. (default 1m0s)
+  -compactor.block-upload.validation-heartbeat-timeout duration
+    	[experimental] Maximum duration of time to wait for a block upload validation to complete. <= 0 to disable. (default 5m0s)
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.cleanup-concurrency int

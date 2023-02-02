@@ -1066,7 +1066,8 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
-			ULID: ulid.MustParse(blockID),
+			Version: metadata.TSDBVersion1,
+			ULID:    ulid.MustParse(blockID),
 		},
 		Thanos: metadata.Thanos{
 			Labels: map[string]string{
@@ -1079,10 +1080,20 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				},
 				{
 					RelPath:   "chunks/000001",
-					SizeBytes: 1024,
+					SizeBytes: 2,
 				},
 			},
 		},
+	}
+
+	validSetup := func(t *testing.T, bkt objstore.Bucket) {
+		err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
+		require.NoError(t, err)
+		for _, file := range validMeta.Thanos.Files {
+			content := bytes.NewReader(make([]byte, file.SizeBytes))
+			err = bkt.Upload(context.Background(), path.Join(tenantID, blockID, file.RelPath), content)
+			require.NoError(t, err)
+		}
 	}
 
 	testCases := []struct {
@@ -1096,7 +1107,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		expConflict            string
 		expNotFound            string
 		expInternalServerError bool
-		expBlockState          string
+		expUploadStateResult   *BlockUploadStateResult
 	}{
 		{
 			name:          "without tenant ID",
@@ -1166,52 +1177,41 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			expInternalServerError: true,
 		},
 		{
-			name:     "uploading meta file fails",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
-				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
-				require.NoError(t, err)
-			},
+			name:          "uploading meta file fails",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			setUpBucket:   validSetup,
 			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
+			expUploadStateResult: &BlockUploadStateResult{
+				State: "failed",
+				Error: "failed uploading meta.json to bucket: " + injectedError.Error(),
+			},
 		},
 		{
-			name:     "removing in-flight meta file fails",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
-				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
-				require.NoError(t, err)
-			},
+			name:          "removing in-flight meta file fails",
+			tenantID:      tenantID,
+			blockID:       blockID,
+			setUpBucket:   validSetup,
 			errorInjector: bucket.InjectErrorOn(bucket.OpDelete, metaPath, injectedError),
-		},
-		{
-			name:     "valid request",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
-				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
-				require.NoError(t, err)
+			expUploadStateResult: &BlockUploadStateResult{
+				State: "complete",
 			},
 		},
 		{
-			name:     "uploading validation file fails",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
-				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
-				require.NoError(t, err)
-			},
+			name:                   "uploading validation file fails",
+			tenantID:               tenantID,
+			blockID:                blockID,
+			setUpBucket:            validSetup,
 			errorInjector:          bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
 			expInternalServerError: true,
 		},
 		{
-			name:     "valid request",
-			tenantID: tenantID,
-			blockID:  blockID,
-			setUpBucket: func(t *testing.T, bkt objstore.Bucket) {
-				err := marshalAndUploadToBucket(context.Background(), bkt, uploadingMetaPath, validMeta)
-				require.NoError(t, err)
+			name:        "valid request",
+			tenantID:    tenantID,
+			blockID:     blockID,
+			setUpBucket: validSetup,
+			expUploadStateResult: &BlockUploadStateResult{
+				State: "complete",
 			},
 		},
 	}
@@ -1233,6 +1233,12 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				bucketClient: &injectedBkt,
 				cfgProvider:  cfgProvider,
 			}
+
+			c.compactorCfg.BlockUpload = BlockUploadConfig{
+				// ensure the validation completes entirely before the finish responds with a result
+				ValidationType: SynchronousValidation,
+			}
+			c.compactorCfg.DataDir = t.TempDir()
 
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
@@ -1264,7 +1270,18 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
+			}
 
+			if tc.expUploadStateResult != nil {
+				w := httptest.NewRecorder()
+				c.GetBlockUploadStateHandler(w, r)
+
+				resp := w.Result()
+				blockState := BlockUploadStateResult{}
+				err = json.NewDecoder(resp.Body).Decode(&blockState)
+				require.NoError(t, err)
+
+				require.Equal(t, *tc.expUploadStateResult, blockState)
 			}
 		})
 	}

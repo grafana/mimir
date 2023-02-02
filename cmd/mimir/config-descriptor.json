@@ -6703,6 +6703,38 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "block_upload",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "validation_heartbeat_interval",
+              "required": false,
+              "desc": "Duration of time between heartbeats of an in-progress block upload validation. \u003c= 0 to disable heartbeating.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "compactor.block-upload.validation-heartbeat-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "validation_heartbeat_timeout",
+              "required": false,
+              "desc": "Maximum duration of time to wait for a block upload validation to complete. \u003c= 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 300000000000,
+              "fieldFlag": "compactor.block-upload.validation-heartbeat-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
