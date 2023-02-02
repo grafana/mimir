@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../../visualizing-metrics/dashboards/reads-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/reads-resources/
+  - ../../monitoring-grafana-mimir/dashboards/reads-resources/
 description: View an example Reads resources dashboard.
 menuTitle: Reads resources
 title: Grafana Mimir Reads resources dashboard
