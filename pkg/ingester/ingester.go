@@ -664,19 +664,22 @@ type extendedAppender interface {
 	storage.GetRef
 }
 
-type pushStats struct {
+type typedPushStats struct {
 	succeededSamplesCount     int
 	failedSamplesCount        int
-	succeededExemplarsCount   int
-	failedExemplarsCount      int
-	succeededHistogramsCount  int
-	failedHistogramsCount     int
 	sampleOutOfBoundsCount    int
 	sampleOutOfOrderCount     int
 	sampleTooOldCount         int
 	newValueForTimestampCount int
 	perUserSeriesLimitCount   int
 	perMetricSeriesLimitCount int
+}
+
+type pushStats struct {
+	succeededExemplarsCount int
+	failedExemplarsCount    int
+	floatStats              typedPushStats
+	histogramStats          typedPushStats
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -803,7 +806,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		case err != nil && errors.Is(err, errEphemeralStorageDisabledForUser):
 			// Add all samples for ephemeral series as "failed".
 			for _, ts := range req.EphemeralTimeseries {
-				ephemeralStats.failedSamplesCount += len(ts.Samples)
+				ephemeralStats.floatStats.failedSamplesCount += len(ts.Samples)
+				ephemeralStats.histogramStats.failedSamplesCount += len(ts.Histograms)
 			}
 
 			updateFirstPartial(func() error {
@@ -831,16 +835,18 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", persistentStats.succeededSamplesCount,
-		"failedSamplesCount", persistentStats.failedSamplesCount,
+		"succeededSamplesCount", persistentStats.floatStats.succeededSamplesCount,
+		"failedSamplesCount", persistentStats.floatStats.failedSamplesCount,
 		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
 		"failedExemplarsCount", persistentStats.failedExemplarsCount,
-		"succeededHistogramsCount", persistentStats.succeededHistogramsCount,
-		"failedHistogramsCount", persistentStats.failedHistogramsCount,
-		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
-		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
+		"succeededHistogramsCount", persistentStats.histogramStats.succeededSamplesCount,
+		"failedHistogramsCount", persistentStats.histogramStats.failedSamplesCount,
+		"ephemeralSucceededSamplesCount", ephemeralStats.floatStats.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralStats.floatStats.failedSamplesCount,
 		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
 		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
+		"ephemeralSucceededHisogramsCount", ephemeralStats.histogramStats.succeededSamplesCount,
+		"ephemeralFailedHistogramsSamplesCount", ephemeralStats.histogramStats.failedSamplesCount,
 	)
 
 	startCommit := time.Now()
@@ -868,28 +874,35 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples and histograms are pushed, don't change "last update", as TSDB was not modified.
-	if persistentStats.succeededSamplesCount+persistentStats.succeededHistogramsCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
+	if persistentStats.floatStats.succeededSamplesCount+persistentStats.histogramStats.succeededSamplesCount > 0 || ephemeralStats.floatStats.succeededSamplesCount+ephemeralStats.histogramStats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.failedSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(persistentStats.floatStats.failedSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(persistentStats.histogramStats.failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
-	i.metrics.ingestedHistograms.WithLabelValues(userID).Add(float64(persistentStats.succeededHistogramsCount))
-	i.metrics.ingestedHistogramsFail.WithLabelValues(userID).Add(float64(persistentStats.failedHistogramsCount))
-	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
+	i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
-	i.appendedHistogramsStats.Inc(int64(persistentStats.succeededHistogramsCount))
+	i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
 
-	if ephemeralStats.succeededSamplesCount > 0 || ephemeralStats.failedSamplesCount > 0 {
-		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
-		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
+	if ephemeralStats.floatStats.succeededSamplesCount > 0 || ephemeralStats.floatStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.succeededSamplesCount))
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(ephemeralStats.floatStats.failedSamplesCount))
 
-		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
+		i.appendedSamplesStats.Inc(int64(ephemeralStats.floatStats.succeededSamplesCount))
+	}
+
+	if ephemeralStats.histogramStats.succeededSamplesCount > 0 || ephemeralStats.histogramStats.failedSamplesCount > 0 {
+		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.succeededSamplesCount))
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(ephemeralStats.histogramStats.failedSamplesCount))
+
+		i.appendedHistogramsStats.Inc(int64(ephemeralStats.histogramStats.succeededSamplesCount))
 	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
@@ -910,31 +923,37 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 }
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
+	i.updateTypedMetricsFromPushStats(userID, group, &stats.floatStats, mimirpb.SampleMetricTypeFloat, samplesSource, db, discarded)
+	i.updateTypedMetricsFromPushStats(userID, group, &stats.histogramStats, mimirpb.SampleMetricTypeHistogram, samplesSource, db, discarded)
+}
+
+func (i *Ingester) updateTypedMetricsFromPushStats(userID string, group string, stats *typedPushStats, sampleType string, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
 	if stats.sampleOutOfBoundsCount > 0 {
-		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
+		discarded.sampleOutOfBounds.WithLabelValues(userID, group, sampleType).Add(float64(stats.sampleOutOfBoundsCount))
 	}
 	if stats.sampleOutOfOrderCount > 0 {
-		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
+		discarded.sampleOutOfOrder.WithLabelValues(userID, group, sampleType).Add(float64(stats.sampleOutOfOrderCount))
 	}
 	if stats.sampleTooOldCount > 0 {
-		discarded.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
+		discarded.sampleTooOld.WithLabelValues(userID, group, sampleType).Add(float64(stats.sampleTooOldCount))
 	}
 	if stats.newValueForTimestampCount > 0 {
-		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+		discarded.newValueForTimestamp.WithLabelValues(userID, group, sampleType).Add(float64(stats.newValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
-		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
+		discarded.perUserSeriesLimit.WithLabelValues(userID, group, sampleType).Add(float64(stats.perUserSeriesLimitCount))
 	}
 	if stats.perMetricSeriesLimitCount > 0 {
-		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
+		discarded.perMetricSeriesLimit.WithLabelValues(userID, group, sampleType).Add(float64(stats.perMetricSeriesLimitCount))
 	}
-	if stats.succeededSamplesCount+stats.succeededHistogramsCount > 0 {
-		i.ingestionRate.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+
+	if stats.succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
 		if samplesSource == mimirpb.RULE {
-			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+			db.ingestedRuleSamples.Add(int64(stats.succeededSamplesCount))
 		} else {
-			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount + stats.succeededHistogramsCount))
+			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
 }
@@ -946,7 +965,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
 
 	// Return true if handled as soft error
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels) bool {
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels, stats *typedPushStats) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
 		// 400 error to the client. The client (Prometheus) will not retry on 400, and
@@ -1022,8 +1041,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// extend the fast path to fail early.
 		if outOfOrderWindow <= 0 && minAppendTimeAvailable &&
 			len(ts.Samples) > 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
-			stats.failedSamplesCount += len(ts.Samples)
-			stats.sampleOutOfBoundsCount += len(ts.Samples)
+			stats.floatStats.failedSamplesCount += len(ts.Samples)
+			stats.floatStats.sampleOutOfBoundsCount += len(ts.Samples)
 
 			updateFirstPartial(func() error {
 				if ephemeral {
@@ -1039,7 +1058,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
 
 		// To find out if any sample or histogram was added to this series, we keep old value.
-		oldSucceededCount := stats.succeededSamplesCount + stats.succeededHistogramsCount
+		oldSucceededCount := stats.floatStats.succeededSamplesCount + stats.histogramStats.succeededSamplesCount
 
 		for _, s := range ts.Samples {
 			var err error
@@ -1047,7 +1066,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
 				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					stats.succeededSamplesCount++
+					stats.floatStats.succeededSamplesCount++
 					continue
 				}
 			} else {
@@ -1056,15 +1075,15 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					stats.succeededSamplesCount++
+					stats.floatStats.succeededSamplesCount++
 					continue
 				}
 			}
 
-			stats.failedSamplesCount++
+			stats.floatStats.failedSamplesCount++
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels, copiedLabels) {
+			if handleAppendError(err, s.TimestampMs, ts.Labels, copiedLabels, &stats.floatStats) {
 				continue
 			}
 
@@ -1088,31 +1107,31 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 					if ref != 0 {
 						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
-							stats.succeededHistogramsCount++
+							stats.histogramStats.succeededSamplesCount++
 							continue
 						}
 					} else {
 						copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 						if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
-							stats.succeededHistogramsCount++
+							stats.histogramStats.succeededSamplesCount++
 							continue
 						}
 					}
 
-					stats.failedHistogramsCount++
+					stats.histogramStats.failedSamplesCount++
 
-					if handleAppendError(err, h.Timestamp, ts.Labels, copiedLabels) {
+					if handleAppendError(err, h.Timestamp, ts.Labels, copiedLabels, &stats.histogramStats) {
 						continue
 					}
 
 					return wrapWithUser(err, userID)
 				}
 			} else { // ignore histograms and increase counter
-				stats.failedHistogramsCount++
+				stats.histogramStats.failedSamplesCount++
 			}
 		}
 
-		if activeSeries != nil && (stats.succeededSamplesCount+stats.succeededHistogramsCount) > oldSucceededCount {
+		if activeSeries != nil && (stats.floatStats.succeededSamplesCount+stats.histogramStats.succeededSamplesCount) > oldSucceededCount {
 			activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount or
 				// succeededHistogramsCount has been incremented.
@@ -1544,12 +1563,10 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if ephemeral {
 		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
-		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
-		i.metrics.ephemeralQueriedHistograms.Observe(float64(numHistograms))
+		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples + numHistograms))
 	} else {
 		i.metrics.queriedSeries.Observe(float64(numSeries))
-		i.metrics.queriedSamples.Observe(float64(numSamples))
-		i.metrics.queriedHistograms.Observe(float64(numHistograms))
+		i.metrics.queriedSamples.Observe(float64(numSamples + numHistograms))
 	}
 	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "histograms", numHistograms, "storage", storageType)
 	return nil

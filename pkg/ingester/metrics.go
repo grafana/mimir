@@ -18,25 +18,21 @@ import (
 type ingesterMetrics struct {
 	ingestedSamples              *prometheus.CounterVec
 	ingestedExemplars            prometheus.Counter
-	ingestedHistograms           *prometheus.CounterVec
 	ingestedMetadata             prometheus.Counter
 	ingestedSamplesFail          *prometheus.CounterVec
 	ingestedExemplarsFail        prometheus.Counter
-	ingestedHistogramsFail       *prometheus.CounterVec
 	ingestedMetadataFail         prometheus.Counter
 	ephemeralIngestedSamples     *prometheus.CounterVec
 	ephemeralIngestedSamplesFail *prometheus.CounterVec
 
-	queries           prometheus.Counter
-	queriedSamples    prometheus.Histogram
-	queriedHistograms prometheus.Histogram
-	queriedExemplars  prometheus.Histogram
-	queriedSeries     prometheus.Histogram
+	queries          prometheus.Counter
+	queriedSamples   prometheus.Histogram
+	queriedExemplars prometheus.Histogram
+	queriedSeries    prometheus.Histogram
 
-	ephemeralQueries           prometheus.Counter
-	ephemeralQueriedSamples    prometheus.Histogram
-	ephemeralQueriedHistograms prometheus.Histogram
-	ephemeralQueriedSeries     prometheus.Histogram
+	ephemeralQueries        prometheus.Counter
+	ephemeralQueriedSamples prometheus.Histogram
+	ephemeralQueriedSeries  prometheus.Histogram
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
@@ -112,15 +108,11 @@ func newIngesterMetrics(
 		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
-		}, []string{"user"}),
+		}, []string{"user", "type"}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
 		}),
-		ingestedHistograms: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_histograms_total",
-			Help: "The total number of histograms ingested per user.",
-		}, []string{"user"}),
 		ingestedMetadata: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_metadata_total",
 			Help: "The total number of metadata ingested.",
@@ -128,15 +120,11 @@ func newIngesterMetrics(
 		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
-		}, []string{"user"}),
+		}, []string{"user", "type"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
 		}),
-		ingestedHistogramsFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_histograms_failures_total",
-			Help: "The total number of histograms that errored on ingestion per user.",
-		}, []string{"user"}),
 		ingestedMetadataFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_metadata_failures_total",
 			Help: "The total number of metadata that errored on ingestion.",
@@ -144,25 +132,20 @@ func newIngesterMetrics(
 		ephemeralIngestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_total",
 			Help: "The total number of samples ingested per user for ephemeral series.",
-		}, []string{"user"}),
+		}, []string{"user", "type"}),
 		ephemeralIngestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user for ephemeral series.",
-		}, []string{"user"}),
+		}, []string{"user", "type"}),
 		queries: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
 		}),
+		// TODO use native histograms and add "type" label
 		queriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_samples",
 			Help: "The total number of samples returned from queries.",
 			// Could easily return 10m samples per query - 10*(8^(8-1)) = 20.9m.
-			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
-		}),
-		queriedHistograms: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_ingester_queried_histograms",
-			Help: "The total number of histograms returned from queries.",
-			// Could easily return 10m histograms per query - 10*(8^(8-1)) = 20.9m.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 		}),
 		queriedExemplars: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
@@ -181,14 +164,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queries_ephemeral_total",
 			Help: "The total number of queries the ingester has handled for ephemeral storage.",
 		}),
+		// TODO use native histograms and add "type" label
 		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_queried_ephemeral_samples",
 			Help:    "The total number of samples from ephemeral storage returned per query.",
-			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
-		}),
-		ephemeralQueriedHistograms: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_queried_ephemeral_histograms",
-			Help:    "The total number of histograms from ephemeral storage returned per query.",
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 		}),
 		ephemeralQueriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
@@ -348,25 +327,25 @@ func newIngesterMetrics(
 }
 
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
-	m.ingestedSamples.DeleteLabelValues(userID)
-	m.ingestedSamplesFail.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
-	m.ephemeralIngestedSamples.DeleteLabelValues(userID)
-	m.ephemeralIngestedSamplesFail.DeleteLabelValues(userID)
-
 	filter := prometheus.Labels{"user": userID}
+	m.ingestedSamples.DeletePartialMatch(filter)
+	m.ingestedSamplesFail.DeletePartialMatch(filter)
 	m.discardedPersistent.DeletePartialMatch(filter)
 	m.discardedEphemeral.DeletePartialMatch(filter)
+	m.ephemeralIngestedSamples.DeletePartialMatch(filter)
+	m.ephemeralIngestedSamplesFail.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
-	m.discardedPersistent.DeleteLabelValues(userID, group)
-	m.discardedEphemeral.DeleteLabelValues(userID, group)
+	filter := prometheus.Labels{"user": userID, "group": group}
+	m.discardedPersistent.DeletePartialMatch(filter)
+	m.discardedEphemeral.DeletePartialMatch(filter)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
