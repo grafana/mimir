@@ -203,6 +203,7 @@ message QueryResponse {
 
 message StringData {
   string value = 1;
+  int64 timestamp_milliseconds = 2;
 }
 
 message VectorData {
