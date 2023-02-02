@@ -64,6 +64,10 @@ type alertmanagerMetrics struct {
 	persistTotal            *prometheus.Desc
 	persistFailed           *prometheus.Desc
 
+	// exported metrics, gathered from Alertmanager Dispatcher
+	dispatcherAggrGroups         *prometheus.Desc
+	dispatcherProcessingDuration *prometheus.Desc
+
 	notificationRateLimited                 *prometheus.Desc
 	dispatcherAggregationGroupsLimitReached *prometheus.Desc
 	insertAlertFailures                     *prometheus.Desc
@@ -214,6 +218,14 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			"cortex_alertmanager_state_persist_failed_total",
 			"Number of times we have failed to persist the running state to storage.",
 			nil, nil),
+		dispatcherAggrGroups: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_aggregation_groups",
+			"Number of active aggregation groups",
+			nil, nil),
+		dispatcherProcessingDuration: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_alert_processing_duration_seconds",
+			"Summary of latencies for the processing of alerts.",
+			nil, nil),
 		notificationRateLimited: prometheus.NewDesc(
 			"cortex_alertmanager_notification_rate_limited_total",
 			"Total number of rate-limited notifications per integration.",
@@ -283,6 +295,8 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.initialSyncDuration
 	out <- m.persistTotal
 	out <- m.persistFailed
+	out <- m.dispatcherAggrGroups
+	out <- m.dispatcherProcessingDuration
 	out <- m.notificationRateLimited
 	out <- m.dispatcherAggregationGroupsLimitReached
 	out <- m.insertAlertFailures
@@ -333,6 +347,9 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfHistograms(out, m.initialSyncDuration, "alertmanager_state_initial_sync_duration_seconds")
 	data.SendSumOfCounters(out, m.persistTotal, "alertmanager_state_persist_total")
 	data.SendSumOfCounters(out, m.persistFailed, "alertmanager_state_persist_failed_total")
+
+	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
+	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")
 
 	data.SendSumOfCountersPerUser(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerUser(out, m.dispatcherAggregationGroupsLimitReached, "alertmanager_dispatcher_aggregation_group_limit_reached_total")
