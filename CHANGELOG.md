@@ -33,6 +33,7 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
+* [ENHANCEMENT] Add optional `weight` param to `newQuerierScaledObject` and `newRulerQuerierScaledObject` to allow running multiple querier deployments on different node types. #4141
 
 ### Mimirtool
 
