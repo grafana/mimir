@@ -809,3 +809,23 @@ type metricOptions struct {
 	skipZeroValueMetrics bool
 	labelNames           []string
 }
+
+func MatchesSelectors(m *dto.Metric, selectors labels.Labels) bool {
+	for _, l := range selectors {
+		found := false
+		for _, lp := range m.GetLabel() {
+			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
+				continue
+			}
+
+			found = true
+			break
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}

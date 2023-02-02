@@ -9,6 +9,8 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -20,7 +22,10 @@ import (
 	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -28,6 +33,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -35,6 +41,8 @@ var (
 )
 
 func TestRequest(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	for i, tc := range []struct {
 		url         string
 		expected    Request
@@ -90,14 +98,14 @@ func TestRequest(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "1")
 			r = r.WithContext(ctx)
 
-			req, err := PrometheusCodec.DecodeRequest(ctx, r)
+			req, err := codec.DecodeRequest(ctx, r)
 			if err != nil {
 				require.EqualValues(t, tc.expectedErr, err)
 				return
 			}
 			require.EqualValues(t, tc.expected, req)
 
-			rdash, err := PrometheusCodec.EncodeRequest(context.Background(), req)
+			rdash, err := codec.EncodeRequest(context.Background(), req)
 			require.NoError(t, err)
 			require.EqualValues(t, tc.url, rdash.RequestURI)
 		})
@@ -118,8 +126,10 @@ type prometeheusResponseData struct {
 }
 
 func TestDecodeFailedResponse(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	t.Run("internal error", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -131,7 +141,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 
 	t.Run("too many requests", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -144,7 +154,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 
 	t.Run("too large entry", func(t *testing.T) {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusRequestEntityTooLarge,
 			Body:       io.NopCloser(strings.NewReader("something failed")),
 		}, nil, log.NewNopLogger())
@@ -295,6 +305,9 @@ func TestResponseRoundtrip(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg)
+
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{
@@ -303,7 +316,7 @@ func TestResponseRoundtrip(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			decoded, err := PrometheusCodec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			if tc.expectedErr != nil {
 				assert.Equal(t, tc.expectedErr, err)
 				return
@@ -312,6 +325,17 @@ func TestResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, decoded)
 
+			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
+
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
 				StatusCode:    200,
@@ -319,8 +343,19 @@ func TestResponseRoundtrip(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := PrometheusCodec.EncodeResponse(context.Background(), decoded)
+			encoded, err := codec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
+
+			metrics, err = util.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 
 			expectedJSON, err := bodyBuffer(httpResponse)
 			require.NoError(t, err)
@@ -333,7 +368,37 @@ func TestResponseRoundtrip(t *testing.T) {
 	}
 }
 
+func findHistogramMatchingLabels(metrics util.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
+	metricFamily, ok := metrics[name]
+	if !ok {
+		return nil, fmt.Errorf("no metric with name %v found", name)
+	}
+
+	l := labels.FromStrings(labelValuePairs...)
+	var matchingMetrics []*dto.Metric
+
+	for _, metric := range metricFamily.Metric {
+		if util.MatchesSelectors(metric, l) {
+			matchingMetrics = append(matchingMetrics, metric)
+		}
+	}
+
+	if len(matchingMetrics) != 1 {
+		return nil, fmt.Errorf("wanted exactly one matching metric, but found %v", len(matchingMetrics))
+	}
+
+	metric := matchingMetrics[0]
+
+	if metric.Histogram == nil {
+		return nil, errors.New("found a single matching metric, but it is not a histogram")
+	}
+
+	return metric.Histogram, nil
+}
+
 func TestMergeAPIResponses(t *testing.T) {
+	codec := newTestPrometheusCodec()
+
 	for _, tc := range []struct {
 		name     string
 		input    []Response
@@ -549,7 +614,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 		}} {
 		t.Run(tc.name, func(t *testing.T) {
-			output, err := PrometheusCodec.MergeResponse(tc.input...)
+			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
 		})
@@ -565,7 +630,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 
-		_, err := PrometheusCodec.MergeResponse(successful, unsuccessful)
+		_, err := codec.MergeResponse(successful, unsuccessful)
 		require.Error(t, err)
 	})
 
@@ -580,7 +645,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Status: statusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
 			Data:   nil,
 		}
-		_, err := PrometheusCodec.MergeResponse(successful, nilData)
+		_, err := codec.MergeResponse(successful, nilData)
 		require.Error(t, err)
 	})
 
@@ -593,7 +658,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: model.ValVector.String()},
 		}
-		_, err := PrometheusCodec.MergeResponse(matrixResponse, vectorResponse)
+		_, err := codec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
 }
@@ -612,6 +677,8 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 		numSamplesPerSeries = 1000
 	)
 
+	codec := newTestPrometheusCodec()
+
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 	encodedRes, err := json.Marshal(res)
@@ -622,7 +689,7 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
@@ -637,6 +704,8 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 		numSamplesPerSeries = 1000
 	)
 
+	codec := newTestPrometheusCodec()
+
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 
@@ -644,7 +713,7 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := PrometheusCodec.EncodeResponse(context.Background(), res)
+		_, err := codec.EncodeResponse(context.Background(), res)
 		require.NoError(b, err)
 	}
 }
@@ -775,4 +844,8 @@ func Test_DecodeOptions(t *testing.T) {
 			require.Equal(t, tt.expected, actual)
 		})
 	}
+}
+
+func newTestPrometheusCodec() Codec {
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry())
 }

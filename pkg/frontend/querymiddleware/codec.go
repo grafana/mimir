@@ -23,6 +23,8 @@ import (
 	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/exp/slices"
@@ -37,9 +39,6 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
-
-	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
-	PrometheusCodec Codec = prometheusCodec{}
 )
 
 const (
@@ -52,6 +51,11 @@ const (
 
 	// Instant query specific options
 	instantSplitControlHeader = "Instant-Split-Control"
+
+	operationEncode = "encode"
+	operationDecode = "decode"
+
+	formatJSON = "json"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -112,7 +116,41 @@ type Response interface {
 	GetHeaders() []*PrometheusResponseHeader
 }
 
-type prometheusCodec struct{}
+type prometheusCodecMetrics struct {
+	duration *prometheus.HistogramVec
+	size     *prometheus.HistogramVec
+}
+
+func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCodecMetrics {
+	factory := promauto.With(registerer)
+	second := 1.0
+	ms := second / 1000
+	kb := 1024.0
+	mb := 1024 * kb
+
+	return &prometheusCodecMetrics{
+		duration: factory.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_frontend_query_response_codec_duration_seconds",
+			Help:    "Total time spent encoding or decoding query result payloads, in seconds.",
+			Buckets: prometheus.ExponentialBucketsRange(1*ms, 2*second, 10),
+		}, []string{"operation", "format"}),
+		size: factory.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_frontend_query_response_codec_payload_bytes",
+			Help:    "Total size of query result payloads, in bytes.",
+			Buckets: prometheus.ExponentialBucketsRange(1*kb, 512*mb, 10),
+		}, []string{"operation", "format"}),
+	}
+}
+
+type prometheusCodec struct {
+	metrics *prometheusCodecMetrics
+}
+
+func NewPrometheusCodec(registerer prometheus.Registerer) Codec {
+	return prometheusCodec{
+		metrics: newPrometheusCodecMetrics(registerer),
+	}
+}
 
 func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
@@ -278,7 +316,7 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 	return req.WithContext(ctx), nil
 }
 
-func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
 	var resp PrometheusResponse
 	if r.StatusCode/100 == 5 {
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
@@ -302,9 +340,13 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	}
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
+	start := time.Now()
 	if err := json.Unmarshal(buf, &resp); err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
+
+	c.metrics.duration.WithLabelValues(operationDecode, formatJSON).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, formatJSON).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -315,7 +357,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	}
 	return &resp, nil
 }
-func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
+func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
@@ -327,11 +369,14 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
+	start := time.Now()
 	b, err := json.Marshal(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
+	c.metrics.duration.WithLabelValues(operationEncode, formatJSON).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, formatJSON).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{
