@@ -132,7 +132,7 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 		duration: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_query_response_codec_duration_seconds",
 			Help:    "Total time spent encoding or decoding query result payloads, in seconds.",
-			Buckets: prometheus.ExponentialBuckets(1*ms, 2*second, 10),
+			Buckets: prometheus.ExponentialBucketsRange(1*ms, 2*second, 10),
 		}, []string{"operation", "format"}),
 		size: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_query_response_codec_payload_bytes",
