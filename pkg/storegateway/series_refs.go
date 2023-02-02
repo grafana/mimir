@@ -14,6 +14,8 @@ import (
 	"github.com/golang/snappy"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -632,6 +634,13 @@ type loadingSeriesChunkRefsSetIterator struct {
 	currentSet seriesChunkRefsSet
 }
 
+var (
+	numChunksPerSeries = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_num_chunks_per_series",
+		Buckets: []float64{1, 3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 100},
+	})
+)
+
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
@@ -780,6 +789,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 		if !shardOwned(s.shard, s.seriesHasher, id, lset, loadStats) {
 			continue
+		}
+		{
+			// TODO dimitarvdimitrov remove
+			numChunksPerSeries.Observe(float64(len(chks)))
 		}
 
 		nextSet.series = append(nextSet.series, seriesChunkRefs{

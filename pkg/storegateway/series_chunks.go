@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore/tracing"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -170,7 +171,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, chunkReaders, refsIterator, refsIteratorBatchSize, stats)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -305,6 +306,7 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 }
 
 type loadingSeriesChunksSetIterator struct {
+	ctx           context.Context
 	chunkReaders  bucketChunkReaders
 	from          seriesChunkRefsSetIterator
 	fromBatchSize int
@@ -314,8 +316,9 @@ type loadingSeriesChunksSetIterator struct {
 	err     error
 }
 
-func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(ctx context.Context, chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
+		ctx:           ctx,
 		chunkReaders:  chunkReaders,
 		from:          from,
 		fromBatchSize: fromBatchSize,
@@ -324,6 +327,9 @@ func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from ser
 }
 
 func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
+	s, ctx := tracing.StartSpan(c.ctx, "loadingSeriesChunksSetIterator.Next")
+	defer s.Finish()
+
 	if c.err != nil {
 		return false
 	}
@@ -373,6 +379,9 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	// Create a batched memory pool that can be released all at once.
 	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
+
+	s, ctx = tracing.StartSpan(ctx, "chunkReaders.load")
+	defer s.Finish()
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {
