@@ -7,6 +7,18 @@
 * [CHANGE] Querier: returning 422 when query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits in the store-gateway. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
+* [FEATURE] Distributor, ingester: accept and store native histograms. The new limit `accept_native_histograms` controls whether native histograms are stored or ignored. TODO PR number
+  * The following metric has a new label called `type`, with possible values of `float`, `histogram` or empty string in case the type is unknown:
+    * `cortex_discarded_samples_total`
+  * The following metrics have a new label called `type`, with possible values of `float` or `histogram`:
+    * `cortex_distributor_deduped_samples_total`
+    * `cortex_distributor_non_ha_samples_received_total`
+    * `cortex_distributor_received_samples_total`
+    * `cortex_distributor_samples_in_total`
+    * `cortex_ingester_ingested_ephemeral_samples_failures_total`
+    * `cortex_ingester_ingested_ephemeral_samples_total`
+    * `cortex_ingester_ingested_samples_failures_total`
+    * `cortex_ingester_ingested_samples_total`
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
