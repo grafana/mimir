@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
@@ -25,48 +27,55 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		blockRangePeriod = 500 * time.Millisecond
 	)
 
-	setup := func(t *testing.T, additionalStoreGatewayFlags, additionalQuerierFlags map[string]string) (scenario *e2e.Scenario, ingester, storeGateway *e2emimir.MimirService, client *e2emimir.Client) {
-		scenario, err := e2e.NewScenario(networkName)
-		require.NoError(t, err)
+	scenario, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
 
-		flags := mergeFlags(
-			BlocksStorageFlags(),
-			BlocksStorageS3Flags(),
-			map[string]string{
-				"-ingester.ring.replication-factor": "1",
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-ingester.ring.replication-factor": "1",
 
-				// Frequently compact and ship blocks to storage so we can query them through the store gateway.
-				"-blocks-storage.bucket-store.sync-interval":        "1s",
-				"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
-				"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
-				"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod * 2) - 1).String(),
-				"-blocks-storage.tsdb.ship-interval":                "1s",
-				"-blocks-storage.tsdb.head-compaction-interval":     "500ms",
-			},
-		)
+			// Frequently compact and ship blocks to storage so we can query them through the store gateway.
+			"-blocks-storage.bucket-store.sync-interval":        "1s",
+			"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
+			"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
+			"-blocks-storage.tsdb.retention-period":             blockRangePeriod.String(), // We want blocks to be immediately deleted from ingesters.
+			"-blocks-storage.tsdb.ship-interval":                "1s",
+			"-blocks-storage.tsdb.head-compaction-interval":     "500ms",
+		},
+	)
 
-		consul := e2edb.NewConsul()
-		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-		require.NoError(t, scenario.StartAndWaitReady(consul, minio))
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, scenario.StartAndWaitReady(consul, minio))
 
-		// Start Mimir components.
-		distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	// Start Mimir write path components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, scenario.StartAndWaitReady(distributor, ingester))
 
-		ingester = e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	// Wait until distributor has discovered the ingester via the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-		additionalStoreGatewayFlags = mergeFlags(flags, additionalStoreGatewayFlags)
-		storeGateway = e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), additionalStoreGatewayFlags)
+	// Write 3 series. Wait until each series is shipped to the storage before pushing the next one,
+	// to ensure each series is in a different block. The 3rd series is written only to trigger the
+	// retention in the ingester and remove the first 2 blocks (containing the first 2 series).
+	timeStamp1 := time.Now()
+	timeStamp2 := timeStamp1.Add(blockRangePeriod * 3)
+	timeStamp3 := timeStamp1.Add(blockRangePeriod * 5)
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "test")
 
-		require.NoError(t, scenario.StartAndWaitReady(distributor, ingester, storeGateway))
+	for i, ts := range []time.Time{timeStamp1, timeStamp2, timeStamp3} {
+		seriesID := i + 1
+		series, _, _ := generateSeries(fmt.Sprintf("series_%d", seriesID), ts)
+		pushTimeSeries(t, client, series)
 
-		additionalQuerierFlags = mergeFlags(flags, additionalQuerierFlags)
-		querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), additionalQuerierFlags)
-
-		require.NoError(t, scenario.StartAndWaitReady(querier))
-
-		client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
-		require.NoError(t, err)
-		return
+		// Wait until the TSDB head is shipped to storage and removed from the ingester.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(float64(seriesID)), "cortex_ingester_shipper_uploads_total"))
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
 	}
 
 	tests := map[string]struct {
@@ -94,26 +103,17 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			scenario, ingester, storeGateway, client := setup(t, testData.additionalStoreGatewayFlags, testData.additionalQuerierFlags)
-			defer scenario.Close()
+			// Start Mimir read components and wait until ready. The querier and store-gateway will be ready after
+			// they discovered the blocks in the storage.
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
+			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
+			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway))
+			t.Cleanup(func() {
+				require.NoError(t, scenario.Stop(querier, storeGateway))
+			})
 
-			timeStamp1 := time.Now()
-			timeStamp2 := timeStamp1.Add(blockRangePeriod * 3)
-			timeSeries1, _, _ := generateSeries("series_1", timeStamp1, prompb.Label{Name: "series_1", Value: "series_1"})
-			timeSeries2, _, _ := generateSeries("series_2", timeStamp2, prompb.Label{Name: "series_2", Value: "series_2"})
-
-			pushTimeSeries(t, client, timeSeries1)
-			pushTimeSeries(t, client, timeSeries2)
-
-			// ensures that first 2 blocks will be shipped to the storage and queried from the store-gateway
-			waitUntilShippedToStorage(t, ingester, storeGateway, 2)
-
-			// Push another series in order to trigger deletion of the previous 2 blocks from the ingester due to expired retention.
-			// 2 retention periods should expire between timeStamp1 and timeStamp3
-			timeStamp3 := timeStamp2.Add(blockRangePeriod * 6)
-			timeSeries3, _, _ := generateSeries("series_3", timeStamp3, prompb.Label{Name: "series_3", Value: "series_3"})
-			pushTimeSeries(t, client, timeSeries3)
-			waitUntilShippedToStorage(t, ingester, storeGateway, 3)
+			client, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "test")
+			require.NoError(t, err)
 
 			// Verify we can successfully query timeseries between timeStamp1 and timeStamp2 (excluded)
 			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
@@ -133,14 +133,4 @@ func pushTimeSeries(t *testing.T, client *e2emimir.Client, timeSeries []prompb.T
 	res, err := client.Push(timeSeries)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
-}
-
-func waitUntilShippedToStorage(t *testing.T, ingester, storeGateway *e2emimir.MimirService, blockCount float64) {
-	// Wait until the TSDB head is shipped to storage, removed from the ingester, and loaded by the
-	// store-gateway to ensure we're querying the store-gateway.
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(blockCount), "cortex_ingester_shipper_uploads_total"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(blockCount), "cortex_ingester_memory_series_created_total"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(blockCount), "cortex_ingester_memory_series_removed_total"))
-	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(blockCount), "cortex_bucket_store_blocks_loaded"))
 }
