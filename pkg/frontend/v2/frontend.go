@@ -90,8 +90,6 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
-
-	wg *sync.WaitGroup
 }
 
 type frontendRequest struct {
@@ -131,15 +129,13 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		return nil, err
 	}
 
-	var wg sync.WaitGroup
 	f := &Frontend{
 		cfg:                     cfg,
 		log:                     log,
 		requestsCh:              requestsCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
-		wg:                      &wg,
-		requests:                newRequestsInProgress(&wg),
+		requests:                newRequestsInProgress(),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -164,14 +160,16 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 	return f, nil
 }
 
-func (f *Frontend) starting(ctx context.Context) error {
+func (f *Frontend) starting(_ context.Context) error {
 	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
 
-	return errors.Wrap(services.StartAndAwaitRunning(withWaitGroup(ctx, f.wg, f.log), f.schedulerWorkers), "failed to start frontend scheduler workers")
+	// We don't pass on the incoming context here, since we want for schedulerWorkers to have
+	// an independent context. This is so we can stop schedulerWorkers after waiting on in-flight
+	// requests in f.stopping.
+	return errors.Wrap(services.StartAndAwaitRunning(context.Background(), f.schedulerWorkers), "failed to start frontend scheduler workers")
 }
 
 func (f *Frontend) running(ctx context.Context) error {
-	ctx = withWaitGroup(ctx, f.wg, f.log)
 	select {
 	case <-ctx.Done():
 		return nil
@@ -181,44 +179,8 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
+	f.requests.Wait()
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
-}
-
-// gracefulContext waits on a sync.WaitGroup before considering itself done.
-type gracefulContext struct {
-	context.Context
-
-	wg     *sync.WaitGroup
-	logger log.Logger
-	done   chan struct{}
-}
-
-func withWaitGroup(ctx context.Context, wg *sync.WaitGroup, logger log.Logger) *gracefulContext {
-	c := &gracefulContext{
-		Context: ctx,
-		wg:      wg,
-		logger:  logger,
-		done:    make(chan struct{}),
-	}
-	go func() {
-		<-c.Context.Done()
-
-		// Wait on any in-flight requests.
-		// We don't expect any new queries to be added to requests once stopping is called,
-		// since RoundTripGRPC only accepts incoming requests in the running state.
-		level.Debug(c.logger).Log("msg", "waiting for in-flight queries to finish...")
-		c.wg.Wait()
-		level.Debug(c.logger).Log("msg", "finished waiting for in-flight queries")
-		close(c.done)
-		c.done = nil
-	}()
-
-	return c
-}
-
-// Done returns a channel that is closed when the underlying context is done.
-func (c *gracefulContext) Done() <-chan struct{} {
-	return c.done
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
@@ -350,14 +312,18 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 type requestsInProgress struct {
 	mu       sync.Mutex
 	requests map[uint64]*frontendRequest
-	wg       *sync.WaitGroup
+	wg       sync.WaitGroup
 }
 
-func newRequestsInProgress(wg *sync.WaitGroup) *requestsInProgress {
+func newRequestsInProgress() *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
-		wg:       wg,
 	}
+}
+
+// Wait waits on any in-flight requests.
+func (r *requestsInProgress) Wait() {
+	r.wg.Wait()
 }
 
 func (r *requestsInProgress) count() int {
