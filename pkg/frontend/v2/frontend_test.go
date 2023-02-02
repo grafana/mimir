@@ -349,7 +349,7 @@ func TestFrontend_GracefulShutdown(t *testing.T) {
 		userID = "test"
 		body   = "all good"
 	)
-	ctx := context.Background()
+	ctx := user.InjectOrgID(context.Background(), userID)
 
 	setupDone := make(chan uint64)
 	t.Cleanup(func() {
@@ -371,7 +371,7 @@ func TestFrontend_GracefulShutdown(t *testing.T) {
 		t.Helper()
 
 		t.Log("sending request")
-		resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, userID), &httpgrpc.HTTPRequest{})
+		resp, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{})
 		require.NoError(t, err)
 		t.Log("received response", "code", resp.Code)
 		require.Equal(t, int32(200), resp.Code)
@@ -402,7 +402,6 @@ func TestFrontend_GracefulShutdown(t *testing.T) {
 	time.Sleep(delay)
 	require.False(t, serviceStopped.Load(), "Service terminated with in-flight request")
 
-	ctx = user.InjectOrgID(ctx, userID)
 	t.Log("sending response")
 	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID: queryID,
