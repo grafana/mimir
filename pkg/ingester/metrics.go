@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -108,7 +109,7 @@ func newIngesterMetrics(
 		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
@@ -120,7 +121,7 @@ func newIngesterMetrics(
 		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
@@ -132,11 +133,11 @@ func newIngesterMetrics(
 		ephemeralIngestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_total",
 			Help: "The total number of samples ingested per user for ephemeral series.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		ephemeralIngestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_ephemeral_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user for ephemeral series.",
-		}, []string{"user", "type"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		queries: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
