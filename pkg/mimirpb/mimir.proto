@@ -135,6 +135,44 @@ message Histogram {
   int64 timestamp = 15;
 }
 
+message FloatHistogram {
+  // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
+  reserved 1, 6, 9, 12;
+  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
+
+  double count_float = 2;
+
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  double zero_count_float   = 7;
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  Histogram.ResetHint reset_hint     = 14;
+  // timestamp is in ms format
+  int64 timestamp = 15;
+}
+
 // A BucketSpan defines a number of consecutive buckets with their
 // offset. Logically, it would be more straightforward to include the
 // bucket counts in the Span. However, the protobuf representation is
@@ -223,7 +261,7 @@ message VectorHistogram {
   // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
   repeated string metric = 1;
 
-  Histogram histogram = 2 [(gogoproto.nullable) = false];
+  FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
 }
 
 message ScalarData {
@@ -240,7 +278,7 @@ message MatrixSeries {
   repeated string metric = 1;
 
   repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+  repeated FloatHistogram histograms = 3 [(gogoproto.nullable) = false];
 }
 
 message MatrixSample {
