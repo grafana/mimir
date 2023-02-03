@@ -36,10 +36,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -7203,11 +7201,11 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: makeWriteRequestHistograms(1, tsdb.GenerateTestHistogram(0)),
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: makeWriteRequestFloatHistograms(1, tsdb.GenerateTestFloatHistogram(0)),
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}
@@ -7357,24 +7355,4 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	setAcceptNativeHistograms(false)
 
 	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
-}
-
-func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
-	h := remote.HistogramToHistogramProto(ts, histogram)
-	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
-	// histogram protobuf representation but we need the Mimir one here.
-	d, _ := h.Marshal()
-	h2 := mimirpb.Histogram{}
-	h2.Unmarshal(d) // nolint:errcheck
-	return []mimirpb.Histogram{h2}
-}
-
-func makeWriteRequestFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
-	h := remote.FloatHistogramToHistogramProto(ts, histogram)
-	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
-	// histogram protobuf representation but we need the Mimir one here.
-	d, _ := h.Marshal()
-	h2 := mimirpb.Histogram{}
-	h2.Unmarshal(d) // nolint:errcheck
-	return []mimirpb.Histogram{h2}
 }

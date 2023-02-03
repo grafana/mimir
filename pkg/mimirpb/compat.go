@@ -249,6 +249,7 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 		NegativeDeltas: h.NegativeBuckets,
 		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
+		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
 		Timestamp:      timestamp,
 	}
 }
@@ -264,6 +265,7 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 		NegativeCounts: fh.NegativeBuckets,
 		PositiveSpans:  fromSpansToSpansProto(fh.PositiveSpans),
 		PositiveCounts: fh.PositiveBuckets,
+		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
 	}
 }
