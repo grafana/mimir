@@ -13,9 +13,8 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 
-	"github.com/grafana/mimir/pkg/util/spanlogger"
-
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -61,8 +60,11 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 	k := generateCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
 
-	var estimatedCardinality uint64
-	var withCardinalityEstimate Request
+	var (
+		withCardinalityEstimate Request
+		estimatedCardinality    uint64
+	)
+
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
 		estimatedCardinality = estimate
 		withCardinalityEstimate = request.WithEstimatedCardinalityHint(estimate)
@@ -78,18 +80,18 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		return nil, err
 	}
 
-	s := stats.FromContext(ctx)
-	if s == nil {
+	statistics := stats.FromContext(ctx)
+	if statistics == nil {
 		return res, nil
 	}
 
-	actualCardinality := s.LoadFetchedSeries()
+	actualCardinality := statistics.FetchedSeriesCount
 	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 	}
 
-	if estimatedCardinality > 0 {
-		spanLog.LogKV("estimated cardinality", estimatedCardinality, "actual cardinality", actualCardinality)
+	if statistics.FetchedSeriesEstimate > 0 {
+		spanLog.LogKV("estimated cardinality", statistics.FetchedSeriesEstimate, "actual cardinality", actualCardinality)
 	}
 
 	return res, nil
