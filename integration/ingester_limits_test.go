@@ -90,7 +90,13 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 			// Try to push as many series with the same metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _, _ := generateSeries("test_limit_per_metric", now, prompb.Label{
+				var genSeries generateSeriesFunc
+				if i%2 == 0 {
+					genSeries = generateFloatSeries
+				} else {
+					genSeries = generateHistogramSeries
+				}
+				series, _, _ := genSeries("test_limit_per_metric", now, prompb.Label{
 					Name:  "cardinality",
 					Value: strconv.Itoa(rand.Int()),
 				})
@@ -108,7 +114,13 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 			// Try to push as many series with the different metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _, _ := generateSeries(fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()), now)
+				var genSeries generateSeriesFunc
+				if i%2 == 0 {
+					genSeries = generateFloatSeries
+				} else {
+					genSeries = generateHistogramSeries
+				}
+				series, _, _ := genSeries(fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()), now)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 

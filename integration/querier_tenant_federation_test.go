@@ -131,7 +131,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u], _ = generateSeries("series_1", now)
+		var genSeries generateSeriesFunc
+		if u%2 == 0 {
+			genSeries = generateFloatSeries
+		} else {
+			genSeries = generateHistogramSeries
+		}
+		series, expectedVectors[u], _ = genSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -153,8 +159,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	assert.Len(t, exemplars, numUsers)
 
 	// ensure a push to multiple tenants is failing
-	series, _, _ := generateSeries("series_1", now)
+	series, _, _ := generateFloatSeries("series_1", now)
 	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 500, res.StatusCode)
+
+	series, _, _ = generateHistogramSeries("series_1", now)
+	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 500, res.StatusCode)
 

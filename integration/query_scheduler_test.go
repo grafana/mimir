@@ -20,6 +20,14 @@ import (
 )
 
 func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
+	runTestQuerySchedulerWithMaxUsedInstances(t, "series_1", generateFloatSeries)
+}
+
+func TestQuerySchedulerWithMaxUsedInstancesHistogram(t *testing.T) {
+	runTestQuerySchedulerWithMaxUsedInstances(t, "hseries_1", generateHistogramSeries)
+}
+
+func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, genSeries generateSeriesFunc) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -88,7 +96,7 @@ func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, _ := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, _ := genSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
@@ -98,7 +106,7 @@ func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query("series_1", now)
+	result, err := c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -113,7 +121,7 @@ func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
 	require.NoError(t, notInUseScheduler.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"cortex_query_scheduler_connected_frontend_clients"}))
 
 	// Query the series.
-	result, err = c.Query("series_1", now)
+	result, err = c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))

@@ -272,7 +272,13 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u], _ = generateSeries("series_1", now)
+		var genSeries generateSeriesFunc
+		if u%2 == 0 {
+			genSeries = generateFloatSeries
+		} else {
+			genSeries = generateHistogramSeries
+		}
+		series, expectedVectors[u], _ = genSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
