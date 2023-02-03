@@ -70,9 +70,11 @@ func TestMatrixToSeriesSetSortsMetricLabels(t *testing.T) {
 func TestConcreteSeriesSetIterator(t *testing.T) {
 	series := &ConcreteSeries{
 		labels:     labels.FromStrings("foo", "bar"),
-		samples:    []model.SamplePair{{Timestamp: 1, Value: 2}, {Timestamp: 5, Value: 6}},
-		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3, generateTestHistogram(4)), mimirpb.FromFloatHistogramToHistogramProto(7, generateTestFloatHistogram(8))},
+		samples:    []model.SamplePair{{Timestamp: 1, Value: 2}, {Timestamp: 5, Value: 6}, {Timestamp: 9, Value: 10}},
+		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3, generateTestHistogram(4)), mimirpb.FromFloatHistogramToHistogramProto(7, generateTestFloatHistogram(8)), mimirpb.FromHistogramToHistogramProto(11, generateTestHistogram(12))},
 	}
+
+	// test next
 	it := series.Iterator(nil)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v := it.At()
@@ -90,8 +92,17 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	ts, fh := it.AtFloatHistogram()
 	require.Equal(t, int64(7), ts)
 	require.Equal(t, generateTestFloatHistogram(8), fh)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(9), ts)
+	require.Equal(t, float64(10), v)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(11), ts)
+	require.Equal(t, generateTestHistogram(12), h)
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
+	// test seek to same and next
 	it = series.Iterator(nil)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3)) // Seek to middle
 	ts, h = it.AtHistogram()
@@ -101,18 +112,37 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	ts, h = it.AtHistogram()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(5), ts)
+	require.Equal(t, float64(6), v)
+
+	// test seek to earlier and next, then to later and next
+	it = series.Iterator(nil)
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(3)) // Seek to middle
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, generateTestHistogram(4), h)
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1)) // Ensure seek doesn't do anything if already past seek target.
 	ts, h = it.AtHistogram()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, generateTestHistogram(4), h)
-	// TODO(zenador): fix
-	// require.Equal(t, chunkenc.ValFloat, it.Next())
-	// ts, v = it.At()
-	// require.Equal(t, int64(5), ts)
-	// require.Equal(t, float64(6), v)
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(7)) // Seek to end
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(5), ts)
+	require.Equal(t, float64(6), v)
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(7)) // Seek to later
 	ts, fh = it.AtFloatHistogram()
 	require.Equal(t, int64(7), ts)
 	require.Equal(t, generateTestFloatHistogram(8), fh)
-	require.Equal(t, chunkenc.ValNone, it.Seek(9)) // Seek to past end
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(9), ts)
+	require.Equal(t, float64(10), v)
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(11)) // Seek to end
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(11), ts)
+	require.Equal(t, generateTestHistogram(12), h)
+	require.Equal(t, chunkenc.ValNone, it.Seek(13)) // Seek to past end
+	require.Equal(t, chunkenc.ValNone, it.Seek(13)) // Ensure that seeking to same end still returns ValNone
 }

@@ -91,6 +91,10 @@ func TestTimeSeriesIterator(t *testing.T) {
 					Value:       3.16,
 					TimestampMs: 1236,
 				},
+				{
+					Value:       3.17,
+					TimestampMs: 1237,
+				},
 			},
 			Histograms: []mimirpb.Histogram{
 				mimirpb.FromHistogramToHistogramProto(1232, generateTestHistogram(7)),
@@ -104,24 +108,28 @@ func TestTimeSeriesIterator(t *testing.T) {
 	i, fh := it.AtFloatHistogram()
 	require.EqualValues(t, 1233, i)
 	require.Equal(t, generateTestFloatHistogram(8), fh)
-	// TODO(zenador): fix
-	// require.Equal(t, chunkenc.ValFloat, it.Next())
-	// i, v := it.At()
-	// require.EqualValues(t, 1234, i)
-	// require.Equal(t, 3.14, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1235)) // Seek to middle
+	require.Equal(t, chunkenc.ValFloat, it.Next())
 	i, v := it.At()
+	require.EqualValues(t, 1234, i)
+	require.Equal(t, 3.14, v)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1235)) // Seek to middle
+	i, v = it.At()
 	require.EqualValues(t, 1235, i)
 	require.Equal(t, 3.15, v)
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1235)) // Seek to same place
 	i, v = it.At()
 	require.EqualValues(t, 1235, i)
 	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1236)) // Seek to end
+	require.Equal(t, chunkenc.ValFloat, it.Next())
 	i, v = it.At()
 	require.EqualValues(t, 1236, i)
 	require.Equal(t, 3.16, v)
-	require.NotEqual(t, chunkenc.ValFloat, it.Seek(1238)) // Seek past end
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1237)) // Seek to end
+	i, v = it.At()
+	require.EqualValues(t, 1237, i)
+	require.Equal(t, 3.17, v)
+	require.Equal(t, chunkenc.ValNone, it.Seek(1238)) // Seek to past end
+	require.Equal(t, chunkenc.ValNone, it.Seek(1238)) // Ensure that seeking to same end still returns ValNone
 
 	it = ts.Iterator(it)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
@@ -140,7 +148,7 @@ func TestTimeSeriesIterator(t *testing.T) {
 	i, v = it.At()
 	require.EqualValues(t, 1235, i)
 	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1234)) // Ensure seek doesn't do anything if already past seek target.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1232)) // Ensure seek doesn't do anything if already past seek target.
 	i, v = it.At()
 	require.EqualValues(t, 1235, i)
 	require.Equal(t, 3.15, v)
@@ -148,6 +156,10 @@ func TestTimeSeriesIterator(t *testing.T) {
 	i, v = it.At()
 	require.EqualValues(t, 1236, i)
 	require.Equal(t, 3.16, v)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1237))
+	i, v = it.At()
+	require.EqualValues(t, 1237, i)
+	require.Equal(t, 3.17, v)
 	require.Equal(t, chunkenc.ValNone, it.Next())
-	it.At() // Ensure an At after a full iteration, doesn't cause a panic
+	it.At() // Ensure an At after a full iteration doesn't cause a panic
 }

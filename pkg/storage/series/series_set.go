@@ -99,46 +99,62 @@ func NewConcreteSeriesIterator(series *ConcreteSeries) chunkenc.Iterator {
 	}
 }
 
-func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	offsetFloat := 0
-	if c.curFloat > 0 {
-		offsetFloat = c.curFloat // only advance via Seek
+// atTypeHisto is an internal method to differentiate between histogram and float histogram value types
+// Checking that c.curHisto is a valid index in the c.series.histograms array and that
+// c.atHisto is true must be done outside of this
+func (c *concreteSeriesIterator) atTypeHisto() chunkenc.ValueType {
+	if c.series.histograms[c.curHisto].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
 	}
-	offsetHisto := 0
-	if c.curHisto > 0 {
-		offsetHisto = c.curHisto // only advance via Seek
+	return chunkenc.ValHistogram
+}
+
+// atType returns current timestamp and value type
+func (c *concreteSeriesIterator) atType() (int64, chunkenc.ValueType) {
+	if c.atHisto {
+		if c.curHisto < 0 || c.curHisto >= len(c.series.histograms) {
+			return 0, chunkenc.ValNone
+		}
+		return c.series.histograms[c.curHisto].Timestamp, c.atTypeHisto()
+	}
+	if c.curFloat < 0 || c.curFloat >= len(c.series.samples) {
+		return 0, chunkenc.ValNone
+	}
+	return int64(c.series.samples[c.curFloat].Timestamp), chunkenc.ValFloat
+}
+
+func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	oldTime, oldType := c.atType()
+	if oldTime >= t { // only advance via Seek
+		return oldType
 	}
 
-	c.curFloat = sort.Search(len(c.series.samples[offsetFloat:]), func(n int) bool {
-		return c.series.samples[offsetFloat+n].Timestamp >= model.Time(t)
-	}) + offsetFloat
-	c.curHisto = sort.Search(len(c.series.histograms[offsetHisto:]), func(n int) bool {
-		return c.series.histograms[offsetHisto+n].Timestamp >= t
-	}) + offsetHisto
+	c.curFloat = sort.Search(len(c.series.samples), func(n int) bool {
+		return c.series.samples[n].Timestamp >= model.Time(t)
+	})
+	c.curHisto = sort.Search(len(c.series.histograms), func(n int) bool {
+		return c.series.histograms[n].Timestamp >= t
+	})
 
 	if c.curFloat >= len(c.series.samples) && c.curHisto >= len(c.series.histograms) {
 		return chunkenc.ValNone
 	}
 	if c.curFloat >= len(c.series.samples) {
 		c.atHisto = true
-		if c.series.histograms[c.curHisto].IsFloatHistogram() {
-			return chunkenc.ValFloatHistogram
-		}
-		return chunkenc.ValHistogram
+		return c.atTypeHisto()
 	}
 	if c.curHisto >= len(c.series.histograms) {
 		c.atHisto = false
 		return chunkenc.ValFloat
 	}
 	if int64(c.series.samples[c.curFloat].Timestamp) < c.series.histograms[c.curHisto].Timestamp {
+		c.curHisto--
 		c.atHisto = false
 		return chunkenc.ValFloat
 	}
+	c.curFloat--
 	c.atHisto = true
-	if c.series.histograms[c.curHisto].IsFloatHistogram() {
-		return chunkenc.ValFloatHistogram
-	}
-	return chunkenc.ValHistogram
+	return c.atTypeHisto()
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
@@ -158,10 +174,7 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	if c.curFloat+1 >= len(c.series.samples) {
 		c.curHisto++
 		c.atHisto = true
-		if c.series.histograms[c.curHisto].IsFloatHistogram() {
-			return chunkenc.ValFloatHistogram
-		}
-		return chunkenc.ValHistogram
+		return c.atTypeHisto()
 	}
 	if c.curHisto+1 >= len(c.series.histograms) {
 		c.curFloat++
@@ -175,10 +188,7 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	}
 	c.curHisto++
 	c.atHisto = true
-	if c.series.histograms[c.curHisto].IsFloatHistogram() {
-		return chunkenc.ValFloatHistogram
-	}
-	return chunkenc.ValHistogram
+	return c.atTypeHisto()
 }
 
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
@@ -189,7 +199,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if h.IsFloatHistogram() {
 		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
 	}
-	return int64(h.Timestamp), mimirpb.FromHistogramProtoToHistogram(&h)
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
@@ -200,7 +210,7 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 	if !h.IsFloatHistogram() {
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
 	}
-	return int64(h.Timestamp), mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
