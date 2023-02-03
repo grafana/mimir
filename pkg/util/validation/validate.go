@@ -190,7 +190,7 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Inc()
-		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.TimestampMs)
+		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
 
 	return nil
@@ -204,7 +204,7 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Inc()
-		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.Timestamp)
+		return newSampleTimestampTooNewError(unsafeMetricName, s.Timestamp)
 	}
 
 	return nil

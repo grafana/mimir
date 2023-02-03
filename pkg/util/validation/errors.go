@@ -129,26 +129,24 @@ func (e invalidMetricNameError) Error() string {
 	return globalerror.InvalidMetricName.Message(fmt.Sprintf("received a series with invalid metric name: '%.200s'", e.metricName))
 }
 
-// sampleValidationError is a ValidationError implementation suitable for sample/histogram validation errors.
+// sampleValidationError is a ValidationError implementation suitable for sample validation errors.
 type sampleValidationError struct {
 	message    string
-	dataType   string
 	metricName string
 	timestamp  int64
 }
 
 func (e sampleValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.dataType, e.timestamp, e.metricName)
+	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
 }
 
 var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
-	"received a %s whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
+	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 	creationGracePeriodFlag)
 
-func newSampleTimestampTooNewError(dataType string, metricName string, timestamp int64) ValidationError {
+func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
 	return sampleValidationError{
 		message:    sampleTimestampTooNewMsgFormat,
-		dataType:   dataType,
 		metricName: metricName,
 		timestamp:  timestamp,
 	}
