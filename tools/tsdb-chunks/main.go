@@ -81,8 +81,27 @@ func printChunksFile(filename string, printSamples bool) error {
 					}
 
 					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %g\n", cix, six, ts, formatTimestamp(ts), val)
+				case chunkenc.ValHistogram:
+					ts, hist := it.AtHistogram()
+					if ts < minTS {
+						minTS = ts
+					}
+					if ts > maxTS {
+						maxTS = ts
+					}
+
+					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), hist.String())
+				case chunkenc.ValFloatHistogram:
+					ts, hist := it.AtFloatHistogram()
+					if ts < minTS {
+						minTS = ts
+					}
+					if ts > maxTS {
+						maxTS = ts
+					}
+
+					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), hist.String())
 				default:
-					// TODO handle native histograms
 					fmt.Printf("Chunk #%d, sample #%d: ts: N/A (N/A), unsupported value type %v", cix, six, valType)
 				}
 				six++
