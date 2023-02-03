@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -25,10 +26,14 @@ const (
 	// cardinalityEstimateBucketSize is the size of buckets that queries are bucketed into.
 	cardinalityEstimateBucketSize = 24 * time.Hour
 
-	// cacheUpdateDifferenceFraction is how much the estimate must deviate
+	// cacheErrorToleranceFraction is how much the estimate must deviate
 	// from the actually observed cardinality to update the cache.
-	cacheUpdateDifferenceFraction = 0.1
+	cacheErrorToleranceFraction = 0.1
 )
+
+type cardinalityEstimationMetrics struct {
+	estimationError prometheus.Histogram
+}
 
 // cardinalityEstimation is a Handler that caches estimates for a query's
 // cardinality based on similar queries seen previously.
@@ -36,14 +41,22 @@ type cardinalityEstimation struct {
 	cache  cache.Cache
 	next   Handler
 	logger log.Logger
+
+	cardinalityEstimationMetrics
 }
 
 func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
+	metrics := cardinalityEstimationMetrics{estimationError: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_frontend_cardinality_estimation_error",
+		Help: "Difference between estimated and actual query cardinality",
+	})}
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
 			cache:  cache,
 			next:   next,
 			logger: logger,
+
+			cardinalityEstimationMetrics: metrics,
 		}
 	})
 }
@@ -142,7 +155,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 	estimate := float64(estimatedCardinality)
 	actual := float64(actualCardinality)
-	return estimate > (1-cacheUpdateDifferenceFraction)*actual && estimate < (1+cacheUpdateDifferenceFraction)*actual
+	return estimate > (1-cacheErrorToleranceFraction)*actual && estimate < (1+cacheErrorToleranceFraction)*actual
 }
 
 // generateCacheKey generates a key to cache a request's cardinality estimate under.

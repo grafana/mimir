@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
@@ -324,4 +325,17 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 			}
 		})
 	}
+}
+
+func Test_newCardinalityEstimationMiddleware_canWrapMoreThanOnce(t *testing.T) {
+	req := &PrometheusRangeQueryRequest{}
+
+	mw := newCardinalityEstimationMiddleware(nil, log.NewNopLogger(), prometheus.NewRegistry())
+
+	require.NotPanics(t, func() {
+		_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.Nil(t, err)
+		_, err = mw.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.Nil(t, err)
+	})
 }
