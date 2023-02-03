@@ -47,8 +47,9 @@ type cardinalityEstimation struct {
 
 func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
 	metrics := cardinalityEstimationMetrics{estimationError: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-		Name: "cortex_frontend_cardinality_estimation_error",
-		Help: "Difference between estimated and actual query cardinality",
+		Name:    "cortex_frontend_cardinality_estimation_error",
+		Help:    "Difference between estimated and actual query cardinality",
+		Buckets: prometheus.ExponentialBuckets(10, 10, 6),
 	})}
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
