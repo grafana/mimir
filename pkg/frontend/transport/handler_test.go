@@ -173,7 +173,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 16+len(tt.expectedParams))
+				require.Len(t, msg, 17+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -190,6 +190,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["fetched_index_bytes"])
 				require.EqualValues(t, 0, msg["sharded_queries"])
 				require.EqualValues(t, 0, msg["split_queries"])
+				require.EqualValues(t, 0, msg["fetched_series_estimate"])
 
 				for name, values := range tt.expectedParams {
 					logMessageKey := fmt.Sprintf("param_%v", name)
