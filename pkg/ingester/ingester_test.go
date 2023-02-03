@@ -7356,3 +7356,94 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
 }
+
+// This tests whether we can correctly append samples where the float sample is at time T and histogram is
+// at time T-1h.
+func TestCompactingWhenSampleAndHistogramAreFarApart(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.AcceptNativeHistograms = true
+	limits.OutOfOrderTimeWindow = 0 // don't accept older samples
+
+	registry := prometheus.NewRegistry()
+
+	newIngester := func() *Ingester {
+		cfg := defaultIngesterTestConfig(t)
+		// Global Ingester limits are computed based on replication factor
+		// Set RF=1 here to ensure the series and metadata limits
+		// are actually set to 1 instead of 3.
+		cfg.IngesterRing.ReplicationFactor = 1
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+
+		// Wait until it's healthy
+		test.Poll(t, time.Second, 1, func() interface{} {
+			return ing.lifecycler.HealthyInstancesCount()
+		})
+
+		return ing
+	}
+
+	ing := newIngester()
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// Metadata
+	metadata := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+	// Labels
+	sampleLabels := labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")
+	// Samples
+	sampleHistogram := mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(1))
+	sampleFloat := mimirpb.Sample{
+		TimestampMs: int64(1 + time.Hour/time.Millisecond), // an hour later then the histogram
+		Value:       1,
+	}
+
+	// Append only one series and one metadata first, expect no error.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err := ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata}, mimirpb.API).
+		AddFloatSeries([]labels.Labels{sampleLabels}, []mimirpb.Sample{sampleFloat}, nil).
+		AddHistogramSeries([]labels.Labels{sampleLabels}, []mimirpb.Histogram{sampleHistogram}, nil))
+	require.NoError(t, err)
+
+	metricNames := []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total"}
+
+	expectedMetrics := `
+	# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+	# TYPE cortex_ingester_ingested_samples_total counter
+	cortex_ingester_ingested_samples_total{type="float",user="1"} 1
+	cortex_ingester_ingested_samples_total{type="histogram",user="1"} 1
+				`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except writes to succeed")
+
+	// Force compaction
+	ing.Flush()
+
+	req := &client.QueryRequest{
+		StartTimestampMs: math.MinInt64,
+		EndTimestampMs:   math.MaxInt64,
+		Matchers: []*client.LabelMatcher{
+			{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "testmetric"},
+		},
+	}
+
+	s := stream{ctx: ctx}
+	err = ing.QueryStream(req, &s)
+	require.NoError(t, err)
+
+	expectHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdb.GenerateTestFloatHistogram(1)))
+	expectedMatrix := model.Matrix{{
+		Metric: model.Metric{"__name__": "testmetric", "foo": "bar"},
+		Values: []model.SamplePair{{
+			Timestamp: model.Time(1 + time.Hour/time.Millisecond),
+			Value:     1,
+		}},
+		Histograms: []model.SampleHistogramPair{{
+			Timestamp: 2,
+			Histogram: expectHistogram,
+		}},
+	}}
+
+	res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, expectedMatrix, res)
+}
