@@ -2376,6 +2376,59 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 	}
 }
 
+func TestLabelNames_Cancelled(t *testing.T) {
+	_, store, _, _, _, _, close := setupStoreForHintsTest(t)
+	defer close()
+
+	req := &storepb.LabelNamesRequest{
+		Start: 0,
+		End:   1,
+		Matchers: []storepb.LabelMatcher{
+			{
+				Name:  "__name__",
+				Type:  storepb.LabelMatcher_RE,
+				Value: ".*",
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := store.LabelNames(ctx, req)
+	assert.Error(t, err)
+	s, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, s.Code())
+}
+
+func TestLabelValues_Cancelled(t *testing.T) {
+	_, store, _, _, _, _, close := setupStoreForHintsTest(t)
+	defer close()
+
+	req := &storepb.LabelValuesRequest{
+		Label: "ext1",
+		Start: 0,
+		End:   1,
+		Matchers: []storepb.LabelMatcher{
+			{
+				Name:  "__name__",
+				Type:  storepb.LabelMatcher_RE,
+				Value: ".*",
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := store.LabelValues(ctx, req)
+	assert.Error(t, err)
+	s, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, s.Code())
+}
+
 func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 	labelsMap := map[string]struct{}{}
 

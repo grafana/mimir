@@ -168,26 +168,6 @@ $(dir $(1))$(UPTODATE): $(1)
 endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 
-# Manually declared dependencies And what goes into each exe
-pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
-pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
-pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/distributor.proto
-pkg/ring/ring.pb.go: pkg/ring/ring.proto
-pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/frontend.proto
-pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
-pkg/frontend/querymiddleware/model.pb.go: pkg/frontend/querymiddleware/model.proto
-pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
-pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
-pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
-pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
-pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
-pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
-pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
-pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
-pkg/storegateway/storepb/types.pb.go: pkg/storegateway/storepb/types.proto
-pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
-pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
-
 all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
@@ -237,7 +217,7 @@ protos: $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 
-%.pb.go:
+%.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 else
