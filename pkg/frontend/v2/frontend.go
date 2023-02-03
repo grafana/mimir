@@ -223,9 +223,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		f.mtx.Unlock()
 		return nil, fmt.Errorf("frontend not running")
 	}
-
 	f.inflightRequests++
 	f.mtx.Unlock()
+
 	defer func() {
 		f.mtx.Lock()
 		f.inflightRequests--
