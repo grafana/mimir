@@ -60,10 +60,27 @@ func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
 	return &new
 }
 
-// WithHints clones the current `PrometheusRangeQueryRequest` with new hints.
-func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
+// WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
+// added Hint value for TotalQueries.
+func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	new := *q
-	new.Hints = hints
+	if new.Hints == nil {
+		new.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		new.Hints.TotalQueries = totalQueries
+	}
+	return &new
+}
+
+// WithEstimatedCardinalityHint clones the current `PrometheusRangeQueryRequest`
+// with an added Hint value for EstimatedCardinality.
+func (q *PrometheusRangeQueryRequest) WithEstimatedCardinalityHint(estimatedCardinality uint64) Request {
+	new := *q
+	if new.Hints == nil {
+		new.Hints = &Hints{EstimatedCardinality: estimatedCardinality}
+	} else {
+		new.Hints.EstimatedCardinality = estimatedCardinality
+	}
 	return &new
 }
 
@@ -107,9 +124,23 @@ func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
 	return &new
 }
 
-func (r *PrometheusInstantQueryRequest) WithHints(hints *Hints) Request {
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	new := *r
-	new.Hints = hints
+	if new.Hints == nil {
+		new.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		new.Hints.TotalQueries = totalQueries
+	}
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) WithEstimatedCardinalityHint(estimatedCardinality uint64) Request {
+	new := *r
+	if new.Hints == nil {
+		new.Hints = &Hints{EstimatedCardinality: estimatedCardinality}
+	} else {
+		new.Hints.EstimatedCardinality = estimatedCardinality
+	}
 	return &new
 }
 

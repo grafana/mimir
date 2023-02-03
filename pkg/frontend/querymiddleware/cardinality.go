@@ -62,12 +62,18 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	k := generateCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
 
 	var estimatedCardinality uint64
+	var withCardinalityEstimate Request
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
 		estimatedCardinality = estimate
-		request = injectCardinalityEstimate(request, estimate)
+		withCardinalityEstimate = request.WithEstimatedCardinalityHint(estimate)
 	}
 
-	res, err := c.next.Do(ctx, request)
+	var res Response
+	if withCardinalityEstimate != nil {
+		res, err = c.next.Do(ctx, withCardinalityEstimate)
+	} else {
+		res, err = c.next.Do(ctx, request)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -123,16 +129,6 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
 	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshaled}, cardinalityEstimateTTL)
-}
-
-// injectCardinalityEstimate injects a given estimate into the request's hints.
-func injectCardinalityEstimate(request Request, estimate uint64) Request {
-	if hints := request.GetHints(); hints != nil {
-		hints.EstimatedCardinality = estimate
-	} else {
-		request = request.WithHints(&Hints{EstimatedCardinality: estimate})
-	}
-	return request
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {

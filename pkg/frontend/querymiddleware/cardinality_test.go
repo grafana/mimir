@@ -133,46 +133,6 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	}
 }
 
-func Test_injectCardinalityEstimate(t *testing.T) {
-	type args struct {
-		request  Request
-		estimate uint64
-	}
-	tests := []struct {
-		name string
-		args args
-		want Request
-	}{
-		{
-			name: "hints present",
-			args: args{
-				request:  &PrometheusInstantQueryRequest{Hints: &Hints{TotalQueries: 10}},
-				estimate: 1,
-			},
-			want: &PrometheusInstantQueryRequest{Hints: &Hints{
-				TotalQueries:         10,
-				EstimatedCardinality: 1,
-			}},
-		},
-		{
-			name: "without hints",
-			args: args{
-				request:  &PrometheusRangeQueryRequest{Hints: nil},
-				estimate: 2,
-			},
-			want: &PrometheusRangeQueryRequest{Hints: &Hints{
-				EstimatedCardinality: 2,
-			}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, injectCardinalityEstimate(tt.args.request, tt.args.estimate))
-		})
-	}
-}
-
 func Test_cardinalityEstimation_Do(t *testing.T) {
 	const numSeries = uint64(25)
 	request := &PrometheusRangeQueryRequest{

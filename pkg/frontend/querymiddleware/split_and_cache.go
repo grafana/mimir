@@ -454,8 +454,6 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 		return nil
 	}
 
-	hints := &Hints{TotalQueries: int32(numDownstreamRequests)}
-
 	// Build the whole list of requests to execute. For each downstream request,
 	// inject hints and a unique ID used to correlate responses once executed.
 	// ID intentionally start at 1 to detect any bug in case the default zero value is used.
@@ -464,7 +462,7 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 	execReqs := make([]Request, 0, numDownstreamRequests)
 	for _, splitReq := range *s {
 		for i := 0; i < len(splitReq.downstreamRequests); i++ {
-			splitReq.downstreamRequests[i] = splitReq.downstreamRequests[i].WithID(nextReqID).WithHints(hints)
+			splitReq.downstreamRequests[i] = splitReq.downstreamRequests[i].WithID(nextReqID).WithTotalQueriesHint(int32(numDownstreamRequests))
 			nextReqID++
 		}
 
