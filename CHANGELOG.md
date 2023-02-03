@@ -14,6 +14,7 @@
     * `cortex_discarded_samples_total`
   * The following metrics have a new label called `type`, with possible values of `float` or `histogram`:
     * `cortex_distributor_deduped_samples_total`
+    * `cortex_distributor_forward_samples_total`
     * `cortex_distributor_non_ha_samples_received_total`
     * `cortex_distributor_received_samples_total`
     * `cortex_distributor_samples_in_total`

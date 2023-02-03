@@ -68,8 +68,7 @@ type forwarder struct {
 
 	requestsTotal           prometheus.Counter
 	errorsTotal             *prometheus.CounterVec
-	samplesTotal            prometheus.Counter
-	histogramsTotal         prometheus.Counter
+	samplesTotal            *prometheus.CounterVec
 	exemplarsTotal          prometheus.Counter
 	requestLatencyHistogram prometheus.Histogram
 	grpcClientsGauge        prometheus.Gauge
@@ -108,16 +107,11 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits 
 			Name:      "distributor_forward_errors_total",
 			Help:      "The total number of errors that the distributor received from forwarding targets when trying to send samples to them.",
 		}, []string{"status_code"}),
-		samplesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		samplesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_samples_total",
 			Help:      "The total number of samples the Distributor forwarded.",
-		}),
-		histogramsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_forward_histograms_total",
-			Help:      "The total number of histograms the Distributor forwarded.",
-		}),
+		}, []string{mimirpb.SampleMetricTypeLabel}),
 		exemplarsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_exemplars_total",
@@ -440,12 +434,11 @@ type request struct {
 	ts       []mimirpb.PreallocTimeseries
 	counts   TimeseriesCounts
 
-	requests   prometheus.Counter
-	errors     *prometheus.CounterVec
-	samples    prometheus.Counter
-	histograms prometheus.Counter
-	exemplars  prometheus.Counter
-	latency    prometheus.Histogram
+	requests  prometheus.Counter
+	errors    *prometheus.CounterVec
+	samples   *prometheus.CounterVec
+	exemplars prometheus.Counter
+	latency   prometheus.Histogram
 }
 
 // submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
@@ -473,7 +466,6 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, en
 	req.requests = f.requestsTotal
 	req.errors = f.errorsTotal
 	req.samples = f.samplesTotal
-	req.histograms = f.histogramsTotal
 	req.exemplars = f.exemplarsTotal
 	req.latency = f.requestLatencyHistogram
 
@@ -540,8 +532,12 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	httpReq.Header.Set(user.OrgIDHeaderName, r.user)
 
 	r.requests.Inc()
-	r.samples.Add(float64(r.counts.SampleCount))
-	r.histograms.Add(float64(r.counts.HistogramCount))
+	if r.counts.SampleCount > 0 {
+		r.samples.WithLabelValues(mimirpb.SampleMetricTypeFloat).Add(float64(r.counts.SampleCount))
+	}
+	if r.counts.HistogramCount > 0 {
+		r.samples.WithLabelValues(mimirpb.SampleMetricTypeHistogram).Add(float64(r.counts.HistogramCount))
+	}
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
@@ -618,8 +614,12 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	h := c.(httpgrpc.HTTPClient)
 
 	r.requests.Inc()
-	r.samples.Add(float64(r.counts.SampleCount))
-	r.histograms.Add(float64(r.counts.HistogramCount))
+	if r.counts.SampleCount > 0 {
+		r.samples.WithLabelValues(mimirpb.SampleMetricTypeFloat).Add(float64(r.counts.SampleCount))
+	}
+	if r.counts.HistogramCount > 0 {
+		r.samples.WithLabelValues(mimirpb.SampleMetricTypeHistogram).Add(float64(r.counts.HistogramCount))
+	}
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
