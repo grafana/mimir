@@ -770,7 +770,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if err == nil {
 			return
 		}
-		code := codes.Aborted
+		code := codes.Internal
 		if st, ok := status.FromError(errors.Cause(err)); ok {
 			code = st.Code()
 		} else if errors.Is(err, context.Canceled) {
@@ -1270,6 +1270,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	s.blocksMx.RUnlock()
 
 	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -1431,7 +1435,11 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	s.blocksMx.RUnlock()
 
 	if err := g.Wait(); err != nil {
-		return nil, status.Error(codes.Aborted, err.Error())
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	anyHints, err := types.MarshalAny(resHints)
