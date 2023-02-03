@@ -28,7 +28,7 @@ type indexTOC struct {
 }
 
 func main() {
-	const indexFileObjectPath = "9960/01F4X9CCYRQ2M9EFDNN72S6EPG/index"
+	var indexFileObjectPath = os.Args[1]
 	bkt := createBucketClient()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,7 +37,6 @@ func main() {
 	noErr(err)
 	indexFileTOC, err := readIndexTOC(bkt, indexFileObjectPath, indexFileObjectSize)
 	noErr(err)
-	fmt.Printf("got TOC; series offset %d; series length %d\n", indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
 
 	indexReader, err := bkt.GetRange(ctx, indexFileObjectPath, indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
 	noErr(err)
@@ -136,7 +135,7 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 	reader := &trackedReader{r: bufio.NewReader(r)}
 	var crcBytes [crc32.Size]byte
 
-	for numSeries := 0; ; numSeries++ {
+	for {
 		//if numSeries%10000 == 0 {
 		//	fmt.Printf("series %d offset %d\n", numSeries, reader.off)
 		//}
@@ -154,12 +153,10 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 		if errors.Is(err, io.EOF) {
 			return
 		}
-
-		seriesStartOffset := reader.off
 		if checkErr(err) {
 			return
 		}
-		//fmt.Printf("series %d id %d len %d ", numSeries, seriesStartOffset, seriesBytesLen)
+		seriesStartOffset := reader.off
 
 		wholeSeriesBytes := make([]byte, seriesBytesLen)
 		_, err = io.ReadFull(reader, wholeSeriesBytes)
@@ -180,7 +177,7 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 		crcHasher.Reset()
 		_, _ = crcHasher.Write(wholeSeriesBytes)
 
-		_, err = io.ReadFull(reader, crcBytes[:]) // crc32
+		_, err = io.ReadFull(reader, crcBytes[:])
 		if checkErr(err) {
 			return
 		}
@@ -274,6 +271,11 @@ func readIndexTOC(bkt objstore.BucketReader, path string, size int64) (indexTOC,
 
 	if symbolsOffset == 0 || seriesOffset == 0 || labelIndex1Offset == 0 {
 		panic("seriesOffset, labelIndex1Offset, or symbolsOffset is zero")
+	}
+
+	if seriesOffset%16 != 0 {
+		// The series offset may not be 16-byte aligned even though each series must be 16-byte aligned.
+		seriesOffset += 16 - (seriesOffset % 16)
 	}
 
 	return indexTOC{
