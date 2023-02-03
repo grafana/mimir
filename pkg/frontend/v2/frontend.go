@@ -229,7 +229,6 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	defer func() {
 		f.mtx.Lock()
 		f.inflightRequests--
-		// Wake up the stopped method if it's waiting
 		f.cond.Broadcast()
 		f.mtx.Unlock()
 	}()
