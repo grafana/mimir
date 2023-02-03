@@ -187,8 +187,8 @@ func (f *Frontend) running(ctx context.Context) error {
 func (f *Frontend) stopping(_ error) error {
 	f.mtx.Lock()
 	f.stopped = true
-	if f.inflightRequests > 0 {
-		level.Debug(f.log).Log("msg", "waiting on in-flight requests")
+	level.Debug(f.log).Log("msg", "waiting on in-flight requests")
+	for f.inflightRequests > 0 {
 		f.cond.Wait()
 	}
 	f.mtx.Unlock()
@@ -218,6 +218,22 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}
 
+	f.mtx.Lock()
+	if f.stopped {
+		f.mtx.Unlock()
+		return nil, fmt.Errorf("frontend not running")
+	}
+
+	f.inflightRequests++
+	f.mtx.Unlock()
+	defer func() {
+		f.mtx.Lock()
+		f.inflightRequests--
+		// Wake up the stopped method if it's waiting
+		f.cond.Broadcast()
+		f.mtx.Unlock()
+	}()
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -237,22 +253,6 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	f.requests.put(freq)
 	defer f.requests.delete(freq.queryID)
-
-	f.mtx.Lock()
-	if f.stopped {
-		f.mtx.Unlock()
-		return nil, fmt.Errorf("frontend not running")
-	}
-
-	f.inflightRequests++
-	f.mtx.Unlock()
-	defer func() {
-		f.mtx.Lock()
-		f.inflightRequests--
-		// Wake up the stopped method if it's waiting
-		f.cond.Broadcast()
-		f.mtx.Unlock()
-	}()
 
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
