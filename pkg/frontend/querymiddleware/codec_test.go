@@ -112,6 +112,26 @@ func TestRequest(t *testing.T) {
 	}
 }
 
+func TestEncodeRequest_AcceptHeader(t *testing.T) {
+	for _, queryResultPayloadFormat := range allFormats {
+		t.Run(queryResultPayloadFormat, func(t *testing.T) {
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), Config{QueryResultPayloadFormat: queryResultPayloadFormat})
+			req := PrometheusInstantQueryRequest{}
+			encodedRequest, err := codec.EncodeRequest(context.Background(), &req)
+			require.NoError(t, err)
+
+			switch queryResultPayloadFormat {
+			case formatJSON:
+				require.Equal(t, "application/json", encodedRequest.Header.Get("Accept"))
+			case formatProtobuf:
+				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", encodedRequest.Header.Get("Accept"))
+			default:
+				panic(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
+			}
+		})
+	}
+}
+
 type prometheusAPIResponse struct {
 	Status    string       `json:"status"`
 	Data      interface{}  `json:"data,omitempty"`
@@ -306,7 +326,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg)
+			codec := NewPrometheusCodec(reg, Config{QueryResultPayloadFormat: formatJSON})
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -847,5 +867,5 @@ func Test_DecodeOptions(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry())
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), Config{QueryResultPayloadFormat: formatJSON})
 }

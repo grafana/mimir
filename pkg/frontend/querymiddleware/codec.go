@@ -145,12 +145,14 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 }
 
 type prometheusCodec struct {
-	metrics *prometheusCodecMetrics
+	metrics               *prometheusCodecMetrics
+	requestProtobufFormat bool
 }
 
-func NewPrometheusCodec(registerer prometheus.Registerer) Codec {
+func NewPrometheusCodec(registerer prometheus.Registerer, cfg Config) Codec {
 	return prometheusCodec{
-		metrics: newPrometheusCodecMetrics(registerer),
+		metrics:               newPrometheusCodecMetrics(registerer),
+		requestProtobufFormat: cfg.QueryResultPayloadFormat == formatProtobuf,
 	}
 }
 
@@ -282,7 +284,7 @@ func decodeOptions(r *http.Request, opts *Options) {
 	}
 }
 
-func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
+func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -315,11 +317,16 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 		Header:     http.Header{},
 	}
 
+	if c.requestProtobufFormat {
+		req.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
+	} else {
+		req.Header.Set("Accept", jsonMimeType)
+	}
+
 	return req.WithContext(ctx), nil
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-
 	if r.StatusCode/100 == 5 {
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
