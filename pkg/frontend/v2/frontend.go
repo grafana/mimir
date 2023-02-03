@@ -90,6 +90,11 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
+
+	mtx              sync.Mutex
+	inflightRequests int
+	stopped          bool
+	cond             *sync.Cond
 }
 
 type frontendRequest struct {
@@ -137,6 +142,7 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
 	}
+	f.cond = sync.NewCond(&f.mtx)
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
@@ -179,7 +185,15 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	f.requests.Wait()
+	f.mtx.Lock()
+	f.stopped = true
+	if f.inflightRequests > 0 {
+		level.Debug(f.log).Log("msg", "waiting on in-flight requests")
+		f.cond.Wait()
+	}
+	f.mtx.Unlock()
+	level.Debug(f.log).Log("msg", "done waiting on in-flight requests")
+
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
@@ -223,6 +237,22 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	f.requests.put(freq)
 	defer f.requests.delete(freq.queryID)
+
+	f.mtx.Lock()
+	if f.stopped {
+		f.mtx.Unlock()
+		return nil, fmt.Errorf("frontend not running")
+	}
+
+	f.inflightRequests++
+	f.mtx.Unlock()
+	defer func() {
+		f.mtx.Lock()
+		f.inflightRequests--
+		// Wake up the stopped method if it's waiting
+		f.cond.Broadcast()
+		f.mtx.Unlock()
+	}()
 
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
@@ -312,18 +342,12 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 type requestsInProgress struct {
 	mu       sync.Mutex
 	requests map[uint64]*frontendRequest
-	wg       sync.WaitGroup
 }
 
 func newRequestsInProgress() *requestsInProgress {
 	return &requestsInProgress{
 		requests: map[uint64]*frontendRequest{},
 	}
-}
-
-// Wait waits on any in-flight requests.
-func (r *requestsInProgress) Wait() {
-	r.wg.Wait()
 }
 
 func (r *requestsInProgress) count() int {
@@ -337,21 +361,12 @@ func (r *requestsInProgress) put(req *frontendRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.requests[req.queryID]; !exists {
-		// Count one more in-flight request
-		r.wg.Add(1)
-	}
 	r.requests[req.queryID] = req
 }
 
 func (r *requestsInProgress) delete(queryID uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if _, exists := r.requests[queryID]; exists {
-		// Count one less in-flight request
-		r.wg.Done()
-	}
 
 	delete(r.requests, queryID)
 }
