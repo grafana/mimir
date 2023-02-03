@@ -9,7 +9,7 @@
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
-* [FEATURE] Distributor, ingester: accept and store native histograms, **no query** support! The new limit `accept_native_histograms` controls whether native histograms are stored or ignored. TODO PR number
+* [FEATURE] Distributor, ingester: accept and store native histograms, **no query** support! The new limit `accept_native_histograms` controls whether native histograms are stored or ignored. #4159
   * The following metric has a new label called `type`, with possible values of `float`, `histogram` or empty string in case the type is unknown:
     * `cortex_discarded_samples_total`
   * The following metrics have a new label called `type`, with possible values of `float` or `histogram`:
