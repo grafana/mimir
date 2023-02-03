@@ -280,7 +280,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
 			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
-		}, []string{"user"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_exemplars_total",
@@ -300,7 +300,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
 			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
-		}, []string{"user"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_exemplars_in_total",
@@ -315,18 +315,19 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_non_ha_samples_received_total",
 			Help:      "The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
-		}, []string{"user"}),
+		}, []string{"user", mimirpb.SampleMetricTypeLabel}),
 		dedupedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_deduped_samples_total",
 			Help:      "The total number of deduplicated samples.",
-		}, []string{"user", "cluster"}),
+		}, []string{"user", "cluster", mimirpb.SampleMetricTypeLabel}),
 		labelsHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "labels_per_sample",
 			Help:      "Number of labels per sample.",
 			Buckets:   []float64{5, 10, 15, 20, 25},
 		}),
+		// TODO switch to native histogram eventually and add "type" label
 		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_sample_delay_seconds",
@@ -526,21 +527,21 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
 	d.receivedRequests.DeleteLabelValues(userID)
-	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingRequests.DeleteLabelValues(userID)
-	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
-	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
+	d.receivedSamples.DeletePartialMatch(filter)
+	d.incomingSamples.DeletePartialMatch(filter)
+	d.nonHASamples.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
+
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
-
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
@@ -556,8 +557,9 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
-	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
-	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
+	filter := prometheus.Labels{"user": userID, "group": group}
+	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
+	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
 }
 
@@ -649,7 +651,13 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
+	sampleMetricType := mimirpb.SampleMetricTypeFloat
+	if len(ts.Histograms) > 0 {
+		// Yes this will report mixed series under the histogram label, but most of the time a series contains
+		// single type data, and this is simpler then checking individually
+		sampleMetricType = mimirpb.SampleMetricTypeHistogram
+	}
+	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation, sampleMetricType); err != nil {
 		return err
 	}
 
@@ -663,6 +671,17 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 
 		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
+			return err
+		}
+	}
+
+	for _, h := range ts.Histograms {
+		delta := now - model.Time(h.Timestamp)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
 			return err
 		}
 	}
@@ -756,21 +775,34 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		numSamples := 0
+		numHistograms := 0
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
+			numHistograms += len(ts.Histograms)
 		}
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+				// These samples and histograms have been deduped.
+				if numSamples > 0 {
+					d.dedupedSamples.WithLabelValues(userID, cluster, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
+				}
+				if numHistograms > 0 {
+					d.dedupedSamples.WithLabelValues(userID, cluster, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+				}
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+				if numSamples > 0 {
+					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
+				}
+				if numHistograms > 0 {
+					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+				}
+
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -786,7 +818,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+			if numSamples > 0 {
+				d.nonHASamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
+			}
+			if numHistograms > 0 {
+				d.nonHASamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+			}
 		}
 
 		cleanupInDefer = false
@@ -888,6 +925,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		validatedMetadata := 0
 		validatedSamples := 0
 		validatedExemplars := 0
+		validatedHistograms := 0
 
 		// Find the earliest and latest samples in the batch.
 		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
@@ -895,6 +933,10 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			for _, s := range ts.Samples {
 				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
 				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
+			}
+			for _, h := range ts.Histograms {
+				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, h.Timestamp)
 			}
 		}
 		// Update this metric even in case of errors.
@@ -938,6 +980,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			validatedSamples += len(ts.Samples)
 			validatedExemplars += len(ts.Exemplars)
+			validatedHistograms += len(ts.Histograms)
 		}
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
@@ -965,15 +1008,24 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
 		}
 
-		if validatedSamples == 0 && validatedMetadata == 0 {
+		if validatedSamples == 0 && validatedHistograms == 0 && validatedMetadata == 0 {
 			return &mimirpb.WriteResponse{}, firstPartialErr
 		}
 
-		totalN := validatedSamples + validatedExemplars + validatedMetadata
+		totalN := validatedSamples + validatedExemplars + validatedHistograms + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
-			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+			if validatedSamples > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeFloat).Add(float64(validatedSamples))
+			}
+			if validatedHistograms > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group, mimirpb.SampleMetricTypeHistogram).Add(float64(validatedHistograms))
+			}
+			if validatedExemplars > 0 {
+				d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
+			}
+			if validatedMetadata > 0 {
+				d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+			}
 			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
@@ -1115,15 +1167,26 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		numSamples := 0
 		numExemplars := 0
+		numHistograms := 0
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
 			numExemplars += len(ts.Exemplars)
+			numHistograms += len(ts.Histograms)
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
-		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
-		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
-		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+		if numSamples > 0 {
+			d.incomingSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(numSamples))
+		}
+		if numHistograms > 0 {
+			d.incomingSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(numHistograms))
+		}
+		if numExemplars > 0 {
+			d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+		}
+		if len(req.Metadata) > 0 {
+			d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+		}
 
 		cleanupInDefer = false
 		return next(ctx, pushReq)
@@ -1356,16 +1419,26 @@ func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.Preallo
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedExemplars, receivedMetadata int
+	var receivedSamples, receivedExemplars, receivedHistograms, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
+		receivedHistograms += len(ts.TimeSeries.Histograms)
 	}
 	receivedMetadata = len(req.Metadata)
 
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
-	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
-	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+	if receivedSamples > 0 {
+		d.receivedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeFloat).Add(float64(receivedSamples))
+	}
+	if receivedHistograms > 0 {
+		d.receivedSamples.WithLabelValues(userID, mimirpb.SampleMetricTypeHistogram).Add(float64(receivedHistograms))
+	}
+	if receivedExemplars > 0 {
+		d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	}
+	if receivedMetadata > 0 {
+		d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+	}
 }
 
 func copyString(s string) string {
