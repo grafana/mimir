@@ -155,22 +155,6 @@ func (s *Stats) LoadSplitQueries() uint32 {
 	return atomic.LoadUint32(&s.SplitQueries)
 }
 
-func (s *Stats) AddFetchedSeriesEstimate(estimate uint64) {
-	if s == nil {
-		return
-	}
-
-	atomic.AddUint64(&s.FetchedSeriesEstimate, estimate)
-}
-
-func (s *Stats) LoadFetchedSeriesEstimate() uint64 {
-	if s == nil {
-		return 0
-	}
-
-	return atomic.LoadUint64(&s.FetchedSeriesEstimate)
-}
-
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {

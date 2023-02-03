@@ -94,17 +94,22 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		return res, nil
 	}
 
-	actualCardinality := statistics.LoadFetchedSeries()
-	c.estimationError.Observe(math.Abs(float64(actualCardinality) - float64(estimatedCardinality)))
+	actualCardinality := statistics.GetFetchedSeriesCount()
 	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 	}
 
-	if statistics.FetchedSeriesEstimate > 0 {
-		spanLog.LogKV("estimated cardinality", statistics.FetchedSeriesEstimate, "actual cardinality", actualCardinality)
-	}
+	c.maintainStatistics(estimatedCardinality, actualCardinality, statistics, spanLog)
 
 	return res, nil
+}
+
+func (c *cardinalityEstimation) maintainStatistics(estimate uint64, actual uint64, s *stats.Stats, span *spanlogger.SpanLogger) {
+	if estimate > 0 {
+		c.estimationError.Observe(math.Abs(float64(actual) - float64(estimate)))
+		s.FetchedSeriesEstimate = estimate
+		span.LogKV("estimated cardinality", estimate, "actual cardinality", actual)
+	}
 }
 
 // lookupCardinalityForKey fetches a cardinality estimate for the given key from
