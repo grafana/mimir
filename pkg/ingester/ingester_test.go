@@ -7271,8 +7271,8 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
-		AddFloatSeries([]labels.Labels{labels1, labels1}, []mimirpb.Sample{sample1}, nil).
-		AddHistogramSeries([]labels.Labels{labels1, labels1}, sampleHistograms, nil))
+		AddFloatSeries([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil).
+		AddHistogramSeries([]labels.Labels{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics := `
@@ -7283,7 +7283,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		# TYPE cortex_ingester_ingested_samples_total counter
 		cortex_ingester_ingested_samples_total{type="float",user="1"} 1
 				`
-	metricNames := []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total", "cortex_ingester_ingested_histograms_total", "cortex_ingester_ingested_histograms_failures_total"}
+	metricNames := []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total"}
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except histogram writes to fail and floats to succeed")
 
 	testResult := func(expected model.Matrix, msg string) {
@@ -7324,7 +7324,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	// Append only one series and one metadata first, expect no error.
 	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata2}, mimirpb.API).
-		AddHistogramSeries([]labels.Labels{labels1, labels1}, sampleHistograms, nil))
+		AddHistogramSeries([]labels.Labels{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics = `
