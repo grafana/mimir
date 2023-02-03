@@ -2,13 +2,14 @@ this tool helps to understand how bug chunks are; in particular how big the last
 compared to the rest of the chunks in a series. It is useful because it's difficult to know the length of the last
 chunk of a series, so the best we can do is estiamte it; this tool helps with this estimation;
 
-example usage
+### Example usage
 
 ```bash
 go run tools/tsdb-chunks-len/main.go dev-us-central1-cortex-tsdb-dev/9960/01GPYS8C08C4D75VP3WW3A4QXK/index
 ```
 
-example output
+Output
+
 ```
 263 0.900685
 261 0.912587
@@ -23,15 +24,41 @@ one series with chunks in multiple segment files
 210 0.709459
 210 0.709459
 one chunk
-5m23.0650165s
 ```
 
-explained
+Explained
 
 * `263 0.900685` - the last chunk of a timeseries was 263; The last chunk was 90% of the size of the largest chunk from the rest 
 * `next segment file` - this is logged once for every segment file after the first one
 * `one series with chunks in multiple segment files` - self-explanatory; this should be rare
 
-one chunk
+### Helper commands
 
+Run it for a list of blocks in a bucket
+
+```bash
+x=( '01F4X9CCYRQ2M9EFDNN72S6EPG' '01FZ9N452CCW3YZK2HKMFNJERD' '01FZ9NZBR4204BQFV9SQ835G11' )
+for b in "${x[@]}"; do 
+  go run tools/tsdb-chunks-len/main.go dev-us-central1-cortex-tsdb-dev/9960/$b/index > cortex-dev-01-$b.raw;
+done
+```
+
+Some useful plots and analytics 
+```bash
+for f in $(find . -name '*.raw'); do 
+  echo $f
+  
+  # Get only the numbers from the output files
+  cat $f | grep -E '[0-9]+ [0-9]+\.[0-9]+' > $f.txt
+  
+  # Generate png files with plots of the chunk sizes and ratios with `gnuplot`
+  gnuplot -e 'set term png size 2560, 1440; set xlabel "last chunk size"; set ylabel "ratio of last chunk to max chunk size (excl last)"; set xrange [:2500]; set yrange [:20]; set ytics 0,0.2,20; set output "'$f.txt.png'"; plot "'$f.txt'"'
+  
+  # Plot the max chunk size in a histogram (excluding the last chunk)
+  cat $f.txt | awk '{if ($2 > 0) { print $1/$2 }}' | promfreq -mode exponential -count 13 -factor 2
+  
+  # Generate png files with plots of the chunk size of the largest chunk (excl last) and the ratio of last/max
+  cat $f.txt | awk '{if ($2 > 0) { print $1/$2, $2 }}' > $f.max-chunk-vs-last.txt
+  gnuplot -e 'set term png size 2560, 1440; set xlabel "max chunk size (excl last)"; set ylabel "ratio of last chunk to max chunk size (excl last)"; set xrange [:2500]; set yrange [:20]; set ytics 0,0.2,20; set output "'$f.max-chunk-vs-last.txt.png'"; plot "'$f.max-chunk-vs-last.txt'"'
+done
 ```
