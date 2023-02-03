@@ -648,6 +648,27 @@ metric_relabel_configs:
 	})
 }
 
+func TestEnabledByAnyTenant(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant1": {
+			AcceptNativeHistograms: false,
+		},
+		"tenant2": {
+			AcceptNativeHistograms: true,
+		},
+	}
+
+	defaults := Limits{
+		AcceptNativeHistograms: false,
+	}
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.AcceptNativeHistograms))
+
+	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.AcceptNativeHistograms))
+}
+
 func TestYamlUnmarshalMarshalLabelMatchers(t *testing.T) {
 	cfg := `
 ephemeral_series_matchers:

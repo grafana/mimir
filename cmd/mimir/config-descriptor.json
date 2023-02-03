@@ -3087,6 +3087,17 @@
         },
         {
           "kind": "field",
+          "name": "accept_native_histograms",
+          "required": false,
+          "desc": "Flag to enable the ingestion of native histogram samples.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.accept-native-histograms",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero).",
