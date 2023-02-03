@@ -31,7 +31,7 @@ type indexTOC struct {
 func main() {
 	split := strings.SplitN(os.Args[1], "/", 2)
 	if len(split) != 2 {
-		panic("invalid args " + strings.Join(os.Args[1:], " "))
+		panic("invalid args " + strings.Join(os.Args[1:], " ") + " expecting one arg in the format ops-tools-cortex-ops-blocks/10428/01GPCSB39Q5QX7EFVGVK95P8AA/index")
 	}
 	bucketName, indexFileObjectPath := split[0], split[1]
 
