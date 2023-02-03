@@ -182,6 +182,43 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 }
 
+func TestDecodeResponse_ContentTypeHandling(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		responseHeaders http.Header
+		expectedErr     error
+	}{
+		{
+			name:            "unknown content type in response",
+			responseHeaders: http.Header{"Content-Type": []string{"something/else"}},
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type 'something/else'"),
+		},
+		{
+			name:            "no content type in response",
+			responseHeaders: http.Header{},
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type ''"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg, Config{QueryResultPayloadFormat: formatJSON})
+
+			resp := prometheusAPIResponse{}
+			body, err := json.Marshal(resp)
+			require.NoError(t, err)
+			httpResponse := &http.Response{
+				StatusCode:    200,
+				Header:        tc.responseHeaders,
+				Body:          io.NopCloser(bytes.NewBuffer(body)),
+				ContentLength: int64(len(body)),
+			}
+
+			_, err = codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
 func TestMergeAPIResponses(t *testing.T) {
 	codec := newTestPrometheusCodec()
 

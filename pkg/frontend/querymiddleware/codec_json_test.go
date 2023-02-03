@@ -44,8 +44,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 		expectedErr     error
 	}{
 		{
-			name:            "successful string response",
-			responseHeaders: headers,
+			name: "successful string response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -68,8 +67,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "successful scalar response",
-			responseHeaders: headers,
+			name: "successful scalar response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -92,8 +90,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "successful instant response",
-			responseHeaders: headers,
+			name: "successful instant response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -117,8 +114,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "successful range response",
-			responseHeaders: headers,
+			name: "successful range response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -142,8 +138,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "successful empty matrix response",
-			responseHeaders: headers,
+			name: "successful empty matrix response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -161,26 +156,13 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "error response",
-			responseHeaders: headers,
+			name: "error response",
 			resp: prometheusAPIResponse{
 				Status:    statusError,
 				ErrorType: "expected",
 				Error:     "failed",
 			},
 			expectedErr: apierror.New(apierror.Type("expected"), "failed"),
-		},
-		{
-			name:            "unknown content type in response",
-			responseHeaders: http.Header{"Content-Type": []string{"something/else"}},
-			resp:            prometheusAPIResponse{},
-			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type 'something/else'"),
-		},
-		{
-			name:            "no content type in response",
-			responseHeaders: http.Header{},
-			resp:            prometheusAPIResponse{},
-			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type ''"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,7 +173,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			httpResponse := &http.Response{
 				StatusCode:    200,
-				Header:        tc.responseHeaders,
+				Header:        headers,
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
@@ -218,7 +200,7 @@ func TestJSONResponseRoundtrip(t *testing.T) {
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
 				StatusCode:    200,
-				Header:        tc.responseHeaders,
+				Header:        headers,
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}

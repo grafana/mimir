@@ -156,7 +156,8 @@ type format interface {
 }
 
 var knownFormats = map[string]format{
-	jsonMimeType: jsonFormat{},
+	jsonMimeType:                  jsonFormat{},
+	mimirpb.QueryResponseMimeType: protobufFormat{},
 }
 
 func NewPrometheusCodec(registerer prometheus.Registerer, cfg Config) Codec {
