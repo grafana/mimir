@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
@@ -52,9 +51,7 @@ func main() {
 	go readChunkRefs(indexReader, seriesCh)
 	go listenForSignals(cancel)
 
-	start := time.Now()
 	doChunkRangeStats(seriesCh)
-	fmt.Println(time.Since(start))
 }
 
 func listenForSignals(cancel context.CancelFunc) {
