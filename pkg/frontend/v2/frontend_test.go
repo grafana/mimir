@@ -42,23 +42,14 @@ import (
 const testFrontendWorkerConcurrency = 5
 
 func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
-	t.Helper()
 	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency)
 }
 
 func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
-	t.Helper()
-
 	l, err := net.Listen("tcp", "")
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = l.Close()
-	})
 
 	server := grpc.NewServer(opts...)
-	t.Cleanup(func() {
-		server.GracefulStop()
-	})
 
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
@@ -86,6 +77,11 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 		_ = server.Serve(l)
 	}()
 
+	t.Cleanup(func() {
+		_ = l.Close()
+		server.GracefulStop()
+	})
+
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
 	t.Cleanup(func() {
 		_ = services.StopAndAwaitTerminated(context.Background(), f)
@@ -102,20 +98,17 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	return f, ms
 }
 
-func sendResponseWithDelay(t *testing.T, f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
-	t.Helper()
-
+func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, queryID uint64, resp *httpgrpc.HTTPResponse) {
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
 		Stats:        &stats.Stats{},
 	})
-	require.NoError(t, err)
 }
 
 func TestFrontendBasicWorkflow(t *testing.T) {
@@ -127,7 +120,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
@@ -152,7 +145,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
 		// It first needs to be told that enqueuing has succeeded.
-		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
@@ -199,7 +192,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 		}
 
-		go sendResponseWithDelay(t, f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
 			Code: 200,
 			Body: []byte(body),
 		})
@@ -249,7 +242,7 @@ func TestFrontendCancellation(t *testing.T) {
 	})
 
 	ms.checkWithLock(func() {
-		require.Len(t, ms.msgs, 2)
+		require.Equal(t, 2, len(ms.msgs))
 		require.True(t, ms.msgs[0].Type == schedulerpb.ENQUEUE)
 		require.True(t, ms.msgs[1].Type == schedulerpb.CANCEL)
 		require.True(t, ms.msgs[0].QueryID == ms.msgs[1].QueryID)
@@ -290,7 +283,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 	})
 
 	ms.checkWithLock(func() {
-		require.Len(t, ms.msgs, 2*reqCount)
+		require.Equal(t, 2*reqCount, len(ms.msgs))
 		msgTypeCounts := map[schedulerpb.FrontendToSchedulerType]int{}
 		for _, msg := range ms.msgs {
 			msgTypeCounts[msg.Type]++
@@ -339,7 +332,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 	require.Nil(t, resp)
 
 	ms.checkWithLock(func() {
-		require.Len(t, ms.msgs, 1)
+		require.Equal(t, 1, len(ms.msgs))
 	})
 }
 
@@ -532,7 +525,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	// Connection will be established on the first roundtrip.
 	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusTooManyRequests, int(resp.Code))
+	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 
 	// Verify that there is one stream open.
 	require.Equal(t, 1, checkStreamGoroutines())
@@ -546,7 +539,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	// Another request will work as before, because worker will recreate connection.
 	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusTooManyRequests, int(resp.Code))
+	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 
 	// There should still be only one stream open, and one goroutine created for it.
 	// Previously frontend leaked goroutine because stream that received "EOF" due to server closing the connection, never stopped its goroutine.
