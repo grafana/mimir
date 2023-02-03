@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,8 +75,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bucketSize := cardinalityEstimateBucket(24 * time.Hour)
-			assert.Equal(t, tt.want, bucketSize.generateCacheKey(tt.args.userID, tt.args.r))
+			assert.Equal(t, tt.want, generateCacheKey(tt.args.userID, tt.args.r, 24*time.Hour))
 		})
 	}
 }
@@ -85,7 +86,9 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 
 	presentKey := "tenant-a:up:1234:4321"
 	presentValue := uint64(25)
-	c.Store(ctx, map[string][]byte{cacheHashKey(presentKey): marshalBinary(presentValue)}, 1*time.Hour)
+	marshaled, err := proto.Marshal(&QueryCardinality{presentValue})
+	require.NoError(t, err)
+	c.Store(ctx, map[string][]byte{cacheHashKey(presentKey): marshaled}, 1*time.Hour)
 
 	expectedFetchCount := 0
 	tests := []struct {
@@ -187,8 +190,8 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			return &PrometheusResponse{}, nil
 		}
 	}
-
-	bucketSize := cardinalityEstimateBucket(24 * time.Hour)
+	marshaledEstimate, err := proto.Marshal(&QueryCardinality{numSeries})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name              string
@@ -223,7 +226,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and unchanged cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries),
-			cacheContent:      map[string][]byte{cacheHashKey(bucketSize.generateCacheKey("1", request)): marshalBinary(numSeries)},
+			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        0,
 			wantErr:           assert.NoError,
@@ -232,7 +235,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and changed cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries+1),
-			cacheContent:      map[string][]byte{cacheHashKey(bucketSize.generateCacheKey("1", request)): marshalBinary(numSeries)},
+			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        1,
 			wantErr:           assert.NoError,
@@ -255,7 +258,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := cache.NewInstrumentedMockCache()
-			mw := newCardinalityEstimationMiddleware(c)
+			mw := newCardinalityEstimationMiddleware(c, log.NewNopLogger())
 			handler := mw.Wrap(tt.downstreamHandler)
 			_, ctx := stats.ContextWithEmptyStats(context.Background())
 			if tt.orgID != "" {
@@ -278,7 +281,6 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 }
 
 func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.T) {
-	splitter := cardinalityEstimateBucket(24 * time.Hour)
 	rangeQuery := &PrometheusRangeQueryRequest{
 		Start: util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
 		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),
@@ -344,8 +346,8 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			keyA := splitter.generateCacheKey(tt.tenantA, tt.requestA)
-			keyB := splitter.generateCacheKey(tt.tenantB, tt.requestB)
+			keyA := generateCacheKey(tt.tenantA, tt.requestA, 24*time.Hour)
+			keyB := generateCacheKey(tt.tenantB, tt.requestB, 24*time.Hour)
 			if tt.wantEqual {
 				assert.Equal(t, keyA, keyB)
 			} else {

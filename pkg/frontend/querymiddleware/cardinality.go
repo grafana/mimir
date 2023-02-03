@@ -4,36 +4,46 @@ package querymiddleware
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 const (
-	// TODO think about a reasonable value for cardinalityEstimateTTL.
+	// cardinalityEstimateTTL is how long a key must see no write to expire and be removed from the cache.
 	cardinalityEstimateTTL = 7 * 24 * time.Hour
 
-	// offsetBucketSize is the size of buckets that query start times are bucketed into
+	// cardinalityEstimateBucketSize is the size of buckets that queries are bucketed into.
 	cardinalityEstimateBucketSize = 24 * time.Hour
+
+	// cacheUpdateDifferenceFraction is how much the estimate must deviate
+	// from the actually observed cardinality to update the cache.
+	cacheUpdateDifferenceFraction = 0.1
 )
 
 // cardinalityEstimation is a Middleware that caches estimates for a query's
 // cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
-	cache cache.Cache
-	next  Handler
+	cache  cache.Cache
+	next   Handler
+	logger log.Logger
 }
 
-func newCardinalityEstimationMiddleware(cache cache.Cache) Middleware {
+func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
-			cache: cache,
-			next:  next,
+			cache:  cache,
+			next:   next,
+			logger: logger,
 		}
 	})
 }
@@ -41,12 +51,15 @@ func newCardinalityEstimationMiddleware(cache cache.Cache) Middleware {
 // Do injects a cardinality estimate into the query hints (if available) and
 // caches the actual cardinality observed for this query.
 func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Response, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "cardinalityEstimation.Do")
+	defer spanLog.Finish()
+
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return c.next.Do(ctx, request)
 	}
 
-	k := cardinalityEstimateBucket(cardinalityEstimateBucketSize).generateCacheKey(tenant.JoinTenantIDs(tenants), request)
+	k := generateCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
 
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
@@ -61,13 +74,19 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 	s := stats.FromContext(ctx)
 	if s == nil {
-		return res, err
+		return res, nil
 	}
 
-	if actualCardinality := s.LoadFetchedSeries(); actualCardinality != estimatedCardinality {
+	actualCardinality := s.LoadFetchedSeries()
+	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 	}
-	return res, err
+
+	if estimatedCardinality > 0 {
+		spanLog.LogKV("estimated cardinality", estimatedCardinality, "actual cardinality", actualCardinality)
+	}
+
+	return res, nil
 }
 
 // lookupCardinalityForKey fetches a cardinality estimate for the given key from
@@ -79,7 +98,13 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 	cacheKey := cacheHashKey(key)
 	res := c.cache.Fetch(ctx, []string{cacheKey})
 	if val, ok := res[cacheKey]; ok {
-		return unmarshalBinary(val), ok
+		cardinality := &QueryCardinality{}
+		err := proto.Unmarshal(val, cardinality)
+		if err != nil {
+			level.Warn(c.logger).Log("msg", "failed to unmarshal cardinality estimate")
+			return 0, false
+		}
+		return cardinality.Estimated, ok
 	}
 	return 0, false
 }
@@ -90,7 +115,14 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	if c.cache == nil {
 		return
 	}
-	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshalBinary(count)}, cardinalityEstimateTTL)
+	m := &QueryCardinality{Estimated: count}
+	marshaled, err := proto.Marshal(m)
+	if err != nil {
+		level.Warn(c.logger).Log("msg", "failed to marshal cardinality estimate")
+	}
+	// The store is executed asynchronously, potential errors are logged and not
+	// propagated back up the stack.
+	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshaled}, cardinalityEstimateTTL)
 }
 
 // injectCardinalityEstimate injects a given estimate into the request's hints.
@@ -103,29 +135,19 @@ func injectCardinalityEstimate(request Request, estimate uint64) Request {
 	return request
 }
 
-// marshalBinary marshals a cardinality estimate value for storage in the cache.
-func marshalBinary(in uint64) []byte {
-	marshaled := make([]byte, 8)
-	binary.LittleEndian.PutUint64(marshaled, in)
-	return marshaled
+func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
+	estimate := float64(estimatedCardinality)
+	actual := float64(actualCardinality)
+	return estimate > (1-cacheUpdateDifferenceFraction)*actual && estimate < (1+cacheUpdateDifferenceFraction)*actual
 }
 
-// unmarshalBinary unmarshals the cached representation of a cardinality estimate.
-func unmarshalBinary(data []byte) uint64 {
-	return binary.LittleEndian.Uint64(data)
-}
-
-// cardinalityEstimateBucket is a utility to allow splitting cardinality estimate
-// keys into buckets of fixed width of time.
-type cardinalityEstimateBucket time.Duration
-
-// generateCacheKey generates a key for a request's cardinality estimate.
-func (s cardinalityEstimateBucket) generateCacheKey(userID string, r Request) string {
-	offsetBucket := r.GetStart() / time.Duration(s).Milliseconds()
-	rangeBucket := (r.GetEnd() - r.GetStart()) / time.Duration(s).Milliseconds()
+// generateCacheKey generates a key to cache a request's cardinality estimate under.
+func generateCacheKey(userID string, r Request, bucketSize time.Duration) string {
+	startBucket := r.GetStart() / bucketSize.Milliseconds()
+	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
 	if rangeBucket == 0 {
-		return fmt.Sprintf("%s:%s:%d", userID, r.GetQuery(), offsetBucket)
+		return fmt.Sprintf("%s:%s:%d", userID, r.GetQuery(), startBucket)
 	}
-	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), offsetBucket, rangeBucket)
+	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), startBucket, rangeBucket)
 }

@@ -103,3 +103,8 @@ message Hints {
   // Estimated total number of series that a request might return.
   uint64 EstimatedCardinality = 2;
 }
+
+// This is used to store cardinality information in a cache.
+message QueryCardinality {
+  uint64 Estimated = 1;
+}
