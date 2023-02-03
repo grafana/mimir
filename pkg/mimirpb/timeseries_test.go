@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,6 +121,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
+			Histograms: []Histogram{FromHistogramToHistogramProto(2, tsdb.GenerateTestHistogram(0))},
 		},
 	}
 	dst := PreallocTimeseries{}
@@ -151,6 +153,10 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
+	assert.NotEqual(t,
+		(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms)).Data,
+		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms)).Data,
+	)
 
 	dst = PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, false)

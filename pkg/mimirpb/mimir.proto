@@ -5,6 +5,9 @@
 // Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Prometheus Team.
+// Provenance-includes-location: https://github.com/prometheus/common/blob/main/model/value_histogram.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 
 syntax = "proto3";
 

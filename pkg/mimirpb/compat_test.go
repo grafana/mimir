@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -211,6 +212,13 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	}
 }
 
+func TestFromPointsToSamples(t *testing.T) {
+	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}}
+	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+
+	assert.Equal(t, expected, FromPointsToSamples(input))
+}
+
 func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
 		metric := Metric{
@@ -351,7 +359,7 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 			assert.NoError(t, err, "unmarshal from protobuf")
 			assert.False(t, receivedHistogram.IsFloatHistogram())
 			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
-			mimirHistogram := FromHistogramProtoToHistogram(*receivedHistogram)
+			mimirHistogram := FromHistogramProtoToHistogram(receivedHistogram)
 
 			// Is equal
 			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
@@ -386,7 +394,7 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 			assert.NoError(t, err, "unmarshal from protobuf")
 			assert.True(t, receivedHistogram.IsFloatHistogram())
 			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
-			mimirHistogram := FromHistogramProtoToFloatHistogram(*receivedHistogram)
+			mimirHistogram := FromHistogramProtoToFloatHistogram(receivedHistogram)
 
 			// Is equal
 			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
@@ -397,4 +405,66 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 func TestCounterResetHint(t *testing.T) {
 	// Use protobuf generated code to check equivalence
 	assert.Equal(t, prompb.Histogram_ResetHint_value, Histogram_ResetHint_value)
+}
+
+func TestFromHistogramToHistogramProto(t *testing.T) {
+	var ts int64 = 1
+	h := tsdb.GenerateTestHistogram(int(ts))
+	h.CounterResetHint = histogram.NotCounterReset
+
+	p := FromHistogramToHistogramProto(ts, h)
+
+	expected := Histogram{
+		Count:          &Histogram_CountInt{18},
+		Sum:            36.8,
+		Schema:         1,
+		ZeroThreshold:  0.001,
+		ZeroCount:      &Histogram_ZeroCountInt{3},
+		NegativeSpans:  []BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeDeltas: []int64{2, 1, -1, 0},
+		PositiveSpans:  []BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveDeltas: []int64{2, 1, -1, 0},
+		ResetHint:      Histogram_NO,
+		Timestamp:      ts,
+	}
+	assert.Equal(t, expected, p)
+
+	// Also check via JSON encode/decode
+	promP := remote.HistogramToHistogramProto(ts, h)
+	d, err := promP.Marshal()
+	assert.NoError(t, err)
+	p2 := Histogram{}
+	assert.NoError(t, p2.Unmarshal(d))
+	assert.Equal(t, expected, p2)
+}
+
+func TestFromFloatHistogramToHistogramProto(t *testing.T) {
+	var ts int64 = 1
+	h := tsdb.GenerateTestFloatHistogram(int(ts))
+	h.CounterResetHint = histogram.NotCounterReset
+
+	p := FromFloatHistogramToHistogramProto(ts, h)
+
+	expected := Histogram{
+		Count:          &Histogram_CountFloat{18},
+		Sum:            36.8,
+		Schema:         1,
+		ZeroThreshold:  0.001,
+		ZeroCount:      &Histogram_ZeroCountFloat{3},
+		NegativeSpans:  []BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeCounts: []float64{2, 3, 2, 2},
+		PositiveSpans:  []BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveCounts: []float64{2, 3, 2, 2},
+		ResetHint:      Histogram_NO,
+		Timestamp:      ts,
+	}
+	assert.Equal(t, expected, p)
+
+	// Also check via JSON encode/decode
+	promP := remote.FloatHistogramToHistogramProto(ts, h)
+	d, err := promP.Marshal()
+	assert.NoError(t, err)
+	p2 := Histogram{}
+	assert.NoError(t, p2.Unmarshal(d))
+	assert.Equal(t, expected, p2)
 }
