@@ -397,6 +397,7 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
+	// TODO: select format based on Accept header
 	f := knownFormats[jsonMimeType]
 
 	start := time.Now()
