@@ -150,10 +150,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_metadata_created_total{user="test"} 2
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -223,10 +220,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -287,10 +281,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -329,10 +320,10 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 1
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{type="float",user="test"} 1
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -347,7 +338,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",type="float",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -381,10 +372,11 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 1
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 2
+				cortex_ingester_ingested_samples_failures_total{type="float",user="test"} 2
+				
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -399,7 +391,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",type="float",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -436,10 +428,10 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 2
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 2
+				cortex_ingester_ingested_samples_failures_total{type="float",user="test"} 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -454,7 +446,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",type="float",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -484,10 +476,10 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 1
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{type="float",user="test"} 1
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -502,7 +494,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",type="float",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -541,12 +533,6 @@ func TestIngester_Push(t *testing.T) {
 				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
 			},
 			expectedMetrics: `
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
-				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 0
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -887,12 +873,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	expectedMetrics := `
 		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 		# TYPE cortex_ingester_ingested_samples_total counter
-		cortex_ingester_ingested_samples_total{user="test-1"} 2
-		cortex_ingester_ingested_samples_total{user="test-2"} 2
-		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-		# TYPE cortex_ingester_ingested_samples_failures_total counter
-		cortex_ingester_ingested_samples_failures_total{user="test-1"} 0
-		cortex_ingester_ingested_samples_failures_total{user="test-2"} 0
+		cortex_ingester_ingested_samples_total{type="float",user="test-1"} 2
+		cortex_ingester_ingested_samples_total{type="float",user="test-2"} 2
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 2
@@ -6213,11 +6195,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			expectedMetrics: `
 					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 2
-
-					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
-					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 0
+					cortex_ingester_ingested_ephemeral_samples_total{type="float",user="test"} 2
 
 					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
 					# TYPE cortex_ingester_ephemeral_series_created_total counter
@@ -6287,13 +6265,9 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			expectedErr:               httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newEphemeralIngestErrSampleTimestampTooOld(model.Time(100), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedIngestedEphemeral: nil, // No returned samples.
 			expectedMetrics: `
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
-					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
-
 					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+					cortex_ingester_ingested_ephemeral_samples_failures_total{type="float",user="test"} 1
 
 					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
 					# TYPE cortex_ingester_ephemeral_series_created_total counter
@@ -6317,7 +6291,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
         	        # TYPE cortex_discarded_samples_total counter
-        	        cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",user="test"} 1
+        	        cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",type="float",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6380,11 +6354,11 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			expectedMetrics: `
 					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 1
+					cortex_ingester_ingested_ephemeral_samples_total{type="float",user="test"} 1
 
 					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+					cortex_ingester_ingested_ephemeral_samples_failures_total{type="float",user="test"} 1
 
 					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
 					# TYPE cortex_ingester_ephemeral_series_created_total counter
@@ -6408,7 +6382,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",type="float",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6549,7 +6523,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 					# TYPE cortex_ingester_ingested_samples_total counter
-					cortex_ingester_ingested_samples_total{user="test"} 2
+					cortex_ingester_ingested_samples_total{type="float",user="test"} 2
 
 					# HELP cortex_ingester_memory_series The current number of series in memory.
         	        # TYPE cortex_ingester_memory_series gauge
@@ -6565,11 +6539,11 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 5
+					cortex_ingester_ingested_ephemeral_samples_total{type="float",user="test"} 5
 
 					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
+					cortex_ingester_ingested_ephemeral_samples_failures_total{type="float",user="test"} 3
 
 					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
 					# TYPE cortex_ingester_ephemeral_series_created_total counter
@@ -6585,9 +6559,9 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",user="test"} 1
-					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",user="test"} 1
-					cortex_discarded_samples_total{group="",reason="ephemeral-new-value-for-timestamp",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-bounds",type="float",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-sample-out-of-order",type="float",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-new-value-for-timestamp",type="float",user="test"} 1
 
 					# HELP cortex_ingester_memory_ephemeral_users The current number of users with ephemeral storage in memory.
 					# TYPE cortex_ingester_memory_ephemeral_users gauge
@@ -6757,11 +6731,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 3
-
-					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
-					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 0
+					cortex_ingester_ingested_ephemeral_samples_failures_total{type="float",user="test"} 3
 			`,
 		},
 
@@ -6789,11 +6759,11 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 			expectedMetrics: `
 					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of samples ingested per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
-					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 1
+					cortex_ingester_ingested_ephemeral_samples_total{type="float",user="test"} 1
 
 					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of samples that errored on ingestion per user for ephemeral series.
 					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
-					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 1
+					cortex_ingester_ingested_ephemeral_samples_failures_total{type="float",user="test"} 1
 
 					# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
 					# TYPE cortex_ingester_ephemeral_series_created_total counter
@@ -6851,7 +6821,7 @@ func TestIngester_PushAndQueryEphemeral(t *testing.T) {
 
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="ephemeral-per_user_series_limit",user="test"} 1
+					cortex_discarded_samples_total{group="",reason="ephemeral-per_user_series_limit",type="float",user="test"} 1
 			`,
 		},
 	}
@@ -7221,4 +7191,169 @@ func TestIngesterQueryingWithStorageLabelErrorHandling(t *testing.T) {
 			require.Equal(t, tc.expectedErr, err)
 		})
 	}
+}
+
+func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
+	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdb.GenerateTestFloatHistogram(0)))
+
+	tests := map[string]struct {
+		sampleHistograms []mimirpb.Histogram
+		expectHistogram  *model.SampleHistogram
+	}{
+		"integer histogram": {
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(0))},
+			expectHistogram:  expectedSampleHistogram,
+		},
+		"float histogram": {
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(0))},
+			expectHistogram:  expectedSampleHistogram,
+		},
+	}
+	for testName, testCfg := range tests {
+		t.Run(testName, func(t *testing.T) {
+			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
+		})
+	}
+}
+
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
+	limits := defaultLimitsTestConfig()
+	limits.AcceptNativeHistograms = false
+
+	userID := "1"
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", userID).Return(nil)
+	override, err := validation.NewOverrides(limits, tenantOverride)
+	require.NoError(t, err)
+
+	setAcceptNativeHistograms := func(enabled bool) {
+		tenantOverride.ExpectedCalls = nil
+		tenantOverride.On("ByUserID", userID).Return(&validation.Limits{
+			AcceptNativeHistograms: enabled,
+		})
+		// TSDB config is updated every second.
+		<-time.After(1500 * time.Millisecond)
+	}
+
+	registry := prometheus.NewRegistry()
+
+	newIngester := func() *Ingester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+		// Global Ingester limits are computed based on replication factor
+		// Set RF=1 here to ensure the series and metadata limits
+		// are actually set to 1 instead of 3.
+		cfg.IngesterRing.ReplicationFactor = 1
+		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", registry)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+
+		// Wait until it's healthy
+		test.Poll(t, time.Second, 1, func() interface{} {
+			return ing.lifecycler.HealthyInstancesCount()
+		})
+
+		return ing
+	}
+
+	ing := newIngester()
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	labels1 := labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")
+	sample1 := mimirpb.Sample{
+		TimestampMs: 0,
+		Value:       1,
+	}
+
+	// Metadata
+	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+
+	// Append only one series and one metadata first, expect no error.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
+		AddFloatSeries([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, nil).
+		AddHistogramSeries([]labels.Labels{labels1}, sampleHistograms, nil))
+	require.NoError(t, err)
+
+	expectedMetrics := `
+		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_samples_failures_total counter
+		cortex_ingester_ingested_samples_failures_total{type="histogram",user="1"} 1
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{type="float",user="1"} 1
+				`
+	metricNames := []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total"}
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except histogram writes to fail and floats to succeed")
+
+	testResult := func(expected model.Matrix, msg string) {
+		// Query back the histogram
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "testmetric"},
+			},
+		}
+
+		s := stream{ctx: ctx}
+		err = ing.QueryStream(req, &s)
+		require.NoError(t, err, msg)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err, msg)
+		assert.ElementsMatch(t, expected, res, msg)
+	}
+
+	testResult(model.Matrix{{
+		Metric: model.Metric{"__name__": "testmetric", "foo": "bar"},
+		Values: []model.SamplePair{{
+			Timestamp: 0,
+			Value:     1,
+		}},
+		Histograms: nil,
+	}}, "Should have no histogram in result")
+
+	setAcceptNativeHistograms(true)
+
+	// resend the histogram at time 2
+	sampleHistograms[0].Timestamp = 2
+
+	// Metadata
+	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.HISTOGRAM}
+
+	// Append only one series and one metadata first, expect no error.
+	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata2}, mimirpb.API).
+		AddHistogramSeries([]labels.Labels{labels1}, sampleHistograms, nil))
+	require.NoError(t, err)
+
+	expectedMetrics = `
+	# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+	# TYPE cortex_ingester_ingested_samples_failures_total counter
+	cortex_ingester_ingested_samples_failures_total{type="histogram",user="1"} 1
+	# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+	# TYPE cortex_ingester_ingested_samples_total counter
+	cortex_ingester_ingested_samples_total{type="float",user="1"} 1
+	cortex_ingester_ingested_samples_total{type="histogram",user="1"} 1
+				`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...), "Except histogram writes to succeed")
+
+	expectedMatrix := model.Matrix{{
+		Metric: model.Metric{"__name__": "testmetric", "foo": "bar"},
+		Values: []model.SamplePair{{
+			Timestamp: 0,
+			Value:     1,
+		}},
+		// TODO when read path for native histograms is ready, uncomment this
+		// Histograms: []model.SampleHistogramPair{{
+		// 	Timestamp: 2,
+		// 	Histogram: expectHistogram,
+		// }},
+	}}
+
+	testResult(expectedMatrix, "Result should contain the histogram when accepting histograms")
+
+	setAcceptNativeHistograms(false)
+
+	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
 }
