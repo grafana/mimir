@@ -339,75 +339,70 @@ func TestFrontendFailedCancellation(t *testing.T) {
 // Test that the front-end shuts down gracefully, i.e. waits for in-flight queries to finish.
 func TestFrontend_GracefulShutdown(t *testing.T) {
 	const (
-		userID = "test"
-		body   = "all good"
+		userID   = "test"
+		body     = "all good"
+		requests = 10
 	)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	setupDone := make(chan uint64)
-	t.Cleanup(func() {
-		close(setupDone)
-	})
+	inProgress := make(chan uint64, requests)
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		go func() {
-			// Allow for the service to register a successful enqueuing
-			time.Sleep(100 * time.Millisecond)
-			setupDone <- msg.QueryID
-		}()
-
+		// Remember which queries are in progress.
+		inProgress <- msg.QueryID
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		t.Helper()
+	for i := 0; i < requests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		t.Log("sending request")
-		resp, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{})
-		require.NoError(t, err)
-		t.Log("received response", "code", resp.Code)
-		require.Equal(t, int32(200), resp.Code)
-		require.Equal(t, []byte(body), resp.Body)
-		wg.Done()
-	}()
+			resp, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{})
+			require.NoError(t, err)
+			require.Equal(t, int32(200), resp.Code)
+			require.Equal(t, []byte(body), resp.Body)
+		}()
+	}
 
-	t.Log("waiting on service to register enqueuing")
-	queryID := <-setupDone
-	t.Log("finished waiting on enqueuing")
-
-	// Wait for the request to be handled, and make sure the service doesn't terminate until the request
-	// is no longer in flight.
-
-	var serviceStopped atomic.Bool
-	wg.Add(1)
-	go func() {
-		t.Helper()
-		t.Log("waiting on service to stop")
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, f))
-		t.Log("service stopped")
-		serviceStopped.Store(true)
-		wg.Done()
-	}()
-
-	const delay = 1 * time.Second
-	t.Log("waiting before sending response, delay:", delay)
-	time.Sleep(delay)
-	require.False(t, serviceStopped.Load(), "Service terminated with in-flight request")
-
-	t.Log("sending response")
-	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
-		QueryID: queryID,
-		HttpResponse: &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte(body),
-		},
-		Stats: &stats.Stats{},
+	// Wait until all requests were sent
+	test.Poll(t, 1*time.Second, requests, func() interface{} {
+		return len(inProgress)
 	})
-	require.NoError(t, err)
 
-	t.Log("waiting on goroutines")
+	// Ask service to stop.
+	f.StopAsync()
+
+	// Service should switch to Stopping state shortly.
+	test.Poll(t, 1*time.Second, services.Stopping, func() interface{} {
+		return f.State()
+	})
+
+	// Wait a bit to give service time to stop
+	time.Sleep(1 * time.Second)
+
+	// Verify it's not stopped yet.
+	for i := 0; i < requests; i++ {
+		st := f.State()
+		require.Equalf(t, services.Stopping, st, "expected Stopping, got %s", st)
+
+		qid := <-inProgress
+
+		_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+			QueryID:      qid,
+			HttpResponse: &httpgrpc.HTTPResponse{Code: 200, Body: []byte(body)},
+			Stats:        &stats.Stats{},
+		})
+		require.NoError(t, err)
+	}
+
+	// Wait until all requests handled the responses.
 	wg.Wait()
+
+	// Now the service should switch to Terminated state.
+	test.Poll(t, 1*time.Second, services.Stopping, func() interface{} {
+		return f.State()
+	})
 }
 
 type mockScheduler struct {
