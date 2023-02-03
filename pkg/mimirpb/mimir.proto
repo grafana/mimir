@@ -115,7 +115,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8;
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -123,7 +123,7 @@ message Histogram {
   repeated double negative_counts    = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
-  repeated BucketSpan positive_spans = 11;
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -131,6 +131,44 @@ message Histogram {
   repeated double positive_counts    = 13; // Absolute count of each bucket.
 
   ResetHint reset_hint               = 14;
+  // timestamp is in ms format
+  int64 timestamp = 15;
+}
+
+message FloatHistogram {
+  // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
+  reserved 1, 6, 9, 12;
+  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
+
+  double count_float = 2;
+
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  double zero_count_float   = 7;
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  Histogram.ResetHint reset_hint     = 14;
   // timestamp is in ms format
   int64 timestamp = 15;
 }
@@ -166,4 +204,84 @@ message HistogramBucket {
 message SampleHistogramPair {
   int64 timestamp = 2;
   SampleHistogram histogram = 1;
+}
+
+message QueryResponse {
+  // These values correspond to the possible status values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum Status {
+    option (gogoproto.goproto_enum_prefix) = true;
+    ERROR = 0;
+    SUCCESS = 1;
+  }
+
+  // These values correspond to the possible error type values defined in https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go.
+  enum ErrorType {
+    option (gogoproto.goproto_enum_prefix) = true;
+    NONE = 0;
+    TIMEOUT = 1;
+    CANCELED = 2;
+    EXECUTION = 3;
+    BAD_DATA = 4;
+    INTERNAL = 5;
+    UNAVAILABLE = 6;
+    NOT_FOUND = 7;
+  }
+
+  Status status = 1;
+  ErrorType error_type = 2;
+  string error = 3;
+
+  oneof data {
+    StringData string = 4;
+    VectorData vector = 5;
+    ScalarData scalar = 6;
+    MatrixData matrix = 7;
+  }
+}
+
+message StringData {
+  string value = 1;
+  int64 timestamp_milliseconds = 2;
+}
+
+message VectorData {
+  repeated VectorSample samples = 1 [(gogoproto.nullable) = false];
+  repeated VectorHistogram histograms = 2 [(gogoproto.nullable) = false];
+}
+
+message VectorSample {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  double value = 2;
+  int64 timestamp_milliseconds = 3;
+}
+
+message VectorHistogram {
+  // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
+  repeated string metric = 1;
+
+  FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
+}
+
+message ScalarData {
+  double value = 1;
+  int64 timestamp_milliseconds = 2;
+}
+
+message MatrixData {
+  repeated MatrixSeries series = 1 [(gogoproto.nullable) = false];
+}
+
+message MatrixSeries {
+  // Why not use a map<...> here? We want to preserve the order of the labels.
+  repeated string metric = 1;
+
+  repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
+  repeated FloatHistogram histograms = 3 [(gogoproto.nullable) = false];
+}
+
+message MatrixSample {
+  double value = 1;
+  int64 timestamp_milliseconds = 2;
 }

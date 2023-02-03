@@ -186,7 +186,7 @@ func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram 
 		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
-func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
+func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
