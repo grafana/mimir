@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -111,7 +112,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 func (c *cardinalityEstimation) maintainStatistics(estimate uint64, actual uint64, s *stats.Stats, span *spanlogger.SpanLogger) {
 	if estimate > 0 {
-		// TODO observe error metric
+		c.estimationError.Observe(math.Abs(float64(actual) - float64(estimate)))
 		s.FetchedSeriesEstimate = estimate
 		span.LogKV("estimated cardinality", estimate, "actual cardinality", actual)
 	}
