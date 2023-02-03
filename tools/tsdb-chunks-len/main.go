@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"os"
+	"math"
+	os "os"
+	"os/signal"
+	"runtime/debug"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -16,6 +19,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/gcs"
+
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 type indexTOC struct {
@@ -26,46 +31,82 @@ func main() {
 	const indexFileObjectPath = "9960/01F4X9CCYRQ2M9EFDNN72S6EPG/index"
 	bkt := createBucketClient()
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	indexFileObjectSize, err := objectSize(bkt, indexFileObjectPath)
 	noErr(err)
 	indexFileTOC, err := readIndexTOC(bkt, indexFileObjectPath, indexFileObjectSize)
 	noErr(err)
 	fmt.Printf("got TOC; series offset %d; series length %d\n", indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
 
-	indexReader, err := bkt.GetRange(context.Background(), indexFileObjectPath, indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
+	indexReader, err := bkt.GetRange(ctx, indexFileObjectPath, indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
 	noErr(err)
 	defer indexReader.Close()
 
 	seriesCh := make(chan series)
 	go readChunkRefs(indexReader, seriesCh)
+	go listenForSignals(cancel)
 
 	start := time.Now()
 	doChunkRangeStats(seriesCh)
 	fmt.Println(time.Since(start))
 }
 
+func listenForSignals(cancel context.CancelFunc) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+	<-sigs
+	cancel()
+}
+
 func doChunkRangeStats(seriesCh <-chan series) {
 	var lastChunk chunks.Meta
-	lastSeriesMaxChunkLen := -1
+	prevSeriesMaxChunkLen := -1
+	var prevSeries series
 
 	for s := range seriesCh {
-		maxChunklen := 0
-		prevChunkLen := uint64(0)
-		for refIdx, ref := range s.refs {
-			if lastSeriesMaxChunkLen != -1 || refIdx != 0 { // if we aren't on the first chunk of the first series
-				seq := uint(id >> 32)
+		prevChunkLen := 0
+		maxChunkLen := 0
 
-				prevChunkLen = uint64(lastChunk.Ref - ref.Ref)
+		for cIdx, chunk := range s.refs {
+			if prevSeriesMaxChunkLen == -1 && cIdx == 0 {
+				lastChunk = chunk
+				continue
 			}
-			if lastSeriesMaxChunkLen != -1 && refIdx == 0 { // this is a chunk of a new series, and it isn't the first chunk of the first series
-				fmt.Printf("%d %f\n", prevChunkLen, float64(prevChunkLen)/float64(lastSeriesMaxChunkLen))
+
+			if chunkSegmentFile(chunk.Ref) == chunkSegmentFile(lastChunk.Ref) {
+				prevChunkLen = int(chunk.Ref - lastChunk.Ref)
+			} else {
+				prevChunkLen = math.MaxInt // 1024 * 1024 * 1024B == 1 GiB; unrealistic, so we can spot these in the output
+				fmt.Printf("next segment file\n")
+				if cIdx != 0 {
+					fmt.Printf("one series with chunks in multiple segment files\n")
+				}
 			}
-			if refIdx < len(s.refs) // we want to fidn out the lenth of the last chunk relative to the
+
+			if cIdx == 0 {
+				// This is a chunk of a new series, we can record how big the last chunk of the last series was
+				if len(prevSeries.refs) == 1 { // We can only record it if the previous series had more than one chunk
+					fmt.Printf("one chunk\n")
+				} else if prevChunkLen != math.MaxInt { // And when the chunks of this series and the previous aren't in two different segment files
+					fmt.Printf("%d %f\n", prevChunkLen, float64(prevChunkLen)/float64(prevSeriesMaxChunkLen))
+				}
+			}
+			if cIdx > 0 {
+				maxChunkLen = util_math.Max(maxChunkLen, prevChunkLen)
+			}
+			lastChunk = chunk
 		}
+
+		prevSeriesMaxChunkLen = maxChunkLen
+		prevSeries = s
 	}
 }
 
 var crcHasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+
+func chunkSegmentFile(id chunks.ChunkRef) int { return int(id >> 32) }
+func chunkOffset(id chunks.ChunkRef) uint32   { return uint32(id) }
 
 type trackedReader struct {
 	off int
@@ -91,19 +132,19 @@ type series struct {
 }
 
 func readChunkRefs(r io.Reader, seriesCh chan<- series) {
+	defer close(seriesCh)
 	reader := &trackedReader{r: bufio.NewReader(r)}
 	var crcBytes [crc32.Size]byte
 
 	for numSeries := 0; ; numSeries++ {
-		if numSeries%10000 == 0 {
-			fmt.Printf("series %d offset %d\n", numSeries, reader.off)
-		}
+		//if numSeries%10000 == 0 {
+		//	fmt.Printf("series %d offset %d\n", numSeries, reader.off)
+		//}
 		// series are 16-byte aligned; we need to skip until the next series
 		if remainder := int64(reader.off % 16); remainder != 0 {
 			_, err := io.CopyN(io.Discard, reader, 16-remainder)
 
 			if errors.Is(err, io.EOF) {
-				close(seriesCh)
 				return
 			}
 		}
@@ -111,42 +152,25 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 		// Read the length of the series (doesn't include the length fo the crc at the end)
 		seriesBytesLen, err := binary.ReadUvarint(reader)
 		if errors.Is(err, io.EOF) {
-			close(seriesCh)
 			return
 		}
 
 		seriesStartOffset := reader.off
-		noErr(err)
+		if checkErr(err) {
+			return
+		}
 		//fmt.Printf("series %d id %d len %d ", numSeries, seriesStartOffset, seriesBytesLen)
 
 		wholeSeriesBytes := make([]byte, seriesBytesLen)
 		_, err = io.ReadFull(reader, wholeSeriesBytes)
-		noErr(err)
+		if checkErr(err) {
+			return
+		}
 
-		chks, err := decodeSeriesForTime(wholeSeriesBytes)
-		noErr(err)
-
-		//numLabels, err := binary.ReadUvarint(reader)
-		//noErr(err)
-		//fmt.Printf("num labels %d ", numLabels)
-		//for i := uint64(0); i < numLabels; i++ {
-		//	_, err = binary.ReadUvarint(reader) // label name
-		//	noErr(err)
-		//	_, err = binary.ReadUvarint(reader) // label val
-		//	noErr(err)
-		//}
-		//
-		//numChunks, err := binary.ReadUvarint(reader)
-		//noErr(err)
-		//fmt.Printf("num chunks %d\n", numChunks)
-		//for i := uint64(0); i < numChunks; i++ {
-		//	_, err = binary.ReadUvarint(reader) // ref
-		//	noErr(err)
-		//	_, err = binary.ReadUvarint(reader) // mint
-		//	noErr(err)
-		//	_, err = binary.ReadUvarint(reader) // maxt
-		//	noErr(err)
-		//}
+		chks, err := decodeSeries(wholeSeriesBytes)
+		if checkErr(err) {
+			return
+		}
 
 		// Some sanity check that we haven't messed up the reading
 		if uint64(reader.off-seriesStartOffset) != seriesBytesLen {
@@ -157,7 +181,9 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 		_, _ = crcHasher.Write(wholeSeriesBytes)
 
 		_, err = io.ReadFull(reader, crcBytes[:]) // crc32
-		noErr(err)
+		if checkErr(err) {
+			return
+		}
 
 		if binary.BigEndian.Uint32(crcBytes[:]) != crcHasher.Sum32() {
 			panic("crc doesn't match")
@@ -167,7 +193,16 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 	}
 
 }
-func decodeSeriesForTime(b []byte) (chks []chunks.Meta, err error) {
+
+func checkErr(err error) bool {
+	if err != nil {
+		fmt.Printf("err %s\n%s\n", err, string(debug.Stack()))
+		return true
+	}
+	return false
+}
+
+func decodeSeries(b []byte) (chks []chunks.Meta, err error) {
 	d := encoding.Decbuf{B: b}
 
 	// Read labels without looking up symbols.
