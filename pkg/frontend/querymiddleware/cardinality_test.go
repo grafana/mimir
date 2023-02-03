@@ -192,9 +192,18 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			wantErr:           assert.NoError,
 		},
 		{
-			name:              "with populated cache and changed cardinality",
+			name:              "with populated cache and marginally changed cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries+1),
+			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
+			wantLoads:         1,
+			wantStores:        0,
+			wantErr:           assert.NoError,
+		},
+		{
+			name:              "with populated cache and significantly changed cardinality",
+			orgID:             "1",
+			downstreamHandler: addSeriesHandler(numSeries, numSeries*2),
 			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        1,
@@ -218,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := cache.NewInstrumentedMockCache()
-			mw := newCardinalityEstimationMiddleware(c, log.NewNopLogger())
+			mw := newCardinalityEstimationMiddleware(c, log.NewNopLogger(), nil)
 			handler := mw.Wrap(tt.downstreamHandler)
 			_, ctx := stats.ContextWithEmptyStats(context.Background())
 			if tt.orgID != "" {

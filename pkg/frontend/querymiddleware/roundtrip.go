@@ -236,7 +236,7 @@ func newQueryTripperware(
 		)
 
 		if cfg.MaxSeriesPerShard > 0 {
-			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log)
+			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
 				newInstrumentMiddleware("cardinality_estimation", metrics, log),
