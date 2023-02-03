@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -14,7 +13,6 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -32,14 +30,12 @@ const (
 	cacheUpdateDifferenceFraction = 0.1
 )
 
-// cardinalityEstimation is a Middleware that caches estimates for a query's
+// cardinalityEstimation is a Handler that caches estimates for a query's
 // cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
 	cache  cache.Cache
 	next   Handler
 	logger log.Logger
-
-	estimationError prometheus.Histogram
 }
 
 func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
@@ -48,11 +44,6 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 			cache:  cache,
 			next:   next,
 			logger: logger,
-			estimationError: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-				Name:    "cortex_frontend_cardinality_estimation_error",
-				Help:    "Difference between estimated and actual cardinality.",
-				Buckets: prometheus.ExponentialBuckets(10, 10, 6),
-			}),
 		}
 	})
 }
@@ -106,7 +97,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 func (c *cardinalityEstimation) maintainStatistics(estimate uint64, actual uint64, s *stats.Stats, span *spanlogger.SpanLogger) {
 	if estimate > 0 {
-		c.estimationError.Observe(math.Abs(float64(actual) - float64(estimate)))
+		// TODO observe error metric
 		s.FetchedSeriesEstimate = estimate
 		span.LogKV("estimated cardinality", estimate, "actual cardinality", actual)
 	}
