@@ -11,6 +11,7 @@ import (
 	os "os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -28,8 +29,13 @@ type indexTOC struct {
 }
 
 func main() {
-	var indexFileObjectPath = os.Args[1]
-	bkt := createBucketClient()
+	split := strings.SplitN(os.Args[1], "/", 2)
+	if len(split) != 2 {
+		panic("invalid args " + strings.Join(os.Args[1:], " "))
+	}
+	bucketName, indexFileObjectPath := split[0], split[1]
+
+	bkt := createBucketClient(bucketName)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -76,7 +82,7 @@ func doChunkRangeStats(seriesCh <-chan series) {
 			if chunkSegmentFile(chunk.Ref) == chunkSegmentFile(lastChunk.Ref) {
 				prevChunkLen = int(chunk.Ref - lastChunk.Ref)
 			} else {
-				prevChunkLen = math.MaxInt // 1024 * 1024 * 1024B == 1 GiB; unrealistic, so we can spot these in the output
+				prevChunkLen = math.MaxInt // unrealistic, so we can spot these in the output
 				fmt.Printf("next segment file\n")
 				if cIdx != 0 {
 					fmt.Printf("one series with chunks in multiple segment files\n")
@@ -238,9 +244,9 @@ func decodeSeries(b []byte) (chks []chunks.Meta, err error) {
 	return chks, d.Err()
 }
 
-func createBucketClient() objstore.BucketReader {
+func createBucketClient(bucketName string) objstore.BucketReader {
 	bkt, err := gcs.NewBucketWithConfig(context.Background(), log.NewLogfmtLogger(os.Stdout), gcs.Config{
-		Bucket:         "dev-us-central1-cortex-tsdb-dev",
+		Bucket:         bucketName,
 		ServiceAccount: "", // This will be injected via GOOGLE_APPLICATION_CREDENTIALS
 	}, "some bucket")
 	noErr(err)
