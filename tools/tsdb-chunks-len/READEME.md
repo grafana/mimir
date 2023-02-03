@@ -51,14 +51,15 @@ for f in $(find . -name '*.raw'); do
   # Get only the numbers from the output files
   cat $f | grep -E '[0-9]+ [0-9]+\.[0-9]+' > $f.txt
   
-  # Generate png files with plots of the chunk sizes and ratios with `gnuplot`
-  gnuplot -e 'set term png size 2560, 1440; set xlabel "last chunk size"; set ylabel "ratio of last chunk to max chunk size (excl last)"; set xrange [:2500]; set yrange [:20]; set ytics 0,0.2,20; set output "'$f.txt.png'"; plot "'$f.txt'"'
+  # Plot the last chunk size in a histogram
+  cat $f.txt | awk '{print $1}' | promfreq -mode exponential -count 13 -factor 2
   
-  # Plot the max chunk size in a histogram (excluding the last chunk)
-  cat $f.txt | awk '{if ($2 > 0) { print $1/$2 }}' | promfreq -mode exponential -count 13 -factor 2
-  
-  # Generate png files with plots of the chunk size of the largest chunk (excl last) and the ratio of last/max
+  # Generate png files with plots of the chunk size of the largest chunk (excl last) and the ratio of last chunk to max chunk
   cat $f.txt | awk '{if ($2 > 0) { print $1/$2, $2 }}' > $f.max-chunk-vs-last.txt
-  gnuplot -e 'set term png size 2560, 1440; set xlabel "max chunk size (excl last)"; set ylabel "ratio of last chunk to max chunk size (excl last)"; set xrange [:2500]; set yrange [:20]; set ytics 0,0.2,20; set output "'$f.max-chunk-vs-last.txt.png'"; plot "'$f.max-chunk-vs-last.txt'"'
+  gnuplot -e 'set term png size 2560, 1440; set xlabel "max chunk size (excl last)"; set ylabel "ratio of last chunk to max chunk size (excl last)"; set xrange [:4096]; set logscale x; set xtics 1,2,4096; set output "'$f.max-chunk-vs-last.txt.png'"; plot "'$f.max-chunk-vs-last.txt'", 1, 0.1, 0.2, 0.25, 0.5;'
+  
+  # Generate png files with plots of the chunk size of the largest chunk (excl last) and last chunk of a series
+  cat $f.txt | awk '{if ($2 > 0) { print $1/$2, $1 }}' > $f.max-chunk-vs-last-sizes.txt
+  gnuplot -e 'set term png size 2560, 1440; set xlabel "max chunk size (excl last)"; set ylabel "last chunk"; set xrange [:4096]; set logscale x; set xtics 1,2,4096; set yrange [:4096]; set logscale y; set ytics 1,2,4096; set output "'$f.max-chunk-vs-last-sizes.txt.png'"; plot "'$f.max-chunk-vs-last-sizes.txt'", 1, 0.1, 0.2, 0.25, 0.5;'
 done
 ```
