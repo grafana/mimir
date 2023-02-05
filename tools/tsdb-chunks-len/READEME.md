@@ -23,13 +23,14 @@ one series with chunks in multiple segment files
 210 0.709459
 210 0.709459
 210 0.709459
-one chunk
+one chunk 279
 ```
 
 Explained
 
-* `263 0.900685` - the last chunk of a timeseries was 263; The last chunk was 90% of the size of the largest chunk from the rest 
+* `263 0.900685` - the last chunk of a timeseries was 263 bytes; The last chunk was 90% of the size of the largest chunk from the rest 
 * `next segment file` - this is logged once for every segment file after the first one
+* `one chunk 279` - a series has only one chunk and its size is 279 bytes
 * `one series with chunks in multiple segment files` - self-explanatory; this should be rare
 
 ### Helper commands

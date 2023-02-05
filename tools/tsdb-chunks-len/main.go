@@ -88,10 +88,13 @@ func doChunkRangeStats(seriesCh <-chan series) {
 
 			if cIdx == 0 {
 				// This is a chunk of a new series, we can record how big the last chunk of the last series was
-				if len(prevSeries.refs) == 1 { // We can only record it if the previous series had more than one chunk
-					fmt.Printf("one chunk\n")
-				} else if prevChunkLen != math.MaxInt { // And when the chunks of this series and the previous aren't in two different segment files
-					fmt.Printf("%d %f\n", prevChunkLen, float64(prevChunkLen)/float64(prevSeriesMaxChunkLen))
+				if prevChunkLen != math.MaxInt { // When the chunks of this series and the previous aren't in two different segment files
+					if len(prevSeries.refs) == 1 {
+						// We can only record ratios if the previous series had more than one chunk
+						fmt.Printf("one chunk %d\n", prevChunkLen)
+					} else {
+						fmt.Printf("%d %f\n", prevChunkLen, float64(prevChunkLen)/float64(prevSeriesMaxChunkLen))
+					}
 				}
 			}
 			if cIdx > 0 {
