@@ -231,14 +231,9 @@ func newQueryTripperware(
 	)
 
 	if cfg.ShardedQueries {
-		queryshardingMiddleware := newQueryShardingMiddleware(
-			log,
-			engine,
-			limits,
-			cfg.MaxSeriesPerShard,
-			registerer,
-		)
-
+		// Inject the cardinality estimation middleware after time-based splitting and
+		// before query-sharding so that it can operate on the partial queries that are
+		// considered for sharding.
 		if cfg.MaxSeriesPerShard > 0 {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
 			queryRangeMiddleware = append(
@@ -252,6 +247,14 @@ func newQueryTripperware(
 				cardinalityEstimationMiddleware,
 			)
 		}
+
+		queryshardingMiddleware := newQueryShardingMiddleware(
+			log,
+			engine,
+			limits,
+			cfg.MaxSeriesPerShard,
+			registerer,
+		)
 
 		queryRangeMiddleware = append(queryRangeMiddleware,
 			newInstrumentMiddleware("querysharding", metrics, log),
