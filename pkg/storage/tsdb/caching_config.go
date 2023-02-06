@@ -63,6 +63,9 @@ func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Reg
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
+	if client == nil { // The client can be nil when the chunks cache wasn't configured
+		return chunkscache.NoopCache{}, nil
+	}
 	c, err := chunkscache.NewDskitCache(logger, client, reg)
 	return chunkscache.TracingCache{C: c}, err
 }

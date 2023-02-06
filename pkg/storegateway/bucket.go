@@ -130,13 +130,6 @@ type BucketStore struct {
 
 type noopCache struct{}
 
-func (noopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Range) (hits map[chunkscache.Range][]byte) {
-	return nil
-}
-
-func (noopCache) StoreChunks(ctx context.Context, userID string, r chunkscache.Range, v []byte) {
-}
-
 func (noopCache) StorePostings(context.Context, string, ulid.ULID, labels.Label, []byte) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
 	return map[labels.Label][]byte{}, keys
@@ -247,7 +240,7 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
-		chunksCache:                 noopCache{},
+		chunksCache:                 chunkscache.NoopCache{},
 		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),

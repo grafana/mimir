@@ -75,6 +75,15 @@ type DskitChunksCache struct {
 	hits     prometheus.Counter
 }
 
+type NoopCache struct{}
+
+func (NoopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
+	return nil
+}
+
+func (NoopCache) StoreChunks(ctx context.Context, userID string, r Range, v []byte) {
+}
+
 // NewDskitCache makes a new DskitChunksCache.
 func NewDskitCache(logger gokit_log.Logger, client cache.Cache, reg prometheus.Registerer) (*DskitChunksCache, error) {
 	c := &DskitChunksCache{
