@@ -59,19 +59,12 @@ func (cfg *ChunksCacheConfig) Validate() error {
 }
 
 func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Registerer) (chunkscache.ChunksCache, error) {
-	switch cfg.Backend {
-	case "":
-		return nil, nil
-	case cache.BackendMemcached:
-		client, err := cache.NewMemcachedClientWithConfig(logger, "chunks-cache", cfg.Memcached.ToMemcachedClientConfig(), prometheus.WrapRegistererWithPrefix("thanos_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "create index cache memcached client")
-		}
-		c, err := chunkscache.NewMemcachedChunksCache(logger, client, reg)
-		return chunkscache.TracingCache{C: c}, err
-	default:
-		return nil, errUnsupportedChunksCacheBackend
+	client, err := cache.CreateClient("chunks-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	if err != nil {
+		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
+	c, err := chunkscache.NewDskitCache(logger, client, reg)
+	return chunkscache.TracingCache{C: c}, err
 }
 
 type MetadataCacheConfig struct {
@@ -142,8 +135,6 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 
 	if chunksCache != nil {
-		// If the chunks cache is configured, we will use it for the attributes of chunk files instead of
-		// the metadata cache.
 		cachingConfigured = true
 		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
@@ -154,13 +145,14 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 			attributesCache = metadataCache
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
+			var err error
 			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
 
-		cfg.CacheAttributes("chunks-attributes", attributesCache, isTSDBChunkFile, chunksConfig.AttributesTTL)
+		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {

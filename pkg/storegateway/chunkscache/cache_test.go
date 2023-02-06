@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
+func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -66,7 +66,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			fetchRanges:  []Range{range1, range3},
 			expectedHits: map[Range][]byte{range1: value1},
 		},
-		"should return no hits on memcached error": {
+		"should return no hits on cache error": {
 			setup: []mockedChunks{
 				{userID: user1, r: range1, value: value1},
 				{userID: user1, r: range1, value: value2},
@@ -81,8 +81,8 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedChunksCache(log.NewNopLogger(), memcached, nil)
+			cacheClient := newMockedCacheClient(testData.mockedErr)
+			c, err := NewDskitCache(log.NewNopLogger(), cacheClient, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -121,19 +121,19 @@ type mockedChunks struct {
 	value  []byte
 }
 
-type mockedMemcachedClient struct {
+type mockedCacheClient struct {
 	cache             map[string][]byte
 	mockedGetMultiErr error
 }
 
-func newMockedMemcachedClient(mockedGetMultiErr error) *mockedMemcachedClient {
-	return &mockedMemcachedClient{
+func newMockedCacheClient(mockedGetMultiErr error) *mockedCacheClient {
+	return &mockedCacheClient{
 		cache:             map[string][]byte{},
 		mockedGetMultiErr: mockedGetMultiErr,
 	}
 }
 
-func (c *mockedMemcachedClient) GetMulti(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
+func (c *mockedCacheClient) Fetch(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
 	if c.mockedGetMultiErr != nil {
 		return nil
 	}
@@ -149,18 +149,22 @@ func (c *mockedMemcachedClient) GetMulti(_ context.Context, keys []string, _ ...
 	return hits
 }
 
-func (c *mockedMemcachedClient) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
-	c.cache[key] = value
-
-	return nil
+func (c *mockedCacheClient) Store(_ context.Context, data map[string][]byte, _ time.Duration) {
+	for key, value := range data {
+		c.cache[key] = value
+	}
 }
 
-func (c *mockedMemcachedClient) Delete(_ context.Context, key string) error {
+func (c *mockedCacheClient) Delete(_ context.Context, key string) error {
 	delete(c.cache, key)
 
 	return nil
 }
 
-func (c *mockedMemcachedClient) Stop() {
+func (c *mockedCacheClient) Name() string {
+	return "mockedCacheClient"
+}
+
+func (c *mockedCacheClient) Stop() {
 	// Nothing to do.
 }
