@@ -97,7 +97,11 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 	}
 
-	c.maintainStatistics(estimatedCardinality, actualCardinality, statistics, spanLog)
+	if estimatedCardinality > 0 {
+		c.estimationError.Observe(math.Abs(float64(actualCardinality) - float64(estimatedCardinality)))
+		statistics.FetchedSeriesEstimate = estimatedCardinality
+		spanLog.LogKV("estimated cardinality", estimatedCardinality, "actual cardinality", actualCardinality)
+	}
 
 	return res, nil
 }
@@ -136,14 +140,6 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
 	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshaled}, cardinalityEstimateTTL)
-}
-
-func (c *cardinalityEstimation) maintainStatistics(estimate uint64, actual uint64, s *stats.Stats, span *spanlogger.SpanLogger) {
-	if estimate > 0 {
-		c.estimationError.Observe(math.Abs(float64(actual) - float64(estimate)))
-		s.FetchedSeriesEstimate = estimate
-		span.LogKV("estimated cardinality", estimate, "actual cardinality", actual)
-	}
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
