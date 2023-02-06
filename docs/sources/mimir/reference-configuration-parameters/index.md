@@ -1202,8 +1202,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# (experimental) How many series a single sharded sub-request should load at
-# most. 0 to disable cardinality-based sharding.
+# (experimental) How many series a single sharded partial query should load at
+# most. This is not a strict requirement guaranteed to be honoured by query
+# sharding, but a hint given to the query sharding when the query execution is
+# initially planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-max-series-per-shard
 [query_sharding_max_series_per_shard: <int> | default = 0]
 
