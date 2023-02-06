@@ -74,7 +74,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		return c.next.Do(ctx, request)
 	}
 
-	k := generateCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
+	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
 
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
@@ -148,8 +148,8 @@ func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 	return estimate > (1-cacheErrorToleranceFraction)*actual && estimate < (1+cacheErrorToleranceFraction)*actual
 }
 
-// generateCacheKey generates a key to cache a request's cardinality estimate under.
-func generateCacheKey(userID string, r Request, bucketSize time.Duration) string {
+// generateCardinalityEstimationCacheKey generates a key to cache a request's cardinality estimate under.
+func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize time.Duration) string {
 	startBucket := r.GetStart() / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 

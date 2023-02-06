@@ -76,7 +76,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, generateCacheKey(tt.args.userID, tt.args.r, 24*time.Hour))
+			assert.Equal(t, tt.want, generateCardinalityEstimationCacheKey(tt.args.userID, tt.args.r, 24*time.Hour))
 		})
 	}
 }
@@ -187,7 +187,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and unchanged cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
+			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        0,
 			wantErr:           assert.NoError,
@@ -196,7 +196,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and marginally changed cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries+1),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
+			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        0,
 			wantErr:           assert.NoError,
@@ -205,7 +205,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and significantly changed cardinality",
 			orgID:             "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries*2),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
+			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
 			wantLoads:         1,
 			wantStores:        1,
 			wantErr:           assert.NoError,
@@ -316,8 +316,8 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			keyA := generateCacheKey(tt.tenantA, tt.requestA, 24*time.Hour)
-			keyB := generateCacheKey(tt.tenantB, tt.requestB, 24*time.Hour)
+			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, 24*time.Hour)
+			keyB := generateCardinalityEstimationCacheKey(tt.tenantB, tt.requestB, 24*time.Hour)
 			if tt.wantEqual {
 				assert.Equal(t, keyA, keyB)
 			} else {
