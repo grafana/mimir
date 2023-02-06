@@ -26,57 +26,48 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 	hoursSinceEpoch := util.TimeToMillis(requestTime) / time.Hour.Milliseconds()
 	daysSinceEpoch := hoursSinceEpoch / 24
 
-	type args struct {
-		userID string
-		r      Request
-	}
 	tests := []struct {
-		name string
-		args args
-		want string
+		name     string
+		userID   string
+		r        Request
+		expected string
 	}{
 		{
-			name: "instant query",
-			args: args{
-				userID: "tenant-a",
-				r: &PrometheusInstantQueryRequest{
-					Time:  requestTime.UnixMilli(),
-					Query: "up",
-				},
+			name:   "instant query",
+			userID: "tenant-a",
+			r: &PrometheusInstantQueryRequest{
+				Time:  requestTime.UnixMilli(),
+				Query: "up",
 			},
-			want: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
-			name: "range query",
-			args: args{
-				userID: "tenant-b",
-				r: &PrometheusRangeQueryRequest{
-					Start: requestTime.UnixMilli(),
-					End:   requestTime.Add(2 * time.Hour).UnixMilli(),
-					Query: "up",
-				},
+			name:   "range query",
+			userID: "tenant-b",
+			r: &PrometheusRangeQueryRequest{
+				Start: requestTime.UnixMilli(),
+				End:   requestTime.Add(2 * time.Hour).UnixMilli(),
+				Query: "up",
 			},
-			want: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
-			name: "range query with large range",
-			args: args{
-				userID: "tenant-b",
-				r: &PrometheusRangeQueryRequest{
-					Start: requestTime.UnixMilli(),
-					// Over 24 hours, range part should be 1
-					End:   requestTime.Add(25 * time.Hour).UnixMilli(),
-					Query: "up",
-				},
+			name:   "range query with large range",
+			userID: "tenant-b",
+			r: &PrometheusRangeQueryRequest{
+				Start: requestTime.UnixMilli(),
+				// Over 24 hours, range part should be 1
+				End:   requestTime.Add(25 * time.Hour).UnixMilli(),
+				Query: "up",
 			},
-			want: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
+			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, generateCardinalityEstimationCacheKey(tt.args.userID, tt.args.r, 24*time.Hour))
+			assert.Equal(t, tt.expected, generateCardinalityEstimationCacheKey(tt.userID, tt.r, 24*time.Hour))
 		})
 	}
 }
@@ -85,40 +76,40 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewInstrumentedMockCache()
 
-	presentKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
-	presentValue := uint64(25)
-	marshaled, err := proto.Marshal(&QueryCardinality{presentValue})
+	actualKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
+	actualValue := uint64(25)
+	marshaled, err := proto.Marshal(&QueryCardinality{actualValue})
 	require.NoError(t, err)
-	c.Store(ctx, map[string][]byte{presentKey: marshaled}, 1*time.Hour)
+	c.Store(ctx, map[string][]byte{actualKey: marshaled}, 1*time.Hour)
 
 	expectedFetchCount := 0
 	tests := []struct {
-		cache           cache.Cache
-		name            string
-		key             string
-		wantCardinality uint64
-		wantPresent     bool
+		cache               cache.Cache
+		name                string
+		key                 string
+		expectedCardinality uint64
+		expectedPresent     bool
 	}{
 		{
-			cache:           nil,
-			name:            "nil cache",
-			key:             presentKey,
-			wantCardinality: 0,
-			wantPresent:     false,
+			cache:               nil,
+			name:                "nil cache",
+			key:                 actualKey,
+			expectedCardinality: 0,
+			expectedPresent:     false,
 		},
 		{
-			cache:           c,
-			name:            "cache hit",
-			key:             presentKey,
-			wantCardinality: presentValue,
-			wantPresent:     true,
+			cache:               c,
+			name:                "cache hit",
+			key:                 actualKey,
+			expectedCardinality: actualValue,
+			expectedPresent:     true,
 		},
 		{
-			cache:           c,
-			name:            "cache miss",
-			key:             "not present",
-			wantCardinality: 0,
-			wantPresent:     false,
+			cache:               c,
+			name:                "cache miss",
+			key:                 "not present",
+			expectedCardinality: 0,
+			expectedPresent:     false,
 		},
 	}
 	for _, tt := range tests {
@@ -128,8 +119,8 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 				expectedFetchCount++
 			}
 			assert.Equal(t, expectedFetchCount, c.CountFetchCalls())
-			assert.Equal(t, tt.wantCardinality, estimate)
-			assert.Equal(t, tt.wantPresent, ok)
+			assert.Equal(t, tt.expectedCardinality, estimate)
+			assert.Equal(t, tt.expectedPresent, ok)
 		})
 	}
 }
@@ -156,83 +147,82 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		orgID             string
+		tenantID          string
 		downstreamHandler HandlerFunc
 		cacheContent      map[string][]byte
-		wantLoads         int
-		wantStores        int
-		wantErr           assert.ErrorAssertionFunc
+		expectedLoads     int
+		expectedStores    int
+		expectedErr       assert.ErrorAssertionFunc
 	}{
 		{
-			name:  "no orgID",
-			orgID: "",
+			name:     "no tenantID",
+			tenantID: "",
 			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
 				return &PrometheusResponse{}, nil
 			},
-			wantLoads:  0,
-			wantStores: 0,
-			wantErr:    assert.NoError,
+			expectedLoads:  0,
+			expectedStores: 0,
+			expectedErr:    assert.NoError,
 		},
 		{
-			name:  "downstream error",
-			orgID: "1",
+			name:     "downstream error",
+			tenantID: "1",
 			downstreamHandler: func(_ context.Context, _ Request) (Response, error) {
 				return nil, errors.New("test error")
 			},
-			wantLoads:  1,
-			wantStores: 0,
-			wantErr:    assert.Error,
+			expectedLoads:  1,
+			expectedStores: 0,
+			expectedErr:    assert.Error,
 		},
 		{
 			name:              "with populated cache and unchanged cardinality",
-			orgID:             "1",
+			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
-			wantLoads:         1,
-			wantStores:        0,
-			wantErr:           assert.NoError,
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, 24*time.Hour): marshaledEstimate},
+			expectedLoads:     1,
+			expectedStores:    0,
+			expectedErr:       assert.NoError,
 		},
 		{
 			name:              "with populated cache and marginally changed cardinality",
-			orgID:             "1",
+			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries+1),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
-			wantLoads:         1,
-			wantStores:        0,
-			wantErr:           assert.NoError,
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, 24*time.Hour): marshaledEstimate},
+			expectedLoads:     1,
+			expectedStores:    0,
+			expectedErr:       assert.NoError,
 		},
 		{
 			name:              "with populated cache and significantly changed cardinality",
-			orgID:             "1",
+			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries*2),
-			cacheContent:      map[string][]byte{cacheHashKey(generateCardinalityEstimationCacheKey("1", request, 24*time.Hour)): marshaledEstimate},
-			wantLoads:         1,
-			wantStores:        1,
-			wantErr:           assert.NoError,
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, 24*time.Hour): marshaledEstimate},
+			expectedLoads:     1,
+			expectedStores:    1,
+			expectedErr:       assert.NoError,
 		},
 		{
-			name:  "with empty cache",
-			orgID: "1",
+			name:     "with empty cache",
+			tenantID: "1",
 			downstreamHandler: func(ctx context.Context, request Request) (Response, error) {
 				queryStats := stats.FromContext(ctx)
 				queryStats.AddFetchedSeries(numSeries)
 				return &PrometheusResponse{}, nil
 			},
-			wantLoads:  1,
-			wantStores: 1,
-			wantErr:    assert.NoError,
+			expectedLoads:  1,
+			expectedStores: 1,
+			expectedErr:    assert.NoError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			c := cache.NewInstrumentedMockCache()
 			mw := newCardinalityEstimationMiddleware(c, log.NewNopLogger(), nil)
 			handler := mw.Wrap(tt.downstreamHandler)
 			_, ctx := stats.ContextWithEmptyStats(context.Background())
-			if tt.orgID != "" {
-				ctx = user.InjectOrgID(ctx, tt.orgID)
+			if tt.tenantID != "" {
+				ctx = user.InjectOrgID(ctx, tt.tenantID)
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
@@ -242,9 +232,9 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 			_, err := handler.Do(ctx, request)
 
-			tt.wantErr(t, err)
-			assert.Equal(t, tt.wantLoads, c.CountFetchCalls())
-			assert.Equal(t, numSetupStoreCalls+tt.wantStores, c.CountStoreCalls())
+			tt.expectedErr(t, err)
+			assert.Equal(t, tt.expectedLoads, c.CountFetchCalls())
+			assert.Equal(t, numSetupStoreCalls+tt.expectedStores, c.CountStoreCalls())
 		})
 	}
 
@@ -257,60 +247,60 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 		Query: "up",
 	}
 	tests := []struct {
-		name      string
-		tenantA   string
-		tenantB   string
-		requestA  Request
-		requestB  Request
-		wantEqual bool
+		name          string
+		tenantA       string
+		tenantB       string
+		requestA      Request
+		requestB      Request
+		expectedEqual bool
 	}{
 		{
-			name:      "same tenant, same request",
-			tenantA:   "1",
-			requestA:  rangeQuery,
-			tenantB:   "1",
-			requestB:  rangeQuery,
-			wantEqual: true,
+			name:          "same tenant, same request",
+			tenantA:       "1",
+			requestA:      rangeQuery,
+			tenantB:       "1",
+			requestB:      rangeQuery,
+			expectedEqual: true,
 		},
 		{
-			name:      "different tenant, same request",
-			tenantA:   "1",
-			tenantB:   "2",
-			requestA:  rangeQuery,
-			requestB:  rangeQuery,
-			wantEqual: false,
+			name:          "different tenant, same request",
+			tenantA:       "1",
+			tenantB:       "2",
+			requestA:      rangeQuery,
+			requestB:      rangeQuery,
+			expectedEqual: false,
 		},
 		{
-			name:      "same tenant, same query with start time in same bucket",
-			tenantA:   "1",
-			tenantB:   "1",
-			requestA:  rangeQuery,
-			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+5*time.Minute.Milliseconds()),
-			wantEqual: true,
+			name:          "same tenant, same query with start time in same bucket",
+			tenantA:       "1",
+			tenantB:       "1",
+			requestA:      rangeQuery,
+			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+5*time.Minute.Milliseconds()),
+			expectedEqual: true,
 		},
 		{
-			name:      "same tenant, same query with start time in different bucket",
-			tenantA:   "1",
-			tenantB:   "1",
-			requestA:  rangeQuery,
-			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart()+24*time.Hour.Milliseconds(), rangeQuery.GetEnd()+24*time.Hour.Milliseconds()),
-			wantEqual: false,
+			name:          "same tenant, same query with start time in different bucket",
+			tenantA:       "1",
+			tenantB:       "1",
+			requestA:      rangeQuery,
+			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+24*time.Hour.Milliseconds(), rangeQuery.GetEnd()+24*time.Hour.Milliseconds()),
+			expectedEqual: false,
 		},
 		{
-			name:      "same tenant, same query with start time in same bucket and range size in same bucket",
-			tenantA:   "1",
-			tenantB:   "1",
-			requestA:  rangeQuery,
-			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart(), rangeQuery.GetEnd()+time.Second.Milliseconds()),
-			wantEqual: true,
+			name:          "same tenant, same query with start time in same bucket and range size in same bucket",
+			tenantA:       "1",
+			tenantB:       "1",
+			requestA:      rangeQuery,
+			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart(), rangeQuery.GetEnd()+time.Second.Milliseconds()),
+			expectedEqual: true,
 		},
 		{
-			name:      "same tenant, same query with start time in same bucket and range size in different bucket",
-			tenantA:   "1",
-			tenantB:   "1",
-			requestA:  rangeQuery,
-			requestB:  rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+25*time.Hour.Milliseconds()),
-			wantEqual: false,
+			name:          "same tenant, same query with start time in same bucket and range size in different bucket",
+			tenantA:       "1",
+			tenantB:       "1",
+			requestA:      rangeQuery,
+			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+25*time.Hour.Milliseconds()),
+			expectedEqual: false,
 		},
 	}
 	for _, tt := range tests {
@@ -318,7 +308,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 			t.Parallel()
 			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, 24*time.Hour)
 			keyB := generateCardinalityEstimationCacheKey(tt.tenantB, tt.requestB, 24*time.Hour)
-			if tt.wantEqual {
+			if tt.expectedEqual {
 				assert.Equal(t, keyA, keyB)
 			} else {
 				assert.NotEqual(t, keyA, keyB)

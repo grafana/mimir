@@ -120,7 +120,7 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 			level.Warn(c.logger).Log("msg", "failed to unmarshal cardinality estimate")
 			return 0, false
 		}
-		return cardinality.Estimated, ok
+		return cardinality.Estimated, true
 	}
 	return 0, false
 }
