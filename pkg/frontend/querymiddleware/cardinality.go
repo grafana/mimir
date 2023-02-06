@@ -144,7 +144,8 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 	estimate := float64(estimatedCardinality)
 	actual := float64(actualCardinality)
-	return estimate > (1-cacheErrorToleranceFraction)*actual && estimate < (1+cacheErrorToleranceFraction)*actual
+	res := math.Abs(estimate/actual-1) < cacheErrorToleranceFraction
+	return res
 }
 
 // generateCardinalityEstimationCacheKey generates a key to cache a request's cardinality estimate under.
