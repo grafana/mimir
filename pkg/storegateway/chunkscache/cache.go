@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -45,15 +44,15 @@ func NewTracingCache(c ChunksCache, l gokit_log.Logger) TracingCache {
 }
 
 func (c TracingCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
-	l := spanlogger.FromContext(ctx, c.l)
 	hits = c.c.FetchMultiChunks(ctx, userID, ranges)
 
-	l.LogFields(
-		log.String("name", "ChunksCache.FetchMultiChunks"),
-		log.Int("ranges_requested", len(ranges)),
-		log.Int("ranges_hit", len(hits)),
-		log.Int("ranges_hit_bytes", hitsSize(hits)),
-		log.Int("ranges_misses", len(ranges)-len(hits)),
+	l := spanlogger.FromContext(ctx, c.l)
+	level.Debug(l).Log(
+		"name", "ChunksCache.FetchMultiChunks",
+		"ranges_requested", len(ranges),
+		"ranges_hit", len(hits),
+		"ranges_hit_bytes", hitsSize(hits),
+		"ranges_misses", len(ranges)-len(hits),
 	)
 	return
 }
