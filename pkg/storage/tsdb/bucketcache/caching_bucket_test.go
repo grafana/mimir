@@ -211,7 +211,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					err := cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
 					if err != nil {
 						t.Errorf("unexpected error from cache delete")
 					}
