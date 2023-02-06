@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	gokit_log "github.com/go-kit/log"
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
@@ -33,10 +33,10 @@ type ChunksCache interface {
 
 type TracingCache struct {
 	c ChunksCache
-	l gokit_log.Logger
+	l log.Logger
 }
 
-func NewTracingCache(c ChunksCache, l gokit_log.Logger) TracingCache {
+func NewTracingCache(c ChunksCache, l log.Logger) TracingCache {
 	return TracingCache{
 		c: c,
 		l: l,
@@ -74,7 +74,7 @@ const (
 
 // DskitChunksCache is a ChunksCache which uses the dskit caching interface.
 type DskitChunksCache struct {
-	logger gokit_log.Logger
+	logger log.Logger
 	cache  cache.Cache
 
 	// TODO these two will soon be tracked by the dskit, we can remove them once https://github.com/grafana/mimir/pull/4078 is marged
@@ -92,7 +92,7 @@ func (NoopCache) StoreChunks(ctx context.Context, userID string, r Range, v []by
 }
 
 // NewDskitCache makes a new DskitChunksCache.
-func NewDskitCache(logger gokit_log.Logger, client cache.Cache, reg prometheus.Registerer) (*DskitChunksCache, error) {
+func NewDskitCache(logger log.Logger, client cache.Cache, reg prometheus.Registerer) (*DskitChunksCache, error) {
 	c := &DskitChunksCache{
 		logger: logger,
 		cache:  client,
