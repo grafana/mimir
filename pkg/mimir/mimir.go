@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
+	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
@@ -653,6 +654,7 @@ type Mimir struct {
 	Ingester                 *ingester.Ingester
 	Flusher                  *flusher.Flusher
 	Frontend                 *frontendv1.Frontend
+	FrontendV2               *frontendv2.Frontend
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable

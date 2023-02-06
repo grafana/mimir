@@ -26,7 +26,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/httpgrpc/server"
 
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -61,15 +60,12 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 }
 
-// Handler accepts queries and forwards them to RoundTripper. It waits on in-flight requests and can log slow queries,
+// Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
 // all other logic is inside the RoundTripper.
 type Handler struct {
-	services.Service
-
 	cfg          HandlerConfig
 	log          log.Logger
 	roundTripper http.RoundTripper
-	frontendSrv  services.Service
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
@@ -86,16 +82,14 @@ type Handler struct {
 }
 
 // NewHandler creates a new frontend handler.
-func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, frontendSrv services.Service, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
+func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
 	h := &Handler{
 		cfg:          cfg,
 		log:          log,
 		roundTripper: roundTripper,
-		frontendSrv:  frontendSrv,
 		at:           at,
 	}
 	h.cond = sync.NewCond(&h.mtx)
-	h.Service = services.NewBasicService(h.starting, h.running, h.stopping)
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -132,20 +126,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, frontendSrv s
 	return h
 }
 
-func (h *Handler) starting(_ context.Context) error {
-	// We don't pass on the incoming context here, since we want for frontendSrv to have
-	// an independent context. This is so we can stop frontendSrv after in-flight requests are
-	// all waited on.
-	return errors.Wrap(services.StartAndAwaitRunning(context.Background(), h.frontendSrv),
-		"failed to start frontend service")
-}
-
-func (h *Handler) running(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
-}
-
-func (h *Handler) stopping(_ error) error {
+// stop makes h enter stopped mode and wait on in-flight requests.
+func (h *Handler) stop() {
 	h.mtx.Lock()
 	h.stopped = true
 
@@ -155,9 +137,6 @@ func (h *Handler) stopping(_ error) error {
 	}
 	h.mtx.Unlock()
 	level.Debug(h.log).Log("msg", "done waiting on in-flight requests")
-
-	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), h.frontendSrv),
-		"failed to stop frontend service")
 }
 
 func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

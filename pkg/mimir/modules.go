@@ -41,6 +41,8 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
+	v1 "github.com/grafana/mimir/pkg/frontend/v1"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -48,6 +50,7 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -80,6 +83,7 @@ const (
 	Queryable                  string = "queryable"
 	StoreQueryable             string = "store-queryable"
 	QueryFrontend              string = "query-frontend"
+	QueryFrontendHandler       string = "query-frontend-handler"
 	QueryFrontendTripperware   string = "query-frontend-tripperware"
 	RulerStorage               string = "ruler-storage"
 	Ruler                      string = "ruler"
@@ -565,29 +569,68 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
-	if err != nil {
-		return nil, err
+	switch {
+	case t.Cfg.Frontend.DownstreamURL != "":
+		// If the user has specified a downstream Prometheus, then we should use that.
+		return nil, nil
+	case t.Cfg.Frontend.FrontendV2.SchedulerAddress != "" || t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
+		// Query-scheduler is enabled when its address is configured or is configured to use ring-based service discovery.
+		cfg := t.Cfg.Frontend
+		if cfg.FrontendV2.Addr == "" {
+			addr, err := util.GetFirstAddressOf(t.Cfg.Frontend.FrontendV2.InfNames)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get frontend address")
+			}
+
+			cfg.FrontendV2.Addr = addr
+		}
+
+		if cfg.FrontendV2.Port == 0 {
+			cfg.FrontendV2.Port = t.Cfg.Server.GRPCListenPort
+		}
+
+		f, err := v2.NewFrontend(cfg.FrontendV2, util_log.Logger, t.Registerer)
+		if err != nil {
+			return nil, err
+		}
+		t.API.RegisterQueryFrontend2(f)
+		t.FrontendV2 = f
+		return f, nil
+	default:
+		// No scheduler = use original frontend.
+		f, err := v1.New(t.Cfg.Frontend.FrontendV1, t.Overrides, util_log.Logger, t.Registerer)
+		if err != nil {
+			return nil, err
+		}
+		t.API.RegisterQueryFrontend1(f)
+		t.Frontend = f
+		return f, nil
+	}
+}
+
+func (t *Mimir) initQueryFrontendHandler() (serv services.Service, err error) {
+	var roundTripper http.RoundTripper
+	switch {
+	case t.Frontend != nil:
+		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(t.Frontend)
+	case t.FrontendV2 != nil:
+		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(t.FrontendV2)
+	case t.Cfg.Frontend.DownstreamURL != "":
+		// If the user has specified a downstream Prometheus, then we should use that.
+		var err error
+		roundTripper, err = frontend.NewDownstreamRoundTripper(t.Cfg.Frontend.DownstreamURL)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		// TODO: Is this an error?
 	}
 
-	// Wrap roundtripper into Tripperware.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-
-	var srv services.Service
-	if frontendV1 != nil {
-		t.API.RegisterQueryFrontend1(frontendV1)
-		t.Frontend = frontendV1
-		srv = frontendV1
-	} else if frontendV2 != nil {
-		t.API.RegisterQueryFrontend2(frontendV2)
-		srv = frontendV2
-	} else {
-		return nil, fmt.Errorf("no frontend service returned")
-	}
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, srv, util_log.Logger, t.Registerer, t.ActivityTracker)
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
-	return handler, nil
+	return transport.NewHandlerService(handler, util_log.Logger), nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
@@ -843,6 +886,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryables, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
+	mm.RegisterModule(QueryFrontendHandler, t.initQueryFrontendHandler)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
@@ -876,6 +920,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV},
+		QueryFrontendHandler:     {QueryFrontend},
 		QueryScheduler:           {API, Overrides, MemberlistKV},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
