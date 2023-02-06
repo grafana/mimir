@@ -164,7 +164,3 @@ func (c *mockedCacheClient) Delete(_ context.Context, key string) error {
 func (c *mockedCacheClient) Name() string {
 	return "mockedCacheClient"
 }
-
-func (c *mockedCacheClient) Stop() {
-	// Nothing to do.
-}
