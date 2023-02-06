@@ -42,7 +42,7 @@ func CreateBlock(
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = math.MaxInt64
 	// WIP draft: Enable OOO
-	headOpts.OutOfOrderTimeWindow.Store(60 * 60 * 24)
+	headOpts.OutOfOrderTimeWindow.Store(60 * 60 * 24 * 1000)
 	headOpts.EnableNativeHistograms.Store(true)
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
@@ -107,35 +107,23 @@ func CreateBlock(
 			return nil
 		})
 
-		// WIP draft: just append everything again, causing out-of-order samples.
+		// WIP draft: append an OOO sample
 		g.Go(func() error {
-			t := mint
+			app := h.Appender(ctx)
+			for _, lset := range batch {
+				var err error
+				_, err = app.Append(0, lset, mint-1, rand.Float64())
 
-			for i := 0; i < numSamples; i++ {
-				app := h.Appender(ctx)
-
-				for j, lset := range batch {
-					var err error
-					switch (batchValueTypeOffset + j) % 3 {
-					case 0:
-						_, err = app.Append(0, lset, t, rand.Float64())
-					case 1:
-						_, err = app.AppendHistogram(0, lset, t, testHistorams[i], nil)
-					case 2:
-						_, err = app.AppendHistogram(0, lset, t, nil, testFloatHistograms[i])
+				if err != nil {
+					if rerr := app.Rollback(); rerr != nil {
+						err = errors.Wrapf(err, "rollback failed: %v", rerr)
 					}
-					if err != nil {
-						if rerr := app.Rollback(); rerr != nil {
-							err = errors.Wrapf(err, "rollback failed: %v", rerr)
-						}
 
-						return errors.Wrap(err, "add sample")
-					}
+					return errors.Wrap(err, "add sample")
 				}
-				if err := app.Commit(); err != nil {
-					return errors.Wrap(err, "commit")
-				}
-				t += timeStepSize
+			}
+			if err := app.Commit(); err != nil {
+				return errors.Wrap(err, "commit")
 			}
 			return nil
 		})

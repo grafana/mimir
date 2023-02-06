@@ -320,21 +320,8 @@ func TestUpload(t *testing.T) {
 		}, 100, 0, 1000, labels.EmptyLabels())
 		require.NoError(t, err)
 
-		// Set block meta as OOO
-		updatedMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b3.String()))
+		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b3.String()), nil)
 		require.NoError(t, err)
-		require.Empty(t, updatedMeta.Thanos.Labels)
-		require.Equal(t, metadata.TestSource, updatedMeta.Thanos.Source)
-		updatedMeta.Compaction.SetOutOfOrder()
-
-		// Upload block with new metadata.
-		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b3.String()), updatedMeta)
-		require.NoError(t, err)
-
-		// Verify that original (on-disk) meta.json is not changed
-		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b3.String()))
-		require.NoError(t, err)
-		require.Empty(t, origMeta.Thanos.Labels)
 
 		// Verify that meta.json uploaded in the bucket has the OOO label
 		bucketMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b3)
