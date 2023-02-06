@@ -104,7 +104,6 @@ message Hints {
   uint64 EstimatedCardinality = 2;
 }
 
-// This is used to store cardinality information in a cache.
-message QueryCardinality {
-  uint64 Estimated = 1;
+message QueryStatistics {
+  uint64 EstimatedSeriesCount = 1;
 }

@@ -78,7 +78,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 
 	actualKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
 	actualValue := uint64(25)
-	marshaled, err := proto.Marshal(&QueryCardinality{actualValue})
+	marshaled, err := proto.Marshal(&QueryStatistics{EstimatedSeriesCount: actualValue})
 	require.NoError(t, err)
 	c.Store(ctx, map[string][]byte{actualKey: marshaled}, 1*time.Hour)
 
@@ -142,7 +142,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			return &PrometheusResponse{}, nil
 		}
 	}
-	marshaledEstimate, err := proto.Marshal(&QueryCardinality{numSeries})
+	marshaledEstimate, err := proto.Marshal(&QueryStatistics{EstimatedSeriesCount: numSeries})
 	require.NoError(t, err)
 
 	tests := []struct {

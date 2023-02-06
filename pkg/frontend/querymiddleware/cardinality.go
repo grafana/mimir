@@ -114,13 +114,13 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 	}
 	res := c.cache.Fetch(ctx, []string{key})
 	if val, ok := res[key]; ok {
-		cardinality := &QueryCardinality{}
-		err := proto.Unmarshal(val, cardinality)
+		qs := &QueryStatistics{}
+		err := proto.Unmarshal(val, qs)
 		if err != nil {
 			level.Warn(c.logger).Log("msg", "failed to unmarshal cardinality estimate")
 			return 0, false
 		}
-		return cardinality.Estimated, true
+		return qs.EstimatedSeriesCount, true
 	}
 	return 0, false
 }
@@ -131,7 +131,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	if c.cache == nil {
 		return
 	}
-	m := &QueryCardinality{Estimated: count}
+	m := &QueryStatistics{EstimatedSeriesCount: count}
 	marshaled, err := proto.Marshal(m)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to marshal cardinality estimate")
