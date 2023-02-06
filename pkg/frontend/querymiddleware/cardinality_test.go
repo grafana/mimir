@@ -137,7 +137,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 	addSeriesHandler := func(estimate, actual uint64) HandlerFunc {
 		return func(ctx context.Context, request Request) (Response, error) {
 			require.NotNil(t, request.GetHints())
-			require.Equal(t, request.GetHints().EstimatedCardinality, estimate)
+			require.Equal(t, request.GetHints().EstimatedSeriesCount, estimate)
 
 			queryStats := stats.FromContext(ctx)
 			queryStats.AddFetchedSeries(actual)

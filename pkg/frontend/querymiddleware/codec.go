@@ -105,7 +105,7 @@ type Request interface {
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
 	WithTotalQueriesHint(int32) Request
 	// WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
-	WithEstimatedCardinalityHint(uint64) Request
+	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
 	LogToSpan(opentracing.Span)

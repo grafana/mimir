@@ -81,7 +81,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
 		estimatedCardinality = estimate
-		request = request.WithEstimatedCardinalityHint(estimate)
+		request = request.WithEstimatedSeriesCountHint(estimate)
 		spanLog.LogFields(
 			otlog.Bool("estimate available", true),
 			otlog.Uint64("estimated cardinality", estimate),

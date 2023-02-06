@@ -58,7 +58,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, cacheResultsFlagName, false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.Uint64Var(&cfg.MaxSeriesPerShard, maxSeriesPerShardFlagName, 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned.  0 to disable cardinality-based hints.")
+	f.Uint64Var(&cfg.MaxSeriesPerShard, maxSeriesPerShardFlagName, 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 

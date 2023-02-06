@@ -1384,7 +1384,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	req := &PrometheusInstantQueryRequest{
 		Time:  util.TimeToMillis(start),
 		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
-		Hints: &Hints{EstimatedCardinality: 55_000},
+		Hints: &Hints{EstimatedSeriesCount: 55_000},
 	}
 
 	tests := []struct {
