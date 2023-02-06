@@ -86,6 +86,8 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 			otlog.Bool("estimate available", true),
 			otlog.Uint64("estimated cardinality", estimate),
 		)
+	} else {
+		spanLog.LogFields(otlog.Bool("estimate available", false))
 	}
 
 	res, err := c.next.Do(ctx, request)
