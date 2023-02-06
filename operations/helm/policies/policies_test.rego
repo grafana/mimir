@@ -17,6 +17,23 @@ test_null_namespace_not_allowed if {
 	contains(reason, "Resource doesn't have a namespace")
 }
 
+test_namespace_forbidden_on_psp if {
+	deny[reason] with input as [{"contents": {
+		"kind": "PodSecurityPolicy",
+		"metadata": {"name": "resource", "namespace": "example"},
+	}}]
+	contains(reason, "Resource has a namespace, but shouldn't")
+}
+
+passing_psp := {"contents": {
+	"kind": "PodSecurityPolicy",
+	"metadata": {"name": "resource"},
+}}
+
+test_passing_psp_without_namespace {
+	count(deny) == 0 with input as [passing_psp]
+}
+
 passing_container := {
 	"image": "grafana/mimir",
 	"securityContext": {
