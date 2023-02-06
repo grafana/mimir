@@ -7,18 +7,13 @@ package frontend
 
 import (
 	"flag"
-	"net/http"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
-	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // CombinedFrontendConfig combines several configuration options together to preserve backwards compatibility.
@@ -49,45 +44,4 @@ func (cfg *CombinedFrontendConfig) Validate(log log.Logger) error {
 		return err
 	}
 	return nil
-}
-
-// InitFrontend initializes frontend (either V1 -- without scheduler, or V2 -- with scheduler) or no frontend at
-// all if downstream Prometheus URL is used instead.
-//
-// Returned RoundTripper can be wrapped in more round-tripper middlewares, and then eventually registered
-// into HTTP server using the Handler from this package. Returned RoundTripper is always non-nil
-// (if there are no errors), and it uses the returned frontend (if any).
-func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort int, log log.Logger, reg prometheus.Registerer) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
-	switch {
-	case cfg.DownstreamURL != "":
-		// If the user has specified a downstream Prometheus, then we should use that.
-		rt, err := NewDownstreamRoundTripper(cfg.DownstreamURL)
-		return rt, nil, nil, err
-
-	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
-		// Query-scheduler is enabled when its addressed is configured or is configured to use ring-based service discovery.
-		if cfg.FrontendV2.Addr == "" {
-			addr, err := util.GetFirstAddressOf(cfg.FrontendV2.InfNames)
-			if err != nil {
-				return nil, nil, nil, errors.Wrap(err, "failed to get frontend address")
-			}
-
-			cfg.FrontendV2.Addr = addr
-		}
-
-		if cfg.FrontendV2.Port == 0 {
-			cfg.FrontendV2.Port = grpcListenPort
-		}
-
-		fr, err := v2.NewFrontend(cfg.FrontendV2, log, reg)
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
-
-	default:
-		// No scheduler = use original frontend.
-		fr, err := v1.New(cfg.FrontendV1, limits, log, reg)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), fr, nil, nil
-	}
 }
