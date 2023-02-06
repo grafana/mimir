@@ -67,6 +67,7 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) R
 	if new.Hints == nil {
 		new.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
+		*new.Hints = *(q.Hints)
 		new.Hints.TotalQueries = totalQueries
 	}
 	return &new
@@ -79,6 +80,7 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedCardinalityHint(estimatedCard
 	if new.Hints == nil {
 		new.Hints = &Hints{EstimatedCardinality: estimatedCardinality}
 	} else {
+		*new.Hints = *(q.Hints)
 		new.Hints.EstimatedCardinality = estimatedCardinality
 	}
 	return &new
@@ -129,6 +131,7 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 	if new.Hints == nil {
 		new.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
+		*new.Hints = *(r.Hints)
 		new.Hints.TotalQueries = totalQueries
 	}
 	return &new
@@ -139,6 +142,7 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedCardinalityHint(estimatedCa
 	if new.Hints == nil {
 		new.Hints = &Hints{EstimatedCardinality: estimatedCardinality}
 	} else {
+		*new.Hints = *(r.Hints)
 		new.Hints.EstimatedCardinality = estimatedCardinality
 	}
 	return &new
