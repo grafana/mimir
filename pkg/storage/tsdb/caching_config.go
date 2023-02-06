@@ -95,14 +95,9 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
-
-	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
-	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
-	}
 
 	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {

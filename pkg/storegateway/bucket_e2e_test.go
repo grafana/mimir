@@ -32,6 +32,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -46,10 +47,15 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
+	chunkscache.Cache
 }
 
-func (c *swappableCache) SwapWith(cache indexcache.IndexCache) {
+func (c *swappableCache) SwapIndexCacheWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
+}
+
+func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.Cache) {
+	c.Cache = cache
 }
 
 type storeSuite struct {
@@ -108,6 +114,7 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
+	chunksCache          chunkscache.Cache
 	bucketStoreOpts      []BucketStoreOption
 	metricsRegistry      *prometheus.Registry
 }
@@ -127,6 +134,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
+		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -162,7 +170,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
 		metricsRegistry: cfg.metricsRegistry,
-		cache:           &swappableCache{IndexCache: cfg.indexCache},
+		cache:           &swappableCache{IndexCache: cfg.indexCache, Cache: cfg.chunksCache},
 		minTime:         minTime,
 		maxTime:         maxTime,
 	}
@@ -171,7 +179,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}, cfg.bucketStoreOpts...)
+	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}, cfg.bucketStoreOpts...)
 
 	store, err := NewBucketStore(
 		"tenant",
@@ -497,8 +505,9 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		s := newSuite()
 
-		if ok := t.Run("no index cache", func(t *testing.T) {
-			s.cache.SwapWith(noopCache{})
+		if ok := t.Run("no caches", func(t *testing.T) {
+			s.cache.SwapIndexCacheWith(noopCache{})
+			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -510,7 +519,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxSize:     2e5,
 			})
 			assert.NoError(t, err)
-			s.cache.SwapWith(indexCache)
+			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -522,7 +531,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
-			s.cache.SwapWith(indexCache2)
+			s.cache.SwapIndexCacheWith(indexCache2)
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -556,7 +565,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 			MaxSize:     2e5,
 		})
 		assert.NoError(t, err)
-		s.cache.SwapWith(indexCache)
+		s.cache.SwapIndexCacheWith(indexCache)
 
 		testBucketStore_e2e(t, ctx, s)
 	})
