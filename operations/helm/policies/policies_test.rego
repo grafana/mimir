@@ -57,6 +57,5 @@ passing_deployment := {"contents": {
 }}
 
 test_passing_deployment if {
-	input := [passing_deployment]
-	count(deny) == 0
+	count(deny) == 0 with input as [passing_deployment]
 }
