@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,9 @@ const (
 	day                    = 24 * time.Hour
 	queryRangePathSuffix   = "/query_range"
 	instantQueryPathSuffix = "/query"
+
+	cacheResultsFlagName      = "query-frontend.cache-results"
+	maxSeriesPerShardFlagName = "query-frontend.query-sharding-max-series-per-shard"
 )
 
 // Config for query_range middleware chain.
@@ -51,10 +55,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
-	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
+	f.BoolVar(&cfg.CacheResults, cacheResultsFlagName, false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.Uint64Var(&cfg.MaxSeriesPerShard, "query-frontend.query-sharding-max-series-per-shard", 0, "How many series a single sharded sub-request should load at most. 0 to disable cardinality-based sharding.")
+	f.Uint64Var(&cfg.MaxSeriesPerShard, maxSeriesPerShardFlagName, 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned.  0 to disable cardinality-based hints.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -69,7 +73,7 @@ func (cfg *Config) Validate() error {
 		}
 	} else {
 		if cfg.MaxSeriesPerShard > 0 {
-			return errors.New("-query-frontend.query-sharding-max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results")
+			return fmt.Errorf("-%s may only be enabled in conjunction with -%s", maxSeriesPerShardFlagName, cacheResultsFlagName)
 		}
 	}
 	return nil
