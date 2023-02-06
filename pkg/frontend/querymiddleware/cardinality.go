@@ -141,6 +141,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	marshaled, err := proto.Marshal(m)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to marshal cardinality estimate")
+		return
 	}
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
@@ -148,10 +149,13 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
+	if actualCardinality == 0 {
+		return estimatedCardinality == 0
+	}
+
 	estimate := float64(estimatedCardinality)
 	actual := float64(actualCardinality)
-	res := math.Abs(estimate/actual-1) < cacheErrorToleranceFraction
-	return res
+	return math.Abs(estimate/actual-1) < cacheErrorToleranceFraction
 }
 
 // generateCardinalityEstimationCacheKey generates a key to cache a request's cardinality estimate under.
