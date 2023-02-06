@@ -126,17 +126,17 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 	return h
 }
 
-// Stop makes h enter stopped mode and wait on in-flight requests.
-func (h *Handler) Stop() {
-	h.mtx.Lock()
-	h.stopped = true
+// Stop makes f enter stopped mode and wait on in-flight requests.
+func (f *Handler) Stop() {
+	f.mtx.Lock()
+	f.stopped = true
 
-	level.Debug(h.log).Log("msg", "waiting on in-flight requests", "requests", h.inflightRequests)
-	for h.inflightRequests > 0 {
-		h.cond.Wait()
+	level.Debug(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
+	for f.inflightRequests > 0 {
+		f.cond.Wait()
 	}
-	h.mtx.Unlock()
-	level.Debug(h.log).Log("msg", "done waiting on in-flight requests")
+	f.mtx.Unlock()
+	level.Debug(f.log).Log("msg", "done waiting on in-flight requests")
 }
 
 func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
