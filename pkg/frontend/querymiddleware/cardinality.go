@@ -13,6 +13,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -75,11 +76,16 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	}
 
 	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
+	spanLog.LogFields(otlog.String("cache key", k))
 
 	var estimatedCardinality uint64
 	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
 		estimatedCardinality = estimate
 		request = request.WithEstimatedCardinalityHint(estimate)
+		spanLog.LogFields(
+			otlog.Bool("estimate available", true),
+			otlog.Uint64("estimated cardinality", estimate),
+		)
 	}
 
 	res, err := c.next.Do(ctx, request)
@@ -89,15 +95,16 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 	statistics := stats.FromContext(ctx)
 	actualCardinality := statistics.GetFetchedSeriesCount()
+	spanLog.LogFields(otlog.Uint64("actual cardinality", actualCardinality))
 
 	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
+		spanLog.LogFields(otlog.Bool("cache updated", true))
 	}
 
 	if estimatedCardinality > 0 {
 		c.estimationError.Observe(math.Abs(float64(actualCardinality) - float64(estimatedCardinality)))
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
-		spanLog.LogKV("estimated cardinality", estimatedCardinality, "actual cardinality", actualCardinality)
 	}
 
 	return res, nil
