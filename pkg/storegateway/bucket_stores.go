@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -83,7 +84,12 @@ type BucketStores struct {
 
 // NewBucketStores makes a new BucketStores.
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
-	cachingBucket, err := tsdb.CreateCachingBucket(cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
+	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "chunks-cache")
+	}
+
+	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
@@ -140,9 +146,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrap(err, "create index cache")
 	}
 
-	if u.chunksCache, err = tsdb.NewChunksCache(cfg.BucketStore.ChunksCache, logger, reg); err != nil {
+	chunksCache, err := chunkscache.NewDskitCache(logger, chunksCacheClient, reg)
+	if err != nil {
 		return nil, errors.Wrap(err, "create chunks cache")
 	}
+	u.chunksCache = chunkscache.NewTracingCache(chunksCache, logger)
 
 	// Init the chunks bytes pool.
 	if u.chunksPool, err = newChunkBytesPool(cfg.BucketStore.ChunkPoolMinBucketSizeBytes, cfg.BucketStore.ChunkPoolMaxBucketSizeBytes, cfg.BucketStore.MaxChunkPoolBytes, reg); err != nil {
