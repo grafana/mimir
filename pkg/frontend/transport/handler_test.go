@@ -190,7 +190,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["fetched_index_bytes"])
 				require.EqualValues(t, 0, msg["sharded_queries"])
 				require.EqualValues(t, 0, msg["split_queries"])
-				require.EqualValues(t, 0, msg["fetched_series_estimate"])
+				require.EqualValues(t, 0, msg["estimated_series_count"])
 
 				for name, values := range tt.expectedParams {
 					logMessageKey := fmt.Sprintf("param_%v", name)
