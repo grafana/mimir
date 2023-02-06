@@ -112,9 +112,8 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 	if c.cache == nil {
 		return 0, false
 	}
-	cacheKey := cacheHashKey(key)
-	res := c.cache.Fetch(ctx, []string{cacheKey})
-	if val, ok := res[cacheKey]; ok {
+	res := c.cache.Fetch(ctx, []string{key})
+	if val, ok := res[key]; ok {
 		cardinality := &QueryCardinality{}
 		err := proto.Unmarshal(val, cardinality)
 		if err != nil {
@@ -139,7 +138,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	}
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
-	c.cache.Store(ctx, map[string][]byte{cacheHashKey(key): marshaled}, cardinalityEstimateTTL)
+	c.cache.Store(ctx, map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
@@ -153,5 +152,6 @@ func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize 
 	startBucket := r.GetStart() / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
-	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), startBucket, rangeBucket)
+	// Prefix key with `QS` (short for "query statistics").
+	return fmt.Sprintf("QS:%s:%s:%d:%d", userID, cacheHashKey(r.GetQuery()), startBucket, rangeBucket)
 }

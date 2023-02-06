@@ -44,7 +44,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-a:up:%d", daysSinceEpoch),
+			want: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name: "range query",
@@ -56,7 +56,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-b:up:%d:%d", daysSinceEpoch, 0),
+			want: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name: "range query with large range",
@@ -69,7 +69,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-b:up:%d:%d", daysSinceEpoch, 1),
+			want: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
 		},
 	}
 
@@ -85,11 +85,11 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewInstrumentedMockCache()
 
-	presentKey := "tenant-a:up:1234:4321"
+	presentKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
 	presentValue := uint64(25)
 	marshaled, err := proto.Marshal(&QueryCardinality{presentValue})
 	require.NoError(t, err)
-	c.Store(ctx, map[string][]byte{cacheHashKey(presentKey): marshaled}, 1*time.Hour)
+	c.Store(ctx, map[string][]byte{presentKey: marshaled}, 1*time.Hour)
 
 	expectedFetchCount := 0
 	tests := []struct {
