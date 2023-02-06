@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1054,16 +1055,28 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if outOfOrderWindow <= 0 && minAppendTimeAvailable &&
-			len(ts.Samples) > 0 && len(ts.Histograms) == 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
+		if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+			(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
+			(len(ts.Samples) == 0 || allOutOfBoundsFloats(ts.Samples, minAppendTime)) &&
+			(len(ts.Histograms) == 0 || (i.limits.AcceptNativeHistograms(userID) && allOutOfBoundsHistograms(ts.Histograms, minAppendTime))) {
+
 			stats.floatStats.failedSamplesCount += len(ts.Samples)
 			stats.floatStats.sampleOutOfBoundsCount += len(ts.Samples)
+			stats.histogramStats.failedSamplesCount += len(ts.Histograms)
+			stats.histogramStats.sampleOutOfBoundsCount += len(ts.Histograms)
 
+			var firstTimestamp int64 = math.MaxInt64
+			if len(ts.Samples) > 0 {
+				firstTimestamp = ts.Samples[0].TimestampMs
+			}
+			if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
+				firstTimestamp = ts.Histograms[0].Timestamp
+			}
 			updateFirstPartial(func() error {
 				if ephemeral {
-					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
 				}
-				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+				return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
 			})
 			continue
 		}
@@ -2815,9 +2828,18 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 }
 
 // allOutOfBounds returns whether all the provided samples are out of bounds.
-func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
+func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	for _, s := range samples {
 		if s.TimestampMs >= minValidTime {
+			return false
+		}
+	}
+	return true
+}
+
+func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64) bool {
+	for _, s := range histograms {
+		if s.Timestamp >= minValidTime {
 			return false
 		}
 	}

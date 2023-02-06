@@ -100,6 +100,7 @@ func TestIngester_Push(t *testing.T) {
 		maxExemplars              int
 		maxMetadataPerUser        int
 		maxMetadataPerMetric      int
+		acceptNativeHistograms    bool
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -396,6 +397,113 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
+		},
+		"should soft fail on all samples with histograms out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     metricLabelAdapters,
+								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{type="float",user="test"} 2
+				cortex_ingester_ingested_samples_failures_total{type="histogram",user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",type="float",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",type="histogram",user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			acceptNativeHistograms: true,
+		},
+		"should succeed if histograms are out of bound but samples are not and histograms are not accepted": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     metricLabelAdapters,
+								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 0, Timestamp: 1575043969 + 1000}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{type="float",user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{type="histogram",user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			acceptNativeHistograms: false,
 		},
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -708,6 +816,7 @@ func TestIngester_Push(t *testing.T) {
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
 			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
+			limits.AcceptNativeHistograms = testData.acceptNativeHistograms
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
 			require.NoError(t, err)
