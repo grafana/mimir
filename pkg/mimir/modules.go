@@ -83,7 +83,6 @@ const (
 	Queryable                  string = "queryable"
 	StoreQueryable             string = "store-queryable"
 	QueryFrontend              string = "query-frontend"
-	QueryFrontendHandler       string = "query-frontend-handler"
 	QueryFrontendTripperware   string = "query-frontend-tripperware"
 	RulerStorage               string = "ruler-storage"
 	Ruler                      string = "ruler"
@@ -569,10 +568,15 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	var roundTripper http.RoundTripper
 	switch {
 	case t.Cfg.Frontend.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
-		return nil, nil
+		var err error
+		roundTripper, err = frontend.NewDownstreamRoundTripper(t.Cfg.Frontend.DownstreamURL)
+		if err != nil {
+			return nil, err
+		}
 	case t.Cfg.Frontend.FrontendV2.SchedulerAddress != "" || t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		// Query-scheduler is enabled when its address is configured or is configured to use ring-based service discovery.
 		cfg := t.Cfg.Frontend
@@ -594,8 +598,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 			return nil, err
 		}
 		t.API.RegisterQueryFrontend2(f)
-		t.FrontendV2 = f
-		return f, nil
+		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
 	default:
 		// No scheduler = use original frontend.
 		f, err := v1.New(t.Cfg.Frontend.FrontendV1, t.Overrides, util_log.Logger, t.Registerer)
@@ -604,33 +607,17 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 		t.API.RegisterQueryFrontend1(f)
 		t.Frontend = f
-		return f, nil
-	}
-}
-
-func (t *Mimir) initQueryFrontendHandler() (serv services.Service, err error) {
-	var roundTripper http.RoundTripper
-	switch {
-	case t.Frontend != nil:
-		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(t.Frontend)
-	case t.FrontendV2 != nil:
-		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(t.FrontendV2)
-	case t.Cfg.Frontend.DownstreamURL != "":
-		// If the user has specified a downstream Prometheus, then we should use that.
-		var err error
-		roundTripper, err = frontend.NewDownstreamRoundTripper(t.Cfg.Frontend.DownstreamURL)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		// TODO: Is this an error?
+		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
 	}
 
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
-	return transport.NewHandlerService(handler, util_log.Logger), nil
+	return services.NewIdleService(nil, func(_ error) error {
+		handler.Stop()
+		return nil
+	}), nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
@@ -886,7 +873,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryables, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
-	mm.RegisterModule(QueryFrontendHandler, t.initQueryFrontendHandler)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
@@ -920,7 +906,6 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV},
-		QueryFrontendHandler:     {QueryFrontend},
 		QueryScheduler:           {API, Overrides, MemberlistKV},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},

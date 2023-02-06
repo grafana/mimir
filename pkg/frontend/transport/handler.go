@@ -126,8 +126,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 	return h
 }
 
-// stop makes h enter stopped mode and wait on in-flight requests.
-func (h *Handler) stop() {
+// Stop makes h enter stopped mode and wait on in-flight requests.
+func (h *Handler) Stop() {
 	h.mtx.Lock()
 	h.stopped = true
 
