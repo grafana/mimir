@@ -61,7 +61,7 @@ func (cfg *ChunksCacheConfig) Validate() error {
 func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Registerer) (chunkscache.ChunksCache, error) {
 	client, err := cache.CreateClient("chunks-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
-		return nil, errors.Wrap(err, "create index cache memcached client")
+		return nil, errors.Wrap(err, "create chunks cache memcached client")
 	}
 	if client == nil { // The client can be nil when the chunks cache wasn't configured
 		return chunkscache.NoopCache{}, nil
