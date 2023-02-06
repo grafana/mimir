@@ -539,6 +539,7 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			}
 
 			resp, err := downstream.Do(childCtx, req)
+			queryStatistics.Merge(partialStats)
 			if err != nil {
 				return err
 			}
@@ -546,8 +547,6 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			mtx.Lock()
 			resps = append(resps, requestResponse{req, resp})
 			mtx.Unlock()
-
-			queryStatistics.Merge(partialStats)
 
 			return nil
 		})
