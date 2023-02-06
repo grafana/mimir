@@ -82,7 +82,7 @@ func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cacheClient := newMockedCacheClient(testData.mockedErr)
-			c, err := NewDskitCache(log.NewNopLogger(), cacheClient, nil)
+			c, err := NewChunksCache(log.NewNopLogger(), cacheClient, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.

@@ -56,7 +56,7 @@ type BucketStores struct {
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
 
-	chunksCache chunkscache.ChunksCache
+	chunksCache chunkscache.Cache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -146,7 +146,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrap(err, "create index cache")
 	}
 
-	chunksCache, err := chunkscache.NewDskitCache(logger, chunksCacheClient, reg)
+	chunksCache, err := chunkscache.NewChunksCache(logger, chunksCacheClient, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "create chunks cache")
 	}

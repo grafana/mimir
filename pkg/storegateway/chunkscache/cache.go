@@ -26,17 +26,17 @@ type Range struct {
 	NumChunks int
 }
 
-type ChunksCache interface {
+type Cache interface {
 	FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte)
 	StoreChunks(ctx context.Context, userID string, r Range, v []byte)
 }
 
 type TracingCache struct {
-	c ChunksCache
+	c Cache
 	l log.Logger
 }
 
-func NewTracingCache(c ChunksCache, l log.Logger) TracingCache {
+func NewTracingCache(c Cache, l log.Logger) TracingCache {
 	return TracingCache{
 		c: c,
 		l: l,
@@ -68,16 +68,11 @@ func (c TracingCache) StoreChunks(ctx context.Context, userID string, r Range, v
 	c.c.StoreChunks(ctx, userID, r, v)
 }
 
-const (
-	defaultTTL = 7 * 24 * time.Hour
-)
-
-// DskitChunksCache is a ChunksCache which uses the dskit caching interface.
-type DskitChunksCache struct {
+type ChunksCache struct {
 	logger log.Logger
 	cache  cache.Cache
 
-	// TODO these two will soon be tracked by the dskit, we can remove them once https://github.com/grafana/mimir/pull/4078 is marged
+	// TODO these two will soon be tracked by the dskit, we can remove them once https://github.com/grafana/mimir/pull/4078 is merged
 	requests prometheus.Counter
 	hits     prometheus.Counter
 }
@@ -91,9 +86,8 @@ func (NoopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []R
 func (NoopCache) StoreChunks(ctx context.Context, userID string, r Range, v []byte) {
 }
 
-// NewDskitCache makes a new DskitChunksCache.
-func NewDskitCache(logger log.Logger, client cache.Cache, reg prometheus.Registerer) (*DskitChunksCache, error) {
-	c := &DskitChunksCache{
+func NewChunksCache(logger log.Logger, client cache.Cache, reg prometheus.Registerer) (*ChunksCache, error) {
+	c := &ChunksCache{
 		logger: logger,
 		cache:  client,
 	}
@@ -113,7 +107,7 @@ func NewDskitCache(logger log.Logger, client cache.Cache, reg prometheus.Registe
 	return c, nil
 }
 
-func (c *DskitChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
+func (c *ChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
 	keysMap := make(map[string]Range, len(ranges))
 	keys := make([]string, len(ranges))
 	for i, r := range ranges {
@@ -139,6 +133,10 @@ func chunksKey(userID string, r Range) string {
 	return fmt.Sprintf("C:%s:%s:%d:%d", userID, r.BlockID, r.Start, r.NumChunks)
 }
 
-func (c *DskitChunksCache) StoreChunks(ctx context.Context, userID string, r Range, v []byte) {
+const (
+	defaultTTL = 7 * 24 * time.Hour
+)
+
+func (c *ChunksCache) StoreChunks(ctx context.Context, userID string, r Range, v []byte) {
 	c.cache.Store(ctx, map[string][]byte{chunksKey(userID, r): v}, defaultTTL)
 }

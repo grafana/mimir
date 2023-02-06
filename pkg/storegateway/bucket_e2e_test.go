@@ -47,15 +47,15 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
-	chunkscache.ChunksCache
+	chunkscache.Cache
 }
 
 func (c *swappableCache) SwapIndexCacheWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
 }
 
-func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.ChunksCache) {
-	c.ChunksCache = cache
+func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.Cache) {
+	c.Cache = cache
 }
 
 type storeSuite struct {
@@ -114,7 +114,7 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
-	chunksCache          chunkscache.ChunksCache
+	chunksCache          chunkscache.Cache
 	bucketStoreOpts      []BucketStoreOption
 	metricsRegistry      *prometheus.Registry
 }
@@ -170,7 +170,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
 		metricsRegistry: cfg.metricsRegistry,
-		cache:           &swappableCache{IndexCache: cfg.indexCache, ChunksCache: cfg.chunksCache},
+		cache:           &swappableCache{IndexCache: cfg.indexCache, Cache: cfg.chunksCache},
 		minTime:         minTime,
 		maxTime:         maxTime,
 	}

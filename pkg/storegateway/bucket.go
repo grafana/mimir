@@ -93,7 +93,7 @@ type BucketStore struct {
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
-	chunksCache     chunkscache.ChunksCache
+	chunksCache     chunkscache.Cache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
@@ -189,7 +189,7 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 }
 
 // WithChunksCache sets a chunksCache to use instead of a noopCache.
-func WithChunksCache(cache chunkscache.ChunksCache) BucketStoreOption {
+func WithChunksCache(cache chunkscache.Cache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.chunksCache = cache
 	}
