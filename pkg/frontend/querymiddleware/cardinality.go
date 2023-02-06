@@ -153,8 +153,5 @@ func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize 
 	startBucket := r.GetStart() / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
-	if rangeBucket == 0 {
-		return fmt.Sprintf("%s:%s:%d", userID, r.GetQuery(), startBucket)
-	}
 	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), startBucket, rangeBucket)
 }

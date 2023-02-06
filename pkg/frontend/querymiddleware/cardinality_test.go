@@ -56,7 +56,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 					Query: "up",
 				},
 			},
-			want: fmt.Sprintf("tenant-b:up:%d", daysSinceEpoch),
+			want: fmt.Sprintf("tenant-b:up:%d:%d", daysSinceEpoch, 0),
 		},
 		{
 			name: "range query with large range",
@@ -64,7 +64,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 				userID: "tenant-b",
 				r: &PrometheusRangeQueryRequest{
 					Start: requestTime.UnixMilli(),
-					// Over 24 hours, should add range part to key
+					// Over 24 hours, range part should be 1
 					End:   requestTime.Add(25 * time.Hour).UnixMilli(),
 					Query: "up",
 				},
