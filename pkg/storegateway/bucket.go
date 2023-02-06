@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
@@ -92,6 +93,7 @@ type BucketStore struct {
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
+	chunksCache     chunkscache.ChunksCache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
@@ -127,6 +129,13 @@ type BucketStore struct {
 }
 
 type noopCache struct{}
+
+func (noopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Range) (hits map[chunkscache.Range][]byte) {
+	return nil
+}
+
+func (noopCache) StoreChunks(ctx context.Context, userID string, r chunkscache.Range, v []byte) {
+}
 
 func (noopCache) StorePostings(context.Context, string, ulid.ULID, labels.Label, []byte) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
@@ -186,6 +195,13 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	}
 }
 
+// WithChunksCache sets a chunksCache to use instead of a noopCache.
+func WithChunksCache(cache chunkscache.ChunksCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.chunksCache = cache
+	}
+}
+
 // WithQueryGate sets a queryGate to use instead of a noopGate.
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -231,6 +247,7 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
+		chunksCache:                 noopCache{},
 		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),

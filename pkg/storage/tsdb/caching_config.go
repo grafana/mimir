@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 )
 
 // subrangeSize is the size of each subrange that bucket objects are split into for better caching
@@ -55,6 +56,22 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 
 func (cfg *ChunksCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
+}
+
+func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Registerer) (chunkscache.ChunksCache, error) {
+	switch cfg.Backend {
+	case "":
+		return nil, nil
+	case cache.BackendMemcached:
+		client, err := cache.NewMemcachedClientWithConfig(logger, "chunks-cache", cfg.Memcached.ToMemcachedClientConfig(), prometheus.WrapRegistererWithPrefix("thanos_", reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create index cache memcached client")
+		}
+		c, err := chunkscache.NewMemcachedChunksCache(logger, client, reg)
+		return chunkscache.TracingCache{C: c}, err
+	default:
+		return nil, errUnsupportedChunksCacheBackend
+	}
 }
 
 type MetadataCacheConfig struct {
@@ -125,6 +142,8 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 
 	if chunksCache != nil {
+		// If the chunks cache is configured, we will use it for the attributes of chunk files instead of
+		// the metadata cache.
 		cachingConfigured = true
 		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
@@ -135,14 +154,13 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 			attributesCache = metadataCache
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
-			var err error
 			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
 
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cfg.CacheAttributes("chunks-attributes", attributesCache, isTSDBChunkFile, chunksConfig.AttributesTTL)
 	}
 
 	if !cachingConfigured {

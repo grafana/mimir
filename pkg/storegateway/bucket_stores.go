@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -53,6 +54,8 @@ type BucketStores struct {
 
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
+
+	chunksCache chunkscache.ChunksCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -135,6 +138,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	// Init the index cache.
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
+	}
+
+	if u.chunksCache, err = tsdb.NewChunksCache(cfg.BucketStore.ChunksCache, logger, reg); err != nil {
+		return nil, errors.Wrap(err, "create chunks cache")
 	}
 
 	// Init the chunks bytes pool.
@@ -451,6 +458,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
+		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
 		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),

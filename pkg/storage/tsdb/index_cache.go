@@ -37,7 +37,8 @@ const (
 var (
 	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
-	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
+	errUnsupportedIndexCacheBackend  = errors.New("unsupported index cache backend")
+	errUnsupportedChunksCacheBackend = errors.New("unsupported chunks cache backend")
 )
 
 type IndexCacheConfig struct {
