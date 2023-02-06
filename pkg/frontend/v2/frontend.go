@@ -187,7 +187,7 @@ func (f *Frontend) running(ctx context.Context) error {
 func (f *Frontend) stopping(_ error) error {
 	f.mtx.Lock()
 	f.stopped = true
-	level.Debug(f.log).Log("msg", "waiting on in-flight requests")
+	level.Debug(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
 	for f.inflightRequests > 0 {
 		f.cond.Wait()
 	}
