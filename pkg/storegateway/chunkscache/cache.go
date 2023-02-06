@@ -19,6 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// Range is a contiguous range of chunks. Start is the ref of the first chunk and NumChunks is how many chunks
+// there are in the range.
 type Range struct {
 	BlockID   ulid.ULID
 	Start     chunks.ChunkRef
