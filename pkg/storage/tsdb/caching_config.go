@@ -67,7 +67,7 @@ func NewChunksCache(cfg ChunksCacheConfig, logger log.Logger, reg prometheus.Reg
 		return chunkscache.NoopCache{}, nil
 	}
 	c, err := chunkscache.NewDskitCache(logger, client, reg)
-	return chunkscache.TracingCache{C: c}, err
+	return chunkscache.NewTracingCache(c, logger), err
 }
 
 type MetadataCacheConfig struct {

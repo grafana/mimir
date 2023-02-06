@@ -33,12 +33,20 @@ type ChunksCache interface {
 }
 
 type TracingCache struct {
-	C ChunksCache
+	c ChunksCache
+	l gokit_log.Logger
+}
+
+func NewTracingCache(c ChunksCache, l gokit_log.Logger) TracingCache {
+	return TracingCache{
+		c: c,
+		l: l,
+	}
 }
 
 func (c TracingCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
-	l := spanlogger.FromContext(ctx, gokit_log.NewNopLogger())
-	hits = c.C.FetchMultiChunks(ctx, userID, ranges)
+	l := spanlogger.FromContext(ctx, c.l)
+	hits = c.c.FetchMultiChunks(ctx, userID, ranges)
 
 	l.LogFields(
 		log.String("name", "ChunksCache.FetchMultiChunks"),
@@ -58,7 +66,7 @@ func hitsSize(hits map[Range][]byte) (size int) {
 }
 
 func (c TracingCache) StoreChunks(ctx context.Context, userID string, r Range, v []byte) {
-	c.C.StoreChunks(ctx, userID, r, v)
+	c.c.StoreChunks(ctx, userID, r, v)
 }
 
 const (
