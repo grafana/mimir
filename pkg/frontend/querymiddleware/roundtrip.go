@@ -39,7 +39,7 @@ type Config struct {
 	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	MaxSeriesPerShard      uint64 `yaml:"max_series_per_shard" category:"experimental"`
+	MaxSeriesPerShard      uint64 `yaml:"query_sharding_max_series_per_shard" category:"experimental"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -54,7 +54,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.Uint64Var(&cfg.MaxSeriesPerShard, "query-frontend.max-series-per-shard", 0, "How many series a single sharded sub-request should load at most. 0 to disable cardinality-based sharding.")
+	f.Uint64Var(&cfg.MaxSeriesPerShard, "query-frontend.query-sharding-max-series-per-shard", 0, "How many series a single sharded sub-request should load at most. 0 to disable cardinality-based sharding.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -69,7 +69,7 @@ func (cfg *Config) Validate() error {
 		}
 	} else {
 		if cfg.MaxSeriesPerShard > 0 {
-			return errors.New("-query-frontend.max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results")
+			return errors.New("-query-frontend.query-sharding-max-series-per-shard may only be enabled in conjunction with query-frontend.cache-results")
 		}
 	}
 	return nil

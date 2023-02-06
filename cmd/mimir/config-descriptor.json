@@ -4363,12 +4363,12 @@
         },
         {
           "kind": "field",
-          "name": "max_series_per_shard",
+          "name": "query_sharding_max_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded sub-request should load at most. 0 to disable cardinality-based sharding.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.max-series-per-shard",
+          "fieldFlag": "query-frontend.query-sharding-max-series-per-shard",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
