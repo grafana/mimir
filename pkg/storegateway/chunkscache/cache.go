@@ -40,10 +40,10 @@ func (c TracingCache) FetchMultiChunks(ctx context.Context, userID string, range
 
 	l.LogFields(
 		log.String("name", "ChunksCache.FetchMultiChunks"),
-		log.Int("requested", len(ranges)),
-		log.Int("hits", len(hits)),
-		log.Int("hits_bytes", hitsSize(hits)),
-		log.Int("misses", len(ranges)-len(hits)),
+		log.Int("ranges_requested", len(ranges)),
+		log.Int("ranges_hit", len(hits)),
+		log.Int("ranges_hit_bytes", hitsSize(hits)),
+		log.Int("ranges_misses", len(ranges)-len(hits)),
 	)
 	return
 }
@@ -107,11 +107,11 @@ func (c *DskitChunksCache) FetchMultiChunks(ctx context.Context, userID string, 
 	hitBytes := c.cache.Fetch(ctx, keys)
 	if len(hitBytes) > 0 {
 		hits = make(map[Range][]byte, len(hitBytes))
+		for key, b := range hitBytes {
+			hits[keysMap[key]] = b
+		}
 	}
 
-	for key, b := range hitBytes {
-		hits[keysMap[key]] = b
-	}
 	c.requests.Add(float64(len(ranges)))
 	c.hits.Add(float64(len(hits)))
 	return
