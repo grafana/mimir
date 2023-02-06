@@ -134,7 +134,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
-		chunksCache:          noopCache{},
+		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -507,7 +507,7 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		if ok := t.Run("no caches", func(t *testing.T) {
 			s.cache.SwapIndexCacheWith(noopCache{})
-			s.cache.SwapChunksCacheWith(noopCache{})
+			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
