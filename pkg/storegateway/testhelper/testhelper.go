@@ -41,6 +41,8 @@ func CreateBlock(
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = math.MaxInt64
+	// WIP draft: Enable OOO
+	headOpts.OutOfOrderTimeWindow.Store(60 * 60 * 24)
 	headOpts.EnableNativeHistograms.Store(true)
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
@@ -73,6 +75,39 @@ func CreateBlock(
 		batchOffset += batchSize
 		series = series[l:]
 
+		g.Go(func() error {
+			t := mint
+
+			for i := 0; i < numSamples; i++ {
+				app := h.Appender(ctx)
+
+				for j, lset := range batch {
+					var err error
+					switch (batchValueTypeOffset + j) % 3 {
+					case 0:
+						_, err = app.Append(0, lset, t, rand.Float64())
+					case 1:
+						_, err = app.AppendHistogram(0, lset, t, testHistorams[i], nil)
+					case 2:
+						_, err = app.AppendHistogram(0, lset, t, nil, testFloatHistograms[i])
+					}
+					if err != nil {
+						if rerr := app.Rollback(); rerr != nil {
+							err = errors.Wrapf(err, "rollback failed: %v", rerr)
+						}
+
+						return errors.Wrap(err, "add sample")
+					}
+				}
+				if err := app.Commit(); err != nil {
+					return errors.Wrap(err, "commit")
+				}
+				t += timeStepSize
+			}
+			return nil
+		})
+
+		// WIP draft: just append everything again, causing out-of-order samples.
 		g.Go(func() error {
 			t := mint
 
