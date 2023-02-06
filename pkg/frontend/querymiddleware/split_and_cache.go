@@ -524,13 +524,16 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
+	queryStatistics := stats.FromContext(ctx)
 	for i := 0; i < len(reqs); i++ {
 		req := reqs[i]
 		g.Go(func() error {
-			var childCtx = ctx
+			// partialStats are the statistics for this partial query, which we'll need to
+			// get correct aggregation of statistics for partial queries.
+			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
 				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(ctx, "doRequests")
+				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
 				req.LogToSpan(span)
 				defer span.Finish()
 			}
@@ -543,6 +546,9 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			mtx.Lock()
 			resps = append(resps, requestResponse{req, resp})
 			mtx.Unlock()
+
+			queryStatistics.Merge(partialStats)
+
 			return nil
 		})
 	}

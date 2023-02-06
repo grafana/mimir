@@ -88,18 +88,15 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	}
 
 	statistics := stats.FromContext(ctx)
-	if statistics == nil {
-		return res, nil
-	}
-
 	actualCardinality := statistics.GetFetchedSeriesCount()
+
 	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 	}
 
 	if estimatedCardinality > 0 {
 		c.estimationError.Observe(math.Abs(float64(actualCardinality) - float64(estimatedCardinality)))
-		statistics.EstimatedSeriesCount = estimatedCardinality
+		statistics.AddEstimatedSeriesCount(estimatedCardinality)
 		spanLog.LogKV("estimated cardinality", estimatedCardinality, "actual cardinality", actualCardinality)
 	}
 
