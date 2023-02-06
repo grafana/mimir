@@ -90,11 +90,6 @@ type Frontend struct {
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
-
-	mtx              sync.Mutex
-	inflightRequests int
-	stopped          bool
-	cond             *sync.Cond
 }
 
 type frontendRequest struct {
@@ -142,7 +137,6 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
 	}
-	f.cond = sync.NewCond(&f.mtx)
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
@@ -166,13 +160,10 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 	return f, nil
 }
 
-func (f *Frontend) starting(_ context.Context) error {
+func (f *Frontend) starting(ctx context.Context) error {
 	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
 
-	// We don't pass on the incoming context here, since we want for schedulerWorkers to have
-	// an independent context. This is so we can stop schedulerWorkers after waiting on in-flight
-	// requests in f.stopping.
-	return errors.Wrap(services.StartAndAwaitRunning(context.Background(), f.schedulerWorkers), "failed to start frontend scheduler workers")
+	return errors.Wrap(services.StartAndAwaitRunning(ctx, f.schedulerWorkers), "failed to start frontend scheduler workers")
 }
 
 func (f *Frontend) running(ctx context.Context) error {
@@ -185,15 +176,6 @@ func (f *Frontend) running(ctx context.Context) error {
 }
 
 func (f *Frontend) stopping(_ error) error {
-	f.mtx.Lock()
-	f.stopped = true
-	level.Debug(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
-	for f.inflightRequests > 0 {
-		f.cond.Wait()
-	}
-	f.mtx.Unlock()
-	level.Debug(f.log).Log("msg", "done waiting on in-flight requests")
-
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
@@ -217,21 +199,6 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 			return nil, err
 		}
 	}
-
-	f.mtx.Lock()
-	if f.stopped {
-		f.mtx.Unlock()
-		return nil, fmt.Errorf("frontend not running")
-	}
-	f.inflightRequests++
-	f.mtx.Unlock()
-
-	defer func() {
-		f.mtx.Lock()
-		f.inflightRequests--
-		f.cond.Broadcast()
-		f.mtx.Unlock()
-	}()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

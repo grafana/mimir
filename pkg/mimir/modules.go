@@ -573,21 +573,21 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	// Wrap roundtripper into Tripperware.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
-
+	var srv services.Service
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
 		t.Frontend = frontendV1
-
-		return frontendV1, nil
+		srv = frontendV1
 	} else if frontendV2 != nil {
 		t.API.RegisterQueryFrontend2(frontendV2)
-
-		return frontendV2, nil
+		srv = frontendV2
+	} else {
+		return nil, fmt.Errorf("no frontend service returned")
 	}
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, srv, util_log.Logger, t.Registerer, t.ActivityTracker)
+	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
-	return nil, nil
+	return handler, nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
