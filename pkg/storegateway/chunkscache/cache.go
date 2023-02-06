@@ -73,7 +73,7 @@ const (
 	defaultTTL = 7 * 24 * time.Hour
 )
 
-// DskitChunksCache is a cache-based index cache.
+// DskitChunksCache is a ChunksCache which uses the dskit caching interface.
 type DskitChunksCache struct {
 	logger gokit_log.Logger
 	cache  cache.Cache
