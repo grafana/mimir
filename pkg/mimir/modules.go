@@ -41,8 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
-	v1 "github.com/grafana/mimir/pkg/frontend/v1"
-	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -50,7 +48,6 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
-	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -568,54 +565,49 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
-	var roundTripper http.RoundTripper
-	switch {
-	case t.Cfg.Frontend.DownstreamURL != "":
-		// If the user has specified a downstream Prometheus, then we should use that.
-		var err error
-		roundTripper, err = frontend.NewDownstreamRoundTripper(t.Cfg.Frontend.DownstreamURL)
-		if err != nil {
-			return nil, err
-		}
-	case t.Cfg.Frontend.FrontendV2.SchedulerAddress != "" || t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
-		// Query-scheduler is enabled when its address is configured or is configured to use ring-based service discovery.
-		cfg := t.Cfg.Frontend
-		if cfg.FrontendV2.Addr == "" {
-			addr, err := util.GetFirstAddressOf(t.Cfg.Frontend.FrontendV2.InfNames)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get frontend address")
-			}
-
-			cfg.FrontendV2.Addr = addr
-		}
-
-		if cfg.FrontendV2.Port == 0 {
-			cfg.FrontendV2.Port = t.Cfg.Server.GRPCListenPort
-		}
-
-		f, err := v2.NewFrontend(cfg.FrontendV2, util_log.Logger, t.Registerer)
-		if err != nil {
-			return nil, err
-		}
-		t.API.RegisterQueryFrontend2(f)
-		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
-	default:
-		// No scheduler = use original frontend.
-		f, err := v1.New(t.Cfg.Frontend.FrontendV1, t.Overrides, util_log.Logger, t.Registerer)
-		if err != nil {
-			return nil, err
-		}
-		t.API.RegisterQueryFrontend1(f)
-		t.Frontend = f
-		roundTripper = transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
 	}
 
+	// Wrap roundtripper into Tripperware.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
+
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
-	return services.NewIdleService(nil, func(_ error) error {
+	var frontendSvc services.Service
+	if frontendV1 != nil {
+		t.API.RegisterQueryFrontend1(frontendV1)
+		t.Frontend = frontendV1
+		frontendSvc = frontendV1
+	} else if frontendV2 != nil {
+		t.API.RegisterQueryFrontend2(frontendV2)
+		frontendSvc = frontendV2
+	}
+
+	w := services.NewFailureWatcher()
+	return services.NewBasicService(func(_ context.Context) error {
+		if frontendSvc != nil {
+			w.WatchService(frontendSvc)
+			// Note that we pass an independent context to the service, since we want to
+			// delay stopping it until in-flight requests are waited on.
+			return services.StartAndAwaitRunning(context.Background(), frontendSvc)
+		}
+		return nil
+	}, func(serviceContext context.Context) error {
+		select {
+		case <-serviceContext.Done():
+			return nil
+		case err := <-w.Chan():
+			return err
+		}
+	}, func(_ error) error {
 		handler.Stop()
+
+		if frontendSvc != nil {
+			return services.StopAndAwaitTerminated(context.Background(), frontendSvc)
+		}
 		return nil
 	}), nil
 }
