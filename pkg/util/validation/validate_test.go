@@ -119,27 +119,24 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, mimirpb.SampleMetricTypeFloat)
+		err := ValidateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
 	randomReason := DiscardedSamplesCounter(reg, "random reason")
-	randomReason.WithLabelValues("different user", "custom label", mimirpb.SampleMetricTypeFloat).Inc()
-	// Check that it honors sample metric type
-	randomReason.WithLabelValues("different user", "custom label", mimirpb.SampleMetricTypeHistogram).Inc()
+	randomReason.WithLabelValues("different user", "custom label").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="label_invalid",type="float",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",type="float",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",type="float",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",type="float",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",type="float",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",type="float",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
 
-			cortex_discarded_samples_total{group="custom label",reason="random reason",type="float",user="different user"} 1
-			cortex_discarded_samples_total{group="custom label",reason="random reason",type="histogram",user="different user"} 1
+			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
 	s.DeleteUserMetrics(userID)
@@ -147,8 +144,7 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="random reason",type="float",user="different user"} 1
-			cortex_discarded_samples_total{group="custom label",reason="random reason",type="histogram",user="different user"} 1
+			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 }
 
@@ -326,7 +322,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, mimirpb.SampleMetricTypeFloat)
+	}, false)
 	expected := newDuplicatedLabelError([]mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
@@ -337,7 +333,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, mimirpb.SampleMetricTypeFloat)
+	}, false)
 	expected = newDuplicatedLabelError([]mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
