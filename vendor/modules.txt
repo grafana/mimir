@@ -491,7 +491,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230120165636-649501dde2ca
+# github.com/grafana/dskit v0.0.0-20230207131021-02a38c36f006
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -516,6 +516,7 @@ github.com/grafana/dskit/limiter
 github.com/grafana/dskit/modules
 github.com/grafana/dskit/multierror
 github.com/grafana/dskit/netutil
+github.com/grafana/dskit/promregistry
 github.com/grafana/dskit/ring
 github.com/grafana/dskit/ring/client
 github.com/grafana/dskit/ring/shard
@@ -538,9 +539,6 @@ github.com/grafana/gomemcache/memcache
 ## explicit; go 1.17
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
-## explicit; go 1.14
-github.com/grpc-ecosystem/go-grpc-middleware
 # github.com/hashicorp/consul/api v1.18.0
 ## explicit; go 1.12
 github.com/hashicorp/consul/api
@@ -919,7 +917,7 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20221201103051-7c2720a9024d
+# github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 ## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc

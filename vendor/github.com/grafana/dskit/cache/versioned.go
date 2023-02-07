@@ -49,6 +49,10 @@ func (c Versioned) Name() string {
 	return c.cache.Name()
 }
 
+func (c Versioned) Delete(ctx context.Context, key string) error {
+	return c.cache.Delete(ctx, c.addVersion(key))
+}
+
 func (c Versioned) addVersion(k string) string {
 	return c.versionPrefix + k
 }
