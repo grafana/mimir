@@ -909,17 +909,6 @@ func clampLastChunkLength(series []seriesChunkRefs, metas []chunks.Meta) {
 	}
 }
 
-func nextChunkRef(metas [][]chunks.Meta, gIdx int, cIdx int) (chunks.ChunkRef, bool) {
-	if cIdx+1 >= len(metas[gIdx]) && gIdx+1 >= len(metas) {
-		return 0, false
-	}
-
-	if cIdx+1 < len(metas[gIdx]) {
-		return metas[gIdx][cIdx+1].Ref, true
-	}
-	return metas[gIdx+1][0].Ref, true
-}
-
 // partitionChunks creates a slice of seriesChunkRefsRange for each range of chunks within the same segment file.
 // It may also create more ranges if there are more chunks.
 // The partitioning here should be fairly static and not depend on the actual Series() request because
@@ -1005,6 +994,17 @@ func metasToRanges(metas [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) [
 		})
 	}
 	return ranges
+}
+
+func nextChunkRef(metas [][]chunks.Meta, gIdx int, cIdx int) (chunks.ChunkRef, bool) {
+	if cIdx+1 >= len(metas[gIdx]) && gIdx+1 >= len(metas) {
+		return 0, false
+	}
+
+	if cIdx+1 < len(metas[gIdx]) {
+		return metas[gIdx][cIdx+1].Ref, true
+	}
+	return metas[gIdx+1][0].Ref, true
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
