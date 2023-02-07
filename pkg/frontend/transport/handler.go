@@ -131,12 +131,12 @@ func (f *Handler) Stop() {
 	f.mtx.Lock()
 	f.stopped = true
 
-	level.Debug(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
+	level.Info(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
 	for f.inflightRequests > 0 {
 		f.cond.Wait()
 	}
 	f.mtx.Unlock()
-	level.Debug(f.log).Log("msg", "done waiting on in-flight requests")
+	level.Info(f.log).Log("msg", "done waiting on in-flight requests")
 }
 
 func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
