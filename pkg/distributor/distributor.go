@@ -327,7 +327,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "Number of labels per sample.",
 			Buckets:   []float64{5, 10, 15, 20, 25},
 		}),
-		// TODO switch to native histogram eventually and add "type" label
 		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_sample_delay_seconds",
