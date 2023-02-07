@@ -33,10 +33,6 @@ const (
 	cacheErrorToleranceFraction = 0.1
 )
 
-type cardinalityEstimationMetrics struct {
-	estimationError prometheus.Histogram
-}
-
 // cardinalityEstimation is a Handler that caches estimates for a query's
 // cardinality based on similar queries seen previously.
 type cardinalityEstimation struct {
@@ -44,22 +40,22 @@ type cardinalityEstimation struct {
 	next   Handler
 	logger log.Logger
 
-	cardinalityEstimationMetrics
+	estimationError prometheus.Histogram
 }
 
 func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) Middleware {
-	metrics := cardinalityEstimationMetrics{estimationError: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+	estimationError := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_frontend_cardinality_estimation_difference",
 		Help:    "Difference between estimated and actual query cardinality",
 		Buckets: prometheus.ExponentialBuckets(10, 10, 6),
-	})}
+	})
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
 			cache:  cache,
 			next:   next,
 			logger: logger,
 
-			cardinalityEstimationMetrics: metrics,
+			estimationError: estimationError,
 		}
 	})
 }
