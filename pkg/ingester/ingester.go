@@ -874,7 +874,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
-	// If only invalid samples and histograms are pushed, don't change "last update", as TSDB was not modified.
+	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if persistentStats.floatStats.succeededSamplesCount+persistentStats.histogramStats.succeededSamplesCount > 0 || ephemeralStats.floatStats.succeededSamplesCount+ephemeralStats.histogramStats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
@@ -882,30 +882,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	// Protect every increase with if now that we have histograms as well to avoid overhead of adding 0 to counters
-	if persistentStats.floatStats.succeededSamplesCount+persistentStats.histogramStats.succeededSamplesCount > 0 {
-		i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.floatStats.succeededSamplesCount + persistentStats.histogramStats.succeededSamplesCount))
-		i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
-		i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
-	}
-	if persistentStats.floatStats.failedSamplesCount+persistentStats.histogramStats.failedSamplesCount > 0 {
-		i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.floatStats.failedSamplesCount + persistentStats.histogramStats.failedSamplesCount))
-	}
-	if persistentStats.succeededExemplarsCount > 0 {
-		i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
-		i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
-	}
-	if persistentStats.failedExemplarsCount > 0 {
-		i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
-	}
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.floatStats.succeededSamplesCount + persistentStats.histogramStats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.floatStats.failedSamplesCount + persistentStats.histogramStats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
+	i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
 
-	if ephemeralStats.floatStats.succeededSamplesCount+ephemeralStats.histogramStats.succeededSamplesCount > 0 {
+	if ephemeralStats.floatStats.succeededSamplesCount+ephemeralStats.histogramStats.succeededSamplesCount > 0 ||
+		ephemeralStats.floatStats.failedSamplesCount+ephemeralStats.histogramStats.failedSamplesCount > 0 {
 		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.floatStats.succeededSamplesCount + ephemeralStats.histogramStats.succeededSamplesCount))
+		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.floatStats.failedSamplesCount + ephemeralStats.histogramStats.failedSamplesCount))
 		i.appendedSamplesStats.Inc(int64(ephemeralStats.floatStats.succeededSamplesCount))
 		i.appendedHistogramsStats.Inc(int64(ephemeralStats.histogramStats.succeededSamplesCount))
-	}
-	if ephemeralStats.floatStats.failedSamplesCount+ephemeralStats.histogramStats.failedSamplesCount > 0 {
-		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.floatStats.failedSamplesCount + ephemeralStats.histogramStats.failedSamplesCount))
 	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
