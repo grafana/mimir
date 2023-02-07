@@ -16,14 +16,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/exp/slices"
+
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/runutil"
 )
 
 const testFilename = "/random_object"
@@ -126,10 +128,11 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete first 3 subranges.
-				cache.Delete(cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize)))
 			},
 		},
 
@@ -141,10 +144,11 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete last 3 subranges.
-				cache.Delete(cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize)))
 			},
 		},
 
@@ -156,10 +160,11 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: 3 * subrangeSize,
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
+				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				cache.Delete(cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize))
-				cache.Delete(cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize)))
 			},
 		},
 
@@ -176,7 +181,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -196,7 +201,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -215,7 +220,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},

@@ -628,6 +628,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 								log.NewNopLogger(),
 								engine,
 								mockLimits{totalShards: numShards},
+								0,
 								reg,
 							)
 
@@ -723,7 +724,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		newSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: shards}, prometheus.NewPedanticRegistry())
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
 	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
 
 	req := &PrometheusInstantQueryRequest{
@@ -896,6 +897,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 					log.NewNopLogger(),
 					engine,
 					mockLimits{totalShards: numShards},
+					0,
 					reg,
 				)
 				downstream := &downstreamHandler{
@@ -957,7 +959,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 		Query: "aaa{", // Invalid query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
@@ -984,7 +986,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
@@ -1009,7 +1011,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
@@ -1143,7 +1145,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				maxShardedQueries: testData.maxShardedQueries,
 				compactorShards:   testData.compactorShards,
 			}
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -1180,7 +1182,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -1290,7 +1292,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				Query: "sum(bar1)",
 			}
 
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, 0, nil)
 
 			if tc.queryable == nil {
 				tc.queryable = queryable
@@ -1352,7 +1354,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 
 	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
 	reg := prometheus.NewPedanticRegistry()
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: numShards}, reg)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: numShards}, 0, reg)
 
 	// Run the query with sharding.
 	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1368,7 +1370,7 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, prometheus.NewRegistry())
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
 
 	require.NotPanics(t, func() {
 		_, err := shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1376,6 +1378,56 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 		_, err = shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
 		require.Nil(t, err)
 	})
+}
+
+func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
+	req := &PrometheusInstantQueryRequest{
+		Time:  util.TimeToMillis(start),
+		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+	}
+
+	tests := []struct {
+		name          string
+		req           Request
+		expectedCalls int
+	}{
+		{
+			"range query",
+			req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end)).WithEstimatedSeriesCountHint(55_000),
+			6,
+		},
+		{
+			"instant query",
+			req.WithEstimatedSeriesCountHint(29_000),
+			3,
+		},
+		{
+			"no hints",
+			req,
+			16,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 10_000, nil)
+			downstream := &mockHandler{}
+			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+				Status: statusSuccess, Data: &PrometheusData{
+					ResultType: string(parser.ValueTypeVector),
+				},
+			}, nil)
+
+			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), tt.req)
+			require.NoError(t, err)
+			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+			downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+			downstream.AssertNumberOfCalls(t, "Do", tt.expectedCalls)
+		})
+	}
+
 }
 
 func BenchmarkQuerySharding(b *testing.B) {
@@ -1465,6 +1517,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 					log.NewNopLogger(),
 					engine,
 					mockLimits{totalShards: shardFactor},
+					0,
 					nil,
 				).Wrap(downstream)
 

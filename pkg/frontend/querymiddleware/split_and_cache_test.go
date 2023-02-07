@@ -1048,9 +1048,9 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 				{downstreamRequests: []Request{&PrometheusRangeQueryRequest{Start: 3}}},
 			},
 			expected: []Request{
-				(&PrometheusRangeQueryRequest{Start: 1}).WithID(1).WithHints(&Hints{TotalQueries: 3}),
-				(&PrometheusRangeQueryRequest{Start: 2}).WithID(2).WithHints(&Hints{TotalQueries: 3}),
-				(&PrometheusRangeQueryRequest{Start: 3}).WithID(3).WithHints(&Hints{TotalQueries: 3}),
+				(&PrometheusRangeQueryRequest{Start: 1}).WithID(1).WithTotalQueriesHint(3),
+				(&PrometheusRangeQueryRequest{Start: 2}).WithID(2).WithTotalQueriesHint(3),
+				(&PrometheusRangeQueryRequest{Start: 3}).WithID(3).WithTotalQueriesHint(3),
 			},
 		},
 	}

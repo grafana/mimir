@@ -8,11 +8,24 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/dskit/promregistry"
 )
 
 var (
 	_ Cache = (*MemcachedCache)(nil)
 	_ Cache = (*RedisCache)(nil)
+)
+
+const (
+	labelCacheName           = "name"
+	labelCacheBackend        = "backend"
+	backendRedis             = "redis"
+	backendMemcached         = "memcached"
+	cacheMetricNamePrefix    = "cache_"
+	getMultiMetricNamePrefix = "getmulti_"
+	legacyMemcachedPrefix    = "memcached_"
+	clientInfoMetricName     = "client_info"
 )
 
 // MemcachedCache is a memcached-based cache.
@@ -27,7 +40,12 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			prometheus.WrapRegistererWithPrefix("cache_memcached_", reg),
+			promregistry.TeeRegisterer{
+				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix+legacyMemcachedPrefix, reg),
+				prometheus.WrapRegistererWith(
+					prometheus.Labels{labelCacheBackend: backendMemcached},
+					prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
+			},
 		),
 	}
 }
@@ -44,7 +62,9 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			prometheus.WrapRegistererWithPrefix("cache_redis_", reg),
+			prometheus.WrapRegistererWith(
+				prometheus.Labels{labelCacheBackend: backendRedis},
+				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
 		),
 	}
 }
@@ -69,13 +89,13 @@ func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClie
 	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "requests_total",
 		Help:        "Total number of items requests to cache.",
-		ConstLabels: prometheus.Labels{"name": name},
+		ConstLabels: prometheus.Labels{labelCacheName: name},
 	})
 
 	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
-		ConstLabels: prometheus.Labels{"name": name},
+		ConstLabels: prometheus.Labels{labelCacheName: name},
 	})
 
 	level.Info(logger).Log("msg", "created remote cache")
@@ -114,6 +134,11 @@ func (c *remoteCache) Fetch(ctx context.Context, keys []string, opts ...Option) 
 	results := c.remoteClient.GetMulti(ctx, keys, opts...)
 	c.hits.Add(float64(len(results)))
 	return results
+}
+
+// Delete data with the given key from cache.
+func (c *remoteCache) Delete(ctx context.Context, key string) error {
+	return c.remoteClient.Delete(ctx, key)
 }
 
 func (c *remoteCache) Name() string {

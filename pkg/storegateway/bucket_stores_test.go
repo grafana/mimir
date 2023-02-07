@@ -900,12 +900,12 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	}
 
 	tb.Run("no cache", func(tb *testing.B) {
-		s.cache.SwapWith(noopCache{})
+		s.cache.SwapIndexCacheWith(noopCache{})
 		benchmarks(tb)
 	})
 
 	tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
-		s.cache.SwapWith(indexCacheMissingLabelValues{indexCache})
+		s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
 		benchmarks(tb)
 	})
 }

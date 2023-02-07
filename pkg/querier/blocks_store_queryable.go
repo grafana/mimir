@@ -207,7 +207,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 
 	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	cachingBucket, err := mimir_tsdb.CreateCachingBucket(nil, storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create caching bucket")
 	}

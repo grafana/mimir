@@ -8,8 +8,6 @@ package querymiddleware
 
 import (
 	"context"
-	"encoding/hex"
-	"hash/fnv"
 	"sync"
 	"time"
 
@@ -456,8 +454,6 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 		return nil
 	}
 
-	hints := &Hints{TotalQueries: int32(numDownstreamRequests)}
-
 	// Build the whole list of requests to execute. For each downstream request,
 	// inject hints and a unique ID used to correlate responses once executed.
 	// ID intentionally start at 1 to detect any bug in case the default zero value is used.
@@ -466,7 +462,7 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 	execReqs := make([]Request, 0, numDownstreamRequests)
 	for _, splitReq := range *s {
 		for i := 0; i < len(splitReq.downstreamRequests); i++ {
-			splitReq.downstreamRequests[i] = splitReq.downstreamRequests[i].WithID(nextReqID).WithHints(hints)
+			splitReq.downstreamRequests[i] = splitReq.downstreamRequests[i].WithID(nextReqID).WithTotalQueriesHint(int32(numDownstreamRequests))
 			nextReqID++
 		}
 
@@ -528,18 +524,22 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
+	queryStatistics := stats.FromContext(ctx)
 	for i := 0; i < len(reqs); i++ {
 		req := reqs[i]
 		g.Go(func() error {
-			var childCtx = ctx
+			// partialStats are the statistics for this partial query, which we'll need to
+			// get correct aggregation of statistics for partial queries.
+			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
 				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(ctx, "doRequests")
+				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
 				req.LogToSpan(span)
 				defer span.Finish()
 			}
 
 			resp, err := downstream.Do(childCtx, req)
+			queryStatistics.Merge(partialStats)
 			if err != nil {
 				return err
 			}
@@ -547,6 +547,7 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			mtx.Lock()
 			resps = append(resps, requestResponse{req, resp})
 			mtx.Unlock()
+
 			return nil
 		})
 	}
@@ -614,13 +615,4 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
-}
-
-// cacheHashKey hashes key into something you can store in the results cache.
-func cacheHashKey(key string) string {
-	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(key)) // This'll never error.
-
-	// Hex because memcache errors for the bytes produced by the hash.
-	return hex.EncodeToString(hasher.Sum(nil))
 }

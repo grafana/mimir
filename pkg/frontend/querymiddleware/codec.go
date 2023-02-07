@@ -102,8 +102,10 @@ type Request interface {
 	WithStartEnd(startTime int64, endTime int64) Request
 	// WithQuery clone the current request with a different query.
 	WithQuery(string) Request
-	// WithHints clone the current request with the provided hints.
-	WithHints(hints *Hints) Request
+	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
+	WithTotalQueriesHint(int32) Request
+	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
+	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
 	LogToSpan(opentracing.Span)
