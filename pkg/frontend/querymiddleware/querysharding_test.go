@@ -1384,18 +1384,27 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	req := &PrometheusInstantQueryRequest{
 		Time:  util.TimeToMillis(start),
 		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
-		Hints: &Hints{CardinalityEstimate: &Hints_EstimatedSeriesCount{55_000}},
 	}
 
 	tests := []struct {
-		name string
-		req  Request
+		name          string
+		req           Request
+		expectedCalls int
 	}{
 		{
-			"range query", req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end)),
+			"range query",
+			req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end)).WithEstimatedSeriesCountHint(55_000),
+			6,
 		},
 		{
-			"instant query", req,
+			"instant query",
+			req.WithEstimatedSeriesCountHint(29_000),
+			3,
+		},
+		{
+			"no hints",
+			req,
+			16,
 		},
 	}
 
@@ -1415,8 +1424,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
 			downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
-			// we expect (55.000 / 10.000) + 1 = 6 calls to the downstream handler and not the original 16.
-			downstream.AssertNumberOfCalls(t, "Do", 6)
+			downstream.AssertNumberOfCalls(t, "Do", tt.expectedCalls)
 		})
 	}
 
