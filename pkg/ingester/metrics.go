@@ -141,7 +141,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
 		}),
-		// TODO use native histograms and add "type" label
 		queriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_samples",
 			Help: "The total number of samples returned from queries.",
@@ -164,7 +163,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queries_ephemeral_total",
 			Help: "The total number of queries the ingester has handled for ephemeral storage.",
 		}),
-		// TODO use native histograms and add "type" label
 		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_queried_ephemeral_samples",
 			Help:    "The total number of samples from ephemeral storage returned per query.",

@@ -7441,11 +7441,6 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 			Timestamp: 0,
 			Value:     1,
 		}},
-		// TODO when read path for native histograms is ready, uncomment this
-		// Histograms: []model.SampleHistogramPair{{
-		// 	Timestamp: 2,
-		// 	Histogram: expectHistogram,
-		// }},
 	}}
 
 	testResult(expectedMatrix, "Result should contain the histogram when accepting histograms")
