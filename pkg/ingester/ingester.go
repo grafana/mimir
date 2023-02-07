@@ -1068,7 +1068,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash())
 
-		// To find out if any sample or histogram was added to this series, we keep old value.
+		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededCount := stats.floatStats.succeededSamplesCount + stats.histogramStats.succeededSamplesCount
 
 		for _, s := range ts.Samples {
