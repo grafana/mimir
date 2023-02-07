@@ -963,8 +963,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
 
-	// Return true if handled as soft error
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, copiedLabels labels.Labels, stats *typedPushStats) bool {
+	// Return true if handled as soft error, and we can ingest more series.
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, stats *typedPushStats) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
 		// 400 error to the client. The client (Prometheus) will not retry on 400, and
@@ -1023,7 +1023,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
 				// Ephemeral storage doesn't have this limit.
-				return makeMetricLimitError(copiedLabels, i.limiter.FormatError(userID, cause))
+				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.FormatError(userID, cause))
 			})
 			return true
 		}
@@ -1094,7 +1094,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.floatStats.failedSamplesCount++
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels, copiedLabels, &stats.floatStats) {
+			if handleAppendError(err, s.TimestampMs, ts.Labels, &stats.floatStats) {
 				continue
 			}
 
@@ -1102,41 +1102,39 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		if len(ts.Histograms) > 0 {
-			if i.limits.AcceptNativeHistograms(userID) {
-				for _, h := range ts.Histograms {
-					var (
-						err error
-						ih  *histogram.Histogram
-						fh  *histogram.FloatHistogram
-					)
+		if i.limits.AcceptNativeHistograms(userID) {
+			for _, h := range ts.Histograms {
+				var (
+					err error
+					ih  *histogram.Histogram
+					fh  *histogram.FloatHistogram
+				)
 
-					if h.IsFloatHistogram() {
-						fh = mimirpb.FromHistogramProtoToFloatHistogram(&h)
-					} else {
-						ih = mimirpb.FromHistogramProtoToHistogram(&h)
-					}
-					if ref != 0 {
-						if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
-							stats.histogramStats.succeededSamplesCount++
-							continue
-						}
-					} else {
-						copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
-						if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
-							stats.histogramStats.succeededSamplesCount++
-							continue
-						}
-					}
-
-					stats.histogramStats.failedSamplesCount++
-
-					if handleAppendError(err, h.Timestamp, ts.Labels, copiedLabels, &stats.histogramStats) {
+				if h.IsFloatHistogram() {
+					fh = mimirpb.FromHistogramProtoToFloatHistogram(&h)
+				} else {
+					ih = mimirpb.FromHistogramProtoToHistogram(&h)
+				}
+				if ref != 0 {
+					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+						stats.histogramStats.succeededSamplesCount++
 						continue
 					}
-
-					return wrapWithUser(err, userID)
+				} else {
+					copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+						stats.histogramStats.succeededSamplesCount++
+						continue
+					}
 				}
+
+				stats.histogramStats.failedSamplesCount++
+
+				if handleAppendError(err, h.Timestamp, ts.Labels, &stats.histogramStats) {
+					continue
+				}
+
+				return wrapWithUser(err, userID)
 			}
 		}
 
