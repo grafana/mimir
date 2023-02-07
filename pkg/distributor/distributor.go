@@ -774,18 +774,13 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples and histograms have been deduped.
-				if numSamples > 0 {
-					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				}
+				// These samples have been deduped.
+				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				if numSamples > 0 {
-					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				}
-
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -801,9 +796,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			if numSamples > 0 {
-				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-			}
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
 		cleanupInDefer = false
@@ -992,15 +985,9 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			if validatedSamples > 0 {
-				d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
-			}
-			if validatedExemplars > 0 {
-				d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-			}
-			if validatedMetadata > 0 {
-				d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			}
+			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
+			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
+			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
@@ -1148,15 +1135,9 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
-		if numSamples > 0 {
-			d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-		if numExemplars > 0 {
-			d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
-		}
-		if len(req.Metadata) > 0 {
-			d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
-		}
+		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
+		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
 		cleanupInDefer = false
 		return next(ctx, pushReq)
@@ -1389,23 +1370,16 @@ func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.Preallo
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedExemplars, receivedHistograms, receivedMetadata int
+	var receivedSamples, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples)
+		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		receivedHistograms += len(ts.TimeSeries.Histograms)
 	}
 	receivedMetadata = len(req.Metadata)
 
-	if receivedSamples+receivedHistograms > 0 {
-		d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
-	}
-	if receivedExemplars > 0 {
-		d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
-	}
-	if receivedMetadata > 0 {
-		d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
-	}
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
 func copyString(s string) string {
