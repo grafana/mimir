@@ -883,12 +883,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
 	// Protect every increase with if now that we have histograms as well to avoid overhead of adding 0 to counters
-	if persistentStats.floatStats.succeededSamplesCount + persistentStats.histogramStats.succeededSamplesCount > 0 {
+	if persistentStats.floatStats.succeededSamplesCount+persistentStats.histogramStats.succeededSamplesCount > 0 {
 		i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.floatStats.succeededSamplesCount + persistentStats.histogramStats.succeededSamplesCount))
 		i.appendedSamplesStats.Inc(int64(persistentStats.floatStats.succeededSamplesCount))
 		i.appendedHistogramsStats.Inc(int64(persistentStats.histogramStats.succeededSamplesCount))
 	}
-	if persistentStats.floatStats.failedSamplesCount + persistentStats.histogramStats.failedSamplesCount > 0 {
+	if persistentStats.floatStats.failedSamplesCount+persistentStats.histogramStats.failedSamplesCount > 0 {
 		i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.floatStats.failedSamplesCount + persistentStats.histogramStats.failedSamplesCount))
 	}
 	if persistentStats.succeededExemplarsCount > 0 {
@@ -899,12 +899,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
 	}
 
-	if ephemeralStats.floatStats.succeededSamplesCount + ephemeralStats.histogramStats.succeededSamplesCount > 0 {
+	if ephemeralStats.floatStats.succeededSamplesCount+ephemeralStats.histogramStats.succeededSamplesCount > 0 {
 		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.floatStats.succeededSamplesCount + ephemeralStats.histogramStats.succeededSamplesCount))
 		i.appendedSamplesStats.Inc(int64(ephemeralStats.floatStats.succeededSamplesCount))
 		i.appendedHistogramsStats.Inc(int64(ephemeralStats.histogramStats.succeededSamplesCount))
 	}
-	if ephemeralStats.floatStats.failedSamplesCount + ephemeralStats.histogramStats.failedSamplesCount > 0 {
+	if ephemeralStats.floatStats.failedSamplesCount+ephemeralStats.histogramStats.failedSamplesCount > 0 {
 		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.floatStats.failedSamplesCount + ephemeralStats.histogramStats.failedSamplesCount))
 	}
 
@@ -926,22 +926,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 }
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
-	if stats.floatStats.sampleOutOfBoundsCount +  stats.histogramStats.sampleOutOfBoundsCount > 0 {
-		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.floatStats.sampleOutOfBoundsCount +  stats.histogramStats.sampleOutOfBoundsCount))
+	if stats.floatStats.sampleOutOfBoundsCount+stats.histogramStats.sampleOutOfBoundsCount > 0 {
+		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.floatStats.sampleOutOfBoundsCount + stats.histogramStats.sampleOutOfBoundsCount))
 	}
-	if stats.floatStats.sampleOutOfOrderCount + stats.histogramStats.sampleOutOfOrderCount > 0 {
+	if stats.floatStats.sampleOutOfOrderCount+stats.histogramStats.sampleOutOfOrderCount > 0 {
 		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.floatStats.sampleOutOfOrderCount + stats.histogramStats.sampleOutOfOrderCount))
 	}
-	if stats.floatStats.sampleTooOldCount + stats.histogramStats.sampleTooOldCount > 0 {
+	if stats.floatStats.sampleTooOldCount+stats.histogramStats.sampleTooOldCount > 0 {
 		discarded.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.floatStats.sampleTooOldCount + stats.histogramStats.sampleTooOldCount))
 	}
-	if stats.floatStats.newValueForTimestampCount + stats.histogramStats.newValueForTimestampCount > 0 {
+	if stats.floatStats.newValueForTimestampCount+stats.histogramStats.newValueForTimestampCount > 0 {
 		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.floatStats.newValueForTimestampCount + stats.histogramStats.newValueForTimestampCount))
 	}
-	if stats.floatStats.perUserSeriesLimitCount + stats.histogramStats.perUserSeriesLimitCount > 0 {
+	if stats.floatStats.perUserSeriesLimitCount+stats.histogramStats.perUserSeriesLimitCount > 0 {
 		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.floatStats.perUserSeriesLimitCount + stats.histogramStats.perUserSeriesLimitCount))
 	}
-	if stats.floatStats.perMetricSeriesLimitCount + stats.histogramStats.perMetricSeriesLimitCount > 0 {
+	if stats.floatStats.perMetricSeriesLimitCount+stats.histogramStats.perMetricSeriesLimitCount > 0 {
 		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.floatStats.perMetricSeriesLimitCount + stats.histogramStats.perMetricSeriesLimitCount))
 	}
 

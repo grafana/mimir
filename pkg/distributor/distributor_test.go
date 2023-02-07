@@ -395,7 +395,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
 	d.nonHASamples.WithLabelValues("userA").Add(5)
 
-	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc()     // We cannot clean this metric
+	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -4757,14 +4757,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
-		requestsIn         int
-		samplesIn          int
-		exemplarsIn        int
-		metadataIn         int
-		receivedRequests   int
-		receivedSamples    int
-		receivedExemplars  int
-		receivedMetadata   int
+		requestsIn        int
+		samplesIn         int
+		exemplarsIn       int
+		metadataIn        int
+		receivedRequests  int
+		receivedSamples   int
+		receivedExemplars int
+		receivedMetadata  int
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		text := fmt.Sprintf(`
@@ -4839,14 +4839,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    20,
-			receivedExemplars:  10,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   20,
+			receivedExemplars: 10,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4869,14 +4869,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    10,
-			receivedExemplars:  5,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4894,14 +4894,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    0,
-			receivedExemplars:  0,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   0,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4937,14 +4937,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         4,
-			samplesIn:          80,
-			exemplarsIn:        40,
-			metadataIn:         40,
-			receivedRequests:   2,
-			receivedSamples:    40,
-			receivedExemplars:  20,
-			receivedMetadata:   20})
+			requestsIn:        4,
+			samplesIn:         80,
+			exemplarsIn:       40,
+			metadataIn:        40,
+			receivedRequests:  2,
+			receivedSamples:   40,
+			receivedExemplars: 20,
+			receivedMetadata:  20})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4973,14 +4973,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    10,
-			receivedExemplars:  5,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4999,14 +4999,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    20,
-			receivedExemplars:  0,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   20,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -5036,14 +5036,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    10,
-			receivedExemplars:  5,
-			receivedMetadata:   10})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -5087,14 +5087,14 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:         1,
-			samplesIn:          20,
-			exemplarsIn:        10,
-			metadataIn:         10,
-			receivedRequests:   1,
-			receivedSamples:    20,
-			receivedExemplars:  10,
-			receivedMetadata:   4})
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   20,
+			receivedExemplars: 10,
+			receivedMetadata:  4})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
