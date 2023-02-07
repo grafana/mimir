@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -13,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestGatherIndexHealthStats(t *testing.T) {
