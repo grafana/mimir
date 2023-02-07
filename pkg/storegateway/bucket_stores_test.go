@@ -627,17 +627,22 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 		}},
 	}
 
-	ctx := setUserIDToGRPCContext(context.Background(), userID)
-	srv := newBucketStoreSeriesServer(ctx)
-	err := stores.Series(req, srv)
+	srv, err := newBucketStoreTestServer(stores)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return srv.SeriesSet, srv.Warnings, err
+	// Ensure we close the test server once done.
+	defer srv.Close()
+
+	// Call the Series() endpoint.
+	seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
+
+	return seriesSet, warnings, err
 }
 
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
-	// We have to store it in the incoming metadata because we have to emulate the
-	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return grpc_metadata.NewIncomingContext(ctx, grpc_metadata.Pairs(GrpcContextMetadataTenantID, userID))
+	return grpc_metadata.AppendToOutgoingContext(ctx, GrpcContextMetadataTenantID, userID)
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {

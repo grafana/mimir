@@ -67,7 +67,9 @@ type queryStats struct {
 	// The Series() request timing breakdown when streaming store-gateway is enabled.
 	streamingSeriesExpandPostingsDuration       time.Duration
 	streamingSeriesFetchSeriesAndChunksDuration time.Duration
+	streamingSeriesEncodeResponseDuration       time.Duration
 	streamingSeriesSendResponseDuration         time.Duration
+	streamingSeriesOtherDuration                time.Duration
 
 	// The Series() request timing breakdown when streaming store-gateway is disabled.
 	synchronousSeriesGetAllDuration time.Duration
@@ -120,7 +122,9 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesWaitBatchLoadedDuration += o.streamingSeriesWaitBatchLoadedDuration
 	s.streamingSeriesExpandPostingsDuration += o.streamingSeriesExpandPostingsDuration
 	s.streamingSeriesFetchSeriesAndChunksDuration += o.streamingSeriesFetchSeriesAndChunksDuration
+	s.streamingSeriesEncodeResponseDuration += o.streamingSeriesEncodeResponseDuration
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
+	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
 
 	s.synchronousSeriesGetAllDuration += o.synchronousSeriesGetAllDuration
 	s.synchronousSeriesMergeDuration += o.synchronousSeriesMergeDuration
