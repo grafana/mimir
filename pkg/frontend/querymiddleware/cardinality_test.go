@@ -279,11 +279,14 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 			expectedEqual: true,
 		},
 		{
-			name:          "same tenant, same query with start time in different bucket",
-			tenantA:       "1",
-			tenantB:       "1",
-			requestA:      rangeQuery,
-			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+24*time.Hour.Milliseconds(), rangeQuery.GetEnd()+24*time.Hour.Milliseconds()),
+			name:     "same tenant, same query with start time in different bucket",
+			tenantA:  "1",
+			tenantB:  "1",
+			requestA: rangeQuery,
+			requestB: rangeQuery.WithStartEnd(
+				rangeQuery.GetStart()+2*cardinalityEstimateBucketSize.Milliseconds(),
+				rangeQuery.GetEnd()+2*cardinalityEstimateBucketSize.Milliseconds(),
+			),
 			expectedEqual: false,
 		},
 		{
@@ -295,19 +298,46 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 			expectedEqual: true,
 		},
 		{
-			name:          "same tenant, same query with start time in same bucket and range size in different bucket",
-			tenantA:       "1",
-			tenantB:       "1",
-			requestA:      rangeQuery,
-			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+25*time.Hour.Milliseconds()),
+			name:     "same tenant, same query with start time in same bucket and range size in different bucket",
+			tenantA:  "1",
+			tenantB:  "1",
+			requestA: rangeQuery,
+			requestB: rangeQuery.WithStartEnd(
+				rangeQuery.GetStart()+5*time.Minute.Milliseconds(),
+				rangeQuery.GetEnd()+2*cardinalityEstimateBucketSize.Milliseconds(),
+			),
 			expectedEqual: false,
+		},
+		// The following two test cases test consistent hashing of queries, which is used
+		// to avoid expiration of all estimates at the same time (i.e., the bucket boundary).
+		{
+			name:     "same tenant, same query with start time less than a bucket width apart but in different buckets",
+			tenantA:  "1",
+			tenantB:  "1",
+			requestA: rangeQuery.WithQuery("sum(up)"),
+			requestB: rangeQuery.WithQuery("sum(up)").WithStartEnd(
+				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
+				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
+			),
+			expectedEqual: false,
+		},
+		{
+			name:     "same tenant, same query with start time less than a bucket width apart and in the same bucket",
+			tenantA:  "1",
+			tenantB:  "1",
+			requestA: rangeQuery.WithQuery("up"),
+			requestB: rangeQuery.WithQuery("up").WithStartEnd(
+				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
+				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
+			),
+			expectedEqual: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, 24*time.Hour)
-			keyB := generateCardinalityEstimationCacheKey(tt.tenantB, tt.requestB, 24*time.Hour)
+			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, cardinalityEstimateBucketSize)
+			keyB := generateCardinalityEstimationCacheKey(tt.tenantB, tt.requestB, cardinalityEstimateBucketSize)
 			if tt.expectedEqual {
 				assert.Equal(t, keyA, keyB)
 			} else {

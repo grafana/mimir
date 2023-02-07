@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"time"
 
@@ -157,9 +158,18 @@ func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 	return math.Abs(estimate/actual-1) < cacheErrorToleranceFraction
 }
 
-// generateCardinalityEstimationCacheKey generates a key to cache a request's cardinality estimate under.
+// generateCardinalityEstimationCacheKey generates a key to cache a request's
+// cardinality estimate under. Queries are assigned to buckets of fixed width
+// with respect to both start time and range size. To avoid expiry of all
+// estimates at the bucket boundary, an offset is added based on the hash of the
+// query string.
 func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize time.Duration) string {
-	startBucket := r.GetStart() / bucketSize.Milliseconds()
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(r.GetQuery()))
+
+	// This assumes that `bucketSize` is positive.
+	offset := hasher.Sum64() % uint64(bucketSize.Milliseconds())
+	startBucket := (r.GetStart() + int64(offset)) / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
 	// Prefix key with `QS` (short for "query statistics").
