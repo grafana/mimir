@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus/
-  - /docs/mimir/latest/operators-guide/configure/configuring-the-query-frontend-work-with-prometheus/
+  - ../configuring/configuring-the-query-frontend-work-with-prometheus/
+  - configuring-the-query-frontend-work-with-prometheus/
 description: Learn how to configure the query-frontend to work with Prometheus.
 menuTitle: Configure the query-frontend to work with Prometheus
 title: Configure the Grafana Mimir query-frontend to work with Prometheus

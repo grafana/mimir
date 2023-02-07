@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../../visualizing-metrics/dashboards/reads-networking/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/reads-networking/
+  - ../../monitoring-grafana-mimir/dashboards/reads-networking/
 description: View an example Reads networking dashboard.
 menuTitle: Reads networking
 title: Grafana Mimir Reads networking dashboard

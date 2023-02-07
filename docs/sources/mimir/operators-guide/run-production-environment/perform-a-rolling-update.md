@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/running-production-environment/performing-a-rolling-update/
-  - /docs/mimir/latest/operators-guide/running-production-environment/perform-a-rolling-update/
+  - ../running-production-environment/performing-a-rolling-update/
+  - ../running-production-environment/perform-a-rolling-update/
 description: Learn how to perform a rolling update to Grafana Mimir.
 menuTitle: Perform a rolling update
 title: Perform a rolling update to Grafana Mimir
