@@ -136,6 +136,8 @@ func (l *LRUCache) Name() string {
 }
 
 func (l *LRUCache) Delete(ctx context.Context, key string) error {
+	l.mtx.Lock()
 	l.lru.Remove(key)
+	l.mtx.Unlock()
 	return l.c.Delete(ctx, key)
 }

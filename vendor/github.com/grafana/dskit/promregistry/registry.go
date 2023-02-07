@@ -2,7 +2,8 @@ package promregistry
 
 import "github.com/prometheus/client_golang/prometheus"
 
-// TeeRegisterer supports MultipleRegisterer.
+// TeeRegisterer is a slice of Registerers. It implements Registerer itself and
+// forward registrations to all Registerers in the slice.
 type TeeRegisterer []prometheus.Registerer
 
 func (t TeeRegisterer) Register(c prometheus.Collector) error {

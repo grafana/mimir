@@ -177,11 +177,9 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 		opts.TLSConfig = tlsClientConfig
 	}
 
-	if reg != nil {
-		reg = prometheus.WrapRegistererWith(
-			prometheus.Labels{labelName: name, labelBackend: backendRedis},
-			prometheus.WrapRegistererWithPrefix(cachePrefix, reg))
-	}
+	reg = prometheus.WrapRegistererWith(
+		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	metrics := newClientMetrics(reg)
 
@@ -193,13 +191,13 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 	if config.MaxGetMultiConcurrency > 0 {
 		c.getMultiGate = gate.New(
-			prometheus.WrapRegistererWithPrefix(getMultiPrefix, reg),
+			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,
 		)
 	}
 
 	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "redis_client_info",
+		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which redis client was configured.",
 		ConstLabels: prometheus.Labels{
 			"dial_timeout":              config.DialTimeout.String(),

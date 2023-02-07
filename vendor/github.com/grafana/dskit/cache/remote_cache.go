@@ -18,13 +18,14 @@ var (
 )
 
 const (
-	labelName             = "name"
-	labelBackend          = "backend"
-	backendRedis          = "redis"
-	backendMemcached      = "memcached"
-	cachePrefix           = "cache_"
-	getMultiPrefix        = "getMulti_"
-	legacyMemcachedPrefix = "memcached_"
+	labelCacheName           = "name"
+	labelCacheBackend        = "backend"
+	backendRedis             = "redis"
+	backendMemcached         = "memcached"
+	cacheMetricNamePrefix    = "cache_"
+	getMultiMetricNamePrefix = "getmulti_"
+	legacyMemcachedPrefix    = "memcached_"
+	clientInfoMetricName     = "client_info"
 )
 
 // MemcachedCache is a memcached-based cache.
@@ -39,14 +40,12 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			promregistry.TeeRegisterer(
-				[]prometheus.Registerer{
-					prometheus.WrapRegistererWithPrefix(cachePrefix+legacyMemcachedPrefix, reg),
-					prometheus.WrapRegistererWith(
-						prometheus.Labels{labelBackend: backendMemcached},
-						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
-				},
-			),
+			promregistry.TeeRegisterer{
+				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix+legacyMemcachedPrefix, reg),
+				prometheus.WrapRegistererWith(
+					prometheus.Labels{labelCacheBackend: backendMemcached},
+					prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
+			},
 		),
 	}
 }
@@ -63,13 +62,9 @@ func NewRedisCache(name string, logger log.Logger, redisClient RemoteCacheClient
 			name,
 			logger,
 			redisClient,
-			promregistry.TeeRegisterer(
-				[]prometheus.Registerer{
-					prometheus.WrapRegistererWith(
-						prometheus.Labels{labelBackend: backendRedis},
-						prometheus.WrapRegistererWithPrefix(cachePrefix, reg)),
-				},
-			),
+			prometheus.WrapRegistererWith(
+				prometheus.Labels{labelCacheBackend: backendRedis},
+				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
 		),
 	}
 }
@@ -94,13 +89,13 @@ func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClie
 	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "requests_total",
 		Help:        "Total number of items requests to cache.",
-		ConstLabels: prometheus.Labels{labelName: name},
+		ConstLabels: prometheus.Labels{labelCacheName: name},
 	})
 
 	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name:        "hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
-		ConstLabels: prometheus.Labels{labelName: name},
+		ConstLabels: prometheus.Labels{labelCacheName: name},
 	})
 
 	level.Info(logger).Log("msg", "created remote cache")

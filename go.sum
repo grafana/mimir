@@ -498,6 +498,8 @@ github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/dskit v0.0.0-20230201171309-21c9fbb09978 h1:NkEozIk/EE/v9Sr7qNnpVOmhd16iBGe9NfdPBx9tKCg=
 github.com/grafana/dskit v0.0.0-20230201171309-21c9fbb09978/go.mod h1:zj+5BNZAVmQafV583uLTAOzRr963KPdEm4d6NPmtbwg=
+github.com/grafana/dskit v0.0.0-20230207050156-cef766af72e5 h1:/Cj5j4jD4Vu6Q7mA4M1G3boC7HupAGfFQO/Qb8YeeiE=
+github.com/grafana/dskit v0.0.0-20230207050156-cef766af72e5/go.mod h1:ulYLLoSd71AWIjxgifLO86Lndx82Yj+IcV+fFnh8tkI=
 github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71 h1:sAMF3CGAtlWLimTyvsO46Slwu1p6Fm5EMB64XzG5btI=
 github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71/go.mod h1:3UsooRp7yW5/NJQBlXcTsAHOoykEhNUYXkQ3r6ehEEY=
 github.com/grafana/gomemcache v0.0.0-20230105173749-11f792309e1f h1:ANwIMe7kOiMNTK88tusoNDb840pWVskI4rCrdoMv5i0=
