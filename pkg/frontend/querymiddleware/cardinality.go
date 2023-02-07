@@ -74,13 +74,12 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
 	spanLog.LogFields(otlog.String("cache key", k))
 
-	var estimatedCardinality uint64
-	if estimate, ok := c.lookupCardinalityForKey(ctx, k); ok {
-		estimatedCardinality = estimate
-		request = request.WithEstimatedSeriesCountHint(estimate)
+	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k)
+	if estimateAvailable {
+		request = request.WithEstimatedSeriesCountHint(estimatedCardinality)
 		spanLog.LogFields(
 			otlog.Bool("estimate available", true),
-			otlog.Uint64("estimated cardinality", estimate),
+			otlog.Uint64("estimated cardinality", estimatedCardinality),
 		)
 	} else {
 		spanLog.LogFields(otlog.Bool("estimate available", false))
@@ -100,7 +99,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		spanLog.LogFields(otlog.Bool("cache updated", true))
 	}
 
-	if estimatedCardinality > 0 {
+	if estimateAvailable {
 		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
 		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
@@ -148,7 +147,9 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 	if actualCardinality == 0 {
-		return estimatedCardinality == 0
+		// We can't do a ratio-based comparison in case the actual cardinality is 0,
+		// therefore we fall back to an exactly-equal comparison here.
+		return estimatedCardinality == actualCardinality
 	}
 
 	estimate := float64(estimatedCardinality)
