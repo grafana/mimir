@@ -51,7 +51,6 @@ type Forwarder interface {
 const httpGrpcPrefix = "httpgrpc://"
 
 var errSamplesTooOld = httpgrpc.Errorf(http.StatusBadRequest, "dropped sample(s) because too old to forward")
-var errHistogramsTooOld = httpgrpc.Errorf(http.StatusBadRequest, "dropped histograms(s) because too old to forward")
 
 type forwarder struct {
 	services.Service
@@ -280,17 +279,15 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 	return toIngest, errCh
 }
 
-// filterAndCopyTimeseries makes a copy of the timeseries with old samples/histograms filtered out. Original timeseries is unchanged.
+// filterAndCopyTimeseries makes a copy of the timeseries with old samples filtered out. Original timeseries is unchanged.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (_ mimirpb.PreallocTimeseries, filteredSamplesCount, filteredHistogramsCount int) {
+func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (_ mimirpb.PreallocTimeseries, filteredSamplesCount int) {
 	if dontForwardBeforeTimestamp > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
-		histogramsUnfiltered := ts.TimeSeries.Histograms
 		defer func() {
-			// Before this function returns we need to restore the original sample/histogram slice because
+			// Before this function returns we need to restore the original sample slice because
 			// we might still want to ingest it into the ingesters.
 			ts.TimeSeries.Samples = samplesUnfiltered
-			ts.TimeSeries.Histograms = histogramsUnfiltered
 		}()
 
 		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBeforeTimestamp)
@@ -298,33 +295,25 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 			filteredSamplesCount = len(samplesUnfiltered) - len(samplesFiltered)
 		}
 
-		histogramsFiltered := dropSamplesBefore(histogramsUnfiltered, dontForwardBeforeTimestamp)
-		if len(histogramsFiltered) < len(histogramsUnfiltered) {
-			filteredHistogramsCount = len(histogramsUnfiltered) - len(histogramsFiltered)
-		}
-
-		// Prepare ts for deep copy. Original samples/histograms will be set back via defer function.
+		// Prepare ts for deep copy. Original samples will be set back via defer function.
 		ts.TimeSeries.Samples = samplesFiltered
-		ts.TimeSeries.Histograms = histogramsUnfiltered
 	}
 
 	result := mimirpb.PreallocTimeseries{TimeSeries: f.pools.getTs()}
-	if len(ts.TimeSeries.Samples) > 0 || len(ts.TimeSeries.Histograms) > 0 {
-		// We don't keep exemplars when forwarding.
-		result = mimirpb.DeepCopyTimeseries(result, ts, false)
+	if len(ts.TimeSeries.Samples) > 0 {
+		// We don't keep exemplars or histograms when forwarding.
+		result = mimirpb.DeepCopyTimeseries(result, ts, false, false)
 	}
-	return result, filteredSamplesCount, filteredHistogramsCount
+	return result, filteredSamplesCount
 }
 
 type TimeseriesCounts struct {
-	SampleCount    int
-	HistogramCount int
-	ExemplarCount  int
+	SampleCount   int
+	ExemplarCount int
 }
 
 func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 	t.SampleCount += len(ts.TimeSeries.Samples)
-	t.HistogramCount += len(ts.TimeSeries.Histograms)
 	t.ExemplarCount += len(ts.TimeSeries.Exemplars)
 }
 
@@ -351,20 +340,15 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	for _, ts := range tsSliceIn {
 		forward, ingest := shouldForwardAndIngest(ts.Labels, rules)
 		if forward {
-			tsCopy, filteredSamples, filteredHistograms := f.filterAndCopyTimeseries(ts, dontForwardBefore)
+			tsCopy, filteredSamples := f.filterAndCopyTimeseries(ts, dontForwardBefore)
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
 					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
 				}
-			} else if filteredHistograms > 0 {
-				err = errHistogramsTooOld
-				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredHistograms))
-				}
 			}
 
-			if len(tsCopy.TimeSeries.Samples) > 0 || len(tsCopy.TimeSeries.Histograms) > 0 {
+			if len(tsCopy.TimeSeries.Samples) > 0 {
 				tsToForward = append(tsToForward, tsCopy)
 				counts.count(tsCopy)
 			} else {
@@ -387,11 +371,11 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	return tsToIngest, tsToForward, counts, err
 }
 
-// dropSamplesBefore filters a given slice of samples/histograms to only contain those that have timestamps newer or equal to
-// the given timestamp. It relies on them being sorted by timestamp.
-func dropSamplesBefore[S mimirpb.GenericSamplePair](samples []S, ts int64) []S {
+// dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
+// the given timestamp. It relies on the samples being sorted by timestamp.
+func dropSamplesBefore(samples []mimirpb.Sample, ts int64) []mimirpb.Sample {
 	for sampleIdx := len(samples) - 1; sampleIdx >= 0; sampleIdx-- {
-		if samples[sampleIdx].GetTimestampVal() < ts {
+		if samples[sampleIdx].TimestampMs < ts {
 			return samples[sampleIdx+1:]
 		}
 	}
@@ -534,9 +518,6 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	if r.counts.SampleCount > 0 {
 		r.samples.Add(float64(r.counts.SampleCount))
 	}
-	if r.counts.HistogramCount > 0 {
-		r.samples.Add(float64(r.counts.HistogramCount))
-	}
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
@@ -615,9 +596,6 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	r.requests.Inc()
 	if r.counts.SampleCount > 0 {
 		r.samples.Add(float64(r.counts.SampleCount))
-	}
-	if r.counts.HistogramCount > 0 {
-		r.samples.Add(float64(r.counts.HistogramCount))
 	}
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
