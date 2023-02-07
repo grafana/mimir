@@ -274,9 +274,19 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	hints := r.GetHints()
 
 	if estimate := hints.GetEstimatedSeriesCount(); s.maxSeriesPerShard > 0 && estimate > 0 {
+		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.
 		totalShards = util_math.Min(totalShards, int(estimate/s.maxSeriesPerShard)+1)
+
+		if prevTotalShards != totalShards {
+			level.Debug(spanLog).Log(
+				"msg", "number of shards has been adjusted to match the estimated series count",
+				"updated total shards", totalShards,
+				"previous total shards", prevTotalShards,
+				"estimated series count", estimate,
+			)
+		}
 	}
 
 	// If total queries is provided through hints, then we adjust the number of shards for the query
