@@ -26,7 +26,7 @@ const (
 	cardinalityEstimateTTL = 7 * 24 * time.Hour
 
 	// cardinalityEstimateBucketSize is the size of buckets that queries are bucketed into.
-	cardinalityEstimateBucketSize = 24 * time.Hour
+	cardinalityEstimateBucketSize = 2 * time.Hour
 
 	// cacheErrorToleranceFraction is how much the estimate must deviate
 	// from the actually observed cardinality to update the cache.
