@@ -16,14 +16,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/exp/slices"
+
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/runutil"
 )
 
 const testFilename = "/random_object"
@@ -211,10 +213,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
-					if err != nil {
-						t.Errorf("unexpected error from cache delete")
-					}
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
