@@ -125,7 +125,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 		},
 	}
 	dst := PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, true)
+	dst = DeepCopyTimeseries(dst, src, true, true)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
@@ -159,9 +159,11 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	)
 
 	dst = PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, false)
+	dst = DeepCopyTimeseries(dst, src, false, false)
 	assert.NotNil(t, dst.Exemplars)
 	assert.Len(t, dst.Exemplars, 0)
+	assert.NotNil(t, dst.Histograms)
+	assert.Len(t, dst.Histograms, 0)
 }
 
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {
@@ -190,10 +192,10 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	}
 
 	dst1 := PreallocTimeseries{}
-	dst1 = DeepCopyTimeseries(dst1, src, false)
+	dst1 = DeepCopyTimeseries(dst1, src, false, false)
 
 	dst2 := PreallocTimeseries{}
-	dst2 = DeepCopyTimeseries(dst2, src, true)
+	dst2 = DeepCopyTimeseries(dst2, src, true, false)
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))

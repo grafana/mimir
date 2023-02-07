@@ -359,7 +359,7 @@ func reuseYoloSlice(val *[]byte) {
 // It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
-func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) PreallocTimeseries {
+func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars, keepHistograms bool) PreallocTimeseries {
 	if dst.TimeSeries == nil {
 		dst.TimeSeries = TimeseriesFromPool()
 	}
@@ -403,13 +403,17 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
 
-	// Copy the histograms.
-	if cap(dstTs.Histograms) < len(srcTs.Histograms) {
-		dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
+	if keepHistograms {
+		// Copy the histograms.
+		if cap(dstTs.Histograms) < len(srcTs.Histograms) {
+			dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
+		} else {
+			dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
+		}
+		copy(dstTs.Histograms, srcTs.Histograms)
 	} else {
-		dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
+		dstTs.Histograms = dstTs.Histograms[:0]
 	}
-	copy(dstTs.Histograms, srcTs.Histograms)
 
 	return dst
 }
