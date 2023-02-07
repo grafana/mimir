@@ -94,7 +94,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	actualCardinality := statistics.GetFetchedSeriesCount()
 	spanLog.LogFields(otlog.Uint64("actual cardinality", actualCardinality))
 
-	if !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
+	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(ctx, k, actualCardinality)
 		spanLog.LogFields(otlog.Bool("cache updated", true))
 	}

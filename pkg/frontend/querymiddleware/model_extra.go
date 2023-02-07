@@ -78,10 +78,12 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) R
 func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
 	new := *q
 	if new.Hints == nil {
-		new.Hints = &Hints{EstimatedSeriesCount: count}
+		new.Hints = &Hints{
+			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+		}
 	} else {
 		*new.Hints = *(q.Hints)
-		new.Hints.EstimatedSeriesCount = count
+		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
 	return &new
 }
@@ -140,10 +142,12 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
 	new := *r
 	if new.Hints == nil {
-		new.Hints = &Hints{EstimatedSeriesCount: count}
+		new.Hints = &Hints{
+			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+		}
 	} else {
 		*new.Hints = *(r.Hints)
-		new.Hints.EstimatedSeriesCount = count
+		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
 	return &new
 }
