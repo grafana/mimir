@@ -906,7 +906,6 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		validatedMetadata := 0
 		validatedSamples := 0
 		validatedExemplars := 0
-		validatedHistograms := 0
 
 		// Find the earliest and latest samples in the batch.
 		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
@@ -959,9 +958,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				continue
 			}
 
-			validatedSamples += len(ts.Samples)
+			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
-			validatedHistograms += len(ts.Histograms)
 		}
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
@@ -989,14 +987,14 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
 		}
 
-		if validatedSamples == 0 && validatedHistograms == 0 && validatedMetadata == 0 {
+		if validatedSamples == 0 && validatedMetadata == 0 {
 			return &mimirpb.WriteResponse{}, firstPartialErr
 		}
 
-		totalN := validatedSamples + validatedExemplars + validatedHistograms + validatedMetadata
+		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			if validatedSamples+validatedHistograms > 0 {
-				d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples + validatedHistograms))
+			if validatedSamples > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			}
 			if validatedExemplars > 0 {
 				d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
@@ -1145,16 +1143,14 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		numSamples := 0
 		numExemplars := 0
-		numHistograms := 0
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 			numExemplars += len(ts.Exemplars)
-			numHistograms += len(ts.Histograms)
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
-		if numSamples+numHistograms > 0 {
-			d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
+		if numSamples > 0 {
+			d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 		if numExemplars > 0 {
 			d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))

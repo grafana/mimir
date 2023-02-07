@@ -515,9 +515,7 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	httpReq.Header.Set(user.OrgIDHeaderName, r.user)
 
 	r.requests.Inc()
-	if r.counts.SampleCount > 0 {
-		r.samples.Add(float64(r.counts.SampleCount))
-	}
+	r.samples.Add(float64(r.counts.SampleCount))
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
@@ -594,9 +592,7 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	h := c.(httpgrpc.HTTPClient)
 
 	r.requests.Inc()
-	if r.counts.SampleCount > 0 {
-		r.samples.Add(float64(r.counts.SampleCount))
-	}
+	r.samples.Add(float64(r.counts.SampleCount))
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
