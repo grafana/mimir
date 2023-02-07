@@ -47,7 +47,7 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 	estimationError := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_frontend_cardinality_estimation_difference",
 		Help:    "Difference between estimated and actual query cardinality",
-		Buckets: prometheus.ExponentialBuckets(10, 10, 6),
+		Buckets: prometheus.ExponentialBuckets(100, 2, 10),
 	})
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &cardinalityEstimation{
