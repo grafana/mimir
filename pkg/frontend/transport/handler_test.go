@@ -14,11 +14,14 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/test"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -26,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
@@ -265,6 +269,88 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			assert.Equal(t, test.expectedMetrics, count)
 		})
 	}
+}
+
+// Test Handler.Stop.
+func TestHandler_Stop(t *testing.T) {
+	const (
+		// We want to verify that the Stop method will wait on 10 in-flight requests.
+		requests = 10
+	)
+	inProgress := make(chan int32)
+	var reqID atomic.Int32
+	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		id := reqID.Inc()
+		t.Logf("request %d sending its ID", id)
+		inProgress <- id
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+		}, nil
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := HandlerConfig{MaxBodySize: 1024}
+	logger := &testLogger{}
+	handler := NewHandler(cfg, roundTripper, logger, reg, nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < requests; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			form := url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(form.Encode()))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Add("User-Agent", "test-user-agent")
+			req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+			_, _ = io.ReadAll(resp.Body)
+			require.Equal(t, http.StatusOK, resp.Code)
+		}()
+	}
+
+	// Wait for all requests to be in flight
+	test.Poll(t, 1*time.Second, requests, func() interface{} {
+		return int(reqID.Load())
+	})
+	t.Log("all requests in flight")
+
+	var stopped atomic.Bool
+	go func() {
+		t.Log("waiting on handler to stop")
+		handler.Stop()
+		t.Log("done waiting on handler to stop")
+		stopped.Store(true)
+	}()
+
+	// Wait for handler to enter stopping mode
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		handler.mtx.Lock()
+		defer handler.mtx.Unlock()
+		return handler.stopped
+	})
+
+	// Complete the requests, by consuming their messages
+	for i := 0; i < requests; i++ {
+		require.False(t, stopped.Load(), "handler stopped too early")
+
+		ri := <-inProgress
+		t.Logf("received message from request %d", ri)
+	}
+
+	wg.Wait()
+	t.Log("waiting on handler to stop")
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return stopped.Load()
+	})
 }
 
 type testLogger struct {

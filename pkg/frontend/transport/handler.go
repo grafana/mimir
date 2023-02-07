@@ -8,7 +8,6 @@ package transport
 import (
 	"bytes"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,10 +15,12 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
@@ -59,8 +60,8 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 }
 
-// Handler accepts queries and forwards them to RoundTripper. It can log slow queries,
-// but all other logic is inside the RoundTripper.
+// Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
+// all other logic is inside the RoundTripper.
 type Handler struct {
 	cfg          HandlerConfig
 	log          log.Logger
@@ -73,16 +74,22 @@ type Handler struct {
 	queryBytes   *prometheus.CounterVec
 	queryChunks  *prometheus.CounterVec
 	activeUsers  *util.ActiveUsersCleanupService
+
+	mtx              sync.Mutex
+	inflightRequests int
+	stopped          bool
+	cond             *sync.Cond
 }
 
 // NewHandler creates a new frontend handler.
-func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) http.Handler {
+func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
 	h := &Handler{
 		cfg:          cfg,
 		log:          log,
 		roundTripper: roundTripper,
 		at:           at,
 	}
+	h.cond = sync.NewCond(&h.mtx)
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -119,7 +126,36 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 	return h
 }
 
+// Stop makes f enter stopped mode and wait on in-flight requests.
+func (f *Handler) Stop() {
+	f.mtx.Lock()
+	f.stopped = true
+
+	level.Debug(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
+	for f.inflightRequests > 0 {
+		f.cond.Wait()
+	}
+	f.mtx.Unlock()
+	level.Debug(f.log).Log("msg", "done waiting on in-flight requests")
+}
+
 func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mtx.Lock()
+	if f.stopped {
+		f.mtx.Unlock()
+		writeError(w, fmt.Errorf("frontend not running"))
+		return
+	}
+	f.inflightRequests++
+	f.mtx.Unlock()
+
+	defer func() {
+		f.mtx.Lock()
+		f.inflightRequests--
+		f.cond.Broadcast()
+		f.mtx.Unlock()
+	}()
+
 	var stats *querier_stats.Stats
 
 	// Initialise the stats in the context and make sure it's propagated
