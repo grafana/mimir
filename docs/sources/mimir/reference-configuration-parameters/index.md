@@ -2597,6 +2597,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
+[out_of_order_blocks_external_label_enabled: <boolean> | default = ]
+
 # (experimental) Label used to define the group label for metrics separation.
 # For each write request, the group is obtained from the first non-empty group
 # label from the first timeseries in the incoming list of timeseries. Specific

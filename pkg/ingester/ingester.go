@@ -1813,6 +1813,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = NewShipper(
 			userLogger,
+			i.limits,
+			userID,
 			tsdbPromReg,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),

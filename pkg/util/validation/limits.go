@@ -104,7 +104,8 @@ type Limits struct {
 	// Active series custom trackers
 	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
-	OutOfOrderTimeWindow model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled"`
 
 	// User defined label to give the option of subdividing specific metrics by another label
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
@@ -576,6 +577,11 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
 func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
 	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
+}
+
+// OutOfOrderBlocksExternalLabelEnabled returns if the shipper is flagging out-of-order blocks with an external label.
+func (o *Overrides) OutOfOrderBlocksExternalLabelEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).OutOfOrderBlocksExternalLabelEnabled
 }
 
 // SeparateMetricsGroupLabel returns the custom label used to separate specific metrics

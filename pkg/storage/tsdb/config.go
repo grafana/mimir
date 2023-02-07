@@ -42,6 +42,10 @@ const (
 	// DeprecatedShardIDExternalLabel is deprecated.
 	DeprecatedShardIDExternalLabel = "__shard_id__"
 
+	// OutOfOrderExternalLabelKey is the external label used to mark blocks
+	// containing out-of-order data.
+	OutOfOrderExternalLabelKey = "__out_of_order__"
+
 	// DefaultCloseIdleTSDBInterval is how often are open TSDBs checked for being idle and closed.
 	DefaultCloseIdleTSDBInterval = 5 * time.Minute
 
