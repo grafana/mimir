@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/exp/slices"
 )
 
 // This script computes the size that a specific percentile of entries in a Memcached
@@ -85,11 +86,11 @@ func main() {
 
 }
 
-func readLines(r io.Reader) ([]stat, uint64, error) {
-	var stats []stat
-	var total uint64
-	buf := bufio.NewReader(r)
+func readLines(r io.Reader) ([]*stat, uint64, error) {
+	stats := make(map[uint64]*stat)
+	total := uint64(0)
 
+	buf := bufio.NewReader(r)
 	for {
 		bytes, _, err := buf.ReadLine()
 		if errors.Is(err, io.EOF) {
@@ -101,8 +102,11 @@ func readLines(r io.Reader) ([]stat, uint64, error) {
 		}
 
 		line := string(bytes)
+		// Skip parsing the "END" line instead of just breaking out since we want to
+		// be able to support finding the distribution of sizes from an entire cluster
+		// (the results from multiple servers `cat`-ed together).
 		if line == "END" {
-			break
+			continue
 		}
 
 		s, err := parseStat(line)
@@ -110,30 +114,45 @@ func readLines(r io.Reader) ([]stat, uint64, error) {
 			return nil, 0, err
 		}
 
-		stats = append(stats, s)
+		existing, ok := stats[s.size]
+		if ok {
+			existing.count += s.count
+		} else {
+			stats[s.size] = s
+		}
+
 		total += s.count
 	}
 
-	return stats, total, nil
+	out := make([]*stat, 0, len(stats))
+	for _, s := range stats {
+		out = append(out, s)
+	}
+
+	slices.SortFunc(out, func(a, b *stat) bool {
+		return a.size < b.size
+	})
+
+	return out, total, nil
 }
 
-func parseStat(line string) (stat, error) {
+func parseStat(line string) (*stat, error) {
 	parts := strings.SplitN(line, " ", 3)
 	if len(parts) != 3 {
-		return stat{}, fmt.Errorf("unexpected number of parts from line %s", line)
+		return nil, fmt.Errorf("unexpected number of parts from line %s", line)
 	}
 
 	size, err := strconv.ParseUint(parts[1], 10, 64)
 	if err != nil {
-		return stat{}, fmt.Errorf("unable to parse size in stat line %s: %w", line, err)
+		return nil, fmt.Errorf("unable to parse size in stat line %s: %w", line, err)
 	}
 
 	count, err := strconv.ParseUint(parts[2], 10, 64)
 	if err != nil {
-		return stat{}, fmt.Errorf("unable to parse count in stat line %s: %w", line, err)
+		return nil, fmt.Errorf("unable to parse count in stat line %s: %w", line, err)
 	}
 
-	return stat{
+	return &stat{
 		size:  size,
 		count: count,
 	}, nil
