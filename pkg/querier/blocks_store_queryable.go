@@ -659,16 +659,16 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 	return true, false
 }
 
-// fetchSeriesFromStores fetches series satisfying the given matchers (convertedMatchers) and belonging to the given time range (minT, maxT)
-// from all the given store-gateways (clients). Series are fetched from the given set of store-gateways concurrently.
-// In successful case, i.e., when all the concurrent fetches terminate with no exception, fetchSeriesFromStores returns:
+// fetchSeriesFromStores fetches series satisfying convertedMatchers and in the time range [minT, maxT) from all
+// store-gateways in clients. Series are fetched from the given set of store-gateways concurrently. In successful
+// case, i.e., when all the concurrent fetches terminate with no exception, fetchSeriesFromStores returns:
 //  1. a slice of fetched storage.SeriesSet
 //  2. a slice of ulid.ULID corresponding to the queried blocks
 //  3. storage.Warnings encountered during the operation
 //
 // In case of a serious error during any of the concurrent executions, the error is returned. Errors while creating storepb.SeriesRequest,
 // context cancellation, and unprocessable requests to the store-gateways (e.g., if a chunk or series limit is hit) are
-// considered serious errors. All other errors are ignored, and give rise to fetch retrials.
+// considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
