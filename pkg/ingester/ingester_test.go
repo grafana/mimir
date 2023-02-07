@@ -482,9 +482,6 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 2
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -7383,9 +7380,6 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	require.NoError(t, err)
 
 	expectedMetrics := `
-		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-		# TYPE cortex_ingester_ingested_samples_failures_total counter
-		cortex_ingester_ingested_samples_failures_total{user="1"} 1
 		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 		# TYPE cortex_ingester_ingested_samples_total counter
 		cortex_ingester_ingested_samples_total{user="1"} 1
@@ -7435,9 +7429,6 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	require.NoError(t, err)
 
 	expectedMetrics = `
-	# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-	# TYPE cortex_ingester_ingested_samples_failures_total counter
-	cortex_ingester_ingested_samples_failures_total{user="1"} 1
 	# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 	# TYPE cortex_ingester_ingested_samples_total counter
 	cortex_ingester_ingested_samples_total{user="1"} 2

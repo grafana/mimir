@@ -1137,8 +1137,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 					return wrapWithUser(err, userID)
 				}
-			} else { // ignore histograms and increase counter
-				stats.histogramStats.failedSamplesCount++
 			}
 		}
 
