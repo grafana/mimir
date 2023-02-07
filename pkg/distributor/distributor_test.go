@@ -371,16 +371,12 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	metrics := []string{
 		"cortex_distributor_received_samples_total",
 		"cortex_distributor_received_exemplars_total",
-		"cortex_distributor_received_histograms_total",
 		"cortex_distributor_received_metadata_total",
 		"cortex_distributor_deduped_samples_total",
-		"cortex_distributor_deduped_histograms_total",
 		"cortex_distributor_samples_in_total",
 		"cortex_distributor_exemplars_in_total",
-		"cortex_distributor_histograms_in_total",
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
-		"cortex_distributor_non_ha_histograms_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 	}
 
@@ -394,7 +390,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
 	d.nonHASamples.WithLabelValues("userA").Add(5)
-
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 
@@ -422,7 +417,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
-		cortex_distributor_received_samples_total{user="userA",} 5
+		cortex_distributor_received_samples_total{user="userA"} 5
 		cortex_distributor_received_samples_total{user="userB"} 10
 
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
@@ -2367,13 +2362,25 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			`,
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
 		}, {
 			name:                  "don't ingest with only samples",
 			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
@@ -2383,13 +2390,28 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
+			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+			# TYPE cortex_distributor_received_samples_total counter
+			cortex_distributor_received_samples_total{user="user"} 0
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			`,
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
 		}, {
 			name:                  "do ingest with metadata",
 			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
@@ -2402,6 +2424,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
@@ -2411,10 +2436,13 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 			# TYPE cortex_distributor_metadata_in_total counter
 			cortex_distributor_metadata_in_total{user="user"} 5
-			`,
+`,
 		}, {
 			name:                  "don't ingest with metadata",
 			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
@@ -2424,6 +2452,12 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
+			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+			# TYPE cortex_distributor_received_samples_total counter
+			cortex_distributor_received_samples_total{user="user"} 0
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
@@ -2433,10 +2467,13 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 			# TYPE cortex_distributor_metadata_in_total counter
 			cortex_distributor_metadata_in_total{user="user"} 5
-			`,
+`,
 		}, {
 			name:                  "do ingest with exemplars",
 			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
@@ -2452,6 +2489,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 5
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
@@ -2461,7 +2501,10 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
-			`,
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
 		}, {
 			name:                  "don't ingest with exemplars",
 			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
@@ -2471,6 +2514,15 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 			# TYPE cortex_distributor_received_requests_total counter
 			cortex_distributor_received_requests_total{user="user"} 1
+			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+			# TYPE cortex_distributor_received_samples_total counter
+			cortex_distributor_received_samples_total{user="user"} 0
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
 			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 			# TYPE cortex_distributor_requests_in_total counter
 			cortex_distributor_requests_in_total{user="user"} 1
@@ -2480,7 +2532,10 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
-			`,
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
 		},
 	}
 
@@ -4767,7 +4822,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		receivedMetadata  int
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
-		text := fmt.Sprintf(`
+		return fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
 				cortex_distributor_requests_in_total{user="%s"} %d
@@ -4783,38 +4838,25 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
 				# TYPE cortex_distributor_received_requests_total counter
 				cortex_distributor_received_requests_total{user="%s"} %d
-			`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests)
-		if cfg.receivedSamples > 0 {
-			text += fmt.Sprintf(`
 				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 				# TYPE cortex_distributor_received_samples_total counter
 				cortex_distributor_received_samples_total{user="%s"} %d
-			`, tenant, cfg.receivedSamples)
-		}
-		if cfg.receivedExemplars > 0 {
-			text += fmt.Sprintf(`
-		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-		# TYPE cortex_distributor_received_exemplars_total counter
-		cortex_distributor_received_exemplars_total{user="%s"} %d
-		`, tenant, cfg.receivedExemplars)
-		}
-		text += fmt.Sprintf(`
-		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-		# TYPE cortex_distributor_received_metadata_total counter
-		cortex_distributor_received_metadata_total{user="%s"} %d
-		`, tenant, cfg.receivedMetadata)
-
-		metrics := []string{
-			"cortex_distributor_requests_in_total",
-			"cortex_distributor_samples_in_total",
-			"cortex_distributor_exemplars_in_total",
-			"cortex_distributor_metadata_in_total",
-			"cortex_distributor_received_requests_total",
-			"cortex_distributor_received_samples_total",
-			"cortex_distributor_received_exemplars_total",
-			"cortex_distributor_received_metadata_total",
-		}
-		return text, metrics
+				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+				# TYPE cortex_distributor_received_exemplars_total counter
+				cortex_distributor_received_exemplars_total{user="%s"} %d
+				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+				# TYPE cortex_distributor_received_metadata_total counter
+				cortex_distributor_received_metadata_total{user="%s"} %d
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
+				"cortex_distributor_requests_in_total",
+				"cortex_distributor_samples_in_total",
+				"cortex_distributor_exemplars_in_total",
+				"cortex_distributor_metadata_in_total",
+				"cortex_distributor_received_requests_total",
+				"cortex_distributor_received_samples_total",
+				"cortex_distributor_received_exemplars_total",
+				"cortex_distributor_received_metadata_total",
+			}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}
