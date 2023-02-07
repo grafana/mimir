@@ -780,14 +780,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples and histograms have been deduped.
-				if numSamples + numHistograms > 0 {
-					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples+numHistograms))
+				if numSamples+numHistograms > 0 {
+					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples + numHistograms))
 				}
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				if numSamples + numHistograms > 0 {
+				if numSamples+numHistograms > 0 {
 					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples + numHistograms))
 				}
 
@@ -806,8 +806,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			if numSamples + numHistograms > 0 {
-				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples+numHistograms))
+			if numSamples+numHistograms > 0 {
+				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
 			}
 		}
 
@@ -999,8 +999,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedHistograms + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			if validatedSamples + validatedHistograms > 0 {
-				d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples+validatedHistograms))
+			if validatedSamples+validatedHistograms > 0 {
+				d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples + validatedHistograms))
 			}
 			if validatedExemplars > 0 {
 				d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
@@ -1157,7 +1157,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
-		if numSamples + numHistograms > 0 {
+		if numSamples+numHistograms > 0 {
 			d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
 		}
 		if numExemplars > 0 {
@@ -1406,8 +1406,8 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	}
 	receivedMetadata = len(req.Metadata)
 
-	if receivedSamples + receivedHistograms > 0 {
-		d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples+receivedHistograms))
+	if receivedSamples+receivedHistograms > 0 {
+		d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
 	}
 	if receivedExemplars > 0 {
 		d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
