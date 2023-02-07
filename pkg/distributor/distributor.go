@@ -527,19 +527,18 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
 	d.receivedRequests.DeleteLabelValues(userID)
+	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingRequests.DeleteLabelValues(userID)
+	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
+	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
-	d.receivedSamples.DeletePartialMatch(filter)
-	d.incomingSamples.DeletePartialMatch(filter)
-	d.nonHASamples.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
-
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
@@ -557,9 +556,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
-	filter := prometheus.Labels{"user": userID, "group": group}
-	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
-	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
+	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
+	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
 	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
 }
 
