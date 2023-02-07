@@ -109,7 +109,7 @@ func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 	cortex_distributor_forward_requests_total{} 1
 	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
 	# TYPE cortex_distributor_forward_samples_total counter
-	cortex_distributor_forward_samples_total{type="float"} 4
+	cortex_distributor_forward_samples_total 4
 `
 
 	require.NoError(t, testutil.GatherAndCompare(
@@ -223,7 +223,7 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="",reason="forwarded-sample-too-old",type="float",user="user"} 3
+			cortex_discarded_samples_total{group="",reason="forwarded-sample-too-old",user="user"} 3
 `,
 		}, {
 			name: "split one sample slice in the middle",
@@ -926,7 +926,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 	cortex_distributor_forward_requests_total{} 1
 	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
 	# TYPE cortex_distributor_forward_samples_total counter
-	cortex_distributor_forward_samples_total{type="float"} 4
+	cortex_distributor_forward_samples_total 4
 	# TYPE cortex_distributor_forward_grpc_clients gauge
 	# HELP cortex_distributor_forward_grpc_clients Number of gRPC clients used by Distributor forwarder.
 	cortex_distributor_forward_grpc_clients 1
