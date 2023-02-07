@@ -101,8 +101,10 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	}
 
 	if estimatedCardinality > 0 {
-		c.estimationError.Observe(math.Abs(float64(actualCardinality) - float64(estimatedCardinality)))
+		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
+		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
+		spanLog.LogFields(otlog.Float64("estimation error", estimationError))
 	}
 
 	return res, nil
