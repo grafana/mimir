@@ -767,26 +767,24 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		numSamples := 0
-		numHistograms := 0
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
-			numHistograms += len(ts.Histograms)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples and histograms have been deduped.
-				if numSamples+numHistograms > 0 {
-					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples + numHistograms))
+				if numSamples > 0 {
+					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 				}
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				if numSamples+numHistograms > 0 {
-					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples + numHistograms))
+				if numSamples > 0 {
+					d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				}
 
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
@@ -804,8 +802,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			if numSamples+numHistograms > 0 {
-				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
+			if numSamples > 0 {
+				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 			}
 		}
 
