@@ -2566,7 +2566,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
-# (experimental) Flag to enable the ingestion of native histogram samples.
+# (experimental) Enable ingestion of native histogram samples. If false, native
+# histogram samples are ignored without an error.
 # CLI flag: -ingester.accept-native-histograms
 [accept_native_histograms: <boolean> | default = false]
 

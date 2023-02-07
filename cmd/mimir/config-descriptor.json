@@ -3089,7 +3089,7 @@
           "kind": "field",
           "name": "accept_native_histograms",
           "required": false,
-          "desc": "Flag to enable the ingestion of native histogram samples.",
+          "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.accept-native-histograms",

@@ -1612,19 +1612,17 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType == chunkenc.ValFloat {
+			switch valType {
+			case chunkenc.ValFloat:
 				t, v := it.At()
-				ts.Samples = append(ts.Samples, mimirpb.Sample{
-					Value:       v,
-					TimestampMs: t,
-				})
-			} else if valType == chunkenc.ValHistogram {
+				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
+			case chunkenc.ValHistogram:
 				t, v := it.AtHistogram()
 				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
-			} else if valType == chunkenc.ValFloatHistogram {
+			case chunkenc.ValFloatHistogram:
 				t, v := it.AtFloatHistogram()
 				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
-			} else {
+			default:
 				return 0, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
