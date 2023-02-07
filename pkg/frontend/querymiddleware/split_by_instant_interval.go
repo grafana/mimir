@@ -161,9 +161,6 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", mapperStats.GetSplitQueries())
 
-	// Send hint with number of embedded queries to the sharding middleware
-	hints := &Hints{TotalQueries: int32(mapperStats.GetSplitQueries())}
-
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(mapperStats.GetSplitQueries()))
@@ -173,7 +170,8 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	s.metrics.splitQueries.Add(float64(mapperStats.GetSplitQueries()))
 	s.metrics.splitQueriesPerQuery.Observe(float64(mapperStats.GetSplitQueries()))
 
-	req = req.WithQuery(instantSplitQuery.String()).WithHints(hints)
+	// Send hint with number of embedded queries to the sharding middleware
+	req = req.WithQuery(instantSplitQuery.String()).WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
 	shardedQueryable := newShardedQueryable(req, s.next)
 
 	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))

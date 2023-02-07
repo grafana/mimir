@@ -273,6 +273,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"fetched_index_bytes", numIndexBytes,
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
+		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 	}, formatQueryString(queryString)...)
 
 	if queryErr != nil {

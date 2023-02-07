@@ -4363,6 +4363,17 @@
         },
         {
           "kind": "field",
+          "name": "query_sharding_max_series_per_shard",
+          "required": false,
+          "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.query-sharding-max-series-per-shard",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "downstream_url",
           "required": false,
           "desc": "URL of downstream Prometheus.",
