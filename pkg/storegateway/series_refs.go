@@ -846,7 +846,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			s.err = errors.Wrap(err, "read series")
 			return false
 		}
-		if len(lset) == 0 {
+		if lset.Len() == 0 {
 			// An empty label set means the series had no chunks in this block, so we skip it.
 			continue
 		}
