@@ -659,6 +659,7 @@ type Mimir struct {
 	MetadataSupplier         querier.MetadataSupplier
 	QuerierEngine            *promql.Engine
 	QueryFrontendTripperware querymiddleware.Tripperware
+	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
 	RulerStorage             rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
