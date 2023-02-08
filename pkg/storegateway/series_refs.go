@@ -152,7 +152,7 @@ func (g seriesChunkRefsRange) minTime() int64 {
 }
 
 func (g seriesChunkRefsRange) maxTime() int64 {
-	// Since chunks are only ordered by minTime, we have no guarantee for their maxTIme, so we need to iterate all.
+	// Since chunks are only ordered by minTime, we have no guarantee for their maxTime, so we need to iterate all.
 	var maxT int64
 	for _, c := range g.refs {
 		if c.maxTime > maxT {
@@ -185,7 +185,8 @@ type seriesChunkRef struct {
 	// The order of these fields matters; having the uint32 on top makes the whole struct 24 bytes; in a different order the struct is 32B
 	segFileOffset uint32
 	// length will be 0 when the length of the chunk isn't known
-	length           uint32
+	length uint32
+	// minTime and maxTime are inclusive
 	minTime, maxTime int64
 }
 
