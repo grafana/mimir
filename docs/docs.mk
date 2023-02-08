@@ -36,7 +36,8 @@ define docs_podman_run
 		-p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) \
 		--name $(DOCS_CONTAINER) \
 		--rm \
-		$(DOCS_IMAGE)
+		$(DOCS_IMAGE) \
+			/bin/bash -c "sed -i'' -e s/latest/$(DOCS_VERSION)/ content/docs/mimir/_index.md && exec $(1)"
 endef
 
 .PHONY: docs-rm
