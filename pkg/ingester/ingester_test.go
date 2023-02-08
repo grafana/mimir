@@ -415,7 +415,7 @@ func TestIngester_Push(t *testing.T) {
 					nil,
 					mimirpb.API,
 				),
-				// Write request with 1 series and 2 samples.
+				// Write request with 1 series and 3 samples.
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{

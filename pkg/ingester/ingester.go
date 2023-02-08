@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -677,7 +676,7 @@ type pushStats struct {
 	perUserSeriesLimitCount   int
 	perMetricSeriesLimitCount int
 
-	// The following stats are counter towards *SamplesCount as well!
+	// The following stats are counted towards *SamplesCount as well!
 	succeededHistogramsCount int
 	failedHistogramsCount    int
 }
@@ -855,7 +854,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
 		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
 		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
-		"ephemeralSucceededHisogramsCount", ephemeralStats.succeededHistogramsCount,
+		"ephemeralSucceededHistogramsCount", ephemeralStats.succeededHistogramsCount,
 		"ephemeralFailedHistogramsSamplesCount", ephemeralStats.failedHistogramsCount,
 	)
 
@@ -961,7 +960,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, stats *pushStats) bool {
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
 		// 400 error to the client. The client (Prometheus) will not retry on 400, and
@@ -1027,6 +1026,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		return false
 	}
 
+	// fetch once per push request to avoid processing half the request differently
+	acceptNativeHistograms := i.limits.AcceptNativeHistograms(userID)
+
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1035,29 +1037,50 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
-			(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
-			(len(ts.Samples) == 0 || allOutOfBoundsFloats(ts.Samples, minAppendTime)) &&
-			(len(ts.Histograms) == 0 || (i.limits.AcceptNativeHistograms(userID) && allOutOfBoundsHistograms(ts.Histograms, minAppendTime))) {
+		if acceptNativeHistograms {
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
+				allOutOfBoundsFloats(ts.Samples, minAppendTime) &&
+				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
 
-			stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-			stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-			stats.failedHistogramsCount += len(ts.Histograms)
+				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
+				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
+				stats.failedHistogramsCount += len(ts.Histograms)
 
-			var firstTimestamp int64 = math.MaxInt64
-			if len(ts.Samples) > 0 {
-				firstTimestamp = ts.Samples[0].TimestampMs
-			}
-			if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
-				firstTimestamp = ts.Histograms[0].Timestamp
-			}
-			updateFirstPartial(func() error {
-				if ephemeral {
-					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+				var firstTimestamp int64
+				if len(ts.Samples) > 0 {
+					firstTimestamp = ts.Samples[0].TimestampMs
 				}
-				return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
-			})
-			continue
+				if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
+					firstTimestamp = ts.Histograms[0].Timestamp
+				}
+
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					}
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+				})
+				continue
+			}
+		} else {
+			// ignore native histograms in the condition and statitics as well
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+				len(ts.Samples) > 0 && allOutOfBoundsFloats(ts.Samples, minAppendTime) {
+
+				stats.failedSamplesCount += len(ts.Samples)
+				stats.sampleOutOfBoundsCount += len(ts.Samples)
+
+				firstTimestamp := ts.Samples[0].TimestampMs
+
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					}
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+				})
+				continue
+			}
 		}
 
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
@@ -1090,7 +1113,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			stats.failedSamplesCount++
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels, stats) {
+			if handleAppendError(err, s.TimestampMs, ts.Labels) {
 				continue
 			}
 
@@ -1098,7 +1121,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		if i.limits.AcceptNativeHistograms(userID) {
+		if acceptNativeHistograms {
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -1111,13 +1134,18 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				} else {
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
+
+				// If the cached reference exists, we try to use it.
 				if ref != 0 {
 					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
 						stats.incSucceededHistogramsCount()
 						continue
 					}
 				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+
+					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
 						stats.incSucceededHistogramsCount()
 						continue
@@ -1126,7 +1154,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.incFailedHistogramsCount()
 
-				if handleAppendError(err, h.Timestamp, ts.Labels, stats) {
+				if handleAppendError(err, h.Timestamp, ts.Labels) {
 					continue
 				}
 
@@ -1134,7 +1162,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 		}
 
-		if activeSeries != nil && (stats.succeededSamplesCount) > oldSucceededSamplesCount {
+		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
 			activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
@@ -2791,7 +2819,7 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 	return hints
 }
 
-// allOutOfBounds returns whether all the provided samples are out of bounds.
+// allOutOfBounds returns whether all the provided (float) samples are out of bounds.
 func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	for _, s := range samples {
 		if s.TimestampMs >= minValidTime {
@@ -2801,6 +2829,7 @@ func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	return true
 }
 
+// allOutOfBoundsHistograms returns whether all the provided histograms are out of bounds.
 func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64) bool {
 	for _, s := range histograms {
 		if s.Timestamp >= minValidTime {
