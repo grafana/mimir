@@ -6,8 +6,8 @@
 package storegateway
 
 import (
-	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -30,7 +30,7 @@ type MetadataFetcherMetrics struct {
 
 func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
 	return &MetadataFetcherMetrics{
-		regs: dskit_metrics.NewTenantRegistries(log.NewNopLogger()),
+		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
 
 		// When mapping new metadata fetcher metrics from Thanos, please remember to add these metrics
 		// to our internal fetcherMetrics implementation too.
