@@ -190,10 +190,9 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
-	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
 
@@ -204,10 +203,9 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
 func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) ValidationError {
-	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return newSampleTimestampTooNewError(unsafeMetricName, s.Timestamp)
 	}
 
