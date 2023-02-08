@@ -998,7 +998,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 	return s.err
 }
 
-// loadSeries returns a for chunks. It is not safe to use the buffer after calling loadSeries again
+// loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []chunks.Meta, error) {
 	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chunkMetasBuffer, s.skipChunks, stats)
 	if !ok || err != nil {
