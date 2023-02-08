@@ -165,18 +165,18 @@ func (g seriesChunkRefsRange) maxTime() int64 {
 
 func (g seriesChunkRefsRange) Compare(other seriesChunkRefsRange) int {
 	if g.minTime() < other.minTime() {
-		return 1
+		return -1
 	}
 	if g.minTime() > other.minTime() {
-		return -1
+		return 1
 	}
 	// Same min time.
 
 	if g.maxTime() < other.maxTime() {
-		return 1
+		return -1
 	}
 	if g.maxTime() > other.maxTime() {
-		return -1
+		return 1
 	}
 	return 0
 }
@@ -490,7 +490,7 @@ Outer:
 				break Outer
 			}
 
-			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
+			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
 				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset])
 				break
 			} else {

@@ -51,7 +51,7 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 	}
 
 	sort.Slice(input, func(i, j int) bool {
-		return input[i].Compare(input[j]) > 0
+		return input[i].Compare(input[j]) < 0
 	})
 
 	assert.Equal(t, expected, input)
