@@ -5,6 +5,8 @@ package compactor
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +18,14 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -671,6 +675,125 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
 			}
 		})
+	}
+}
+
+func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+	const (
+		userID     = "user-1"
+		numSeries  = 100
+		blockRange = 2 * time.Hour
+		numShards  = 2
+	)
+
+	var (
+		blockRangeMillis = blockRange.Milliseconds()
+		compactionRanges = mimir_tsdb.DurationList{blockRange}
+
+		// You should NEVER CHANGE the expected series here, otherwise it means you're introducing
+		// a backward incompatible change.
+		expectedSeriesIDByShard = map[string][]int{
+			"1_of_2": {0, 1, 3, 4, 5, 6, 7, 11, 12, 15, 16, 17, 18, 19, 20, 21, 24, 25, 27, 31, 36, 37, 38, 40, 42, 45, 47, 50, 51, 52, 53, 54, 55, 57, 59, 60, 61, 63, 68, 70, 71, 72, 74, 77, 79, 80, 81, 82, 83, 84, 85, 86, 88, 89, 90, 91, 92, 94, 98, 100},
+			"2_of_2": {2, 8, 9, 10, 13, 14, 22, 23, 26, 28, 29, 30, 32, 33, 34, 35, 39, 41, 43, 44, 46, 48, 49, 56, 58, 62, 64, 65, 66, 67, 69, 73, 75, 76, 78, 87, 93, 95, 96, 97, 99},
+		}
+	)
+
+	workDir := t.TempDir()
+	storageDir := t.TempDir()
+	fetcherDir := t.TempDir()
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = storageDir
+
+	compactorCfg := prepareConfig(t)
+	compactorCfg.DataDir = workDir
+	compactorCfg.BlockRanges = compactionRanges
+
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.splitAndMergeShards[userID] = numShards
+
+	logger := log.NewLogfmtLogger(os.Stdout)
+	reg := prometheus.NewPedanticRegistry()
+	ctx := context.Background()
+
+	bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+	require.NoError(t, err)
+
+	// Create a TSDB block in the storage.
+	blockID := createTSDBBlock(t, bucketClient, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+	})
+
+	// Wait until the first compaction run completed.
+	test.Poll(t, 15*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+					# TYPE cortex_compactor_runs_completed_total counter
+					cortex_compactor_runs_completed_total 1
+				`), "cortex_compactor_runs_completed_total")
+	})
+
+	// List back any (non deleted) block from the storage.
+	userBucket := bucket.NewUserBucketClient(userID, bucketClient, nil)
+	fetcher, err := block.NewMetaFetcher(logger,
+		1,
+		userBucket,
+		fetcherDir,
+		reg,
+		[]block.MetadataFilter{NewExcludeMarkedForDeletionFilter(userBucket)},
+	)
+	require.NoError(t, err)
+	metas, partials, err := fetcher.Fetch(ctx)
+	require.NoError(t, err)
+	require.Empty(t, partials)
+
+	// Sort blocks by MinTime and labels so that we get a stable comparison.
+	actualMetas := sortMetasByMinTime(convertMetasMapToSlice(metas))
+
+	// Ensure the input block has been split.
+	require.Len(t, actualMetas, numShards)
+	for idx, actualMeta := range actualMetas {
+		assert.Equal(t, blockRangeMillis, actualMeta.MinTime)
+		assert.Equal(t, 2*blockRangeMillis, actualMeta.MaxTime)
+		assert.Equal(t, []ulid.ULID{blockID}, actualMeta.Compaction.Sources)
+		assert.Equal(t, sharding.FormatShardIDLabelValue(uint64(idx), numShards), actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
+	}
+
+	// Ensure each split block contains the right series, based on a series labels
+	// hashing function which doesn't change over time.
+	for _, actualMeta := range actualMetas {
+		expectedSeriesIDs := expectedSeriesIDByShard[actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]]
+
+		b, err := tsdb.OpenBlock(logger, filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil)
+		require.NoError(t, err)
+
+		indexReader, err := b.Index()
+		require.NoError(t, err)
+
+		// Find all series in the block.
+		postings, err := indexReader.PostingsForMatchers(false, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+		require.NoError(t, err)
+
+		builder := labels.NewScratchBuilder(1)
+		for postings.Next() {
+			// Symbolize the series labels.
+			require.NoError(t, indexReader.Series(postings.At(), &builder, nil))
+
+			// Ensure the series below to the right shard.
+			seriesLabels := builder.Labels()
+			seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+			require.NoError(t, err)
+			assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+		}
+
+		require.NoError(t, postings.Err())
 	}
 }
 

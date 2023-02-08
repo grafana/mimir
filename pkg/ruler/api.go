@@ -51,11 +51,12 @@ type AlertDiscovery struct {
 
 // Alert has info for an alert.
 type Alert struct {
-	Labels      labels.Labels `json:"labels"`
-	Annotations labels.Labels `json:"annotations"`
-	State       string        `json:"state"`
-	ActiveAt    *time.Time    `json:"activeAt"`
-	Value       string        `json:"value"`
+	Labels          labels.Labels `json:"labels"`
+	Annotations     labels.Labels `json:"annotations"`
+	State           string        `json:"state"`
+	ActiveAt        *time.Time    `json:"activeAt,omitempty"`
+	KeepFiringSince *time.Time    `json:"keepFiringSince,omitempty"`
+	Value           string        `json:"value"`
 }
 
 // RuleDiscovery has info for all rules
@@ -85,6 +86,7 @@ type alertingRule struct {
 	Name           string        `json:"name"`
 	Query          string        `json:"query"`
 	Duration       float64       `json:"duration"`
+	KeepFiringFor  float64       `json:"keepFiringFor"`
 	Labels         labels.Labels `json:"labels"`
 	Annotations    labels.Labels `json:"annotations"`
 	Alerts         []*Alert      `json:"alerts"`
@@ -177,19 +179,14 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 			if g.ActiveRules[i].Rule.Alert != "" {
 				alerts := make([]*Alert, 0, len(rl.Alerts))
 				for _, a := range rl.Alerts {
-					alerts = append(alerts, &Alert{
-						Labels:      mimirpb.FromLabelAdaptersToLabels(a.Labels),
-						Annotations: mimirpb.FromLabelAdaptersToLabels(a.Annotations),
-						State:       a.GetState(),
-						ActiveAt:    &a.ActiveAt,
-						Value:       strconv.FormatFloat(a.Value, 'e', -1, 64),
-					})
+					alerts = append(alerts, alertStateDescToPrometheusAlert(a))
 				}
 				grp.Rules[i] = alertingRule{
 					State:          rl.GetState(),
 					Name:           rl.Rule.GetAlert(),
 					Query:          rl.Rule.GetExpr(),
 					Duration:       rl.Rule.For.Seconds(),
+					KeepFiringFor:  rl.Rule.KeepFiringFor.Seconds(),
 					Labels:         mimirpb.FromLabelAdaptersToLabels(rl.Rule.Labels),
 					Annotations:    mimirpb.FromLabelAdaptersToLabels(rl.Rule.Annotations),
 					Alerts:         alerts,
@@ -259,13 +256,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 		for _, rl := range g.ActiveRules {
 			if rl.Rule.Alert != "" {
 				for _, a := range rl.Alerts {
-					alerts = append(alerts, &Alert{
-						Labels:      mimirpb.FromLabelAdaptersToLabels(a.Labels),
-						Annotations: mimirpb.FromLabelAdaptersToLabels(a.Annotations),
-						State:       a.GetState(),
-						ActiveAt:    &a.ActiveAt,
-						Value:       strconv.FormatFloat(a.Value, 'e', -1, 64),
-					})
+					alerts = append(alerts, alertStateDescToPrometheusAlert(a))
 				}
 			}
 		}
@@ -559,4 +550,22 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	respondAccepted(w, logger)
+}
+
+// alertStateDescToPrometheusAlert converts AlertStateDesc to Alert. The returned data structure is suitable
+// to be exported by the user-facing API.
+func alertStateDescToPrometheusAlert(d *AlertStateDesc) *Alert {
+	a := &Alert{
+		Labels:      mimirpb.FromLabelAdaptersToLabels(d.Labels),
+		Annotations: mimirpb.FromLabelAdaptersToLabels(d.Annotations),
+		State:       d.GetState(),
+		ActiveAt:    &d.ActiveAt,
+		Value:       strconv.FormatFloat(d.Value, 'e', -1, 64),
+	}
+
+	if !d.KeepFiringSince.IsZero() {
+		a.KeepFiringSince = &d.KeepFiringSince
+	}
+
+	return a
 }

@@ -32,6 +32,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -46,10 +47,15 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
+	chunkscache.Cache
 }
 
-func (c *swappableCache) SwapWith(cache indexcache.IndexCache) {
+func (c *swappableCache) SwapIndexCacheWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
+}
+
+func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.Cache) {
+	c.Cache = cache
 }
 
 type storeSuite struct {
@@ -108,6 +114,7 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
+	chunksCache          chunkscache.Cache
 	bucketStoreOpts      []BucketStoreOption
 	metricsRegistry      *prometheus.Registry
 }
@@ -127,6 +134,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
+		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -162,7 +170,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
 		metricsRegistry: cfg.metricsRegistry,
-		cache:           &swappableCache{IndexCache: cfg.indexCache},
+		cache:           &swappableCache{IndexCache: cfg.indexCache, Cache: cfg.chunksCache},
 		minTime:         minTime,
 		maxTime:         maxTime,
 	}
@@ -171,7 +179,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}, cfg.bucketStoreOpts...)
+	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}, cfg.bucketStoreOpts...)
 
 	store, err := NewBucketStore(
 		"tenant",
@@ -225,6 +233,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, vals.Values)
+
+	srv := newBucketStoreTestServer(t, s.store)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
@@ -406,12 +416,12 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		},
 	} {
 		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			srv := newBucketStoreSeriesServer(ctx)
+			seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
+			require.NoError(t, err)
 
-			assert.NoError(t, s.store.Series(tcase.req, srv))
-			assert.Equal(t, len(tcase.expected), len(srv.SeriesSet))
+			assert.Equal(t, len(tcase.expected), len(seriesSet))
 
-			for i, s := range srv.SeriesSet {
+			for i, s := range seriesSet {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
@@ -482,32 +492,12 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors labels.Labels) []*dto.Metric {
 	var result []*dto.Metric
 	for _, m := range mf.GetMetric() {
-		if !matchesSelectors(m, selectors) {
+		if !util.MatchesSelectors(m, selectors) {
 			continue
 		}
 		result = append(result, m)
 	}
 	return result
-}
-
-func matchesSelectors(m *dto.Metric, selectors labels.Labels) bool {
-	for _, l := range selectors {
-		found := false
-		for _, lp := range m.GetLabel() {
-			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
-				continue
-			}
-
-			found = true
-			break
-		}
-
-		if !found {
-			return false
-		}
-	}
-
-	return true
 }
 
 func TestBucketStore_e2e(t *testing.T) {
@@ -517,8 +507,9 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		s := newSuite()
 
-		if ok := t.Run("no index cache", func(t *testing.T) {
-			s.cache.SwapWith(noopCache{})
+		if ok := t.Run("no caches", func(t *testing.T) {
+			s.cache.SwapIndexCacheWith(noopCache{})
+			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -530,7 +521,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxSize:     2e5,
 			})
 			assert.NoError(t, err)
-			s.cache.SwapWith(indexCache)
+			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -542,7 +533,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
-			s.cache.SwapWith(indexCache2)
+			s.cache.SwapIndexCacheWith(indexCache2)
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -576,7 +567,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 			MaxSize:     2e5,
 		})
 		assert.NoError(t, err)
-		s.cache.SwapWith(indexCache)
+		s.cache.SwapIndexCacheWith(indexCache)
 
 		testBucketStore_e2e(t, ctx, s)
 	})
@@ -629,8 +620,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				MaxTime: timestamp.FromTime(maxTime),
 			}
 
-			srv := newBucketStoreSeriesServer(ctx)
-			err := s.store.Series(req, srv)
+			srv := newBucketStoreTestServer(t, s.store)
+			_, _, _, err := srv.Series(context.Background(), req)
 
 			if testData.expectedErr == "" {
 				assert.NoError(t, err)
@@ -846,18 +837,19 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 			},
 			SkipChunks: false,
 		}
-		srv := newBucketStoreSeriesServer(ctx)
 
-		assert.NoError(t, s.store.Series(req, srv))
+		srv := newBucketStoreTestServer(t, s.store)
+		seriesSet, _, _, err := srv.Series(ctx, req)
+		require.NoError(t, err)
 
 		counts := map[storepb.Chunk_Encoding]int{}
-		for _, series := range srv.SeriesSet {
+		for _, series := range seriesSet {
 			for _, chunk := range series.Chunks {
 				counts[chunk.Raw.Type]++
 			}
 		}
 		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
-			count, ok := counts[storepb.Chunk_Encoding(chunkType)]
+			count, ok := counts[chunkType]
 			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
 			assert.NotEmpty(t, count)
 		}

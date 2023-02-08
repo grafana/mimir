@@ -38,8 +38,8 @@ var (
 )
 
 const (
-	errSeriesLimitMessage = "exceeded series limit"
-	errChunksLimitMessage = "exceeded chunks limit"
+	ErrSeriesLimitMessage = "exceeded series limit"
+	ErrChunksLimitMessage = "exceeded chunks limit"
 )
 
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
@@ -586,7 +586,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	l.currentBatch = l.from.At()
 	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
 	if err != nil {
-		l.err = errors.Wrap(err, errSeriesLimitMessage)
+		l.err = errors.Wrap(err, ErrSeriesLimitMessage)
 		return false
 	}
 
@@ -597,7 +597,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 
 	err = l.chunksLimiter.Reserve(uint64(totalChunks))
 	if err != nil {
-		l.err = errors.Wrap(err, errChunksLimitMessage)
+		l.err = errors.Wrap(err, ErrChunksLimitMessage)
 		return false
 	}
 	return true
@@ -955,7 +955,7 @@ func (b cachedSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryS
 func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
 	hash, ok := b.CachedHash(id, stats)
 	if !ok {
-		hash = lset.Hash()
+		hash = labels.StableHash(lset)
 		b.cache.Store(id, hash)
 	}
 	return hash

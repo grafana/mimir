@@ -3,7 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Copyright 2016-2017 The New York Times Company.
 //go:build go1.8
-// +build go1.8
 
 package gziphandler
 

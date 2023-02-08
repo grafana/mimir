@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/reference-configuration-parameters/
-  - /docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/
+  - operators-guide/configuring/reference-configuration-parameters/
+  - operators-guide/configure/reference-configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration
 title: Grafana Mimir configuration reference
@@ -1201,6 +1201,13 @@ results_cache:
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
+
+# (experimental) How many series a single sharded partial query should load at
+# most. This is not a strict requirement guaranteed to be honoured by query
+# sharding, but a hint given to the query sharding when the query execution is
+# initially planned. 0 to disable cardinality-based hints.
+# CLI flag: -query-frontend.query-sharding-max-series-per-shard
+[query_sharding_max_series_per_shard: <int> | default = 0]
 
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
@@ -2968,11 +2975,6 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.chunks-cache
     [memcached: <memcached>]
-
-    # (advanced) Size of each subrange that bucket object is split into for
-    # better caching.
-    # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-size
-    [subrange_size: <int> | default = 16000]
 
     # (advanced) Maximum number of sub-GetRange requests that a single GetRange
     # request can be split into when fetching chunks. Zero or negative value =

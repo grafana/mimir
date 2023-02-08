@@ -512,11 +512,13 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 			queried := false
 
 			for _, g := range initialGateways {
-				req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-				srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-				require.NoError(t, g.Series(req, srv))
+				srv := newStoreGatewayTestServer(t, g)
 
-				for _, b := range srv.Hints.QueriedBlocks {
+				req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+				_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+				require.NoError(t, err)
+
+				for _, b := range hints.QueriedBlocks {
 					if b.Id == block.ID.String() {
 						queried = true
 					}
@@ -785,6 +787,8 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 
+	srv := newStoreGatewayTestServer(t, g)
+
 	// No sync retries to speed up tests.
 	g.stores.syncBackoffConfig = backoff.Config{MaxRetries: 1}
 
@@ -797,9 +801,9 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-		require.NoError(t, g.Series(req, srv))
-		assert.Len(t, srv.Hints.QueriedBlocks, 1)
+		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		require.NoError(t, err)
+		assert.Len(t, hints.QueriedBlocks, 1)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -841,9 +845,9 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-		require.NoError(t, g.Series(req, srv))
-		assert.Len(t, srv.Hints.QueriedBlocks, 1)
+		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		require.NoError(t, err)
+		assert.Len(t, hints.QueriedBlocks, 1)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -878,9 +882,9 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-		require.NoError(t, g.Series(req, srv))
-		assert.Len(t, srv.Hints.QueriedBlocks, 1)
+		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		require.NoError(t, err)
+		assert.Len(t, hints.QueriedBlocks, 1)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -914,9 +918,9 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-		require.NoError(t, g.Series(req, srv))
-		assert.Len(t, srv.Hints.QueriedBlocks, 1)
+		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		require.NoError(t, err)
+		assert.Len(t, hints.QueriedBlocks, 1)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -1044,6 +1048,8 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
+			srv := newStoreGatewayTestServer(t, g)
+
 			// Query back all series.
 			req := &storepb.SeriesRequest{
 				MinTime: minT,
@@ -1053,14 +1059,13 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				},
 			}
 
-			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-			err = g.Series(req, srv)
+			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 			require.NoError(t, err)
-			assert.Empty(t, srv.Warnings)
-			assert.Len(t, srv.SeriesSet, numSeries)
+			assert.Empty(t, warnings)
+			assert.Len(t, seriesSet, numSeries)
 
 			for seriesID := 0; seriesID < numSeries; seriesID++ {
-				actual := srv.SeriesSet[seriesID]
+				actual := seriesSet[seriesID]
 
 				// Ensure Mimir external labels have been removed.
 				assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
@@ -1151,6 +1156,8 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
+	srv := newStoreGatewayTestServer(t, g)
+
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &storepb.SeriesRequest{
@@ -1159,17 +1166,101 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 				Matchers: testData.matchers,
 			}
 
-			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-			err = g.Series(req, srv)
+			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 			require.NoError(t, err)
-			assert.Empty(t, srv.Warnings)
+			assert.Empty(t, warnings)
 
-			actualMetrics := make([]string, 0, len(srv.SeriesSet))
-			for _, s := range srv.SeriesSet {
+			actualMetrics := make([]string, 0, len(seriesSet))
+			for _, s := range seriesSet {
 				actualMetrics = append(actualMetrics, s.PromLabels().Get(labels.MetricName))
 			}
 			assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 		})
+	}
+}
+
+func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		numSeries = 100
+		numShards = 2
+	)
+
+	var (
+		ctx    = context.Background()
+		userID = "user-1"
+
+		// You should NEVER CHANGE the expected series here, otherwise it means you're introducing
+		// a backward incompatible change.
+		expectedSeriesIDByShard = map[string][]int{
+			"1_of_2": {0, 1, 10, 12, 16, 18, 2, 22, 23, 24, 26, 28, 29, 3, 30, 33, 34, 35, 36, 39, 40, 41, 42, 43, 44, 47, 53, 54, 57, 58, 60, 61, 63, 66, 67, 68, 69, 7, 71, 75, 77, 80, 81, 83, 84, 86, 87, 89, 9, 90, 91, 92, 94, 96, 98, 99},
+			"2_of_2": {11, 13, 14, 15, 17, 19, 20, 21, 25, 27, 31, 32, 37, 38, 4, 45, 46, 48, 49, 5, 50, 51, 52, 55, 56, 59, 6, 62, 64, 65, 70, 72, 73, 74, 76, 78, 79, 8, 82, 85, 88, 93, 95, 97},
+		}
+	)
+
+	// Prepare the storage dir.
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
+
+	// Generate a TSDB block in the storage dir, containing the fixture series.
+	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {
+		nextID := 0
+		return func() (bool, labels.Labels, int64, float64) {
+			if nextID >= numSeries {
+				return false, labels.Labels{}, 0, 0
+			}
+
+			nextSeries := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(nextID))
+			nextID++
+
+			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
+		}
+	}())
+
+	createBucketIndex(t, bucketClient, userID)
+
+	// Create a store-gateway.
+	gatewayCfg := mockGatewayConfig()
+	storageCfg := mockStorageConfig(t)
+	storageCfg.BucketStore.BucketIndex.Enabled = true
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+	srv := newStoreGatewayTestServer(t, g)
+
+	// Query all series, 1 shard at a time.
+	for shardID := 0; shardID < numShards; shardID++ {
+		shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
+		expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
+
+		req := &storepb.SeriesRequest{
+			MinTime: math.MinInt64,
+			MaxTime: math.MaxInt64,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: "series_id", Value: ".+"},
+				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: shardLabel},
+			},
+		}
+
+		seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		require.Greater(t, len(seriesSet), 0)
+
+		for _, series := range seriesSet {
+			// Ensure the series below to the right shard.
+			seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+			seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+			require.NoError(t, err)
+
+			assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+		}
 	}
 }
 
@@ -1218,6 +1309,8 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
+	srv := newStoreGatewayTestServer(t, g)
+
 	// Keep track of all responses received (by shard).
 	responsesMx := sync.Mutex{}
 	responses := make(map[int][][]*storepb.Series)
@@ -1241,13 +1334,12 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 				},
 			}
 
-			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-			err := g.Series(req, srv)
+			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 			require.NoError(t, err)
-			assert.Empty(t, srv.Warnings)
+			assert.Empty(t, warnings)
 
 			responsesMx.Lock()
-			responses[shardIndex] = append(responses[shardIndex], srv.SeriesSet)
+			responses[shardIndex] = append(responses[shardIndex], seriesSet)
 			responsesMx.Unlock()
 		}(i % shardCount)
 	}
@@ -1346,9 +1438,10 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
+			srv := newStoreGatewayTestServer(t, g)
+
 			// Query back all the series (1 chunk per series in this test).
-			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
-			err = g.Series(req, srv)
+			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 
 			if testData.expectedErr != nil {
 				require.Error(t, err)
@@ -1361,8 +1454,8 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 				assert.Equal(t, s1.Code(), s2.Code())
 			} else {
 				require.NoError(t, err)
-				assert.Empty(t, srv.Warnings)
-				assert.Len(t, srv.SeriesSet, chunksQueried)
+				assert.Empty(t, warnings)
+				assert.Len(t, seriesSet, chunksQueried)
 			}
 		})
 	}

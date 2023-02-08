@@ -55,6 +55,8 @@ var (
 	errOpsGenieAPIKeyFileFileNotAllowed  = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
 	errPagerDutyServiceKeyFileNotAllowed = errors.New("setting PagerDuty service_key_file is not allowed")
 	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
+	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
+	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -375,6 +377,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validatePagerDutyConfig(v.Interface().(config.PagerdutyConfig)); err != nil {
 			return err
 		}
+
+	case reflect.TypeOf(config.PushoverConfig{}):
+		if err := validatePushoverConfig(v.Interface().(config.PushoverConfig)); err != nil {
+			return err
+		}
 	}
 
 	// If the input config is a struct, recursively iterate on all fields.
@@ -513,6 +520,19 @@ func validatePagerDutyConfig(cfg config.PagerdutyConfig) error {
 	}
 	if cfg.RoutingKeyFile != "" {
 		return errPagerDutyRoutingKeyFileNotAllowed
+	}
+
+	return nil
+}
+
+// validatePushoverConfig validates the Pushover config and returns an error if it contains
+// settings not allowed by Mimir.
+func validatePushoverConfig(cfg config.PushoverConfig) error {
+	if cfg.UserKeyFile != "" {
+		return errPushoverUserKeyFileNotAllowed
+	}
+	if cfg.TokenFile != "" {
+		return errPushoverTokenFileNotAllowed
 	}
 
 	return nil

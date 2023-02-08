@@ -555,6 +555,36 @@ alertmanager_config: |
 			err: errors.Wrap(errPagerDutyRoutingKeyFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should return error if Pushover user_key_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      pushover_configs:
+        - user_key_file: /secrets
+          token: xxx
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errPushoverUserKeyFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if Pushover token_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      pushover_configs:
+        - token_file: /secrets
+          user_key: xxx
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errPushoverTokenFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
 			name: "should return error if template is wrong",
 			cfg: `
 alertmanager_config: |
@@ -976,7 +1006,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		},
 		"struct containing *HTTPClientConfig as nested child within a slice": {
 			input: config.Config{
-				Receivers: []*config.Receiver{{
+				Receivers: []config.Receiver{{
 					Name: "test",
 					WebhookConfigs: []*config.WebhookConfig{{
 						HTTPConfig: &commoncfg.HTTPClientConfig{

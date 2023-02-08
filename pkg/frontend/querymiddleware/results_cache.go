@@ -7,8 +7,10 @@ package querymiddleware
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"time"
@@ -516,4 +518,13 @@ func (e *Extent) toResponse() (Response, error) {
 		return nil, fmt.Errorf("bad cached type")
 	}
 	return resp, nil
+}
+
+// cacheHashKey hashes key into something you can store in the results cache.
+func cacheHashKey(key string) string {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(key)) // This'll never error.
+
+	// Hex because memcache errors for the bytes produced by the hash.
+	return hex.EncodeToString(hasher.Sum(nil))
 }

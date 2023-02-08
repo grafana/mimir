@@ -1761,7 +1761,7 @@ func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse
 	return items
 }
 
-func TestIngester_Query_QuerySharding(t *testing.T) {
+func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 	const (
 		numSeries = 1000
 		numShards = 16
@@ -1838,6 +1838,76 @@ func TestIngester_Query_QuerySharding(t *testing.T) {
 		require.Len(t, series.Values, 1)
 		assert.Equal(t, int64(seriesID), int64(series.Values[0].Timestamp))
 		assert.Equal(t, float64(seriesID), float64(series.Values[0].Value))
+	}
+}
+
+func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+	const (
+		numSeries = 100
+		numShards = 2
+	)
+
+	// You should NEVER CHANGE the expected series here, otherwise it means you're introducing
+	// a backward incompatible change.
+	expectedSeriesIDByShard := map[string][]int{
+		"1_of_2": {0, 1, 10, 12, 16, 18, 2, 22, 23, 24, 26, 28, 29, 3, 30, 33, 34, 35, 36, 39, 40, 41, 42, 43, 44, 47, 53, 54, 57, 58, 60, 61, 63, 66, 67, 68, 69, 7, 71, 75, 77, 80, 81, 83, 84, 86, 87, 89, 9, 90, 91, 92, 94, 96, 98, 99},
+		"2_of_2": {11, 13, 14, 15, 17, 19, 20, 21, 25, 27, 31, 32, 37, 38, 4, 45, 46, 48, 49, 5, 50, 51, 52, 55, 56, 59, 6, 62, 64, 65, 70, 72, 73, 74, 76, 78, 79, 8, 82, 85, 88, 93, 95, 97},
+	}
+
+	// Create ingester
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Push all series.
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		lbls := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(seriesID))
+		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
+		_, err = i.Push(ctx, req)
+		require.NoError(t, err)
+	}
+
+	// Query all series, 1 shard at a time.
+	for shardID := 0; shardID < numShards; shardID++ {
+		shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
+		expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
+
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: "series_id", Value: ".+"},
+				{Type: client.EQUAL, Name: sharding.ShardLabel, Value: shardLabel},
+			},
+		}
+
+		s := stream{ctx: ctx}
+		err = i.QueryStream(req, &s)
+		require.NoError(t, err)
+		require.Greater(t, len(s.responses), 0)
+
+		for _, res := range s.responses {
+			require.Greater(t, len(res.Chunkseries), 0)
+
+			for _, series := range res.Chunkseries {
+				// Ensure the series below to the right shard.
+				seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+				require.NoError(t, err)
+
+				assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+			}
+		}
 	}
 }
 

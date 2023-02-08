@@ -56,6 +56,8 @@ If the Mimir cluster loses an ingester, the in-memory series samples held by the
 In the event of a single ingester failure, no time series samples are lost.
 If multiple ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
+> **Note:** Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
+
 ### Write-ahead log
 
 The write-ahead log (WAL) writes all incoming series to a persistent disk until the series are uploaded to the long-term storage.

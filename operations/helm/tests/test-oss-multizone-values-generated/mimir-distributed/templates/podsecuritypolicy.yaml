@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-multizone-values
     app.kubernetes.io/managed-by: Helm
-  namespace: "citestns"
   annotations:
     "seccomp.security.alpha.kubernetes.io/allowedProfileNames": runtime/default
 spec:

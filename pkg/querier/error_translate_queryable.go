@@ -22,7 +22,7 @@ import (
 //
 // Specifically, it supports:
 //
-//	promql.ErrQueryCanceled, mapped to 503
+//	promql.ErrQueryCanceled, mapped to 499
 //	promql.ErrQueryTimeout, mapped to 503
 //	promql.ErrStorage mapped to 500
 //	anything else is mapped to 422
@@ -46,7 +46,7 @@ func TranslateToPromqlAPIError(err error) error {
 		return err
 	default:
 		if errors.Is(err, context.Canceled) {
-			return err // 422
+			return err // 499
 		}
 
 		s, ok := status.FromError(err)

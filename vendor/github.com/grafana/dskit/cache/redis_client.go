@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	dstls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
@@ -89,8 +91,8 @@ type RedisClientConfig struct {
 	// If set to 0, concurrency is unlimited.
 	MaxGetMultiConcurrency int `yaml:"max_get_multi_concurrency" category:"advanced"`
 
-	// GetMultiBatchSize specifies the maximum size per batch for mget.
-	GetMultiBatchSize int `yaml:"get_multi_batch_size" category:"advanced"`
+	// MaxGetMultiBatchSize specifies the maximum size per batch for mget.
+	MaxGetMultiBatchSize int `yaml:"max_get_multi_batch_size" category:"advanced"`
 
 	// TLSEnabled enable TLS for Redis connection.
 	TLSEnabled bool `yaml:"tls_enabled" category:"advanced"`
@@ -117,7 +119,7 @@ func (c *RedisClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+".max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&c.MaxAsyncBufferSize, prefix+".max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
 	f.IntVar(&c.MaxGetMultiConcurrency, prefix+".max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
-	f.IntVar(&c.GetMultiBatchSize, prefix+".max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
+	f.IntVar(&c.MaxGetMultiBatchSize, prefix+".max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
 	f.IntVar(&c.MaxItemSize, prefix+".max-item-size", 16*1024*1024, "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 
 	f.BoolVar(&c.TLSEnabled, prefix+".tls-enabled", false, "Enable connecting to Redis with TLS.")
@@ -145,6 +147,9 @@ type redisClient struct {
 	getMultiGate gate.Gate
 
 	logger log.Logger
+
+	// Tracked metrics.
+	clientInfo prometheus.GaugeFunc
 }
 
 // NewRedisClient makes a new RedisClient.
@@ -172,11 +177,12 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 		opts.TLSConfig = tlsClientConfig
 	}
 
-	reg = prometheus.WrapRegistererWith(prometheus.Labels{"name": name}, reg)
+	reg = prometheus.WrapRegistererWith(
+		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
-	metrics := newClientMetrics(
-		prometheus.WrapRegistererWithPrefix("redis_", reg),
-	)
+	metrics := newClientMetrics(reg)
+
 	c := &redisClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		UniversalClient: redis.NewUniversalClient(opts),
@@ -185,10 +191,28 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 	if config.MaxGetMultiConcurrency > 0 {
 		c.getMultiGate = gate.New(
-			prometheus.WrapRegistererWithPrefix("redis_getmulti_", reg),
+			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,
 		)
 	}
+
+	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: clientInfoMetricName,
+		Help: "A metric with a constant '1' value labeled by configuration options from which redis client was configured.",
+		ConstLabels: prometheus.Labels{
+			"dial_timeout":              config.DialTimeout.String(),
+			"read_timeout":              config.ReadTimeout.String(),
+			"write_timeout":             config.WriteTimeout.String(),
+			"connection_pool_size":      strconv.Itoa(config.ConnectionPoolSize),
+			"max_async_concurrency":     strconv.Itoa(config.MaxAsyncConcurrency),
+			"max_async_buffer_size":     strconv.Itoa(config.MaxAsyncBufferSize),
+			"max_item_size":             strconv.FormatUint(uint64(config.MaxItemSize), 10),
+			"max_get_multi_concurrency": strconv.Itoa(config.MaxGetMultiConcurrency),
+			"max_get_multi_batch_size":  strconv.Itoa(config.MaxGetMultiBatchSize),
+		},
+	},
+		func() float64 { return 1 },
+	)
 	return c, nil
 }
 
@@ -208,7 +232,7 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 	var mu sync.Mutex
 	results := make(map[string][]byte, len(keys))
 
-	err := doWithBatch(ctx, len(keys), c.config.GetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
+	err := doWithBatch(ctx, len(keys), c.config.MaxGetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 

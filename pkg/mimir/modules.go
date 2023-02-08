@@ -543,13 +543,14 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
-		querymiddleware.PrometheusCodec,
+		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
@@ -576,18 +577,40 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
+	var frontendSvc services.Service
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
 		t.Frontend = frontendV1
-
-		return frontendV1, nil
+		frontendSvc = frontendV1
 	} else if frontendV2 != nil {
 		t.API.RegisterQueryFrontend2(frontendV2)
-
-		return frontendV2, nil
+		frontendSvc = frontendV2
 	}
 
-	return nil, nil
+	w := services.NewFailureWatcher()
+	return services.NewBasicService(func(_ context.Context) error {
+		if frontendSvc != nil {
+			w.WatchService(frontendSvc)
+			// Note that we pass an independent context to the service, since we want to
+			// delay stopping it until in-flight requests are waited on.
+			return services.StartAndAwaitRunning(context.Background(), frontendSvc)
+		}
+		return nil
+	}, func(serviceContext context.Context) error {
+		select {
+		case <-serviceContext.Done():
+			return nil
+		case err := <-w.Chan():
+			return err
+		}
+	}, func(_ error) error {
+		handler.Stop()
+
+		if frontendSvc != nil {
+			return services.StopAndAwaitTerminated(context.Background(), frontendSvc)
+		}
+		return nil
+	}), nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {

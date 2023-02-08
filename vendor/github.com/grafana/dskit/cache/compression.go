@@ -98,3 +98,7 @@ func (s *snappyCache) Fetch(ctx context.Context, keys []string, opts ...Option) 
 func (s *snappyCache) Name() string {
 	return s.next.Name()
 }
+
+func (s *snappyCache) Delete(ctx context.Context, key string) error {
+	return s.next.Delete(ctx, key)
+}

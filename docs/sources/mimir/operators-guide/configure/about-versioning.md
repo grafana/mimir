@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/about-versioning/
+  - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
 menuTitle: About versioning
 title: About Grafana Mimir versioning
@@ -93,6 +93,7 @@ The following features are currently experimental:
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
+  - Cardinality-based query sharding (`-query-frontend.query-sharding-max-series-per-shard`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)

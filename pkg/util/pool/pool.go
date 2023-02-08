@@ -207,8 +207,9 @@ func (b *SlabPool[T]) Get(size int) []T {
 		b.slabs = append(b.slabs, slab)
 	}
 
-	// Resize the slab length and return a sub-slice.
+	// Resize the slab length to include the requested size
 	*slab = (*slab)[:len(*slab)+size]
+	// Create a subslice of the slab with length and capacity of size
 	return (*slab)[len(*slab)-size : len(*slab) : len(*slab)]
 }
 

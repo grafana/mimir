@@ -5,7 +5,6 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" .) }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
   annotations:
     "seccomp.security.alpha.kubernetes.io/allowedProfileNames": runtime/default
 spec:

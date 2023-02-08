@@ -23,8 +23,8 @@ const (
 	// number of chunks (across series).
 	seriesChunksSlabSize = 1000
 
-	// Selected so that an individual chunk's data typically fits within the slab size (16 KiB)
-	chunkBytesSlabSize = 16_384
+	// Selected so that chunks typically fit within the slab size (16 KiB)
+	chunkBytesSlabSize = 16 * 1024
 )
 
 var (
