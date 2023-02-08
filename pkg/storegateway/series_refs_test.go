@@ -33,28 +33,52 @@ func init() {
 	seriesChunkRefsSetPool = &pool.TrackedPool{Parent: seriesChunkRefsSetPool}
 }
 
-func TestSeriesChunkRef_Compare(t *testing.T) {
-	input := []seriesChunkRefsRange{
-		{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
-		{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
-		{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
-		{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
-		{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
+func TestSeriesChunkRefsRange_Compare(t *testing.T) {
+	testCases := map[string]struct {
+		input    []seriesChunkRefsRange
+		expected []seriesChunkRefsRange
+	}{
+		"sorts ranges with single chunk": {
+			input: []seriesChunkRefsRange{
+				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
+				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
+				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
+				{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
+				{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
+			},
+			expected: []seriesChunkRefsRange{
+				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
+				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
+				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
+				{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
+				{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
+			},
+		},
+		"sorts ranges with multiple chunks": {
+			input: []seriesChunkRefsRange{
+				// max time of the whole range may not be the max time of the last chunk
+				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 7}, {minTime: 3, maxTime: 5}}},
+				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 10}}},
+				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
+			},
+			expected: []seriesChunkRefsRange{
+				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 10}}},
+				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
+				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 7}, {minTime: 3, maxTime: 5}}},
+			},
+		},
 	}
 
-	expected := []seriesChunkRefsRange{
-		{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
-		{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
-		{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
-		{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
-		{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			input, expected := testCase.input, testCase.expected
+			sort.Slice(input, func(i, j int) bool {
+				return input[i].Compare(input[j]) < 0
+			})
+
+			assert.Equal(t, expected, input)
+		})
 	}
-
-	sort.Slice(input, func(i, j int) bool {
-		return input[i].Compare(input[j]) < 0
-	})
-
-	assert.Equal(t, expected, input)
 }
 
 func TestSeriesChunkRefsIterator(t *testing.T) {
