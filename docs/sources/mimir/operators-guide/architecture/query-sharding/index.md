@@ -152,7 +152,7 @@ Therefore, it will not strictly be complied with in all cases, and the actual nu
 This is likely to happen in cases where the cardinality of a query changes rapidly within a short period of time.
 
 Estimates for query cardinality are only ever used to reduce the number of shards compared to the case when cardinality estimation is disabled.
-Other parameters that limit the total number of shards, such as `-query-frontend.query-sharding-total-shards` will still provide an upper bound for the number of shards even when cardinality estimation is enabled and would suggest the use of a higher number of shards.
+Other parameters that limit the total number of shards, such as `-query-frontend.query-sharding-total-shards`, will still provide an upper bound for the number of shards even when cardinality estimation is enabled and would suggest the use of a higher number of shards.
 
 The histogram metric `cortex_query_frontend_cardinality_estimation_difference` tracks the difference between the estimated and actual number of series fetched per shard.
 
