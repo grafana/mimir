@@ -17,7 +17,7 @@ This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics
 
 Depending on what version of the `mimir-distributed` Helm chart is installed currently, make sure to meet the following requirements.
 
-1. In case the current version of the `mimir-distributed` Helm chart is less than 4.0.0 (version < 4.0.0).
+- If the current version of the `mimir-distributed` Helm chart is less than 4.0.0 (version < 4.0.0).
 
    1. Follow the upgrade instructions for 4.0.0 in the [CHANGELOG.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md#400).
       In particular make sure to disable zone awareness before upgrading the chart:
@@ -37,9 +37,11 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
 
    1. If you have modified the `mimir.config` value, make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}})
 
-1. In case the current version of the `mimir-distributed` Helm chart is greater than 4.0.0 (version >= 4.0.0).
+- If the current version of the `mimir-distributed` Helm chart is greater than 4.0.0 (version >= 4.0.0).
 
-   1. Make sure that zone-aware replication is turned off for the component in question, e.g. for store-gateway:
+   1. Make sure that zone-aware replication is turned off for the component in question.
+   
+    For example, the store-gateway:
 
       ```yaml
       store_gateway:
@@ -47,7 +49,9 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
           enabled: false
       ```
 
-   1. If you have modified the `mimir.config` value, make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}})
+   1. If you have modified the `mimir.config` value, either make sure to merge in the latest version from the chart, or consider using `mimir.structuredConfig` instead.
+   
+    For more information, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}}).
 
 ## Migrate alertmanager to zone-aware replication
 
