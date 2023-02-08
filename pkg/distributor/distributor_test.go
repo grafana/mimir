@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -3790,13 +3789,7 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 }
 
 func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
-	h := remote.HistogramToHistogramProto(ts, histogram)
-	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
-	// histogram protobuf representation but we need the Mimir one here.
-	d, _ := h.Marshal()
-	h2 := mimirpb.Histogram{}
-	h2.Unmarshal(d) // nolint:errcheck
-	return []mimirpb.Histogram{h2}
+	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
