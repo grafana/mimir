@@ -894,7 +894,7 @@ func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunk
 	}
 }
 
-// partitionChunks creates a slice of seriesChunkRefsRange for each range of chunks within the same segment file.
+// partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
 // It may also create more ranges if there are more chunks.
 // The partitioning here should be fairly static and not depend on the actual Series() request because
 // the resulting ranges may be used for caching, and we want our cache entries to be reusable between requests.
@@ -926,7 +926,7 @@ func partitionChunks(chks []chunks.Meta) [][]chunks.Meta {
 
 // metasToRanges converts partitioned metas to ranges of chunk refs. It excludes any ranges that do not have
 // at least one chunk which overlaps with minT and maxT
-func metasToRanges(metas [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRefsRange {
+func metasToRanges(partitions [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRefsRange {
 	someMetaOverlapsWithMinTMaxT := func(gr []chunks.Meta) bool {
 		for _, m := range gr {
 			if m.MinTime <= maxT && m.MaxTime >= minT {
@@ -937,28 +937,33 @@ func metasToRanges(metas [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) [
 	}
 
 	rangesWithinTime := 0
-	for _, gr := range metas {
+	for _, gr := range partitions {
 		if someMetaOverlapsWithMinTMaxT(gr) {
 			rangesWithinTime++
 		}
 	}
 	ranges := make([]seriesChunkRefsRange, 0, rangesWithinTime)
 
-	for gIdx, g := range metas {
-		if !someMetaOverlapsWithMinTMaxT(g) {
+	for pIdx, partition := range partitions {
+		if !someMetaOverlapsWithMinTMaxT(partition) {
 			continue
 		}
 
-		chunkRefs := make([]seriesChunkRef, 0, len(g))
-		for cIdx, c := range g {
+		chunkRefs := make([]seriesChunkRef, 0, len(partition))
+		for cIdx, c := range partition {
 			var chunkLen uint32
 			// We can only calculate the length of this chunk, if we know the ref of the next chunk
 			// and the two chunks are in the same segment file.
 			// We do that by taking the difference between the chunk references. This works since the chunk references are offsets in a file.
 			// If the chunks are in different segment files (unlikely, but possible),
 			// then this chunk ends at the end of the segment file, and we don't know how big the segment file is.
-			if nextRef, ok := nextChunkRef(metas, gIdx, cIdx); ok && chunkSegmentFile(nextRef) == chunkSegmentFile(c.Ref) {
-				chunkLen = uint32(nextRef - c.Ref)
+			if nextRef, ok := nextChunkRef(partitions, pIdx, cIdx); ok && chunkSegmentFile(nextRef) == chunkSegmentFile(c.Ref) {
+				chunkLen = chunkOffset(nextRef) - chunkOffset(c.Ref)
+				if chunkLen > tsdb.EstimatedMaxChunkSize {
+					// Clamp the length in case chunks are scattered across a segment file. This should never happen,
+					// but if it does, we don't want to have an erroneously large length.
+					chunkLen = tsdb.EstimatedMaxChunkSize
+				}
 			} else {
 				chunkLen = tsdb.EstimatedMaxChunkSize
 			}
@@ -972,9 +977,9 @@ func metasToRanges(metas [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) [
 
 		ranges = append(ranges, seriesChunkRefsRange{
 			blockID: blockID,
-			// We have a guarantee that each range of chunk metas will be from a separate segment file; we can just take the segment file of the first chunk.
+			// We have a guarantee that each meta in a partition will be from the same segment file; we can just take the segment file of the first chunk.
 			// The cast to uint32 is safe because the segment file seq must fit in the first 32 bytes of the chunk ref
-			segmentFile: uint32(chunkSegmentFile(g[0].Ref)),
+			segmentFile: uint32(chunkSegmentFile(partition[0].Ref)),
 			refs:        chunkRefs,
 		})
 	}
