@@ -139,7 +139,8 @@ parallel by the query-frontend, multiplying the previously set value of
 `-querier.max-query-parallelism` by
 `-query-frontend.query-sharding-total-shards`.
 
-## Cardinality-estimation for query sharding (experimental)
+## Cardinality estimation for query sharding (experimental)
+
 Since a high number of parallel sharded queries increases load on queriers and their dependencies, it is desirable to shard queries only as much as necessary.
 Queries that return more series (i.e., are of high cardinality) need to fetch more data and should therefore be split into a larger batch of shards, while queries that return few or no series should be executed with fewer or no shards at all.
 When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality observed during previous executions of the same query for similar time ranges.
@@ -148,6 +149,12 @@ To enable this experimental feature, set `-query-frontend.query-sharding-max-ser
 The value set for this flag is one of several parameters used by the sharding logic to determine the appropriate number of shards for a query.
 Therefore, it will not strictly be complied with in all cases, and the actual number of series fetched per shard may exceed the limit.
 This is especially likely to happen in cases where cardinality of a query changes rapidly within a short period of time.
+
+{{% notice note %}}
+Estimates for query cardinality are only ever used to reduce the number of shards compared to the case when cardinality estimation is disabled.
+Other parameters that limit the total number of shards, such as `-query-frontend.query-sharding-total-shards` will still provide an upper bound for the number of shards even when cardinality estimation is enabled and would suggest the use of a higher number of shards.
+{{ /notice %}}
+
 The histogram metric `cortex_query_frontend_cardinality_estimation_difference` tracks the difference between the estimated and actual number of series fetched per shard.
 
 ## Verification
