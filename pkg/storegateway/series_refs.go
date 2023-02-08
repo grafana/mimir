@@ -442,7 +442,7 @@ func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRe
 }
 
 // nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
-// label set, nextUniqueEntry merges their chunks ranges. The merged ranges are sorted by their MinTime and then by MaxTIme.
+// label set, nextUniqueEntry merges their chunks ranges. The merged ranges are sorted by their MinTime and then by MaxTime.
 func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIteratorImpl) (toReturn seriesChunkRefs, _ bool) {
 	if a.Done() && b.Done() {
 		return toReturn, false
