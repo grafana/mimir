@@ -1524,28 +1524,48 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
-		//"partitions multiple chunks into 2 ranges": {
-		//	matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
-		//	batchSize: 1,
-		//	expectedSeries: []seriesChunkRefsSet{
-		//		{series: []seriesChunkRefs{
-		//			{lset: labels.FromStrings("a", "3", "b", "1"), chunksRanges: []seriesChunkRefsRange{
-		//				{refs: []seriesChunkRef{{segFileOffset: 358, minTime: 0, maxTime: 124}, {segFileOffset: 407, minTime: 125, maxTime: 249}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 457, minTime: 250, maxTime: 374}, {segFileOffset: 507, minTime: 375, maxTime: 499}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 557, minTime: 500, maxTime: 624}, {segFileOffset: 607, minTime: 625, maxTime: 749}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 657, minTime: 750, maxTime: 874}, {segFileOffset: 707, minTime: 875, maxTime: 999}, {segFileOffset: 757, minTime: 1000, maxTime: 1124}, {segFileOffset: 807, minTime: 1125, maxTime: 1199}}},
-		//			}},
-		//		}},
-		//		{series: []seriesChunkRefs{
-		//			{lset: labels.FromStrings("a", "3", "b", "2"), chunksRanges: []seriesChunkRefsRange{
-		//				{refs: []seriesChunkRef{{segFileOffset: 845, minTime: 0, maxTime: 124}, {segFileOffset: 894, minTime: 125, maxTime: 249}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 944, minTime: 250, maxTime: 374}, {segFileOffset: 994, minTime: 375, maxTime: 499}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 1044, minTime: 500, maxTime: 624}, {segFileOffset: 1094, minTime: 625, maxTime: 749}}},
-		//				{refs: []seriesChunkRef{{segFileOffset: 1144, minTime: 750, maxTime: 874}, {segFileOffset: 1194, minTime: 875, maxTime: 999}, {segFileOffset: 1244, minTime: 1000, maxTime: 1124}, {segFileOffset: 1294, minTime: 1125, maxTime: 1199}}},
-		//			}},
-		//		}},
-		//	},
-		//},
+		"partitions multiple chunks into 2 ranges": {
+			matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
+			batchSize: 1,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "3", "b", "1"), chunksRanges: []seriesChunkRefsRange{
+						{refs: []seriesChunkRef{
+							{segFileOffset: 358, length: 49, minTime: 0, maxTime: 124},
+							{segFileOffset: 407, length: 50, minTime: 125, maxTime: 249},
+							{segFileOffset: 457, length: 50, minTime: 250, maxTime: 374},
+							{segFileOffset: 507, length: 50, minTime: 375, maxTime: 499},
+							{segFileOffset: 557, length: 50, minTime: 500, maxTime: 624},
+						}},
+						{refs: []seriesChunkRef{
+							{segFileOffset: 607, length: 50, minTime: 625, maxTime: 749},
+							{segFileOffset: 657, length: 50, minTime: 750, maxTime: 874},
+							{segFileOffset: 707, length: 50, minTime: 875, maxTime: 999},
+							{segFileOffset: 757, length: 50, minTime: 1000, maxTime: 1124},
+							{segFileOffset: 807, length: tsdb.EstimatedMaxChunkSize, minTime: 1125, maxTime: 1199},
+						}},
+					}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "3", "b", "2"), chunksRanges: []seriesChunkRefsRange{
+						{refs: []seriesChunkRef{
+							{segFileOffset: 845, length: 49, minTime: 0, maxTime: 124},
+							{segFileOffset: 894, length: 50, minTime: 125, maxTime: 249},
+							{segFileOffset: 944, length: 50, minTime: 250, maxTime: 374},
+							{segFileOffset: 994, length: 50, minTime: 375, maxTime: 499},
+							{segFileOffset: 1044, length: 50, minTime: 500, maxTime: 624},
+						}},
+						{refs: []seriesChunkRef{
+							{segFileOffset: 1094, length: 50, minTime: 625, maxTime: 749},
+							{segFileOffset: 1144, length: 50, minTime: 750, maxTime: 874},
+							{segFileOffset: 1194, length: 50, minTime: 875, maxTime: 999},
+							{segFileOffset: 1244, length: 50, minTime: 1000, maxTime: 1124},
+							{segFileOffset: 1294, length: tsdb.EstimatedMaxChunkSize, minTime: 1125, maxTime: 1199},
+						}},
+					}},
+				}},
+			},
+		},
 		"doesn't return a series if its chunks are around minT/maxT but not within it": {
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "a", "4"),
 			minT:    500, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
