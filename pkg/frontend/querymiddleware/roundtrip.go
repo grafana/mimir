@@ -31,7 +31,7 @@ const (
 	instantQueryPathSuffix = "/query"
 
 	cacheResultsFlagName      = "query-frontend.cache-results"
-	maxSeriesPerShardFlagName = "query-frontend.query-sharding-max-series-per-shard"
+	maxSeriesPerShardFlagName = "query-frontend.query-sharding-target-series-per-shard"
 )
 
 // Config for query_range middleware chain.
