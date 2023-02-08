@@ -6108,6 +6108,113 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 }
 
+// Test_Ingester_OutOfOrder_CompactHead tests that the OOO head is compacted
+// when the compaction is forced or when the TSDB is idle.
+func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	l := defaultLimitsTestConfig()
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", userID).Return(nil)
+	override, err := validation.NewOverrides(l, tenantOverride)
+	require.NoError(t, err)
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	pushSamples := func(start, end int64, expErr bool) {
+		start = start * time.Minute.Milliseconds()
+		end = end * time.Minute.Milliseconds()
+
+		s := labels.FromStrings(labels.MetricName, "test_1", "status", "200")
+		var samples []mimirpb.Sample
+		var lbls []labels.Labels
+		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+			samples = append(samples, mimirpb.Sample{
+				TimestampMs: ts,
+				Value:       float64(ts),
+			})
+			lbls = append(lbls, s)
+		}
+
+		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		_, err = i.Push(ctx, wReq)
+		if expErr {
+			require.Error(t, err, "should have failed on push")
+			require.ErrorAs(t, err, &storage.ErrTooOldSample)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	verifySamples := func(start, end int64) {
+		start = start * time.Minute.Milliseconds()
+		end = end * time.Minute.Milliseconds()
+
+		var expSamples []model.SamplePair
+		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+			expSamples = append(expSamples, model.SamplePair{
+				Timestamp: model.Time(ts),
+				Value:     model.SampleValue(ts),
+			})
+		}
+		expMatrix := model.Matrix{{
+			Metric: model.Metric{"__name__": "test_1", "status": "200"},
+			Values: expSamples,
+		}}
+
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+			},
+		}
+
+		s := stream{ctx: ctx}
+		err = i.QueryStream(req, &s)
+		require.NoError(t, err)
+
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expMatrix, res)
+	}
+
+	// Increasing the OOO time window.
+	tenantOverride.ExpectedCalls = nil
+	tenantOverride.On("ByUserID", userID).Return(&validation.Limits{
+		OutOfOrderTimeWindow: model.Duration(60 * time.Minute),
+	})
+	<-time.After(1500 * time.Millisecond) // TSDB config is updated every second.
+
+	pushSamples(100, 100, false)
+	pushSamples(90, 99, false)
+	verifySamples(90, 100)
+
+	// wait one second (plus maximum jitter) -- TSDB is now idle.
+	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
+	i.compactBlocks(context.Background(), false, nil) // Should be compacted because the TSDB is idle.
+	verifyCompactedHead(t, i, true)
+
+	pushSamples(110, 110, false)
+	pushSamples(101, 109, false)
+	verifySamples(90, 110)
+	i.compactBlocks(context.Background(), true, nil) // Shuold be compacted because it's forced.
+	verifyCompactedHead(t, i, true)
+}
+
 func TestNewIngestErrMsgs(t *testing.T) {
 	timestamp := model.Time(1575043969)
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
