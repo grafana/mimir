@@ -16,12 +16,13 @@ import (
 )
 
 type ingesterMetrics struct {
-	ingestedSamples              *prometheus.CounterVec
-	ingestedExemplars            prometheus.Counter
-	ingestedMetadata             prometheus.Counter
-	ingestedSamplesFail          *prometheus.CounterVec
-	ingestedExemplarsFail        prometheus.Counter
-	ingestedMetadataFail         prometheus.Counter
+	ingestedSamples       *prometheus.CounterVec
+	ingestedExemplars     prometheus.Counter
+	ingestedMetadata      prometheus.Counter
+	ingestedSamplesFail   *prometheus.CounterVec
+	ingestedExemplarsFail prometheus.Counter
+	ingestedMetadataFail  prometheus.Counter
+
 	ephemeralIngestedSamples     *prometheus.CounterVec
 	ephemeralIngestedSamplesFail *prometheus.CounterVec
 
@@ -325,25 +326,25 @@ func newIngesterMetrics(
 }
 
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
+	m.ingestedSamples.DeleteLabelValues(userID)
+	m.ingestedSamplesFail.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
+	m.ephemeralIngestedSamples.DeleteLabelValues(userID)
+	m.ephemeralIngestedSamplesFail.DeleteLabelValues(userID)
+
 	filter := prometheus.Labels{"user": userID}
-	m.ingestedSamples.DeletePartialMatch(filter)
-	m.ingestedSamplesFail.DeletePartialMatch(filter)
 	m.discardedPersistent.DeletePartialMatch(filter)
 	m.discardedEphemeral.DeletePartialMatch(filter)
-	m.ephemeralIngestedSamples.DeletePartialMatch(filter)
-	m.ephemeralIngestedSamplesFail.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
-	filter := prometheus.Labels{"user": userID, "group": group}
-	m.discardedPersistent.DeletePartialMatch(filter)
-	m.discardedEphemeral.DeletePartialMatch(filter)
+	m.discardedPersistent.DeleteLabelValues(userID, group)
+	m.discardedEphemeral.DeleteLabelValues(userID, group)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
@@ -384,8 +385,12 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
-	filter := prometheus.Labels{"user": userID, "group": group}
-	m.DeletePartialMatch(filter)
+	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
+	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
+	m.sampleTooOld.DeleteLabelValues(userID, group)
+	m.newValueForTimestamp.DeleteLabelValues(userID, group)
+	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
+	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.
