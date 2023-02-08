@@ -25,19 +25,23 @@ func main() {
 		return
 	}
 
-	b, err := tsdb.OpenBlock(logger, args[1], nil)
+	printChunks(args[1], args[2:])
+}
+
+func printChunks(blockDir string, chunkRefs []string) {
+	b, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
 	cr, err := b.Chunks()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
-	for _, ref := range args[2:] {
+	for _, ref := range chunkRefs {
 		val, err := strconv.ParseUint(ref, 10, 64)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to parse chunk ref:", ref)
@@ -56,8 +60,14 @@ func main() {
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
 			case chunkenc.ValFloat:
-				ts, val := it.At()
-				fmt.Printf("%g\t%d (%s)\n", val, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+				ts, v := it.At()
+				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValHistogram:
+				ts, hist := it.AtHistogram()
+				fmt.Printf("%s\t%d (%s)\n", hist.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+			case chunkenc.ValFloatHistogram:
+				ts, hist := it.AtFloatHistogram()
+				fmt.Printf("%s\t%d (%s)\n", hist.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			default:
 				fmt.Printf("skipping unsupported value type %v\n", valType)
 			}

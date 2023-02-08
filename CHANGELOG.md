@@ -50,6 +50,12 @@
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
 
+### Tools
+
+* [ENHANCEMENT] Adapt tsdb-print-chunk for native histograms. #4186
+* [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #4186
+* [ENHANCEMENT] Adapt tsdb-chunks tool to handle native histograms. #4186
+
 ## 2.6.0
 
 ### Grafana Mimir
