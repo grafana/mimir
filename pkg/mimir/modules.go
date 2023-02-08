@@ -543,13 +543,14 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
-		querymiddleware.NewPrometheusCodec(t.Registerer),
+		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
