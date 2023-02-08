@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -153,7 +154,7 @@ func (g seriesChunkRefsRange) minTime() int64 {
 
 func (g seriesChunkRefsRange) maxTime() int64 {
 	// Since chunks are only ordered by minTime, we have no guarantee for their maxTime, so we need to iterate all.
-	var maxT int64
+	maxT := int64(math.MinInt64)
 	for _, c := range g.refs {
 		if c.maxTime > maxT {
 			maxT = c.maxTime
