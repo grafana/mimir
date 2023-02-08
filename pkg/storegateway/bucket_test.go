@@ -1336,10 +1336,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	}
 
 	runRequest := func(t *testing.T, store *BucketStore) {
-		srv, err := newBucketStoreTestServer(store)
-		require.NoError(t, err)
-		t.Cleanup(srv.Close)
-
+		srv := newBucketStoreTestServer(t, store)
 		seriesSet, warnings, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(warnings), "%v", warnings)
@@ -1568,9 +1565,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		chunkPool:            chunkPool,
 	}
 
-	srv, err := newBucketStoreTestServer(store)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newBucketStoreTestServer(t, store)
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
 		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
@@ -1748,10 +1743,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
 	}
 
-	srv, err := newBucketStoreTestServer(store)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
-
+	srv := newBucketStoreTestServer(t, store)
 	_, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
@@ -1801,10 +1793,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv, err := newBucketStoreTestServer(store)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
-
+	srv := newBucketStoreTestServer(t, store)
 	_, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
@@ -1853,10 +1842,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		},
 	}
 
-	srv, err := newBucketStoreTestServer(store)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
-
+	srv := newBucketStoreTestServer(t, store)
 	_, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
@@ -1966,9 +1952,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
-	srv, err := newBucketStoreTestServer(store)
-	assert.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newBucketStoreTestServer(t, store)
 
 	tests := map[string]struct {
 		reqMinTime      int64
@@ -2126,10 +2110,7 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 						Matchers: testData.reqMatchers,
 					}
 
-					srv, err := newBucketStoreTestServer(store)
-					require.NoError(t, err)
-					t.Cleanup(srv.Close)
-
+					srv := newBucketStoreTestServer(t, store)
 					seriesSet, _, _, err := srv.Series(ctx, req)
 
 					if testData.expectedErr != "" {
@@ -2949,9 +2930,7 @@ type seriesCase struct {
 func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
-			srv, err := newBucketStoreTestServer(store)
-			require.NoError(t, err)
-			t.Cleanup(srv.Close)
+			srv := newBucketStoreTestServer(t, store)
 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {

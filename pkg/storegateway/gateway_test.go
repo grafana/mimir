@@ -512,9 +512,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 			queried := false
 
 			for _, g := range initialGateways {
-				srv, err := newStoreGatewayTestServer(g)
-				require.NoError(t, err)
-				t.Cleanup(srv.Close)
+				srv := newStoreGatewayTestServer(t, g)
 
 				req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 				_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
@@ -789,9 +787,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 
-	srv, err := newStoreGatewayTestServer(g)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newStoreGatewayTestServer(t, g)
 
 	// No sync retries to speed up tests.
 	g.stores.syncBackoffConfig = backoff.Config{MaxRetries: 1}
@@ -1052,9 +1048,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-			srv, err := newStoreGatewayTestServer(g)
-			require.NoError(t, err)
-			t.Cleanup(srv.Close)
+			srv := newStoreGatewayTestServer(t, g)
 
 			// Query back all series.
 			req := &storepb.SeriesRequest{
@@ -1162,9 +1156,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-	srv, err := newStoreGatewayTestServer(g)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newStoreGatewayTestServer(t, g)
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -1240,9 +1232,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-	srv, err := newStoreGatewayTestServer(g)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newStoreGatewayTestServer(t, g)
 
 	// Query all series, 1 shard at a time.
 	for shardID := 0; shardID < numShards; shardID++ {
@@ -1319,9 +1309,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-	srv, err := newStoreGatewayTestServer(g)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newStoreGatewayTestServer(t, g)
 
 	// Keep track of all responses received (by shard).
 	responsesMx := sync.Mutex{}
@@ -1450,9 +1438,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-			srv, err := newStoreGatewayTestServer(g)
-			require.NoError(t, err)
-			t.Cleanup(srv.Close)
+			srv := newStoreGatewayTestServer(t, g)
 
 			// Query back all the series (1 chunk per series in this test).
 			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)

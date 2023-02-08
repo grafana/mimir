@@ -9,10 +9,12 @@ import (
 	"context"
 	"io"
 	"net"
+	"testing"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -33,11 +35,12 @@ type storeTestServer struct {
 	requestSeries func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error)
 }
 
-func newBucketStoreTestServer(store storepb.StoreServer) (*storeTestServer, error) {
+func newBucketStoreTestServer(t testing.TB, store storepb.StoreServer) *storeTestServer {
 	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = listener.Close()
+	})
 
 	s := &storeTestServer{
 		server:         grpc.NewServer(),
@@ -54,14 +57,18 @@ func newBucketStoreTestServer(store storepb.StoreServer) (*storeTestServer, erro
 		_ = s.server.Serve(listener)
 	}()
 
-	return s, nil
+	// Stop the gRPC server once the test has done.
+	t.Cleanup(s.server.GracefulStop)
+
+	return s
 }
 
-func newStoreGatewayTestServer(store storegatewaypb.StoreGatewayServer) (*storeTestServer, error) {
+func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewayServer) *storeTestServer {
 	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = listener.Close()
+	})
 
 	s := &storeTestServer{
 		server:         grpc.NewServer(),
@@ -78,7 +85,10 @@ func newStoreGatewayTestServer(store storegatewaypb.StoreGatewayServer) (*storeT
 		_ = s.server.Serve(listener)
 	}()
 
-	return s, nil
+	// Stop the gRPC server once the test has done.
+	t.Cleanup(s.server.GracefulStop)
+
+	return s
 }
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected

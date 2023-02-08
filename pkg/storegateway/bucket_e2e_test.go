@@ -234,9 +234,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, vals.Values)
 
-	srv, err := newBucketStoreTestServer(s.store)
-	require.NoError(t, err)
-	t.Cleanup(srv.Close)
+	srv := newBucketStoreTestServer(t, s.store)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
@@ -622,11 +620,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				MaxTime: timestamp.FromTime(maxTime),
 			}
 
-			srv, err := newBucketStoreTestServer(s.store)
-			require.NoError(t, err)
-			t.Cleanup(srv.Close)
-
-			_, _, _, err = srv.Series(context.Background(), req)
+			srv := newBucketStoreTestServer(t, s.store)
+			_, _, _, err := srv.Series(context.Background(), req)
 
 			if testData.expectedErr == "" {
 				assert.NoError(t, err)
@@ -843,10 +838,7 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 			SkipChunks: false,
 		}
 
-		srv, err := newBucketStoreTestServer(s.store)
-		require.NoError(t, err)
-		t.Cleanup(srv.Close)
-
+		srv := newBucketStoreTestServer(t, s.store)
 		seriesSet, _, _, err := srv.Series(ctx, req)
 		require.NoError(t, err)
 
