@@ -191,26 +191,6 @@ type seriesChunkRef struct {
 	minTime, maxTime int64
 }
 
-// Compare returns > 0 if m should be before other when sorting seriesChunkRef,
-// 0 if they're equal or < 0 if m should be after other.
-func (m seriesChunkRef) Compare(other seriesChunkRef) int {
-	if m.minTime < other.minTime {
-		return 1
-	}
-	if m.minTime > other.minTime {
-		return -1
-	}
-
-	// Same min time.
-	if m.maxTime < other.maxTime {
-		return 1
-	}
-	if m.maxTime > other.maxTime {
-		return -1
-	}
-	return 0
-}
-
 // seriesChunkRefsIteratorImpl implements an iterator returning a sequence of seriesChunkRefs.
 type seriesChunkRefsIteratorImpl struct {
 	currentOffset int
