@@ -896,7 +896,7 @@ func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunk
 
 const (
 	chunksRangesPerSeries = 2
-	minChunksPerRange     = 2
+	minChunksPerRange     = 10
 )
 
 // partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.

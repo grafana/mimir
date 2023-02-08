@@ -1336,7 +1336,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
-			samplesFor10Chunks = 1200                 // 120 samples per chunk
+			samplesFor13Chunks = 1560                 // 120 samples per chunk
 		)
 		earlySeries := []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
@@ -1364,7 +1364,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			labels.FromStrings("a", "3", "b", "2"),
 		}
 
-		for i := int64(0); i < samplesFor10Chunks; i++ {
+		for i := int64(0); i < samplesFor13Chunks; i++ {
 			for _, s := range seriesWith50Chunks {
 				_, err := appender.Append(0, s, i, 0)
 				assert.NoError(t, err)
@@ -1536,31 +1536,37 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 							{segFileOffset: 457, length: 50, minTime: 250, maxTime: 374},
 							{segFileOffset: 507, length: 50, minTime: 375, maxTime: 499},
 							{segFileOffset: 557, length: 50, minTime: 500, maxTime: 624},
-						}},
-						{refs: []seriesChunkRef{
 							{segFileOffset: 607, length: 50, minTime: 625, maxTime: 749},
 							{segFileOffset: 657, length: 50, minTime: 750, maxTime: 874},
 							{segFileOffset: 707, length: 50, minTime: 875, maxTime: 999},
 							{segFileOffset: 757, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 807, length: tsdb.EstimatedMaxChunkSize, minTime: 1125, maxTime: 1199},
+							{segFileOffset: 807, length: 50, minTime: 1125, maxTime: 1249},
+						}},
+						{refs: []seriesChunkRef{
+							{segFileOffset: 857, length: 50, minTime: 1250, maxTime: 1374},
+							{segFileOffset: 907, length: 50, minTime: 1375, maxTime: 1499},
+							{segFileOffset: 957, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
 						}},
 					}},
 				}},
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("a", "3", "b", "2"), chunksRanges: []seriesChunkRefsRange{
 						{refs: []seriesChunkRef{
-							{segFileOffset: 845, length: 49, minTime: 0, maxTime: 124},
-							{segFileOffset: 894, length: 50, minTime: 125, maxTime: 249},
-							{segFileOffset: 944, length: 50, minTime: 250, maxTime: 374},
-							{segFileOffset: 994, length: 50, minTime: 375, maxTime: 499},
-							{segFileOffset: 1044, length: 50, minTime: 500, maxTime: 624},
+							{segFileOffset: 991, length: 49, minTime: 0, maxTime: 124},
+							{segFileOffset: 1040, length: 50, minTime: 125, maxTime: 249},
+							{segFileOffset: 1090, length: 50, minTime: 250, maxTime: 374},
+							{segFileOffset: 1140, length: 50, minTime: 375, maxTime: 499},
+							{segFileOffset: 1190, length: 50, minTime: 500, maxTime: 624},
+							{segFileOffset: 1240, length: 50, minTime: 625, maxTime: 749},
+							{segFileOffset: 1290, length: 50, minTime: 750, maxTime: 874},
+							{segFileOffset: 1340, length: 50, minTime: 875, maxTime: 999},
+							{segFileOffset: 1390, length: 50, minTime: 1000, maxTime: 1124},
+							{segFileOffset: 1440, length: 50, minTime: 1125, maxTime: 1249},
 						}},
 						{refs: []seriesChunkRef{
-							{segFileOffset: 1094, length: 50, minTime: 625, maxTime: 749},
-							{segFileOffset: 1144, length: 50, minTime: 750, maxTime: 874},
-							{segFileOffset: 1194, length: 50, minTime: 875, maxTime: 999},
-							{segFileOffset: 1244, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 1294, length: tsdb.EstimatedMaxChunkSize, minTime: 1125, maxTime: 1199},
+							{segFileOffset: 1490, length: 50, minTime: 1250, maxTime: 1374},
+							{segFileOffset: 1540, length: 50, minTime: 1375, maxTime: 1499},
+							{segFileOffset: 1590, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
 						}},
 					}},
 				}},
