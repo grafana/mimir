@@ -451,9 +451,10 @@ func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator
 		return toReturn, true
 	}
 
-	// Both a and b contains the same series. Go through all chunk references and concatenate them from both
-	// series sets. We best effortly assume chunk references are sorted by min time, so that the sorting by min
-	// time is honored in the returned chunk references too.
+	// Both a and b contains the same series. Go through all chunk ranges and concatenate them from both
+	// series sets. We best effortly assume chunk ranges are sorted by min time. This means that
+	// if the ranges overlap, then the resulting chunks will not be in min time order.
+	// This is ok since the series API doesn't require us to return sorted chunks.
 	toReturn.lset = lsetA
 
 	// Slice reuse is not generally safe with nested merge iterators.
