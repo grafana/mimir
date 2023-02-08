@@ -249,11 +249,11 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 	}
 }
 
-func (m *alertmanagerMetrics) AddTenantRegistry(user string, reg *prometheus.Registry) {
+func (m *alertmanagerMetrics) addUserRegistry(user string, reg *prometheus.Registry) {
 	m.regs.AddTenantRegistry(user, reg)
 }
 
-func (m *alertmanagerMetrics) RemoveTenantRegistry(user string) {
+func (m *alertmanagerMetrics) removeUserRegistry(user string) {
 	// We need to go for a soft deletion here, as hard deletion requires
 	// that _all_ metrics except gauges are per-user.
 	m.regs.RemoveTenantRegistry(user, false)

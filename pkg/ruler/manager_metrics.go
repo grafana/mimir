@@ -103,13 +103,13 @@ func NewManagerMetrics() *ManagerMetrics {
 	}
 }
 
-// AddTenantRegistry adds a user-specific Prometheus registry.
-func (m *ManagerMetrics) AddTenantRegistry(user string, reg *prometheus.Registry) {
+// AddUserRegistry adds a user-specific Prometheus registry.
+func (m *ManagerMetrics) AddUserRegistry(user string, reg *prometheus.Registry) {
 	m.regs.AddTenantRegistry(user, reg)
 }
 
-// RemoveTenantRegistry removes user-specific Prometheus registry.
-func (m *ManagerMetrics) RemoveTenantRegistry(user string) {
+// RemoveUserRegistry removes user-specific Prometheus registry.
+func (m *ManagerMetrics) RemoveUserRegistry(user string) {
 	m.regs.RemoveTenantRegistry(user, true)
 }
 
@@ -133,7 +133,7 @@ func (m *ManagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data := m.regs.BuildMetricFamiliesPerTenant()
 
 	// WARNING: It is important that all metrics generated in this method are "Per User".
-	// Thanks to that we can actually *remove* metrics for given user (see RemoveTenantRegistry).
+	// Thanks to that we can actually *remove* metrics for given user (see RemoveUserRegistry).
 	// If same user is later re-added, all metrics will start from 0, which is fine.
 
 	data.SendSumOfSummariesPerTenant(out, m.EvalDuration, "prometheus_rule_evaluation_duration_seconds")

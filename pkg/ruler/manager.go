@@ -122,7 +122,7 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 			r.lastReloadSuccessful.DeleteLabelValues(userID)
 			r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 			r.configUpdatesTotal.DeleteLabelValues(userID)
-			r.userManagerMetrics.RemoveTenantRegistry(userID)
+			r.userManagerMetrics.RemoveUserRegistry(userID)
 			level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 		}
 	}
@@ -216,7 +216,7 @@ func (r *DefaultMultiTenantManager) newManager(ctx context.Context, userID strin
 	// Create a new Prometheus registry and register it within
 	// our metrics struct for the provided user.
 	reg := prometheus.NewRegistry()
-	r.userManagerMetrics.AddTenantRegistry(userID, reg)
+	r.userManagerMetrics.AddUserRegistry(userID, reg)
 
 	return r.managerFactory(ctx, userID, notifier, r.logger, reg), nil
 }

@@ -22,12 +22,12 @@ func TestManagerMetrics(t *testing.T) {
 
 	managerMetrics := NewManagerMetrics()
 	mainReg.MustRegister(managerMetrics)
-	managerMetrics.AddTenantRegistry("user1", populateManager(1))
-	managerMetrics.AddTenantRegistry("user2", populateManager(10))
-	managerMetrics.AddTenantRegistry("user3", populateManager(100))
+	managerMetrics.AddUserRegistry("user1", populateManager(1))
+	managerMetrics.AddUserRegistry("user2", populateManager(10))
+	managerMetrics.AddUserRegistry("user3", populateManager(100))
 
-	managerMetrics.AddTenantRegistry("user4", populateManager(1000))
-	managerMetrics.RemoveTenantRegistry("user4")
+	managerMetrics.AddUserRegistry("user4", populateManager(1000))
+	managerMetrics.RemoveUserRegistry("user4")
 
 	//noinspection ALL
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
@@ -272,9 +272,9 @@ func TestMetricsArePerUser(t *testing.T) {
 
 	managerMetrics := NewManagerMetrics()
 	mainReg.MustRegister(managerMetrics)
-	managerMetrics.AddTenantRegistry("user1", populateManager(1))
-	managerMetrics.AddTenantRegistry("user2", populateManager(10))
-	managerMetrics.AddTenantRegistry("user3", populateManager(100))
+	managerMetrics.AddUserRegistry("user1", populateManager(1))
+	managerMetrics.AddUserRegistry("user2", populateManager(10))
+	managerMetrics.AddUserRegistry("user3", populateManager(100))
 
 	ch := make(chan prometheus.Metric)
 

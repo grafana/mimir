@@ -57,11 +57,11 @@ func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
 	}
 }
 
-func (m *MetadataFetcherMetrics) AddTenantRegistry(user string, reg *prometheus.Registry) {
+func (m *MetadataFetcherMetrics) AddUserRegistry(user string, reg *prometheus.Registry) {
 	m.regs.AddTenantRegistry(user, reg)
 }
 
-func (m *MetadataFetcherMetrics) RemoveTenantRegistry(user string) {
+func (m *MetadataFetcherMetrics) RemoveUserRegistry(user string) {
 	m.regs.RemoveTenantRegistry(user, false)
 }
 
