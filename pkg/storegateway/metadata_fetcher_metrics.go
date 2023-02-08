@@ -6,15 +6,15 @@
 package storegateway
 
 import (
+	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // This struct aggregates metrics exported by Thanos MetaFetcher
 // and re-exports those aggregates as Mimir metrics.
 type MetadataFetcherMetrics struct {
-	regs *util.UserRegistries
+	regs *dskit_metrics.TenantRegistries
 
 	// Exported metrics, gathered from Thanos MetaFetcher
 	syncs                *prometheus.Desc
@@ -30,7 +30,7 @@ type MetadataFetcherMetrics struct {
 
 func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
 	return &MetadataFetcherMetrics{
-		regs: util.NewUserRegistries(),
+		regs: dskit_metrics.NewTenantRegistries(log.NewNopLogger()),
 
 		// When mapping new metadata fetcher metrics from Thanos, please remember to add these metrics
 		// to our internal fetcherMetrics implementation too.
@@ -57,12 +57,12 @@ func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
 	}
 }
 
-func (m *MetadataFetcherMetrics) AddUserRegistry(user string, reg *prometheus.Registry) {
-	m.regs.AddUserRegistry(user, reg)
+func (m *MetadataFetcherMetrics) AddTenantRegistry(user string, reg *prometheus.Registry) {
+	m.regs.AddTenantRegistry(user, reg)
 }
 
-func (m *MetadataFetcherMetrics) RemoveUserRegistry(user string) {
-	m.regs.RemoveUserRegistry(user, false)
+func (m *MetadataFetcherMetrics) RemoveTenantRegistry(user string) {
+	m.regs.RemoveTenantRegistry(user, false)
 }
 
 func (m *MetadataFetcherMetrics) Describe(out chan<- *prometheus.Desc) {
@@ -74,7 +74,7 @@ func (m *MetadataFetcherMetrics) Describe(out chan<- *prometheus.Desc) {
 }
 
 func (m *MetadataFetcherMetrics) Collect(out chan<- prometheus.Metric) {
-	data := m.regs.BuildMetricFamiliesPerUser()
+	data := m.regs.BuildMetricFamiliesPerTenant()
 
 	data.SendSumOfCounters(out, m.syncs, "blocks_meta_syncs_total")
 	data.SendSumOfCounters(out, m.syncFailures, "blocks_meta_sync_failures_total")

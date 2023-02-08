@@ -393,7 +393,7 @@ func (u *BucketStores) closeBucketStore(userID string) error {
 	unlockInDefer = false
 	u.storesMu.Unlock()
 
-	u.metaFetcherMetrics.RemoveUserRegistry(userID)
+	u.metaFetcherMetrics.RemoveTenantRegistry(userID)
 	return bs.RemoveBlocksAndClose()
 }
 
@@ -498,7 +498,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	}
 
 	u.stores[userID] = bs
-	u.metaFetcherMetrics.AddUserRegistry(userID, fetcherReg)
+	u.metaFetcherMetrics.AddTenantRegistry(userID, fetcherReg)
 
 	return bs, nil
 }

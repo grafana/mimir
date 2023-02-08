@@ -2708,7 +2708,7 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reg := i.tsdbMetrics.regs.GetRegistryForUser(userID)
+	reg := i.tsdbMetrics.regs.GetRegistryForTenant(userID)
 	if reg == nil {
 		http.Error(w, "user registry not found", http.StatusNotFound)
 		return

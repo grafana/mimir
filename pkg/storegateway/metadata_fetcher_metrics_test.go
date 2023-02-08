@@ -21,9 +21,9 @@ func TestMetadataFetcherMetrics(t *testing.T) {
 	metrics := NewMetadataFetcherMetrics()
 	mainReg.MustRegister(metrics)
 
-	metrics.AddUserRegistry("user1", populateMetadataFetcherMetrics(3))
-	metrics.AddUserRegistry("user2", populateMetadataFetcherMetrics(5))
-	metrics.AddUserRegistry("user3", populateMetadataFetcherMetrics(7))
+	metrics.AddTenantRegistry("user1", populateMetadataFetcherMetrics(3))
+	metrics.AddTenantRegistry("user2", populateMetadataFetcherMetrics(5))
+	metrics.AddTenantRegistry("user3", populateMetadataFetcherMetrics(7))
 
 	//noinspection ALL
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`

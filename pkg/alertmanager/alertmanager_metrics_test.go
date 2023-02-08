@@ -33,9 +33,9 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 
 	alertmanangerMetrics := newAlertmanagerMetrics()
 	mainReg.MustRegister(alertmanangerMetrics)
-	alertmanangerMetrics.addUserRegistry("user1", populateAlertmanager(1))
-	alertmanangerMetrics.addUserRegistry("user2", populateAlertmanager(10))
-	alertmanangerMetrics.addUserRegistry("user3", populateAlertmanager(100))
+	alertmanangerMetrics.AddTenantRegistry("user1", populateAlertmanager(1))
+	alertmanangerMetrics.AddTenantRegistry("user2", populateAlertmanager(10))
+	alertmanangerMetrics.AddTenantRegistry("user3", populateAlertmanager(100))
 
 	//noinspection ALL
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
@@ -318,9 +318,9 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
 	alertmanagerMetrics := newAlertmanagerMetrics()
 	mainReg.MustRegister(alertmanagerMetrics)
-	alertmanagerMetrics.addUserRegistry("user1", populateAlertmanager(1))
-	alertmanagerMetrics.addUserRegistry("user2", populateAlertmanager(10))
-	alertmanagerMetrics.addUserRegistry("user3", populateAlertmanager(100))
+	alertmanagerMetrics.AddTenantRegistry("user1", populateAlertmanager(1))
+	alertmanagerMetrics.AddTenantRegistry("user2", populateAlertmanager(10))
+	alertmanagerMetrics.AddTenantRegistry("user3", populateAlertmanager(100))
 
 	// In this test, we assert that metrics are "soft deleted" per the registry removal.
 	// In practice, this means several things:
@@ -625,7 +625,7 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 `))
 	require.NoError(t, err)
 
-	alertmanagerMetrics.removeUserRegistry("user3")
+	alertmanagerMetrics.RemoveTenantRegistry("user3")
 
 	// After removal counters shouldn't reset.
 	err = testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`

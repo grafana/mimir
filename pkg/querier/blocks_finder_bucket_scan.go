@@ -396,7 +396,7 @@ func (d *BucketScanBlocksFinder) createMetaFetcher(userID string) (block.Metadat
 		return nil, nil, nil, err
 	}
 
-	d.fetchersMetrics.AddUserRegistry(userID, userReg)
+	d.fetchersMetrics.AddTenantRegistry(userID, userReg)
 	return f, userBucket, deletionMarkFilter, nil
 }
 

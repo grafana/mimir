@@ -637,7 +637,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 			delete(am.cfgs, userID)
 			am.multitenantMetrics.lastReloadSuccessful.DeleteLabelValues(userID)
 			am.multitenantMetrics.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
-			am.alertmanagerMetrics.removeUserRegistry(userID)
+			am.alertmanagerMetrics.RemoveTenantRegistry(userID)
 		}
 	}
 	am.alertmanagersMtx.Unlock()
@@ -787,7 +787,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
-	am.alertmanagerMetrics.addUserRegistry(userID, reg)
+	am.alertmanagerMetrics.AddTenantRegistry(userID, reg)
 	return newAM, nil
 }
 
