@@ -942,6 +942,9 @@ func metasToRanges(partitions [][]chunks.Meta, blockID ulid.ULID, minT, maxT int
 			rangesWithinTime++
 		}
 	}
+	if rangesWithinTime == 0 {
+		return nil
+	}
 	ranges := make([]seriesChunkRefsRange, 0, rangesWithinTime)
 
 	for pIdx, partition := range partitions {
