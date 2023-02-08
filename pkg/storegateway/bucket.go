@@ -37,6 +37,7 @@ import (
 	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -886,9 +887,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// Merge the sub-results from each selected block.
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		var (
-			begin       = time.Now()
-			seriesCount int
-			chunksCount int
+			iterationBegin = time.Now()
+			encodeDuration = time.Duration(0)
+			sendDuration   = time.Duration(0)
+			seriesCount    int
+			chunksCount    int
 		)
 
 		// Once the iteration is done we will update the stats.
@@ -899,13 +902,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			if s.maxSeriesPerBatch <= 0 {
 				// When streaming is disabled, the time spent iterating over the series set is the
 				// actual time spent merging series and sending response to the client.
-				stats.synchronousSeriesMergeDuration += time.Since(begin)
+				stats.synchronousSeriesMergeDuration += time.Since(iterationBegin)
 			} else {
 				// When streaming is enabled, the time spent iterating over the series set is the
-				// actual time spent fetching series and chunks, and sending them to the client.
-				// We split the two timings to have a better view over how time is spent.
+				// actual time spent fetching series and chunks, encoding and sending them to the client.
+				// We split the timings to have a better view over how time is spent.
 				stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
-				stats.streamingSeriesSendResponseDuration += time.Duration(util_math.Max64(0, int64(time.Since(begin)-stats.streamingSeriesFetchSeriesAndChunksDuration)))
+				stats.streamingSeriesEncodeResponseDuration += encodeDuration
+				stats.streamingSeriesSendResponseDuration += sendDuration
+				stats.streamingSeriesOtherDuration += time.Duration(util_math.Max64(0, int64(time.Since(iterationBegin)-
+					stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
 			}
 		})
 
@@ -928,10 +934,24 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
+
+			// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
+			// the time it takes.
+			encodeBegin := time.Now()
+			msg := &grpc.PreparedMsg{}
+			if err = msg.Encode(srv, storepb.NewSeriesResponse(&series)); err != nil {
+				err = status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+				return
+			}
+			encodeDuration += time.Since(encodeBegin)
+
+			// Send the message.
+			sendBegin := time.Now()
+			if err = srv.SendMsg(msg); err != nil {
 				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 				return
 			}
+			sendDuration += time.Since(sendBegin)
 		}
 		if seriesSet.Err() != nil {
 			err = errors.Wrap(seriesSet.Err(), "expand series set")
@@ -1185,7 +1205,9 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
+		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
 		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
 	} else {
 		s.metrics.synchronousSeriesGetAllDuration.Observe(stats.synchronousSeriesGetAllDuration.Seconds())
 		s.metrics.synchronousSeriesMergeDuration.Observe(stats.synchronousSeriesMergeDuration.Seconds())

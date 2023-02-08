@@ -79,7 +79,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 	// Query series before the initial sync.
 	for userID, metricName := range userToMetric {
-		seriesSet, warnings, err := querySeries(stores, userID, metricName, 20, 40)
+		seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 20, 40)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		assert.Empty(t, seriesSet)
@@ -89,7 +89,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 	// Query series after the initial sync.
 	for userID, metricName := range userToMetric {
-		seriesSet, warnings, err := querySeries(stores, userID, metricName, 20, 40)
+		seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 20, 40)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
@@ -97,7 +97,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	}
 
 	// Query series of another user.
-	seriesSet, warnings, err := querySeries(stores, "user-1", "series_2", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_2", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Empty(t, seriesSet)
@@ -158,7 +158,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
-	seriesSet, warnings, err := querySeries(stores, "user-1", "series_1", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_1", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
@@ -220,7 +220,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query a range for which we have no samples.
-	seriesSet, warnings, err := querySeries(stores, userID, metricName, 150, 180)
+	seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 150, 180)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Empty(t, seriesSet)
@@ -229,7 +229,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	generateStorageBlock(t, storageDir, userID, metricName, 100, 200, 15)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
-	seriesSet, warnings, err = querySeries(stores, userID, metricName, 150, 180)
+	seriesSet, warnings, err = querySeries(t, stores, userID, metricName, 150, 180)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
@@ -452,7 +452,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Query a range for which we have no samples.
-			seriesSet, warnings, err := querySeries(stores, userID, metricName, testData.reqMinTime, testData.reqMaxTime)
+			seriesSet, warnings, err := querySeries(t, stores, userID, metricName, testData.reqMinTime, testData.reqMaxTime)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 			assert.Len(t, seriesSet, 1)
@@ -538,7 +538,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			seriesSet, warnings, err := querySeries(stores, userID, metricName, testData.minT, testData.maxT)
+			seriesSet, warnings, err := querySeries(t, stores, userID, metricName, testData.minT, testData.maxT)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 
@@ -616,7 +616,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
-func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, storage.Warnings, error) {
+func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, storage.Warnings, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
@@ -627,17 +627,14 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 		}},
 	}
 
-	ctx := setUserIDToGRPCContext(context.Background(), userID)
-	srv := newBucketStoreSeriesServer(ctx)
-	err := stores.Series(req, srv)
+	srv := newBucketStoreTestServer(t, stores)
+	seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
 
-	return srv.SeriesSet, srv.Warnings, err
+	return seriesSet, warnings, err
 }
 
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
-	// We have to store it in the incoming metadata because we have to emulate the
-	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return grpc_metadata.NewIncomingContext(ctx, grpc_metadata.Pairs(GrpcContextMetadataTenantID, userID))
+	return grpc_metadata.AppendToOutgoingContext(ctx, GrpcContextMetadataTenantID, userID)
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {

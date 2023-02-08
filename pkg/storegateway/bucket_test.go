@@ -1336,15 +1336,16 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	}
 
 	runRequest := func(t *testing.T, store *BucketStore) {
-		srv := newBucketStoreSeriesServer(ctx)
-		require.NoError(t, store.Series(req, srv))
-		require.Equal(t, 0, len(srv.Warnings), "%v", srv.Warnings)
-		require.Equal(t, len(expectedSeries), len(srv.SeriesSet))
+		srv := newBucketStoreTestServer(t, store)
+		seriesSet, warnings, _, err := srv.Series(context.Background(), req)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(warnings), "%v", warnings)
+		require.Equal(t, len(expectedSeries), len(seriesSet))
 
 		// Huge responses can produce unreadable diffs - make it more human readable.
 		for j := range expectedSeries {
-			require.Equal(t, expectedSeries[j].Labels, srv.SeriesSet[j].Labels, "series labels mismatch at position %d", j)
-			require.Equal(t, expectedSeries[j].Chunks, srv.SeriesSet[j].Chunks, "series chunks mismatch at position %d", j)
+			require.Equal(t, expectedSeries[j].Labels, seriesSet[j].Labels, "series labels mismatch at position %d", j)
+			require.Equal(t, expectedSeries[j].Chunks, seriesSet[j].Chunks, "series chunks mismatch at position %d", j)
 		}
 	}
 
@@ -1564,9 +1565,10 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		chunkPool:            chunkPool,
 	}
 
+	srv := newBucketStoreTestServer(t, store)
+
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
-		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1575,13 +1577,14 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 				// This bug shows only when we use lot's of symbols for matching.
 				{Type: storepb.LabelMatcher_NEQ, Name: "i", Value: ""},
 			},
-		}, srv))
-		assert.Equal(t, 0, len(srv.Warnings))
-		assert.Equal(t, numSeries, len(srv.SeriesSet))
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, len(warnings))
+		assert.Equal(t, numSeries, len(seriesSet))
 	})
 	t.Run("invoke series for second block. This should revoke previous cache.", func(t *testing.T) {
-		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1590,15 +1593,16 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 				// This bug shows only when we use lot's of symbols for matching.
 				{Type: storepb.LabelMatcher_NEQ, Name: "i", Value: ""},
 			},
-		}, srv))
-		assert.Equal(t, 0, len(srv.Warnings))
-		assert.Equal(t, numSeries, len(srv.SeriesSet))
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, len(warnings))
+		assert.Equal(t, numSeries, len(seriesSet))
 	})
 	t.Run("remove second block. Cache stays. Ask for first again.", func(t *testing.T) {
 		assert.NoError(t, store.removeBlock(b2.meta.ULID))
 
-		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1607,9 +1611,11 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 				// This bug shows only when we use lot's of symbols for matching.
 				{Type: storepb.LabelMatcher_NEQ, Name: "i", Value: ""},
 			},
-		}, srv))
-		assert.Equal(t, 0, len(srv.Warnings))
-		assert.Equal(t, numSeries, len(srv.SeriesSet))
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, len(warnings))
+		assert.Equal(t, numSeries, len(seriesSet))
 	})
 }
 
@@ -1737,8 +1743,8 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
 	}
 
-	srv := newBucketStoreSeriesServer(context.Background())
-	err = store.Series(req, srv)
+	srv := newBucketStoreTestServer(t, store)
+	_, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
 }
@@ -1787,8 +1793,8 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newBucketStoreSeriesServer(ctx)
-	err = store.Series(req, srv)
+	srv := newBucketStoreTestServer(t, store)
+	_, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1836,8 +1842,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		},
 	}
 
-	srv := newBucketStoreSeriesServer(context.Background())
-	err = store.Series(req, srv)
+	srv := newBucketStoreTestServer(t, store)
+	_, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1946,6 +1952,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
+	srv := newBucketStoreTestServer(t, store)
+
 	tests := map[string]struct {
 		reqMinTime      int64
 		reqMaxTime      int64
@@ -1983,14 +1991,13 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 				},
 			}
 
-			srv := newBucketStoreSeriesServer(context.Background())
-			err = store.Series(req, srv)
+			seriesSet, _, _, err := srv.Series(context.Background(), req)
 			assert.NoError(t, err)
-			assert.True(t, len(srv.SeriesSet) == 1)
+			assert.True(t, len(seriesSet) == 1)
 
 			// Count the number of samples in the returned chunks.
 			numSamples := 0
-			for _, rawChunk := range srv.SeriesSet[0].Chunks {
+			for _, rawChunk := range seriesSet[0].Chunks {
 				decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
 				assert.NoError(t, err)
 
@@ -2103,15 +2110,15 @@ func TestBucketStore_Series_LimitsWithStreamingEnabled(t *testing.T) {
 						Matchers: testData.reqMatchers,
 					}
 
-					srv := newBucketStoreSeriesServer(ctx)
-					err = store.Series(req, srv)
+					srv := newBucketStoreTestServer(t, store)
+					seriesSet, _, _, err := srv.Series(ctx, req)
 
 					if testData.expectedErr != "" {
 						require.Error(t, err)
 						assert.ErrorContains(t, err, testData.expectedErr)
 					} else {
 						require.NoError(t, err)
-						assert.Len(t, srv.SeriesSet, testData.expectedSeries)
+						assert.Len(t, seriesSet, testData.expectedSeries)
 					}
 				})
 			}
@@ -2923,39 +2930,41 @@ type seriesCase struct {
 func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
+			srv := newBucketStoreTestServer(t, store)
+
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				srv := newBucketStoreSeriesServer(context.Background())
-				require.NoError(t, store.Series(c.Req, srv))
-				require.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
-				require.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
+				seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
+				require.NoError(t, err)
+				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
+				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-						sort.Slice(srv.SeriesSet[0].Chunks, func(i, j int) bool {
-							return srv.SeriesSet[0].Chunks[i].MinTime < srv.SeriesSet[0].Chunks[j].MinTime
+						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
+							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
 						})
 					}
 
 					// Huge responses can produce unreadable diffs - make it more human readable.
 					if len(c.ExpectedSeries) > 4 {
 						for j := range c.ExpectedSeries {
-							assert.Equal(t, c.ExpectedSeries[j].Labels, srv.SeriesSet[j].Labels, "%v series chunks mismatch", j)
+							assert.Equal(t, c.ExpectedSeries[j].Labels, seriesSet[j].Labels, "%v series chunks mismatch", j)
 
 							// Check chunks when it is not a skip chunk query
 							if !c.Req.SkipChunks {
 								if len(c.ExpectedSeries[j].Chunks) > 20 {
-									assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(srv.SeriesSet[j].Chunks), "%v series chunks number mismatch", j)
+									assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(seriesSet[j].Chunks), "%v series chunks number mismatch", j)
 								}
-								assert.Equal(t, c.ExpectedSeries[j].Chunks, srv.SeriesSet[j].Chunks, "%v series chunks mismatch", j)
+								assert.Equal(t, c.ExpectedSeries[j].Chunks, seriesSet[j].Chunks, "%v series chunks mismatch", j)
 							}
 						}
 					} else {
-						assert.Equal(t, c.ExpectedSeries, srv.SeriesSet)
+						assert.Equal(t, c.ExpectedSeries, seriesSet)
 					}
 
-					assert.Equal(t, c.ExpectedHints, srv.Hints)
+					assert.Equal(t, c.ExpectedHints, hints)
 				}
 			}
 		})
