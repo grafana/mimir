@@ -1745,6 +1745,212 @@ func TestMetasToRanges(t *testing.T) {
 	}
 }
 
+func TestPartitionChunks(t *testing.T) {
+	testCases := map[string]struct {
+		targetNumRanges, minChunksPerRange int
+		input                              []chunks.Meta
+		expectedPartitions                 [][]chunks.Meta
+	}{
+		"empty input chunks": {
+			targetNumRanges: 10, minChunksPerRange: 3,
+		},
+		"even distribution into partitions": {
+			targetNumRanges: 4, minChunksPerRange: 1,
+			input: []chunks.Meta{
+				{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+				{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+				{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+				{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+				{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+				{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+				{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+				{Ref: chunkRef(1, 12), MinTime: 23, MaxTime: 24},
+			},
+			expectedPartitions: [][]chunks.Meta{
+				{
+					{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+					{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+					{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				},
+				{
+					{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+					{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+					{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				},
+				{
+					{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+					{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+					{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+				},
+				{
+					{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+					{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+					{Ref: chunkRef(1, 12), MinTime: 23, MaxTime: 24},
+				},
+			},
+		},
+		"when number of chunks per range would be less than minChunksPerRange, then targetNumRanges isn't used": {
+			targetNumRanges: 3, minChunksPerRange: 4,
+			input: []chunks.Meta{
+				{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+				{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+				{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+				{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+				{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+				{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+				{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+				{Ref: chunkRef(1, 12), MinTime: 23, MaxTime: 24},
+			},
+			expectedPartitions: [][]chunks.Meta{
+				{
+					{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+					{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+					{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+					{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				},
+				{
+					{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+					{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+					{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+					{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+				},
+				{
+					{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+					{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+					{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+					{Ref: chunkRef(1, 12), MinTime: 23, MaxTime: 24},
+				},
+			},
+		},
+		"remainder of division with targetNumRanges is put in the last range": {
+			targetNumRanges: 3, minChunksPerRange: 1,
+			input: []chunks.Meta{
+				{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+				{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+				{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+				{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+				{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+				{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+				{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+			},
+			expectedPartitions: [][]chunks.Meta{
+				{
+					{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+					{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+					{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				},
+				{
+					{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+					{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+					{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				},
+				{
+					{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+					{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+					{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+					{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+					{Ref: chunkRef(1, 11), MinTime: 21, MaxTime: 22},
+				},
+			},
+		},
+		"targetNumRanges can be exceeded when there are chunks from multiple segment files": {
+			targetNumRanges: 3, minChunksPerRange: 1,
+			input: []chunks.Meta{
+				{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+				{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+				{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+				{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				{Ref: chunkRef(2, 1), MinTime: 15, MaxTime: 16},
+				{Ref: chunkRef(2, 2), MinTime: 17, MaxTime: 18},
+				{Ref: chunkRef(2, 3), MinTime: 19, MaxTime: 20},
+				{Ref: chunkRef(2, 4), MinTime: 21, MaxTime: 22},
+			},
+			expectedPartitions: [][]chunks.Meta{
+				{
+					{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+					{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+					{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				},
+				{
+					{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+					{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+					{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				},
+				{
+					// This is an unfortunate case where one chunk is on its own because the next chunk is in a different segment file.
+					{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				},
+				{
+					{Ref: chunkRef(2, 1), MinTime: 15, MaxTime: 16},
+					{Ref: chunkRef(2, 2), MinTime: 17, MaxTime: 18},
+					{Ref: chunkRef(2, 3), MinTime: 19, MaxTime: 20},
+				},
+				{
+					{Ref: chunkRef(2, 4), MinTime: 21, MaxTime: 22},
+				},
+			},
+		},
+		"chunks from separate segment files get their own range even when below minChunksPerRange": {
+			targetNumRanges: 3, minChunksPerRange: 1,
+			input: []chunks.Meta{
+				{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+				{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+				{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+				{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+				{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+				{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+				{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+				{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+				{Ref: chunkRef(2, 1), MinTime: 21, MaxTime: 22},
+			},
+			expectedPartitions: [][]chunks.Meta{
+				{
+					{Ref: chunkRef(1, 1), MinTime: 1, MaxTime: 2},
+					{Ref: chunkRef(1, 2), MinTime: 3, MaxTime: 4},
+					{Ref: chunkRef(1, 3), MinTime: 5, MaxTime: 6},
+				},
+				{
+					{Ref: chunkRef(1, 4), MinTime: 7, MaxTime: 8},
+					{Ref: chunkRef(1, 5), MinTime: 9, MaxTime: 10},
+					{Ref: chunkRef(1, 6), MinTime: 11, MaxTime: 12},
+				},
+				{
+					{Ref: chunkRef(1, 7), MinTime: 13, MaxTime: 14},
+					{Ref: chunkRef(1, 8), MinTime: 15, MaxTime: 16},
+					{Ref: chunkRef(1, 9), MinTime: 17, MaxTime: 18},
+					{Ref: chunkRef(1, 10), MinTime: 19, MaxTime: 20},
+				},
+				{
+					{Ref: chunkRef(2, 1), MinTime: 21, MaxTime: 22},
+				},
+			},
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			actualPartitions := partitionChunks(testCase.input, testCase.targetNumRanges, testCase.minChunksPerRange)
+			assert.Equal(t, testCase.expectedPartitions, actualPartitions)
+		})
+	}
+}
+
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {

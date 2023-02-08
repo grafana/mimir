@@ -836,7 +836,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		var ranges []seriesChunkRefsRange
 		if !s.skipChunks {
 			clampLastChunkLength(nextSet.series, metas)
-			ranges = metasToRanges(partitionChunks(metas), s.blockID, s.minTime, s.maxTime)
+			ranges = metasToRanges(partitionChunks(metas, chunksRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 			if len(ranges) == 0 {
 				// There are no chunks for this series in the requested time range; skip it
 				continue
@@ -894,24 +894,31 @@ func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunk
 	}
 }
 
+const (
+	chunksRangesPerSeries = 2
+	minChunksPerRange     = 2
+)
+
 // partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
-// It may also create more ranges if there are more chunks.
 // The partitioning here should be fairly static and not depend on the actual Series() request because
 // the resulting ranges may be used for caching, and we want our cache entries to be reusable between requests.
-func partitionChunks(chks []chunks.Meta) [][]chunks.Meta {
-	const (
-		chunksRangesPerSeries = 2
-		minChunksPerRange     = 2
-	)
-	chunksPerRange := util_math.Max(minChunksPerRange, len(chks)/chunksRangesPerSeries)
+// partitionChunks tries to partition the metas into targetNumRanges ranges. If any of those ranges will have
+// less than minChunksPerRange metas, then partitionChunks will return less ranges than targetNumRanges.
+// Regardless of targetNumRanges and minChunksPerRange, partitionChunks will keep chunks from separate segment files
+// in separate partitions.
+func partitionChunks(chks []chunks.Meta, targetNumRanges, minChunksPerRange int) [][]chunks.Meta {
+	if len(chks) == 0 {
+		return nil
+	}
+	chunksPerRange := util_math.Max(minChunksPerRange, len(chks)/targetNumRanges)
 
-	ranges := make([][]chunks.Meta, 0, util_math.Min(chunksRangesPerSeries, len(chks)/chunksPerRange))
+	ranges := make([][]chunks.Meta, 0, util_math.Min(targetNumRanges, len(chks)/chunksPerRange))
 
 	currentRangeFirstChunkIdx := 0
 	for i := range chks {
 		isDifferentSegmentFile := chunkSegmentFile(chks[currentRangeFirstChunkIdx].Ref) != chunkSegmentFile(chks[i].Ref)
 		currentRangeIsFull := i-currentRangeFirstChunkIdx >= chunksPerRange
-		atLastRange := len(ranges) == chunksRangesPerSeries-1
+		atLastRange := len(ranges) == targetNumRanges-1
 
 		if isDifferentSegmentFile || (currentRangeIsFull && !atLastRange) {
 			ranges = append(ranges, chks[currentRangeFirstChunkIdx:i])
