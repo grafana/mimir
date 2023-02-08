@@ -64,11 +64,15 @@ type alertmanagerMetrics struct {
 	persistTotal            *prometheus.Desc
 	persistFailed           *prometheus.Desc
 
-	notificationRateLimited                 *prometheus.Desc
+	// exported metrics, gathered from Alertmanager Dispatcher
+	dispatcherAggrGroups                    *prometheus.Desc
+	dispatcherProcessingDuration            *prometheus.Desc
 	dispatcherAggregationGroupsLimitReached *prometheus.Desc
-	insertAlertFailures                     *prometheus.Desc
-	alertsLimiterAlertsCount                *prometheus.Desc
-	alertsLimiterAlertsSize                 *prometheus.Desc
+
+	notificationRateLimited  *prometheus.Desc
+	insertAlertFailures      *prometheus.Desc
+	alertsLimiterAlertsCount *prometheus.Desc
+	alertsLimiterAlertsSize  *prometheus.Desc
 }
 
 func newAlertmanagerMetrics() *alertmanagerMetrics {
@@ -214,14 +218,22 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 			"cortex_alertmanager_state_persist_failed_total",
 			"Number of times we have failed to persist the running state to storage.",
 			nil, nil),
-		notificationRateLimited: prometheus.NewDesc(
-			"cortex_alertmanager_notification_rate_limited_total",
-			"Total number of rate-limited notifications per integration.",
-			[]string{"user", "integration"}, nil),
+		dispatcherAggrGroups: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_aggregation_groups",
+			"Number of active aggregation groups",
+			nil, nil),
+		dispatcherProcessingDuration: prometheus.NewDesc(
+			"cortex_alertmanager_dispatcher_alert_processing_duration_seconds",
+			"Summary of latencies for the processing of alerts.",
+			nil, nil),
 		dispatcherAggregationGroupsLimitReached: prometheus.NewDesc(
 			"cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total",
 			"Number of times when dispatcher failed to create new aggregation group due to limit.",
 			[]string{"user"}, nil),
+		notificationRateLimited: prometheus.NewDesc(
+			"cortex_alertmanager_notification_rate_limited_total",
+			"Total number of rate-limited notifications per integration.",
+			[]string{"user", "integration"}, nil),
 		insertAlertFailures: prometheus.NewDesc(
 			"cortex_alertmanager_alerts_insert_limited_total",
 			"Total number of failures to store alert due to hitting alertmanager limits.",
@@ -283,8 +295,10 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.initialSyncDuration
 	out <- m.persistTotal
 	out <- m.persistFailed
-	out <- m.notificationRateLimited
+	out <- m.dispatcherAggrGroups
+	out <- m.dispatcherProcessingDuration
 	out <- m.dispatcherAggregationGroupsLimitReached
+	out <- m.notificationRateLimited
 	out <- m.insertAlertFailures
 	out <- m.alertsLimiterAlertsCount
 	out <- m.alertsLimiterAlertsSize
@@ -334,8 +348,11 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.persistTotal, "alertmanager_state_persist_total")
 	data.SendSumOfCounters(out, m.persistFailed, "alertmanager_state_persist_failed_total")
 
-	data.SendSumOfCountersPerUser(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
+	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
+	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")
 	data.SendSumOfCountersPerUser(out, m.dispatcherAggregationGroupsLimitReached, "alertmanager_dispatcher_aggregation_group_limit_reached_total")
+
+	data.SendSumOfCountersPerUser(out, m.notificationRateLimited, "alertmanager_notification_rate_limited_total", util.WithLabels("integration"), util.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerUser(out, m.insertAlertFailures, "alertmanager_alerts_insert_limited_total")
 	data.SendSumOfGaugesPerUser(out, m.alertsLimiterAlertsCount, "alertmanager_alerts_limiter_current_alerts")
 	data.SendSumOfGaugesPerUser(out, m.alertsLimiterAlertsSize, "alertmanager_alerts_limiter_current_alerts_size_bytes")

@@ -140,10 +140,10 @@ func (b *dnsBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts 
 		disableServiceConfig: opts.DisableServiceConfig,
 	}
 
-	if target.URL.Host == "" {
+	if target.Authority == "" {
 		d.resolver = defaultResolver
 	} else {
-		d.resolver, err = customAuthorityResolver(target.URL.Host)
+		d.resolver, err = customAuthorityResolver(target.Authority)
 		if err != nil {
 			return nil, err
 		}

@@ -60,10 +60,31 @@ func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
 	return &new
 }
 
-// WithQuery clones the current `PrometheusRangeQueryRequest` with new hints.
-func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
+// WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
+// added Hint value for TotalQueries.
+func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	new := *q
-	new.Hints = hints
+	if new.Hints == nil {
+		new.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*new.Hints = *(q.Hints)
+		new.Hints.TotalQueries = totalQueries
+	}
+	return &new
+}
+
+// WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
+// with an added Hint value for EstimatedCardinality.
+func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
+	new := *q
+	if new.Hints == nil {
+		new.Hints = &Hints{
+			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+		}
+	} else {
+		*new.Hints = *(q.Hints)
+		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+	}
 	return &new
 }
 
@@ -107,9 +128,27 @@ func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
 	return &new
 }
 
-func (r *PrometheusInstantQueryRequest) WithHints(hints *Hints) Request {
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
 	new := *r
-	new.Hints = hints
+	if new.Hints == nil {
+		new.Hints = &Hints{TotalQueries: totalQueries}
+	} else {
+		*new.Hints = *(r.Hints)
+		new.Hints.TotalQueries = totalQueries
+	}
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
+	new := *r
+	if new.Hints == nil {
+		new.Hints = &Hints{
+			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
+		}
+	} else {
+		*new.Hints = *(r.Hints)
+		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+	}
 	return &new
 }
 

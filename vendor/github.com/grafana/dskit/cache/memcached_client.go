@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/promregistry"
 )
 
 var (
@@ -165,7 +166,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client.MaxIdleConns = config.MaxIdleConnections
 
 	if reg != nil {
-		reg = prometheus.WrapRegistererWith(prometheus.Labels{"name": name}, reg)
+		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
 	}
 	return newMemcachedClient(logger, client, selector, config, reg, name)
 }
@@ -178,15 +179,21 @@ func newMemcachedClient(
 	reg prometheus.Registerer,
 	name string,
 ) (*memcachedClient, error) {
+	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
+	reg = prometheus.WrapRegistererWith(
+		prometheus.Labels{labelCacheBackend: backendMemcached},
+		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
+
+	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
+
 	addressProvider := dns.NewProvider(
 		logger,
-		prometheus.WrapRegistererWithPrefix("memcached_", reg),
+		backwardCompatibleRegs,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(
-		prometheus.WrapRegistererWithPrefix("memcached_", reg),
-	)
+	metrics := newClientMetrics(backwardCompatibleRegs)
+
 	c := &memcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		logger:          log.With(logger, "name", name),
@@ -196,13 +203,16 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			prometheus.WrapRegistererWithPrefix("memcached_getmulti_", reg),
+			promregistry.TeeRegisterer{
+				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, legacyRegister),
+				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
+			},
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "memcached_client_info",
+	c.clientInfo = promauto.With(backwardCompatibleRegs).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
 			"timeout":                      config.Timeout.String(),
