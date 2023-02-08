@@ -172,6 +172,72 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 			`,
 		},
+		"should succeed on valid series with histograms and metadata": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(1))}, nil),
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, tsdb.GenerateTestGaugeHistogram(2))}, nil),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromCommonHistogram(tsdb.GenerateTestHistogram(1))},
+					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromCommonHistogram(tsdb.GenerateTestGaugeHistogram(2))},
+				}},
+			},
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+			},
+			additionalMetrics: []string{
+				// Metadata.
+				"cortex_ingester_memory_metadata",
+				"cortex_ingester_memory_metadata_created_total",
+				"cortex_ingester_ingested_metadata_total",
+				"cortex_ingester_ingested_metadata_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
+				# TYPE cortex_ingester_ingested_metadata_failures_total counter
+				cortex_ingester_ingested_metadata_failures_total 0
+				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+				# TYPE cortex_ingester_ingested_metadata_total counter
+				cortex_ingester_ingested_metadata_total 2
+				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+				# TYPE cortex_ingester_memory_metadata gauge
+				cortex_ingester_memory_metadata 2
+				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+				# TYPE cortex_ingester_memory_metadata_created_total counter
+				cortex_ingester_memory_metadata_created_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			acceptNativeHistograms: true,
+		},
 		"should succeed on valid series with exemplars": {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
@@ -909,12 +975,14 @@ func TestIngester_Push(t *testing.T) {
 			// Check anonymous usage stats.
 			expectedTenantsCount := 0
 			expectedSamplesCount := 0
+			expectedHistogramsCount := 0
 			expectedExemplarsCount := 0
 			if len(testData.expectedIngested) > 0 {
 				expectedTenantsCount = 1
 			}
 			for _, stream := range testData.expectedIngested {
-				expectedSamplesCount += len(stream.Values)
+				expectedSamplesCount += len(stream.Values) + len(stream.Histograms)
+				expectedHistogramsCount += len(stream.Histograms)
 			}
 			for _, series := range testData.expectedExemplarsIngested {
 				expectedExemplarsCount += len(series.Exemplars)
@@ -925,6 +993,7 @@ func TestIngester_Push(t *testing.T) {
 			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount), usagestats.GetCounter(appendedSamplesStatsName).Total())
+			assert.Equal(t, int64(expectedHistogramsCount), usagestats.GetCounter(appendedHistogramsStatsName).Total())
 			assert.Equal(t, int64(expectedExemplarsCount), usagestats.GetCounter(appendedExemplarsStatsName).Total())
 			assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 			assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
