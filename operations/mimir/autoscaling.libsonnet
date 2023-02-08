@@ -1,5 +1,7 @@
 {
   _config+:: {
+    autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
@@ -16,7 +18,13 @@
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
     autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
 
-    autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
+    autoscaling_query_frontend_enabled: false,
+    autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
+    autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+
+    autoscaling_ruler_query_frontend_enabled: false,
+    autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
+    autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
   },
 
   assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
@@ -139,6 +147,40 @@
     ],
   }),
 
+  local newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas) = self.newScaledObject(
+    name, $._config.namespace, {
+      min_replica_count: min_replicas,
+      max_replica_count: max_replicas,
+      triggers: [
+        {
+          metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+          // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per query-frontend over 5m (rolling window)
+          // and then we pick the highest value over the last 15m.
+          // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with ints.
+          query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [
+            name,
+            $._config.namespace,
+          ],
+          // Threshold is expected to be a string
+          threshold: std.toString(cpuToMilliCPUInt(cpu_requests)),
+        },
+        {
+          metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+          // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all query-frontends over 15m.
+          query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [
+            name,
+            $._config.namespace,
+          ],
+
+          // Threshold is expected to be a string
+          threshold: std.toString(siToBytes(memory_requests)),
+        },
+      ],
+    },
+  ),
+
   // When querier autoscaling is enabled the querier's "replicas" is missing from the spec
   // so the query sharding jsonnet can't compute the min number of replicas. To fix it, we
   // override it and we compute it based on the max number of replicas (worst case scenario).
@@ -215,10 +257,20 @@
     if !$._config.autoscaling_querier_enabled then {} else removeReplicasFromSpec
   ),
 
+  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+    newQueryFrontendScaledObject(
+      name='query-frontend',
+      cpu_requests=$.query_frontend_container.resources.requests.cpu,
+      memory_requests=$.query_frontend_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_query_frontend_min_replicas,
+      max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+    ),
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
-    if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
-      queryFrontendReplicas($._config.autoscaling_querier_max_replicas)
+    if $._config.autoscaling_query_frontend_enabled then removeReplicasFromSpec else
+      if $._config.query_sharding_enabled && $._config.autoscaling_querier_enabled then
+        queryFrontendReplicas($._config.autoscaling_querier_max_replicas) else
+        {}
   ),
 
   //
@@ -259,10 +311,20 @@
     if !$._config.autoscaling_ruler_querier_enabled then {} else removeReplicasFromSpec
   ),
 
+  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    newQueryFrontendScaledObject(
+      name='ruler-query-frontend',
+      cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
+      memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
+      max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+    ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
-    if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
-      queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
+    if $._config.autoscaling_ruler_query_frontend_enabled then removeReplicasFromSpec else
+      if $._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled then
+        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
+        {}
   ),
 
   //
