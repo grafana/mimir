@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -210,13 +209,6 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		FromLabelAdaptersToLabelsWithCopy(input)
 	}
-}
-
-func TestFromPointsToSamples(t *testing.T) {
-	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}}
-	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
-
-	assert.Equal(t, expected, FromPointsToSamples(input))
 }
 
 func TestPreallocatingMetric(t *testing.T) {
