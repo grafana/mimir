@@ -141,13 +141,13 @@ parallel by the query-frontend, multiplying the previously set value of
 
 ## Cardinality estimation for query sharding (experimental)
 
-Since a high number of parallel sharded queries increases load on queriers and their dependencies, it is desirable to shard queries only as much as necessary.
+When the number of parallel sharded queries increases, so does the load on the queriers and their dependencies. Therefore, to balance the tradeoff, only use shard queries as much as necessary.
 Queries that return more series, such as those that are of high cardinality, need to fetch more data and should therefore be split into a larger number of shards.
 Queries that return few or no series should be executed with fewer or no shards at all.
-When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality observed during previous executions of the same query for similar time ranges.
+When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality (number of series) observed during previous executions of the same query for similar time ranges.
 
 To enable this experimental feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and enable result caching (the result cache is used to store cardinality estimates).
-The value set for this flag is one of several parameters used by the sharding logic to determine the appropriate number of shards for a query.
+The value that you set for this flag is one of several parameters that the sharding logic uses to determine the appropriate number of shards for a query.
 Therefore, it will not strictly be complied with in all cases, and the actual number of series fetched per shard might exceed the limit.
 This is likely to happen in cases where the cardinality of a query changes rapidly within a short period of time.
 
