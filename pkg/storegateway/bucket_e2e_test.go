@@ -505,9 +505,8 @@ func TestBucketStore_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		s := newSuite()
-
 		if ok := t.Run("no caches", func(t *testing.T) {
+			s := newSuite(t)
 			s.cache.SwapIndexCacheWith(noopCache{})
 			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
@@ -516,6 +515,7 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
+			s := newSuite(t)
 			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 1e5,
 				MaxSize:     2e5,
@@ -528,6 +528,7 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
+			s := newSuite(t)
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
@@ -537,7 +538,8 @@ func TestBucketStore_e2e(t *testing.T) {
 			testBucketStore_e2e(t, ctx, s)
 		})
 
-		t.Run("with large, sufficient chunks cache", func(t *testing.T) {
+		t.Run("with chunks cache", func(t *testing.T) {
+			s := newSuite(t, withBucketStoreOptions(WithFineGrainedChunksCaching(true)))
 			chunksCache := newInMemoryChunksCache()
 			s.cache.SwapChunksCacheWith(chunksCache)
 			testBucketStore_e2e(t, ctx, s)
@@ -566,7 +568,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 		prepareCfg := defaultPrepareStoreConfig(t)
 		prepareCfg.manyParts = true
 
-		s := newSuite(withManyParts())
+		s := newSuite(t, withManyParts())
 
 		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
@@ -647,7 +649,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		s := newSuite()
+		s := newSuite(t)
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -744,7 +746,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		s := newSuite()
+		s := newSuite(t)
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -829,7 +831,7 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		s := newSuite()
+		s := newSuite(t)
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -869,14 +871,14 @@ func emptyToNil(values []string) []string {
 	return values
 }
 
-type suiteFactory func(...prepareStoreConfigOption) *storeSuite
+type suiteFactory func(testing.TB, ...prepareStoreConfigOption) *storeSuite
 
 func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory)) {
 	t.Parallel()
 
 	// Mandatory Inmem. Not parallel, to detect problem early.
 	if ok := t.Run("inmem", func(t *testing.T) {
-		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+		factory := func(t testing.TB, opts ...prepareStoreConfigOption) *storeSuite {
 			return prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)
@@ -888,9 +890,9 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		b, err := filesystem.NewBucket(t.TempDir())
-		assert.NoError(t, err)
-		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+		factory := func(t testing.TB, opts ...prepareStoreConfigOption) *storeSuite {
+			b, err := filesystem.NewBucket(t.TempDir())
+			assert.NoError(t, err)
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)
@@ -899,9 +901,9 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	t.Run("streaming", func(t *testing.T) {
 		t.Parallel()
 
-		b, err := filesystem.NewBucket(t.TempDir())
-		assert.NoError(t, err)
-		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+		factory := func(t testing.TB, opts ...prepareStoreConfigOption) *storeSuite {
+			b, err := filesystem.NewBucket(t.TempDir())
+			assert.NoError(t, err)
 			// We want to force each Series() call to use more than one batch to catch some edge cases.
 			// This should make the implementation slightly slower, although test time
 			// should be dominated by the setup.
