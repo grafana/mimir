@@ -119,8 +119,10 @@ func (b *seriesChunksSet) release() {
 	if b.seriesReleasable {
 		// Reset series and chunk entries, before putting back to the pool.
 		for i := range b.series {
-			for c := range b.series[i].chks {
-				b.series[i].chks[c].Reset()
+			// Be sure to reset all chunks within the capacity, not just the length.
+			b.series[i].chks = b.series[i].chks[0:cap(b.series[i].chks)]
+			for j := 0; j < cap(b.series[i].chks); j++ {
+				b.series[i].chks[j].Reset()
 			}
 
 			b.series[i] = seriesEntry{}
@@ -448,7 +450,6 @@ func filterNativeHistogramChunks(seriesEntries []seriesEntry) []seriesEntry {
 			// The bucketChunkReader will skip populating native histogram chunks when ignoreNativeHistograms is true,
 			// leaving chk.Raw as nil.
 			if chk.Raw == nil {
-				chk.Reset()
 				continue
 			}
 
@@ -460,10 +461,6 @@ func filterNativeHistogramChunks(seriesEntries []seriesEntry) []seriesEntry {
 			}
 
 			chksWriteIdx++
-		}
-		// Any remaining chunks are to be discarded but we need to reset them first.
-		for k := chksWriteIdx; k < len(series.chks); k++ {
-			series.chks[k].Reset()
 		}
 		series.chks = series.chks[:chksWriteIdx]
 
