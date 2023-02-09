@@ -93,7 +93,7 @@ The following features are currently experimental:
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
-  - Cardinality-based query sharding (`-query-frontend.query-sharding-max-series-per-shard`)
+  - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)
