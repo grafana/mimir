@@ -193,6 +193,9 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 }
 
 func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToHistogram called on float histogram")
+	}
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -208,6 +211,9 @@ func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
 }
 
 func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToFloatHistogram called on integer histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -222,14 +228,20 @@ func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram
 	}
 }
 
-func FromHistogramProtoToPromCommonHistogram(h *Histogram) *model.SampleHistogram {
-	if h.IsFloatHistogram() {
-		return FromFloatHistogramToPromCommonHistogram(FromHistogramProtoToFloatHistogram(h))
+func FromHistogramProtoToPromHistogram(hp *Histogram) *model.SampleHistogram {
+	if hp == nil {
+		return nil
 	}
-	return FromHistogramToPromCommonHistogram(FromHistogramProtoToHistogram(h))
+	if hp.IsFloatHistogram() {
+		return FromFloatHistogramToPromHistogram(FromHistogramProtoToFloatHistogram(hp))
+	}
+	return FromHistogramToPromHistogram(FromHistogramProtoToHistogram(hp))
 }
 
 func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
+	if len(s) == 0 {
+		return nil
+	}
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -271,6 +283,9 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 }
 
 func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
+	if len(s) == 0 {
+		return nil
+	}
 	spans := make([]BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
@@ -311,8 +326,8 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 	return samples
 }
 
-// FromFloatHistogramToPromCommonHistogram converts histogram.FloatHistogram to model.SampleHistogram.
-func FromFloatHistogramToPromCommonHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
+// FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.
+func FromFloatHistogramToPromHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
 	buckets := make([]*model.HistogramBucket, 0)
 	it := h.AllBucketIterator()
 	for it.Next() {
@@ -334,8 +349,8 @@ func FromFloatHistogramToPromCommonHistogram(h *histogram.FloatHistogram) *model
 	}
 }
 
-func FromHistogramToPromCommonHistogram(h *histogram.Histogram) *model.SampleHistogram {
-	return FromFloatHistogramToPromCommonHistogram(h.ToFloat())
+func FromHistogramToPromHistogram(h *histogram.Histogram) *model.SampleHistogram {
+	return FromFloatHistogramToPromHistogram(h.ToFloat())
 }
 
 type byLabel []LabelAdapter
@@ -627,4 +642,22 @@ loop:
 	}
 
 	return numLabels, true
+}
+
+// Generics
+type GenericSamplePair interface {
+	Sample | SampleHistogramPair | Histogram
+	GetTimestampVal() int64
+}
+
+func (s Sample) GetTimestampVal() int64 {
+	return s.TimestampMs
+}
+
+func (vs SampleHistogramPair) GetTimestampVal() int64 {
+	return vs.Timestamp
+}
+
+func (m Histogram) GetTimestampVal() int64 {
+	return m.Timestamp
 }
