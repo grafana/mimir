@@ -271,7 +271,6 @@ type Ingester struct {
 	memoryTenantsStats                 *expvar.Int
 	appendedSamplesStats               *usagestats.Counter
 	appendedExemplarsStats             *usagestats.Counter
-	appendedHistogramsStats            *usagestats.Counter
 	tenantsWithOutOfOrderEnabledStat   *expvar.Int
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
@@ -308,7 +307,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
 		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
 		appendedExemplarsStats:             usagestats.GetAndResetCounter(appendedExemplarsStatsName),
-		appendedHistogramsStats:            usagestats.GetAndResetCounter(appendedHistogramsStatsName),
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
@@ -675,20 +673,6 @@ type pushStats struct {
 	newValueForTimestampCount int
 	perUserSeriesLimitCount   int
 	perMetricSeriesLimitCount int
-
-	// The following stats are counted towards *SamplesCount as well!
-	succeededHistogramsCount int
-	failedHistogramsCount    int
-}
-
-func (s *pushStats) incSucceededHistogramsCount() {
-	s.succeededSamplesCount++
-	s.succeededHistogramsCount++
-}
-
-func (s *pushStats) incFailedHistogramsCount() {
-	s.failedSamplesCount++
-	s.failedHistogramsCount++
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -816,7 +800,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			// Add all samples for ephemeral series as "failed".
 			for _, ts := range req.EphemeralTimeseries {
 				ephemeralStats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-				ephemeralStats.failedHistogramsCount += len(ts.Histograms)
 			}
 
 			updateFirstPartial(func() error {
@@ -848,14 +831,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		"failedSamplesCount", persistentStats.failedSamplesCount,
 		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
 		"failedExemplarsCount", persistentStats.failedExemplarsCount,
-		"succeededHistogramsCount", persistentStats.succeededHistogramsCount,
-		"failedHistogramsCount", persistentStats.failedHistogramsCount,
 		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
 		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
 		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
 		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
-		"ephemeralSucceededHistogramsCount", ephemeralStats.succeededHistogramsCount,
-		"ephemeralFailedHistogramsSamplesCount", ephemeralStats.failedHistogramsCount,
 	)
 
 	startCommit := time.Now()
@@ -895,7 +874,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
 	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
-	i.appendedHistogramsStats.Inc(int64(persistentStats.succeededHistogramsCount))
 	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
 
 	if ephemeralStats.succeededSamplesCount > 0 || ephemeralStats.failedSamplesCount > 0 {
@@ -903,7 +881,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
 
 		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
-		i.appendedHistogramsStats.Inc(int64(ephemeralStats.succeededHistogramsCount))
 	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
@@ -1045,7 +1022,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-				stats.failedHistogramsCount += len(ts.Histograms)
 
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
@@ -1138,7 +1114,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
 					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
-						stats.incSucceededHistogramsCount()
+						stats.succeededSamplesCount++
 						continue
 					}
 				} else {
@@ -1147,12 +1123,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
-						stats.incSucceededHistogramsCount()
+						stats.succeededSamplesCount++
 						continue
 					}
 				}
 
-				stats.incFailedHistogramsCount()
+				stats.failedSamplesCount++
 
 				if handleAppendError(err, h.Timestamp, ts.Labels) {
 					continue
