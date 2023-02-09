@@ -2575,8 +2575,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error.
-# CLI flag: -ingester.accept-native-histograms
-[accept_native_histograms: <boolean> | default = false]
+# CLI flag: -ingester.native-histograms-ingestion-enabled
+[native_histograms_ingestion_enabled: <boolean> | default = false]
 
 # (advanced) Additional custom trackers for active metrics. If there are active
 # series matching a provided matcher (map value), the count will be exposed in
