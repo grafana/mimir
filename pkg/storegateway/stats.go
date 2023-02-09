@@ -41,6 +41,8 @@ type queryStats struct {
 	seriesHashCacheRequests int
 	seriesHashCacheHits     int
 
+	chunksParsed           int
+	chunksParsedSizeSum    int
 	chunksRefetched        int
 	chunksRefetchedSizeSum int
 	chunksTouched          int

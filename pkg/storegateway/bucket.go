@@ -1189,20 +1189,14 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	stats := safeStats.export()
-	s.metrics.seriesDataTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("postings", "normal").Observe(float64(stats.postingsFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "normal").Observe(float64(stats.postingsFetchedSizeSum))
-	s.metrics.seriesDataTouched.WithLabelValues("series").Observe(float64(stats.seriesTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("series", "normal").Observe(float64(stats.seriesFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("series").Observe(float64(stats.seriesTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "normal").Observe(float64(stats.seriesFetchedSizeSum))
-	s.metrics.seriesDataTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("chunks", "normal").Observe(float64(stats.chunksFetched))
-	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "normal").Observe(float64(stats.chunksFetchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetchedSizeSum))
+	s.metrics.seriesDataTouched.WithLabelValues("postings", "all").Observe(float64(stats.postingsTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("postings", "all").Observe(float64(stats.postingsFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("postings", "all").Observe(float64(stats.postingsTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "all").Observe(float64(stats.postingsFetchedSizeSum))
+	s.metrics.seriesDataTouched.WithLabelValues("series", "all").Observe(float64(stats.seriesTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("series", "all").Observe(float64(stats.seriesFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "all").Observe(float64(stats.seriesTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "all").Observe(float64(stats.seriesFetchedSizeSum))
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
@@ -1214,6 +1208,27 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
 	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
+
+	if s.fineGrainedChunksCachingEnabled && s.maxSeriesPerBatch > 0 {
+		// There is no metric for the count of fetched chunks because the bytes we have fetched may not contain whole chunks.
+		// The parsed count is the definitive count.
+		s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "normal").Observe(float64(stats.chunksFetchedSizeSum))
+
+		s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetched))
+		s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetch").Observe(float64(stats.chunksRefetchedSizeSum))
+
+		s.metrics.seriesDataFetched.WithLabelValues("chunks", "parsed").Observe(float64(stats.chunksParsed))
+		s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "parsed").Observe(float64(stats.chunksParsedSizeSum))
+
+		s.metrics.seriesDataTouched.WithLabelValues("chunks", "selected").Observe(float64(stats.chunksTouched))
+		s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "selected").Observe(float64(stats.chunksTouchedSizeSum))
+	} else {
+		s.metrics.seriesDataFetched.WithLabelValues("chunks", "all").Observe(float64(stats.chunksFetched))
+		s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "all").Observe(float64(stats.chunksFetchedSizeSum))
+
+		s.metrics.seriesDataTouched.WithLabelValues("chunks", "all").Observe(float64(stats.chunksTouched))
+		s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "all").Observe(float64(stats.chunksTouchedSizeSum))
+	}
 
 	// Track the streaming store-gateway preloading effectiveness metrics only if the request had
 	// more than 1 batch. If the request only had 1 batch, then preloading is not triggered at all.

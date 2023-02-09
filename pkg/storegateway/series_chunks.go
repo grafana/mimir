@@ -519,7 +519,7 @@ func (c *rangeLoadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	fetchStartTime := time.Now()
 	cachedRanges := c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series, countRanges(partialSeries)))
-	c.recordCachedChunksStats(cachedRanges)
+	c.recordCachedChunks(cachedRanges)
 
 	// Collect the cached ranges bytes or prepare to fetch cache misses from the bucket.
 	for sIdx, s := range partialSeries {
@@ -541,7 +541,7 @@ func (c *rangeLoadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
-	c.recordFetchComplete(fetchStartTime)
+	c.recordFetchedChunks(fetchStartTime)
 
 	// Parse the bytes we have from the cache or the bucket. This returns the ranges for which we didn't have
 	// enough fetched bytes. This may happen when a chunk's length was underestimated.
@@ -560,7 +560,7 @@ func (c *rangeLoadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		}
 	}
 
-	c.recordFetchedChunks(partialSeries)
+	c.recordParsedChunks(partialSeries)
 
 	c.storeChunkRanges(cachedRanges, partialSeries)
 
@@ -835,19 +835,22 @@ func parseRanges(partialSeries []partialSeriesChunksSet) (map[int][]underfetched
 	return underfetchedSeries, nil
 }
 
-func (c *rangeLoadingSeriesChunksSetIterator) recordFetchComplete(fetchStartTime time.Time) {
+func (c *rangeLoadingSeriesChunksSetIterator) recordFetchedChunks(fetchStartTime time.Time) {
 	c.stats.update(func(stats *queryStats) {
+		stats.chunksFetchCount++
 		stats.chunksFetchDurationSum += time.Since(fetchStartTime)
 	})
 }
 
-func (c *rangeLoadingSeriesChunksSetIterator) recordCachedChunksStats(cachedRanges map[chunkscache.Range][]byte) {
+func (c *rangeLoadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chunkscache.Range][]byte) {
 	fetchedBytes := 0
 	for _, b := range cachedRanges {
 		fetchedBytes += len(b)
 	}
 
 	c.stats.update(func(stats *queryStats) {
+		// We don't record the number of fetched chunks because they may not perfectly align with the bytes we fetched
+		// if we overfetched or underfetched.
 		stats.chunksFetchedSizeSum += fetchedBytes
 	})
 }
@@ -863,17 +866,6 @@ func (c *rangeLoadingSeriesChunksSetIterator) recordRefetchStats(refetchStartTim
 		stats.chunksRefetched += refetchedChunks
 		stats.chunksRefetchedSizeSum += refetchStats.export().chunksFetchedSizeSum
 		stats.chunksFetchDurationSum += time.Since(refetchStartTime)
-	})
-}
-
-func (c *rangeLoadingSeriesChunksSetIterator) recordFetchedChunks(series []partialSeriesChunksSet) {
-	totalChunks := 0
-	for _, s := range series {
-		totalChunks += len(s.parsedChunks)
-	}
-	c.stats.update(func(stats *queryStats) {
-		stats.chunksFetchCount++
-		stats.chunksFetched += totalChunks
 	})
 }
 
@@ -904,6 +896,23 @@ func chunksSizeInSegmentFile(chks []storepb.AggrChunk) int {
 		total += varint.UvarintSize(uint64(dataLen)) + 1 + dataLen + crc32.Size
 	}
 	return total
+}
+
+func (c *rangeLoadingSeriesChunksSetIterator) recordParsedChunks(series []partialSeriesChunksSet) {
+	totalParsedBytes := 0
+	totalParsedChunks := 0
+	for _, s := range series {
+		// rawRanges at this point should be truncated to what has been read from the range only.
+		// Any overfetched bytes should have been sliced away during parsing.
+		for _, r := range s.rawRanges {
+			totalParsedBytes += len(r)
+		}
+		totalParsedChunks += len(s.parsedChunks)
+	}
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksParsedSizeSum += totalParsedBytes
+		stats.chunksParsed += totalParsedChunks
+	})
 }
 
 type nextDurationMeasuringIterator[Set any] struct {
