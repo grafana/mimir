@@ -545,6 +545,8 @@ func (s partialSeriesChunksSet) populateRange(rIdx int, dst []storepb.AggrChunk)
 
 // parseRange parses the byte slice as concatenated encoded chunks. lastChunkLen is non-zero when allChunksComplete==false.
 // An error is returned when gBytes are malformed or when more than the last chunk is incomplete.
+//
+//nolint:unused // dead code while we are working on PR 3968
 func parseRange(rBytes []byte, chunks []storepb.AggrChunk) (allChunksComplete bool, lastChunkLen uint32, totalRead int, _ error) {
 	rangeFullSize := len(rBytes)
 	for i := range chunks {
@@ -581,6 +583,8 @@ func parseRange(rBytes []byte, chunks []storepb.AggrChunk) (allChunksComplete bo
 // parseRanges parses the passed bytes into nextSet. In case a range was underfetched, parseRanges will return an underfetchedChunksRangeIdx
 // with the indices of the range; the keys in the map are the indices into partialSeries.
 // parseRanges will also set the correct length of the last chunk in an underfetched range in case its estimated length was wrong.
+//
+//nolint:unused // dead code while we are working on PR 3968
 func parseRanges(partialSeries []partialSeriesChunksSet) (map[int][]underfetchedChunksRangeIdx, error) {
 	underfetchedSeries := make(map[int][]underfetchedChunksRangeIdx)
 	for sIdx, series := range partialSeries {
