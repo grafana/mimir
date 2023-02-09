@@ -422,12 +422,16 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 type partialSeriesChunksSet struct {
-	refsRanges   []seriesChunkRefsRange
-	rawRanges    [][]byte
+	//nolint:unused // dead code while we are working on PR 3968
+	refsRanges []seriesChunkRefsRange
+	rawRanges  [][]byte
+	//nolint:unused // dead code while we are working on PR 3968
 	parsedChunks []storepb.AggrChunk
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func newPartialSeries(nextUnloaded seriesChunkRefsSet, getPooledChunks func(size int) []storepb.AggrChunk) []partialSeriesChunksSet {
 	partialSeries := make([]partialSeriesChunksSet, len(nextUnloaded.series))
 
@@ -444,6 +448,7 @@ func newPartialSeries(nextUnloaded seriesChunkRefsSet, getPooledChunks func(size
 	return partialSeries
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 type underfetchedChunksRangeIdx struct {
 	blockID  ulid.ULID
 	rangeIdx int
@@ -458,6 +463,8 @@ type underfetchedChunksRangeIdx struct {
 // parse will also truncate the bytes in rawRanges in case there are extra unnecessary bytes there.
 // parse will return an error when the bytes in rawRanges were underfetched before the last chunk or
 // if the data in rawRanges is invalid.
+//
+//nolint:unused // dead code while we are working on PR 3968
 func (s partialSeriesChunksSet) parse() ([]underfetchedChunksRangeIdx, error) {
 	var underfetchedRanges []underfetchedChunksRangeIdx
 	parsedChunksCount := 0
@@ -480,6 +487,7 @@ func (s partialSeriesChunksSet) parse() ([]underfetchedChunksRangeIdx, error) {
 	return underfetchedRanges, nil
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func convertChunkEncoding(storageEncoding chunkenc.Encoding) (storepb.Chunk_Encoding, bool) {
 	switch storageEncoding {
 	case chunkenc.EncXOR:
@@ -493,6 +501,7 @@ func convertChunkEncoding(storageEncoding chunkenc.Encoding) (storepb.Chunk_Enco
 	}
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func (s partialSeriesChunksSet) reparse(idx underfetchedChunksRangeIdx) error {
 	refsRange := s.refsRanges[idx.rangeIdx]
 	ok, err := s.populateRange(idx.rangeIdx, idx.parsed)
@@ -507,6 +516,8 @@ func (s partialSeriesChunksSet) reparse(idx underfetchedChunksRangeIdx) error {
 
 // parseRange also corrects the length of the last chunk to the size that it actually is.
 // It slices away any extra bytes in the raw range.
+//
+//nolint:unused // dead code while we are working on PR 3968
 func (s partialSeriesChunksSet) populateRange(rIdx int, dst []storepb.AggrChunk) (bool, error) {
 	rawRange := s.rawRanges[rIdx]
 	r := s.refsRanges[rIdx]

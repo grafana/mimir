@@ -444,6 +444,8 @@ func (r *bucketChunkReaders) reset() {
 
 // bucketChunkRangesReaders holds a collection of chunkRangesReader's for multiple blocks
 // and selects the correct chunk reader to use on each call to addLoad
+//
+//nolint:unused // dead code while we are working on PR 3968
 type bucketChunkRangesReaders struct {
 	readers map[ulid.ULID]chunkRangesReader
 }
@@ -456,16 +458,19 @@ type chunkRangesReader interface {
 	reset()
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func newChunkRangeReaders(readersMap map[ulid.ULID]chunkRangesReader) *bucketChunkRangesReaders {
 	return &bucketChunkRangesReaders{
 		readers: readersMap,
 	}
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func (r bucketChunkRangesReaders) addLoadRange(blockID ulid.ULID, g seriesChunkRefsRange, seriesEntry int, rangeEntry int) error {
 	return r.readers[blockID].addLoadRange(g, seriesEntry, rangeEntry)
 }
 
+//nolint:unused // dead code while we are working on PR 3968
 func (r bucketChunkRangesReaders) loadRanges(partialSeries []partialSeriesChunksSet, stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
@@ -485,6 +490,8 @@ func (r bucketChunkRangesReaders) loadRanges(partialSeries []partialSeriesChunks
 }
 
 // reset the chunks scheduled for loading.
+//
+//nolint:unused // dead code while we are working on PR 3968
 func (r bucketChunkRangesReaders) reset() {
 	for _, reader := range r.readers {
 		reader.reset()
