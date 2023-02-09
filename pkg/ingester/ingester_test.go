@@ -186,8 +186,8 @@ func TestIngester_Push(t *testing.T) {
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
-					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromCommonHistogram(tsdb.GenerateTestHistogram(1))},
-					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromCommonHistogram(tsdb.GenerateTestGaugeHistogram(2))},
+					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(tsdb.GenerateTestHistogram(1))},
+					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(tsdb.GenerateTestGaugeHistogram(2))},
 				}},
 			},
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{

@@ -196,9 +196,6 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
 	}
 	h := c.series.histograms[c.curHisto]
-	if h.IsFloatHistogram() {
-		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
-	}
 	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
@@ -207,9 +204,7 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}
 	h := c.series.histograms[c.curHisto]
-	if !h.IsFloatHistogram() {
-		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
-	}
+	// Should we automatically convert to float if the histogram happens to be integer histogram?
 	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 

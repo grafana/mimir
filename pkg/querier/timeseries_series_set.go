@@ -164,9 +164,6 @@ func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return 0, nil
 	}
 	h := t.ts.series.Histograms[t.iH]
-	if h.IsFloatHistogram() {
-		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is at float histogram"))
-	}
 	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
@@ -179,9 +176,7 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 		return 0, nil
 	}
 	h := t.ts.series.Histograms[t.iH]
-	if !h.IsFloatHistogram() {
-		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is at integer histogram"))
-	}
+	// Should we automatially convert to float if the hisotgram happens to be integer histogram?
 	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
