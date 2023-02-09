@@ -112,6 +112,9 @@ type BucketStore struct {
 	// or to load and unload them in batches and stream them to the querier. The bucketStore uses streaming when
 	// maxSeriesPerBatch is larger than zero.
 	maxSeriesPerBatch int
+	// fineGrainedChunksCachingEnabled controls whether to use the per series chunks caching
+	// or rely on the transparent caching bucket.
+	fineGrainedChunksCachingEnabled bool
 
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
@@ -214,6 +217,12 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.maxSeriesPerBatch = seriesPerBatch
+	}
+}
+
+func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.fineGrainedChunksCachingEnabled = enabled
 	}
 }
 
@@ -1159,8 +1168,12 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	var set storepb.SeriesSet
-	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, s.userID, s.chunksCache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+	if !req.SkipChunks {
+		if s.fineGrainedChunksCachingEnabled {
+			set = newSeriesSetWithChunks(ctx, s.userID, s.chunksCache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		} else {
+			set = newSeriesSetWithChunks(ctx, s.userID, nil, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		}
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -386,12 +385,15 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	// so can safely expand it.
 	nextSet.series = nextSet.series[:nextUnloaded.len()]
 
-	cachedRanges := c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+	var cachedRanges map[chunkscache.Range][]byte
+	if c.cache != nil {
+		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+	}
 	c.chunkReaders.reset()
 
 	for i, s := range nextUnloaded.series {
 		nextSet.series[i].lset = s.lset
-		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunksWithinRange(math.MinInt64, math.MaxInt64))
+		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
 		seriesChunkIdx := 0
 
 		for _, chunksRange := range s.chunksRanges {
@@ -405,7 +407,14 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 				seriesChunkIdx += len(chunksRange.refs)
 				continue
 			}
+
 			for _, chunk := range chunksRange.refs {
+				if c.cache == nil && (chunk.minTime > c.maxTime || chunk.maxTime < c.minTime) {
+					// If the cache is not set, then we don't need to overfetch chunks that we know are outside minT/maxT.
+					// If the cache is set, then we need to do that, so we can cache the complete chunks ranges.
+					seriesChunkIdx++
+					continue
+				}
 				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx, chunk.length)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
@@ -424,7 +433,9 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
-	c.storeRanges(nextUnloaded.series, nextSet.series, cachedRanges)
+	if c.cache != nil {
+		c.storeRanges(nextUnloaded.series, nextSet.series, cachedRanges)
+	}
 
 	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
 	// range of chunks. After storing the chunks in the cache, we should throw away the chunks that are outside
@@ -451,9 +462,7 @@ func prepareChunks(chunksRange seriesChunkRefsRange, chunks []storepb.AggrChunk)
 func toCacheKeys(series []seriesChunkRefs) []chunkscache.Range {
 	totalRanges := 0
 	for _, s := range series {
-		for _, r := range s.chunksRanges {
-			totalRanges += len(r.refs)
-		}
+		totalRanges += len(s.chunksRanges)
 	}
 	ranges := make([]chunkscache.Range, 0, totalRanges)
 	for _, s := range series {
