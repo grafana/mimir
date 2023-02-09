@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
-	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -60,13 +59,6 @@ const (
 	// store-gateways. If no more store-gateways are left (ie. due to lower replication
 	// factor) than we'll end the retries earlier.
 	maxFetchSeriesAttempts = 3
-)
-
-var (
-	maxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithPerTenantLimitConfig(
-		"the query exceeded the maximum number of chunks fetched from store-gateways when querying '%s' (limit: %d)",
-		validation.MaxChunksPerQueryFlag,
-	)
 )
 
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.
@@ -442,9 +434,6 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       = storage.Warnings(nil)
-
-		maxChunksLimit  = q.limits.MaxChunksPerQuery(q.userID)
-		leftChunksLimit = maxChunksLimit
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -453,19 +442,13 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	}
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, numChunks, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, matchers, convertedMatchers, maxChunksLimit, leftChunksLimit)
+		seriesSets, queriedBlocks, warnings, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
 
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings = append(resWarnings, warnings...)
-
-		// Given a single block is guaranteed to not be queried twice, we can safely decrease the number of
-		// chunks we can still read before hitting the limit (max == 0 means disabled).
-		if maxChunksLimit > 0 {
-			leftChunksLimit -= numChunks
-		}
 
 		return queriedBlocks, nil
 	}
@@ -676,17 +659,17 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 	return true, false
 }
 
-func (q *blocksStoreQuerier) fetchSeriesFromStores(
-	ctx context.Context,
-	sp *storage.SelectHints,
-	clients map[BlocksStoreClient][]ulid.ULID,
-	minT int64,
-	maxT int64,
-	matchers []*labels.Matcher,
-	convertedMatchers []storepb.LabelMatcher,
-	maxChunksLimit int,
-	leftChunksLimit int,
-) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, int, error) {
+// fetchSeriesFromStores fetches series satisfying convertedMatchers and in the time range [minT, maxT) from all
+// store-gateways in clients. Series are fetched from the given set of store-gateways concurrently. In successful
+// case, i.e., when all the concurrent fetches terminate with no exception, fetchSeriesFromStores returns:
+//  1. a slice of fetched storage.SeriesSet
+//  2. a slice of ulid.ULID corresponding to the queried blocks
+//  3. storage.Warnings encountered during the operation
+//
+// In case of a serious error during any of the concurrent executions, the error is returned. Errors while creating storepb.SeriesRequest,
+// context cancellation, and unprocessable requests to the store-gateways (e.g., if a chunk or series limit is hit) are
+// considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
@@ -694,7 +677,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 		seriesSets    = []storage.SeriesSet(nil)
 		warnings      = storage.Warnings(nil)
 		queriedBlocks = []ulid.ULID(nil)
-		numChunks     = atomic.NewInt32(0)
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
@@ -764,18 +746,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					}
 
 					chunksCount, chunksSize := countChunksAndBytes(s)
-
-					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
-					if maxChunksLimit > 0 {
-						actual := numChunks.Add(int32(chunksCount))
-						if actual > int32(leftChunksLimit) {
-							return validation.LimitError(fmt.Sprintf(maxChunksPerQueryLimitMsgFormat, util.LabelMatchersToString(matchers), maxChunksLimit))
-						}
-					}
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
 						return validation.LimitError(chunkBytesLimitErr.Error())
 					}
-					if chunkLimitErr := queryLimiter.AddChunks(len(s.Chunks)); chunkLimitErr != nil {
+					if chunkLimitErr := queryLimiter.AddChunks(chunksCount); chunkLimitErr != nil {
 						return validation.LimitError(chunkLimitErr.Error())
 					}
 				}
@@ -833,10 +807,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 	// Wait until all client requests complete.
 	if err := g.Wait(); err != nil {
-		return nil, nil, nil, 0, err
+		return nil, nil, nil, err
 	}
 
-	return seriesSets, queriedBlocks, warnings, int(numChunks.Load()), nil
+	return seriesSets, queriedBlocks, warnings, nil
 }
 
 func shouldStopQueryFunc(err error) bool {

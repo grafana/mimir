@@ -234,6 +234,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, vals.Values)
 
+	srv := newBucketStoreTestServer(t, s.store)
+
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
 		req              *storepb.SeriesRequest
@@ -414,12 +416,12 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		},
 	} {
 		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			srv := newBucketStoreSeriesServer(ctx)
+			seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
+			require.NoError(t, err)
 
-			assert.NoError(t, s.store.Series(tcase.req, srv))
-			assert.Equal(t, len(tcase.expected), len(srv.SeriesSet))
+			assert.Equal(t, len(tcase.expected), len(seriesSet))
 
-			for i, s := range srv.SeriesSet {
+			for i, s := range seriesSet {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
@@ -618,8 +620,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				MaxTime: timestamp.FromTime(maxTime),
 			}
 
-			srv := newBucketStoreSeriesServer(ctx)
-			err := s.store.Series(req, srv)
+			srv := newBucketStoreTestServer(t, s.store)
+			_, _, _, err := srv.Series(context.Background(), req)
 
 			if testData.expectedErr == "" {
 				assert.NoError(t, err)
@@ -835,18 +837,19 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 			},
 			SkipChunks: false,
 		}
-		srv := newBucketStoreSeriesServer(ctx)
 
-		assert.NoError(t, s.store.Series(req, srv))
+		srv := newBucketStoreTestServer(t, s.store)
+		seriesSet, _, _, err := srv.Series(ctx, req)
+		require.NoError(t, err)
 
 		counts := map[storepb.Chunk_Encoding]int{}
-		for _, series := range srv.SeriesSet {
+		for _, series := range seriesSet {
 			for _, chunk := range series.Chunks {
 				counts[chunk.Raw.Type]++
 			}
 		}
 		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
-			count, ok := counts[storepb.Chunk_Encoding(chunkType)]
+			count, ok := counts[chunkType]
 			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
 			assert.NotEmpty(t, count)
 		}

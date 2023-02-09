@@ -1206,7 +1206,7 @@ results_cache:
 # most. This is not a strict requirement guaranteed to be honoured by query
 # sharding, but a hint given to the query sharding when the query execution is
 # initially planned. 0 to disable cardinality-based hints.
-# CLI flag: -query-frontend.query-sharding-max-series-per-shard
+# CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_max_series_per_shard: <int> | default = 0]
 
 # (advanced) URL of downstream Prometheus.

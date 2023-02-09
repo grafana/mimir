@@ -19,6 +19,11 @@ GIT_ROOT = $(shell git rev-parse --show-toplevel)
 # Support podman over Docker if it is available.
 PODMAN := $(shell if command -v podman &>/dev/null; then echo podman; else echo docker; fi)
 
+MIMIR_CONTENT_PATH="/hugo/content/docs/mimir"
+MIMIR_REDIRECT_TEMPLATE="'---\\nredirectURL: /docs/mimir/$(MIMIR_VERSION)\\ntype: redirect\\n---\\n'"
+HELM_CONTENT_PATH="/hugo/content/docs/helm-charts/mimir-distributed"
+HELM_REDIRECT_TEMPLATE="'---\\nredirectURL: /docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION)\\ntype: redirect\\n---\\n'"
+
 # This wrapper will serve documentation on a local webserver.
 define docs_podman_run
 	@echo "Documentation will be served at:"
@@ -30,14 +35,14 @@ define docs_podman_run
 	fi
 	@$(PODMAN) run -ti \
 		--init \
-		-v $(GIT_ROOT)/docs/sources/mimir:/hugo/content/docs/mimir/$(MIMIR_VERSION):ro,z \
-		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION):ro,z \
+		-v $(GIT_ROOT)/docs/sources/mimir:$(MIMIR_CONTENT_PATH)/$(MIMIR_VERSION):ro,z \
+		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:$(HELM_CONTENT_PATH)/$(HELM_CHARTS_VERSION):ro,z \
 		-e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) \
 		-p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) \
 		--name $(DOCS_CONTAINER) \
 		--rm \
 		$(DOCS_IMAGE) \
-			/bin/bash -c "sed -i'' -e s/latest/$(DOCS_VERSION)/ content/docs/mimir/_index.md && exec $(1)"
+			/bin/bash -c "echo -e $(MIMIR_REDIRECT_TEMPLATE) > $(MIMIR_CONTENT_PATH)/_index.md && echo -e $(HELM_REDIRECT_TEMPLATE) > $(HELM_CONTENT_PATH)/_index.md && exec $(1)"
 endef
 
 .PHONY: docs-rm

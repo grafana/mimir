@@ -237,7 +237,8 @@ func (u *userTSDB) casState(from, to tsdbState) bool {
 	return true
 }
 
-// compactHead compacts the Head block at specified block durations avoiding a single huge block.
+// compactHead compacts the in-order Head block with the specified block duration and the OOO Head block
+// at the chunk range duration, to avoid having huge blocks.
 func (u *userTSDB) compactHead(blockDuration int64) error {
 	if !u.casState(active, forceCompacting) {
 		return errors.New("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress)")
@@ -265,8 +266,11 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 		// Get current min/max times after compaction.
 		minTime, maxTime = h.MinTime(), h.MaxTime()
 	}
-
-	return u.db.CompactHead(tsdb.NewRangeHead(h, minTime, maxTime))
+	err := u.db.CompactHead(tsdb.NewRangeHead(h, minTime, maxTime))
+	if err != nil {
+		return err
+	}
+	return u.db.CompactOOOHead()
 }
 
 func (u *userTSDB) persistentSeriesCallback() tsdb.SeriesLifecycleCallback {
