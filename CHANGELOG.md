@@ -26,6 +26,7 @@
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 * [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 * [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
+* [BUGFIX] Ingester: compact out-of-order data during `/ingester/flush` or when TSDB is idle. #4180
 
 ### Mixin
 
