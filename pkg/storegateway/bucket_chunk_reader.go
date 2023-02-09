@@ -332,9 +332,10 @@ func (r *bucketChunksRangesReader) loadChunksRanges(ctx context.Context, partial
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
 	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
 
-	stats.update(func(stats *queryStats) {
-		stats.chunksFetchedSizeSum += int(part.End - part.Start)
-	})
+	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
+	// all stats in a local instance and then merge it in the defer.
+	localStats := queryStats{}
+	defer stats.merge(&localStats)
 
 	readOffset := int(ranges[0].offset)
 
@@ -362,6 +363,7 @@ func (r *bucketChunksRangesReader) loadChunksRanges(ctx context.Context, partial
 			return fmt.Errorf("read chunk range (block %s segment %d offset %d read offset %d): %w", r.block.meta.ULID, seq, rng.offset, readOffset, err)
 		}
 		readOffset += n
+		localStats.chunksFetchedSizeSum += n
 		partialSeries[rng.seriesEntry].rawRanges[rng.rangeEntry] = rangeBuf
 	}
 	return nil
