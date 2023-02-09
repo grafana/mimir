@@ -127,12 +127,7 @@ func (b *seriesChunksSet) release() {
 		// Reset series and chunk entries, before putting back to the pool.
 		for i := range b.series {
 			for c := range b.series[i].chks {
-				b.series[i].chks[c].MaxTime = 0
-				b.series[i].chks[c].MinTime = 0
-				if b.series[i].chks[c].Raw != nil {
-					b.series[i].chks[c].Raw.Data = nil
-					b.series[i].chks[c].Raw.Type = 0
-				}
+				b.series[i].chks[c].Reset()
 			}
 
 			b.series[i] = seriesEntry{}
@@ -182,18 +177,14 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 
 func newSeriesSetWithChunks(
 	ctx context.Context,
-	l log.Logger,
-	userID string,
-	chunkReaders bucketChunkRangesReaders,
+	chunkReaders bucketChunkReaders,
 	refsIterator seriesChunkRefsSetIterator,
 	refsIteratorBatchSize int,
 	stats *safeQueryStats,
-	cache chunkscache.Cache,
 	minT, maxT int64,
-	m *BucketStoreMetrics,
 ) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newRangeLoadingSeriesChunksSetIterator(ctx, l, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats, cache, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -433,8 +424,24 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
-// TODO dimitarvdimitrov retain the implementation and the tests of the old loadingSeriesChunksSetIterator
-// and use that one when the new chunks loading flag is disabled
+func newSeriesSetWithChunksAndCaching(
+	ctx context.Context,
+	l log.Logger,
+	userID string,
+	chunkReaders bucketChunkRangesReaders,
+	refsIterator seriesChunkRefsSetIterator,
+	refsIteratorBatchSize int,
+	stats *safeQueryStats,
+	cache chunkscache.Cache,
+	minT, maxT int64,
+	m *BucketStoreMetrics,
+) storepb.SeriesSet {
+	var iterator seriesChunksSetIterator
+	iterator = newRangeLoadingSeriesChunksSetIterator(ctx, l, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats, cache, minT, maxT)
+	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
+	return newSeriesChunksSeriesSet(iterator)
+}
+
 type rangeLoadingSeriesChunksSetIterator struct {
 	ctx     context.Context
 	l       log.Logger

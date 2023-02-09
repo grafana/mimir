@@ -111,6 +111,9 @@ type BucketStore struct {
 	// or to load and unload them in batches and stream them to the querier. The bucketStore uses streaming when
 	// maxSeriesPerBatch is larger than zero.
 	maxSeriesPerBatch int
+	// fineGrainedChunksCachingEnabled controls whether to use the per series chunks caching
+	// or rely on the transparent caching bucket.
+	fineGrainedChunksCachingEnabled bool
 
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
@@ -213,6 +216,12 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.maxSeriesPerBatch = seriesPerBatch
+	}
+}
+
+func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.fineGrainedChunksCachingEnabled = enabled
 	}
 }
 
@@ -844,7 +853,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkReaders, chunkGroupReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders, chunkRangeReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
@@ -852,7 +861,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 	}
-	for _, r := range chunkGroupReaders {
+	for _, r := range chunkRangeReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunks range reader")
 	}
 
@@ -875,12 +884,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkReaders, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
-		var readers *bucketChunkRangesReaders
+		var (
+			rangeReaders *bucketChunkRangesReaders
+			readers      *bucketChunkReaders
+		)
 		if !req.SkipChunks {
-			readers = newChunkRangeReaders(chunkGroupReaders)
+			rangeReaders = newChunkRangeReaders(chunkRangeReaders)
+			readers = newChunkReaders(chunkReaders)
 		}
 
-		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, rangeReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 
 	if err != nil {
@@ -1082,7 +1095,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders *bucketChunkRangesReaders,
+	chunkRangesReaders *bucketChunkRangesReaders,
+	chunkReaders *bucketChunkReaders,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
@@ -1161,9 +1175,12 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	var set storepb.SeriesSet
-	if chunkReaders != nil {
-		// TODO dimitarvdimitrov use a different constructor when the new chunks loading is disabled
-		set = newSeriesSetWithChunks(ctx, s.logger, s.userID, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, s.chunksCache, req.MinTime, req.MaxTime, s.metrics)
+	if !req.SkipChunks {
+		if s.fineGrainedChunksCachingEnabled {
+			set = newSeriesSetWithChunksAndCaching(ctx, s.logger, s.userID, *chunkRangesReaders, mergedIterator, s.maxSeriesPerBatch, stats, s.chunksCache, req.MinTime, req.MaxTime, s.metrics)
+		} else {
+			set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		}
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
