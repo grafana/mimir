@@ -6116,10 +6116,13 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	l := defaultLimitsTestConfig()
-	tenantOverride := new(TenantLimitsMock)
-	tenantOverride.On("ByUserID", userID).Return(nil)
-	override, err := validation.NewOverrides(l, tenantOverride)
+	// Set the OOO window to 30 minutes
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow: model.Duration(30 * time.Minute),
+		},
+	}
+	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
@@ -6134,7 +6137,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	pushSamples := func(start, end int64, expErr bool) {
+	pushSamples := func(start, end int64) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
@@ -6151,12 +6154,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
 		_, err = i.Push(ctx, wReq)
-		if expErr {
-			require.Error(t, err, "should have failed on push")
-			require.ErrorAs(t, err, &storage.ErrTooOldSample)
-		} else {
-			require.NoError(t, err)
-		}
+		require.NoError(t, err)
 	}
 
 	verifySamples := func(start, end int64) {
@@ -6192,15 +6190,8 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		assert.ElementsMatch(t, expMatrix, res)
 	}
 
-	// Increasing the OOO time window.
-	tenantOverride.ExpectedCalls = nil
-	tenantOverride.On("ByUserID", userID).Return(&validation.Limits{
-		OutOfOrderTimeWindow: model.Duration(60 * time.Minute),
-	})
-	<-time.After(1500 * time.Millisecond) // TSDB config is updated every second.
-
-	pushSamples(100, 100, false)
-	pushSamples(90, 99, false)
+	pushSamples(100, 100)
+	pushSamples(90, 99)
 	verifySamples(90, 100)
 
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
@@ -6208,10 +6199,10 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	i.compactBlocks(context.Background(), false, nil) // Should be compacted because the TSDB is idle.
 	verifyCompactedHead(t, i, true)
 
-	pushSamples(110, 110, false)
-	pushSamples(101, 109, false)
+	pushSamples(110, 110)
+	pushSamples(101, 109)
 	verifySamples(90, 110)
-	i.compactBlocks(context.Background(), true, nil) // Shuold be compacted because it's forced.
+	i.compactBlocks(context.Background(), true, nil) // Should be compacted because it's forced.
 	verifyCompactedHead(t, i, true)
 }
 
