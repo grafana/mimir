@@ -25,19 +25,23 @@ func main() {
 		return
 	}
 
-	b, err := tsdb.OpenBlock(logger, args[1], nil)
+	printChunks(args[1], args[2:])
+}
+
+func printChunks(blockDir string, chunkRefs []string) {
+	b, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
 	cr, err := b.Chunks()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", args[1], "due to error:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get chunks reader for block", blockDir, "due to error:", err)
 		os.Exit(1)
 	}
 
-	for _, ref := range args[2:] {
+	for _, ref := range chunkRefs {
 		val, err := strconv.ParseUint(ref, 10, 64)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to parse chunk ref:", ref)

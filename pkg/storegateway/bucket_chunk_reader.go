@@ -56,14 +56,21 @@ func (r *bucketChunkReader) reset() {
 // Chunk will be fetched and saved to res[seriesEntry][chunk] upon r.load(res, <...>) call.
 func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error {
 	var (
-		seq = int(id >> 32)
-		off = uint32(id)
+		seq = chunkSegmentFile(id)
+		off = chunkOffset(id)
 	)
 	if seq >= len(r.toLoad) {
 		return errors.Errorf("reference sequence %d out of range", seq)
 	}
 	r.toLoad[seq] = append(r.toLoad[seq], loadIdx{off, seriesEntry, chunk})
 	return nil
+}
+
+func chunkSegmentFile(id chunks.ChunkRef) int { return int(id >> 32) }
+func chunkOffset(id chunks.ChunkRef) uint32   { return uint32(id) }
+
+func chunkRef(segmentFile, offset uint32) chunks.ChunkRef {
+	return chunks.ChunkRef(uint64(segmentFile)<<32 | uint64(offset))
 }
 
 // load all added chunks and saves resulting chunks to res.

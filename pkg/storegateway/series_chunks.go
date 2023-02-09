@@ -168,9 +168,16 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, refsIterator seriesChunkRefsSetIterator, refsIteratorBatchSize int, stats *safeQueryStats) storepb.SeriesSet {
+func newSeriesSetWithChunks(
+	ctx context.Context,
+	chunkReaders bucketChunkReaders,
+	refsIterator seriesChunkRefsSetIterator,
+	refsIteratorBatchSize int,
+	stats *safeQueryStats,
+	minT, maxT int64,
+) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats)
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -310,16 +317,26 @@ type loadingSeriesChunksSetIterator struct {
 	fromBatchSize int
 	stats         *safeQueryStats
 
-	current seriesChunksSet
-	err     error
+	current          seriesChunksSet
+	err              error
+	minTime, maxTime int64
 }
 
-func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, from seriesChunkRefsSetIterator, fromBatchSize int, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(
+	chunkReaders bucketChunkReaders,
+	from seriesChunkRefsSetIterator,
+	fromBatchSize int,
+	stats *safeQueryStats,
+	minT int64,
+	maxT int64,
+) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		chunkReaders:  chunkReaders,
 		from:          from,
 		fromBatchSize: fromBatchSize,
 		stats:         stats,
+		minTime:       minT,
+		maxTime:       maxT,
 	}
 }
 
@@ -357,16 +374,23 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	for i, s := range nextUnloaded.series {
 		nextSet.series[i].lset = s.lset
-		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(len(s.chunks))
+		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunksWithinRange(c.minTime, c.maxTime))
+		seriesChunkIdx := 0
 
-		for j, chunk := range s.chunks {
-			nextSet.series[i].chks[j].MinTime = chunk.minTime
-			nextSet.series[i].chks[j].MaxTime = chunk.maxTime
+		for _, chunksRange := range s.chunksRanges {
+			for _, chunk := range chunksRange.refs {
+				if chunk.minTime > c.maxTime || chunk.maxTime < c.minTime {
+					continue
+				}
+				nextSet.series[i].chks[seriesChunkIdx].MinTime = chunk.minTime
+				nextSet.series[i].chks[seriesChunkIdx].MaxTime = chunk.maxTime
 
-			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
-			if err != nil {
-				c.err = errors.Wrap(err, "preloading chunks")
-				return false
+				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx)
+				if err != nil {
+					c.err = errors.Wrap(err, "preloading chunks")
+					return false
+				}
+				seriesChunkIdx++
 			}
 		}
 	}

@@ -1159,7 +1159,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
