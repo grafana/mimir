@@ -327,6 +327,112 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 	})
 }
 
+type loadingSeriesChunksSetIterator struct {
+	chunkReaders  bucketChunkReaders
+	from          seriesChunkRefsSetIterator
+	fromBatchSize int
+	stats         *safeQueryStats
+
+	current          seriesChunksSet
+	err              error
+	minTime, maxTime int64
+}
+
+func newLoadingSeriesChunksSetIterator(
+	chunkReaders bucketChunkReaders,
+	from seriesChunkRefsSetIterator,
+	fromBatchSize int,
+	stats *safeQueryStats,
+	minT int64,
+	maxT int64,
+) *loadingSeriesChunksSetIterator {
+	return &loadingSeriesChunksSetIterator{
+		chunkReaders:  chunkReaders,
+		from:          from,
+		fromBatchSize: fromBatchSize,
+		stats:         stats,
+		minTime:       minT,
+		maxTime:       maxT,
+	}
+}
+
+func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
+	if c.err != nil {
+		return false
+	}
+
+	if !c.from.Next() {
+		c.err = c.from.Err()
+		return false
+	}
+
+	nextUnloaded := c.from.At()
+
+	// This data structure doesn't retain the seriesChunkRefsSet so it can be released once done.
+	defer nextUnloaded.release()
+
+	// Pre-allocate the series slice using the expected batchSize even if nextUnloaded has less elements,
+	// so that there's a higher chance the slice will be reused once released.
+	nextSet := newSeriesChunksSet(util_math.Max(c.fromBatchSize, nextUnloaded.len()), true)
+
+	// Release the set if an error occurred.
+	defer func() {
+		if !retHasNext && c.err != nil {
+			nextSet.release()
+		}
+	}()
+
+	// The series slice is guaranteed to have at least the requested capacity,
+	// so can safely expand it.
+	nextSet.series = nextSet.series[:nextUnloaded.len()]
+
+	c.chunkReaders.reset()
+
+	for i, s := range nextUnloaded.series {
+		nextSet.series[i].lset = s.lset
+		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunksWithinRange(c.minTime, c.maxTime))
+		seriesChunkIdx := 0
+
+		for _, chunksRange := range s.chunksRanges {
+			for _, chunk := range chunksRange.refs {
+				if chunk.minTime > c.maxTime || chunk.maxTime < c.minTime {
+					continue
+				}
+				nextSet.series[i].chks[seriesChunkIdx].MinTime = chunk.minTime
+				nextSet.series[i].chks[seriesChunkIdx].MaxTime = chunk.maxTime
+
+				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx)
+				if err != nil {
+					c.err = errors.Wrap(err, "preloading chunks")
+					return false
+				}
+				seriesChunkIdx++
+			}
+		}
+	}
+
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
+
+	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
+	if err != nil {
+		c.err = errors.Wrap(err, "loading chunks")
+		return false
+	}
+
+	nextSet.chunksReleaser = chunksPool
+	c.current = nextSet
+	return true
+}
+
+func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
+	return c.current
+}
+
+func (c *loadingSeriesChunksSetIterator) Err() error {
+	return c.err
+}
+
 // TODO dimitarvdimitrov retain the implementation and the tests of the old loadingSeriesChunksSetIterator
 // and use that one when the new chunks loading flag is disabled
 type rangeLoadingSeriesChunksSetIterator struct {
