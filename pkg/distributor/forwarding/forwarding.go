@@ -302,7 +302,7 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 	result := mimirpb.PreallocTimeseries{TimeSeries: f.pools.getTs()}
 	if len(ts.TimeSeries.Samples) > 0 {
 		// We don't keep exemplars or histograms when forwarding.
-		result = mimirpb.DeepCopyTimeseries(result, ts, false, false)
+		result = mimirpb.DeepCopyTimeseries(result, ts, false)
 	}
 	return result, filteredSamplesCount
 }
