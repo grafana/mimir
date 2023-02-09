@@ -193,6 +193,9 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 }
 
 func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
+	if hp == nil {
+		return nil
+	}
 	if hp.IsFloatHistogram() {
 		panic("FromHistogramProtoToHistogram called on float histogram")
 	}
@@ -211,6 +214,9 @@ func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
 }
 
 func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
+	if hp == nil {
+		return nil
+	}
 	if !hp.IsFloatHistogram() {
 		panic("FromHistogramProtoToFloatHistogram called on integer histogram")
 	}
@@ -251,6 +257,9 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 }
 
 func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+	if h == nil {
+		panic("FromHistogramToHistogramProto called on nil histogram")
+	}
 	return Histogram{
 		Count:          &Histogram_CountInt{CountInt: h.Count},
 		Sum:            h.Sum,
@@ -267,6 +276,9 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 }
 
 func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+	if fh == nil {
+		panic("FromFloatHistogramToHistogramProto called on nil histogram")
+	}
 	return Histogram{
 		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:            fh.Sum,
@@ -328,6 +340,9 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 
 // FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.
 func FromFloatHistogramToPromHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
+	if h == nil {
+		return nil
+	}
 	buckets := make([]*model.HistogramBucket, 0)
 	it := h.AllBucketIterator()
 	for it.Next() {
@@ -483,6 +498,9 @@ func FromMimirSampleToPromHistogram(src *SampleHistogram) *model.SampleHistogram
 
 // FromFloatHistogramToSampleHistogram converts histogram.FloatHistogram to SampleHistogram.
 func FromFloatHistogramToSampleHistogram(h *histogram.FloatHistogram) *SampleHistogram {
+	if h == nil {
+		return nil
+	}
 	// The extra +1 in the capacity is for the zero count bucket (which may optionally exist).
 	buckets := make([]*HistogramBucket, 0, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
 
