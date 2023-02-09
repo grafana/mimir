@@ -260,7 +260,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	}
 
 	// TODO: Remove when https://github.com/grafana/mimir/issues/3992 is solved. Also remove EnabledByAnyTenant (unless used elsewhere)
-	if validation.EnabledByAnyTenant(tenantIDs, s.limit.AcceptNativeHistograms) {
+	if validation.EnabledByAnyTenant(tenantIDs, s.limit.NativeHistogramsIngestionEnabled) {
 		return 1
 	}
 

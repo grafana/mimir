@@ -1030,13 +1030,13 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 	tests := map[string]struct {
-		query                  string
-		hints                  *Hints
-		totalShards            int
-		maxShardedQueries      int
-		acceptNativeHistograms bool
-		expectedShards         int
-		compactorShards        int
+		query             string
+		hints             *Hints
+		totalShards       int
+		maxShardedQueries int
+		nativeHistograms  bool
+		expectedShards    int
+		compactorShards   int
 	}{
 		"query is not shardable": {
 			query:             "metric",
@@ -1129,13 +1129,13 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			expectedShards:    1,
 		},
 		"native histograms accepted": {
-			query:                  "sum(metric) / count(metric)",
-			hints:                  &Hints{TotalQueries: 3},
-			totalShards:            16,
-			maxShardedQueries:      64,
-			acceptNativeHistograms: true,
-			compactorShards:        10,
-			expectedShards:         1,
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			nativeHistograms:  true,
+			compactorShards:   10,
+			expectedShards:    1,
 		},
 	}
 
@@ -1151,10 +1151,10 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			}
 
 			limits := mockLimits{
-				totalShards:            testData.totalShards,
-				maxShardedQueries:      testData.maxShardedQueries,
-				compactorShards:        testData.compactorShards,
-				acceptNativeHistograms: testData.acceptNativeHistograms,
+				totalShards:                      testData.totalShards,
+				maxShardedQueries:                testData.maxShardedQueries,
+				compactorShards:                  testData.compactorShards,
+				nativeHistogramsIngestionEnabled: testData.nativeHistograms,
 			}
 			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
 

@@ -9,7 +9,7 @@
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
-* [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `accept_native_histograms` controls whether native histograms are stored or ignored. TODO PR number
+* [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. TODO PR number
 * [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-max-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056

@@ -3087,12 +3087,12 @@
         },
         {
           "kind": "field",
-          "name": "accept_native_histograms",
+          "name": "native_histograms_ingestion_enabled",
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "ingester.accept-native-histograms",
+          "fieldFlag": "ingester.native-histograms-ingestion-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

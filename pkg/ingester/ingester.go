@@ -649,7 +649,7 @@ func (i *Ingester) applyTSDBSettings() {
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
-		if i.limits.AcceptNativeHistograms(userID) {
+		if i.limits.NativeHistogramsIngestionEnabled(userID) {
 			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
 			db.db.EnableNativeHistograms()
 		} else {
@@ -1027,7 +1027,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	}
 
 	// fetch once per push request to avoid processing half the request differently
-	acceptNativeHistograms := i.limits.AcceptNativeHistograms(userID)
+	nativeHistogramsIngestionEnabled := i.limits.NativeHistogramsIngestionEnabled(userID)
 
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -1037,7 +1037,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if acceptNativeHistograms {
+		if nativeHistogramsIngestionEnabled {
 			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
 				allOutOfBoundsFloats(ts.Samples, minAppendTime) &&
@@ -1121,7 +1121,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		if acceptNativeHistograms {
+		if nativeHistogramsIngestionEnabled {
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -1909,7 +1909,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheTTL:   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
 		HeadPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
 		HeadPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-		EnableNativeHistograms:            i.limits.AcceptNativeHistograms(userID),
+		EnableNativeHistograms:            i.limits.NativeHistogramsIngestionEnabled(userID),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
