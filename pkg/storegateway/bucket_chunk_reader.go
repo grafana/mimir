@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -166,7 +168,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		if n < 1 {
 			return errors.New("reading chunk length failed")
 		}
-
 		// Chunk length is n (number of bytes used to encode chunk data), 1 for chunk encoding and chunkDataLen for actual chunk data.
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
@@ -242,6 +243,130 @@ type loadIdx struct {
 	chunk       int
 }
 
+type rangeLoadIdx struct {
+	offset uint32
+	estLen int64
+	// seriesEntry and rangeEntry are indices for where to put the result,
+	// they are not actual refs of series or chunks
+	seriesEntry int
+	rangeEntry  int
+}
+
+type bucketChunksRangesReader struct {
+	ctx    context.Context
+	block  *bucketBlock
+	toLoad [][]rangeLoadIdx
+}
+
+func newBucketChunksRangesReader(ctx context.Context, block *bucketBlock) *bucketChunksRangesReader {
+	return &bucketChunksRangesReader{
+		ctx:    ctx,
+		block:  block,
+		toLoad: make([][]rangeLoadIdx, len(block.chunkObjs)),
+	}
+}
+
+func (r *bucketChunksRangesReader) Close() error {
+	r.block.pendingReaders.Done()
+	return nil
+}
+
+// reset resets the ranges scheduled for loading. It does not release any loaded ranges.
+func (r *bucketChunksRangesReader) reset() {
+	for i := range r.toLoad {
+		r.toLoad[i] = r.toLoad[i][:0]
+	}
+}
+
+func (r *bucketChunksRangesReader) addLoadRange(g seriesChunkRefsRange, seriesEntry, rangeEntry int) error {
+	var (
+		seq = g.segmentFile
+		off = g.refs[0].segFileOffset
+	)
+	if seq >= uint32(len(r.toLoad)) {
+		return errors.Errorf("reference sequence %d out of range", seq)
+	}
+
+	var totalLen int64
+	for _, c := range g.refs {
+		totalLen += int64(c.length)
+	}
+
+	r.toLoad[seq] = append(r.toLoad[seq], rangeLoadIdx{offset: off, seriesEntry: seriesEntry, rangeEntry: rangeEntry, estLen: totalLen})
+	return nil
+}
+
+func (r *bucketChunksRangesReader) loadRanges(partialSeries []partialSeriesChunksSet, stats *safeQueryStats) error {
+	g, ctx := errgroup.WithContext(r.ctx)
+	s, ctx := tracing.StartSpan(ctx, "loadRanges")
+	defer s.Finish()
+
+	for seq, pIdxs := range r.toLoad {
+		sort.Slice(pIdxs, func(i, j int) bool {
+			return pIdxs[i].offset < pIdxs[j].offset
+		})
+		parts := r.block.partitioners.chunks.Partition(len(pIdxs), func(i int) (start, end uint64) {
+			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + uint64(pIdxs[i].estLen)
+		})
+
+		for _, p := range parts {
+			seq := seq
+			p := p
+			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
+			g.Go(func() error {
+				return r.loadChunksRanges(ctx, partialSeries, seq, p, indices, stats)
+			})
+		}
+	}
+	return g.Wait()
+}
+
+// loadChunksRanges will read the part [start, end] from the segment file with sequence number seq.
+// This data range covers ranges starting at supplied chunks ranges.
+func (r *bucketChunksRangesReader) loadChunksRanges(ctx context.Context, partialSeries []partialSeriesChunksSet, seq int, part Part, ranges []rangeLoadIdx, stats *safeQueryStats) error {
+	// Get a reader for the required range.
+	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
+	if err != nil {
+		return errors.Wrap(err, "get range reader")
+	}
+	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
+	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
+
+	stats.update(func(stats *queryStats) {
+		stats.chunksFetchedSizeSum += int(part.End - part.Start)
+	})
+
+	readOffset := int(ranges[0].offset)
+
+	for rIdx, rng := range ranges {
+		// Fast forward range reader to the next chunk range start in case of sparse byte range.
+		for readOffset < int(rng.offset) {
+			n, err := io.CopyN(io.Discard, bufReader, int64(rng.offset)-int64(readOffset))
+			if err != nil {
+				return fmt.Errorf("fast forward range reader (block %s segment %d offset %d read offset %d): %w", r.block.meta.ULID, seq, rng.offset, readOffset, err)
+			}
+			readOffset += int(n)
+		}
+		rLen := int(rng.estLen)
+		if rIdx+1 < len(ranges) {
+			if diff := ranges[rIdx+1].offset - rng.offset; int(diff) < rLen {
+				// When a range contains a chunk with an estimated length, a range can overlap with the next one.
+				// In this case we want to clamp it to beginning of the next range.
+				rLen = int(diff)
+			}
+		}
+		rangeBuf := make([]byte, rLen)
+		n, err := io.ReadFull(bufReader, rangeBuf)
+		// EOF for last chunk could be a valid case. Any other errors are definitely unexpected.
+		if err != nil && !(errors.Is(err, io.ErrUnexpectedEOF) && rIdx == len(ranges)-1) {
+			return fmt.Errorf("read chunk range (block %s segment %d offset %d read offset %d): %w", r.block.meta.ULID, seq, rng.offset, readOffset, err)
+		}
+		readOffset += n
+		partialSeries[rng.seriesEntry].rawRanges[rng.rangeEntry] = rangeBuf
+	}
+	return nil
+}
+
 // rawChunk is a helper type that wraps a chunk's raw bytes and implements the chunkenc.Chunk
 // interface over it.
 // It is used to Store API responses which don't need to introspect and validate the chunk's contents.
@@ -312,6 +437,55 @@ func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.SafeSla
 
 // reset the chunks scheduled for loading.
 func (r *bucketChunkReaders) reset() {
+	for _, reader := range r.readers {
+		reader.reset()
+	}
+}
+
+// bucketChunkRangesReaders holds a collection of chunkRangesReader's for multiple blocks
+// and selects the correct chunk reader to use on each call to addLoad
+type bucketChunkRangesReaders struct {
+	readers map[ulid.ULID]chunkRangesReader
+}
+
+type chunkRangesReader interface {
+	io.Closer
+
+	addLoadRange(g seriesChunkRefsRange, seriesEntry, rangeEntry int) error
+	loadRanges(partialSeries []partialSeriesChunksSet, stats *safeQueryStats) error
+	reset()
+}
+
+func newChunkRangeReaders(readersMap map[ulid.ULID]chunkRangesReader) *bucketChunkRangesReaders {
+	return &bucketChunkRangesReaders{
+		readers: readersMap,
+	}
+}
+
+func (r bucketChunkRangesReaders) addLoadRange(blockID ulid.ULID, g seriesChunkRefsRange, seriesEntry int, rangeEntry int) error {
+	return r.readers[blockID].addLoadRange(g, seriesEntry, rangeEntry)
+}
+
+func (r bucketChunkRangesReaders) loadRanges(partialSeries []partialSeriesChunksSet, stats *safeQueryStats) error {
+	g := &errgroup.Group{}
+	for _, reader := range r.readers {
+		reader := reader
+		g.Go(func() error {
+			// We don't need synchronisation on the access to entries because each chunk in
+			// every series will be loaded by exactly one reader. Since the ranges slices are already
+			// initialized to the correct length, they don't need to be resized and can just be accessed.
+			return reader.loadRanges(partialSeries, stats)
+		})
+	}
+
+	// Block until all goroutines are done. We need to wait for all goroutines and
+	// can't return on first error, otherwise a subsequent release of the bytes pool
+	// could cause a race condition.
+	return g.Wait()
+}
+
+// reset the chunks scheduled for loading.
+func (r bucketChunkRangesReaders) reset() {
 	for _, reader := range r.readers {
 		reader.reset()
 	}

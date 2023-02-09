@@ -4,11 +4,16 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
+	"hash/crc32"
 	"sync"
 	"time"
 
+	"github.com/dennwc/varint"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -415,6 +420,168 @@ func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
 
 func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
+}
+
+type partialSeriesChunksSet struct {
+	refsRanges   []seriesChunkRefsRange
+	rawRanges    [][]byte
+	parsedChunks []storepb.AggrChunk
+}
+
+func newPartialSeries(nextUnloaded seriesChunkRefsSet, getPooledChunks func(size int) []storepb.AggrChunk) []partialSeriesChunksSet {
+	partialSeries := make([]partialSeriesChunksSet, len(nextUnloaded.series))
+
+	for i, s := range nextUnloaded.series {
+		numRanges := len(s.chunksRanges)
+		partialSeries[i].refsRanges = s.chunksRanges
+		partialSeries[i].rawRanges = make([][]byte, numRanges)
+		chunksCount := 0
+		for _, g := range s.chunksRanges {
+			chunksCount += len(g.refs)
+		}
+		partialSeries[i].parsedChunks = getPooledChunks(chunksCount)
+	}
+	return partialSeries
+}
+
+type underfetchedChunksRangeIdx struct {
+	blockID  ulid.ULID
+	rangeIdx int
+	parsed   []storepb.AggrChunk
+}
+
+// parse tries to parse the ranges in the partial set with the bytes it has in rawRanges.
+// If the bytes for any of the ranges aren't enough, then parse will return an underfetchedChunksRangeIdx
+// and will correct the length of all ranges which had a understimated length.
+// Currently, parse will only correct the length of the last chunk, since this is the only chunk
+// whose size we estimate.
+// parse will also truncate the bytes in rawRanges in case there are extra unnecessary bytes there.
+// parse will return an error when the bytes in rawRanges were underfetched before the last chunk or
+// if the data in rawRanges is invalid.
+func (s partialSeriesChunksSet) parse() ([]underfetchedChunksRangeIdx, error) {
+	var underfetchedRanges []underfetchedChunksRangeIdx
+	parsedChunksCount := 0
+	for rIdx, r := range s.refsRanges {
+		dst := s.parsedChunks[parsedChunksCount : parsedChunksCount+len(r.refs)]
+		ok, err := s.populateRange(rIdx, dst)
+		if err != nil {
+			return nil, fmt.Errorf("parsing chunk range (block %s, first ref %d, num chunks %d): %w", r.blockID, r.firstRef(), len(r.refs), err)
+		}
+		if !ok {
+			underfetchedRanges = append(underfetchedRanges, underfetchedChunksRangeIdx{
+				blockID:  r.blockID,
+				rangeIdx: rIdx,
+				parsed:   dst,
+			})
+		}
+
+		parsedChunksCount += len(r.refs)
+	}
+	return underfetchedRanges, nil
+}
+
+func convertChunkEncoding(storageEncoding chunkenc.Encoding) (storepb.Chunk_Encoding, bool) {
+	switch storageEncoding {
+	case chunkenc.EncXOR:
+		return storepb.Chunk_XOR, true
+	case chunkenc.EncHistogram:
+		return storepb.Chunk_Histogram, true
+	case chunkenc.EncFloatHistogram:
+		return storepb.Chunk_FloatHistogram, true
+	default:
+		return 0, false
+	}
+}
+
+func (s partialSeriesChunksSet) reparse(idx underfetchedChunksRangeIdx) error {
+	refsRange := s.refsRanges[idx.rangeIdx]
+	ok, err := s.populateRange(idx.rangeIdx, idx.parsed)
+	if err != nil {
+		return fmt.Errorf("parsing underfetched range (block %s first ref %d): %w", idx.blockID, refsRange.firstRef(), err)
+	}
+	if !ok {
+		return fmt.Errorf("chunk length doesn't match after refetching (first ref %d)", refsRange.firstRef())
+	}
+	return nil
+}
+
+// parseRange also corrects the length of the last chunk to the size that it actually is.
+// It slices away any extra bytes in the raw range.
+func (s partialSeriesChunksSet) populateRange(rIdx int, dst []storepb.AggrChunk) (bool, error) {
+	rawRange := s.rawRanges[rIdx]
+	r := s.refsRanges[rIdx]
+	for cIdx := range dst {
+		dst[cIdx].MinTime = r.refs[cIdx].minTime
+		dst[cIdx].MaxTime = r.refs[cIdx].maxTime
+		if dst[cIdx].Raw == nil {
+			// This may come as initialized from a pool or from a previous parse. Do an allocation only if it already isn't.
+			dst[cIdx].Raw = &storepb.Chunk{}
+		}
+	}
+	ok, lastChunkLen, totalRead, err := parseRange(rawRange, dst)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// We estimate the length of the last chunk of a series.
+		// Unfortunately, we got it wrong. We can set the length correctly because we now know it.
+		r.refs[len(r.refs)-1].length = lastChunkLen
+		return false, nil
+	}
+	s.rawRanges[rIdx] = s.rawRanges[rIdx][:totalRead]
+	return true, nil
+}
+
+// parseRange parses the byte slice as concatenated encoded chunks. lastChunkLen is non-zero when allChunksComplete==false.
+// An error is returned when gBytes are malformed or when more than the last chunk is incomplete.
+func parseRange(rBytes []byte, chunks []storepb.AggrChunk) (allChunksComplete bool, lastChunkLen uint32, totalRead int, _ error) {
+	rangeFullSize := len(rBytes)
+	for i := range chunks {
+		// ┌───────────────┬───────────────────┬──────────────┬────────────────┐
+		// │ len <uvarint> │ encoding <1 byte> │ data <bytes> │ CRC32 <4 byte> │
+		// └───────────────┴───────────────────┴──────────────┴────────────────┘
+		chunkDataLen, n := varint.Uvarint(rBytes)
+		if n == 0 {
+			return false, 0, 0, fmt.Errorf("not enough bytes (%d) to read length of chunk %d/%d", len(rBytes), i, len(chunks))
+		}
+		if n < 0 {
+			return false, 0, 0, fmt.Errorf("chunk length doesn't fit into uint64 %d/%d", i, len(chunks))
+		}
+		totalChunkLen := n + 1 + int(chunkDataLen) + crc32.Size
+		if totalChunkLen > len(rBytes) {
+			if i != len(chunks)-1 {
+				return false, 0, 0, fmt.Errorf("underfetched before the last chunk, don't know what to do (chunk idx %d/%d, fetched %d/%d bytes)", i, len(chunks), len(rBytes), totalChunkLen)
+			}
+			return false, uint32(totalChunkLen), rangeFullSize - len(rBytes), nil
+		}
+		c := rawChunk(rBytes[n : n+1+int(chunkDataLen)])
+		enc, ok := convertChunkEncoding(c.Encoding())
+		if !ok {
+			return false, 0, 0, fmt.Errorf("unknown encoding (%d, %s), don't know what to do", c.Encoding(), c.Encoding().String())
+		}
+		chunks[i].Raw.Type = enc
+		chunks[i].Raw.Data = c.Bytes()
+		// We ignore the crc32 because we assume that the chunk didn't get corrupted in transit or at rest.
+		rBytes = rBytes[totalChunkLen:]
+	}
+	return true, 0, rangeFullSize - len(rBytes), nil
+}
+
+// parseRanges parses the passed bytes into nextSet. In case a range was underfetched, parseRanges will return an underfetchedChunksRangeIdx
+// with the indices of the range; the keys in the map are the indices into partialSeries.
+// parseRanges will also set the correct length of the last chunk in an underfetched range in case its estimated length was wrong.
+func parseRanges(partialSeries []partialSeriesChunksSet) (map[int][]underfetchedChunksRangeIdx, error) {
+	underfetchedSeries := make(map[int][]underfetchedChunksRangeIdx)
+	for sIdx, series := range partialSeries {
+		underfetched, err := series.parse()
+		if err != nil {
+			return nil, err
+		}
+		if len(underfetched) > 0 {
+			underfetchedSeries[sIdx] = underfetched
+		}
+	}
+	return underfetchedSeries, nil
 }
 
 type nextDurationMeasuringIterator[Set any] struct {

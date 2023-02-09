@@ -844,13 +844,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders, chunkGroupReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 	}
 	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
+	}
+	for _, r := range chunkGroupReaders {
+		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunks range reader")
 	}
 
 	span.Finish()
@@ -1214,7 +1217,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	}
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader, map[ulid.ULID]chunkRangesReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
@@ -1226,7 +1229,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		indexReaders[b.meta.ULID] = b.indexReader()
 	}
 	if skipChunks {
-		return blocks, indexReaders, nil
+		return blocks, indexReaders, nil, nil
 	}
 
 	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
@@ -1234,7 +1237,12 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
-	return blocks, indexReaders, chunkReaders
+	chunksRangesReaders := make(map[ulid.ULID]chunkRangesReader, len(blocks))
+	for _, b := range blocks {
+		chunksRangesReaders[b.meta.ULID] = b.chunksRangeReader(ctx)
+	}
+
+	return blocks, indexReaders, chunkReaders, chunksRangesReaders
 }
 
 // LabelNames implements the storepb.StoreServer interface.
@@ -1801,6 +1809,11 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
 	b.pendingReaders.Add(1)
 	return newBucketChunkReader(ctx, b)
+}
+
+func (b *bucketBlock) chunksRangeReader(ctx context.Context) *bucketChunksRangesReader {
+	b.pendingReaders.Add(1)
+	return newBucketChunksRangesReader(ctx, b)
 }
 
 // matchLabels verifies whether the block matches the given matchers.
