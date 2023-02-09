@@ -10,7 +10,6 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -121,11 +120,10 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
-			Histograms: []Histogram{FromHistogramToHistogramProto(2, tsdb.GenerateTestHistogram(0))},
 		},
 	}
 	dst := PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, true, true)
+	dst = DeepCopyTimeseries(dst, src, true)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
@@ -153,17 +151,13 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
-	assert.NotEqual(t,
-		(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms)).Data,
-		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms)).Data,
-	)
+	assert.Nil(t, dst.Histograms)
 
 	dst = PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, false, false)
+	dst = DeepCopyTimeseries(dst, src, false)
 	assert.NotNil(t, dst.Exemplars)
 	assert.Len(t, dst.Exemplars, 0)
-	assert.NotNil(t, dst.Histograms)
-	assert.Len(t, dst.Histograms, 0)
+	assert.Nil(t, dst.Histograms)
 }
 
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {
@@ -192,10 +186,10 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	}
 
 	dst1 := PreallocTimeseries{}
-	dst1 = DeepCopyTimeseries(dst1, src, false, false)
+	dst1 = DeepCopyTimeseries(dst1, src, false)
 
 	dst2 := PreallocTimeseries{}
-	dst2 = DeepCopyTimeseries(dst2, src, true, false)
+	dst2 = DeepCopyTimeseries(dst2, src, true)
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))

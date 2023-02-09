@@ -16,11 +16,10 @@ import (
 )
 
 const (
-	expectedTimeseries          = 100
-	expectedLabels              = 20
-	expectedSamplesPerSeries    = 10
-	expectedExemplarsPerSeries  = 1
-	expectedHistogramsPerSeries = 2
+	expectedTimeseries         = 100
+	expectedLabels             = 20
+	expectedSamplesPerSeries   = 10
+	expectedExemplarsPerSeries = 1
 )
 
 var (
@@ -42,7 +41,7 @@ var (
 				Labels:     make([]LabelAdapter, 0, expectedLabels),
 				Samples:    make([]Sample, 0, expectedSamplesPerSeries),
 				Exemplars:  make([]Exemplar, 0, expectedExemplarsPerSeries),
-				Histograms: make([]Histogram, 0, expectedHistogramsPerSeries),
+				Histograms: nil,
 			}
 		},
 	}
@@ -356,10 +355,10 @@ func reuseYoloSlice(val *[]byte) {
 }
 
 // DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
-// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
+// It copies all the properties (except histograms), sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
-func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars, keepHistograms bool) PreallocTimeseries {
+func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) PreallocTimeseries {
 	if dst.TimeSeries == nil {
 		dst.TimeSeries = TimeseriesFromPool()
 	}
@@ -403,17 +402,8 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars, keepHistogra
 		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
 
-	if keepHistograms {
-		// Copy the histograms.
-		if cap(dstTs.Histograms) < len(srcTs.Histograms) {
-			dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
-		} else {
-			dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
-		}
-		copy(dstTs.Histograms, srcTs.Histograms)
-	} else {
-		dstTs.Histograms = dstTs.Histograms[:0]
-	}
+	// do not keep histograms
+	dstTs.Histograms = nil
 
 	return dst
 }
