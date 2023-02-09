@@ -651,22 +651,22 @@ metric_relabel_configs:
 func TestEnabledByAnyTenant(t *testing.T) {
 	tenantLimits := map[string]*Limits{
 		"tenant1": {
-			AcceptNativeHistograms: false,
+			NativeHistogramsIngestionEnabled: false,
 		},
 		"tenant2": {
-			AcceptNativeHistograms: true,
+			NativeHistogramsIngestionEnabled: true,
 		},
 	}
 
 	defaults := Limits{
-		AcceptNativeHistograms: false,
+		NativeHistogramsIngestionEnabled: false,
 	}
 	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 	require.NoError(t, err)
 
-	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.AcceptNativeHistograms))
+	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 
-	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.AcceptNativeHistograms))
+	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 }
 
 func TestYamlUnmarshalMarshalLabelMatchers(t *testing.T) {

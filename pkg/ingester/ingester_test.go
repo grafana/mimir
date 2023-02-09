@@ -100,7 +100,7 @@ func TestIngester_Push(t *testing.T) {
 		maxExemplars              int
 		maxMetadataPerUser        int
 		maxMetadataPerMetric      int
-		acceptNativeHistograms    bool
+		nativeHistograms          bool
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -236,7 +236,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
-			acceptNativeHistograms: true,
+			nativeHistograms: true,
 		},
 		"should succeed on valid series with exemplars": {
 			maxExemplars: 2,
@@ -524,7 +524,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
-			acceptNativeHistograms: true,
+			nativeHistograms: true,
 		},
 		"should succeed if histograms are out of bound but samples are not and histograms are not accepted": {
 			reqs: []*mimirpb.WriteRequest{
@@ -575,7 +575,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
-			acceptNativeHistograms: false,
+			nativeHistograms: false,
 		},
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -894,7 +894,7 @@ func TestIngester_Push(t *testing.T) {
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
 			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
-			limits.AcceptNativeHistograms = testData.acceptNativeHistograms
+			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
 			require.NoError(t, err)
@@ -7424,7 +7424,7 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 
 func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
 	limits := defaultLimitsTestConfig()
-	limits.AcceptNativeHistograms = false
+	limits.NativeHistogramsIngestionEnabled = false
 
 	userID := "1"
 	tenantOverride := new(TenantLimitsMock)
@@ -7432,10 +7432,10 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	override, err := validation.NewOverrides(limits, tenantOverride)
 	require.NoError(t, err)
 
-	setAcceptNativeHistograms := func(enabled bool) {
+	setNativeHistogramsIngestionEnabled := func(enabled bool) {
 		tenantOverride.ExpectedCalls = nil
 		tenantOverride.On("ByUserID", userID).Return(&validation.Limits{
-			AcceptNativeHistograms: enabled,
+			NativeHistogramsIngestionEnabled: enabled,
 		})
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
@@ -7520,7 +7520,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		Histograms: nil,
 	}}, "Should have no histogram in result")
 
-	setAcceptNativeHistograms(true)
+	setNativeHistogramsIngestionEnabled(true)
 
 	// resend the histogram at time 2
 	sampleHistograms[0].Timestamp = 2
@@ -7557,7 +7557,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	testResult(expectedMatrix, "Result should contain the histogram when accepting histograms")
 
-	setAcceptNativeHistograms(false)
+	setNativeHistogramsIngestionEnabled(false)
 
 	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
 }

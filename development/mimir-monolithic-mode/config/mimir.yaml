@@ -72,7 +72,7 @@ ruler_storage:
     insecure: true
 
 limits:
-  accept_native_histograms: true
+  native_histograms_ingestion_enabled: true
 
 runtime_config:
   file: ./config/runtime.yaml
