@@ -1220,7 +1220,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	}
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader, map[ulid.ULID]chunkRangeReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader, map[ulid.ULID]chunkRangesReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
@@ -1240,7 +1240,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
-	chunksRangesReaders := make(map[ulid.ULID]chunkRangeReader, len(blocks))
+	chunksRangesReaders := make(map[ulid.ULID]chunkRangesReader, len(blocks))
 	for _, b := range blocks {
 		chunksRangesReaders[b.meta.ULID] = b.chunksRangeReader(ctx)
 	}

@@ -921,7 +921,7 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 					chunkBytesSlicePool.(*pool.TrackedPool).Reset()
 
 					// Setup
-					readersMap := make(map[ulid.ULID]chunkRangeReader, len(testCase.existingBlocks))
+					readersMap := make(map[ulid.ULID]chunkRangesReader, len(testCase.existingBlocks))
 					for _, block := range testCase.existingBlocks {
 						readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
 					}
@@ -1006,7 +1006,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 			}
 
 			// Mock the chunk reader.
-			readersMap := map[ulid.ULID]chunkRangeReader{
+			readersMap := map[ulid.ULID]chunkRangesReader{
 				blockID: newChunkReaderMockWithSeries(testBlk.series, nil, nil),
 			}
 
@@ -1138,7 +1138,7 @@ type chunkReaderMock struct {
 	toLoad map[chunks.ChunkRef]rangeLoadIdx
 }
 
-// newChunkReaderMockWithSeries returns a chunkRangeReader that can load any chunks range from the existingChunks
+// newChunkReaderMockWithSeries returns a chunkRangesReader that can load any chunks range from the existingChunks
 func newChunkReaderMockWithSeries(existingChunks []seriesEntry, addLoadErr, loadErr error) *chunkReaderMock {
 	storage := map[chunks.ChunkRef][]storepb.AggrChunk{}
 

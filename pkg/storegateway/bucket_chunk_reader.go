@@ -442,13 +442,13 @@ func (r *bucketChunkReaders) reset() {
 	}
 }
 
-// bucketChunkRangesReaders holds a collection of chunkRangeReader's for multiple blocks
+// bucketChunkRangesReaders holds a collection of chunkRangesReader's for multiple blocks
 // and selects the correct chunk reader to use on each call to addLoad
 type bucketChunkRangesReaders struct {
-	readers map[ulid.ULID]chunkRangeReader
+	readers map[ulid.ULID]chunkRangesReader
 }
 
-type chunkRangeReader interface {
+type chunkRangesReader interface {
 	io.Closer
 
 	addLoadRange(g seriesChunkRefsRange, seriesEntry, rangeEntry int) error
@@ -456,7 +456,7 @@ type chunkRangeReader interface {
 	reset()
 }
 
-func newChunkRangeReaders(readersMap map[ulid.ULID]chunkRangeReader) *bucketChunkRangesReaders {
+func newChunkRangeReaders(readersMap map[ulid.ULID]chunkRangesReader) *bucketChunkRangesReaders {
 	return &bucketChunkRangesReaders{
 		readers: readersMap,
 	}
