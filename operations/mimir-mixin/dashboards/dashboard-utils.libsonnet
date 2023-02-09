@@ -513,53 +513,60 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
     .addPanel(
-      local title = 'Scaling metric (CPU)';
+      local title = 'Scaling metric (CPU): Desired replicas';
       $.panel(title) +
       $.queryPanel(
         [
-          $.filterKedaMetricByHPA('(keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"} / 1000)', $._config.autoscaling[component].hpa_name),
-          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s", metric_name=~".*cpu.*"} / 1000' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          |||
+            keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
+            /
+            on(metric) group_left label_replace(
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+            )
+          ||| % {
+            hpa_name: $._config.autoscaling[component].hpa_name,
+            namespace: $.namespaceMatcher(),
+          },
         ], [
-          'Scaling metric',
-          'Target per replica',
+          '{{ scaledObject }}',
         ]
       ) +
       $.panelDescription(
         title,
         |||
-          This panel shows the result of the query used as scaling metric and target/threshold used.
-          The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
+          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
         |||
-      ) +
-      $.panelAxisPlacement('Target per replica', 'right'),
+      ),
     )
     .addPanel(
-      local title = 'Scaling metric (Memory)';
+      local title = 'Scaling metric (memory): Desired replicas';
       $.panel(title) +
       $.queryPanel(
         [
-          $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}', $._config.autoscaling[component].hpa_name),
-          'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s", metric_name=~".*memory.*"}' % [$.namespaceMatcher(), $._config.autoscaling[component].hpa_name],
+          |||
+            keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
+            /
+            on(metric) group_left label_replace(
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+            )
+          ||| % {
+            hpa_name: $._config.autoscaling[component].hpa_name,
+            namespace: $.namespaceMatcher(),
+          },
         ], [
-          'Scaling metric',
-          'Target per replica',
+          '{{ scaledObject }}',
         ]
       ) +
       $.panelDescription(
         title,
         |||
-          This panel shows the result of the query used as scaling metric and target/threshold used.
-          The desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.
+          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
+          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
         |||
-      ) +
-      $.panelAxisPlacement('Target per replica', 'right') +
-      {
-        yaxes: std.mapWithIndex(
-          // Set the "bytes" unit to the right axis.
-          function(idx, axis) axis + (if idx == 1 then { format: 'bytes' } else {}),
-          $.yaxes('bytes')
-        ),
-      },
+      ),
     )
     .addPanel(
       local title = 'Autoscaler failures rate';
