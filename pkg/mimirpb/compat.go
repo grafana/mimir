@@ -257,10 +257,12 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 		ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
 		NegativeSpans:  fromSpansToSpansProto(h.NegativeSpans),
 		NegativeDeltas: h.NegativeBuckets,
+		// NegativeCounts: nil,  not relevant for integer Histogram
 		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
-		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
-		Timestamp:      timestamp,
+		// PositiveCounts: nil,  not relevant for integer Histogram
+		ResetHint: Histogram_ResetHint(h.CounterResetHint),
+		Timestamp: timestamp,
 	}
 }
 
@@ -269,14 +271,16 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
 	return Histogram{
-		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
-		Sum:            fh.Sum,
-		Schema:         fh.Schema,
-		ZeroThreshold:  fh.ZeroThreshold,
-		ZeroCount:      &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
-		NegativeSpans:  fromSpansToSpansProto(fh.NegativeSpans),
+		Count:         &Histogram_CountFloat{CountFloat: fh.Count},
+		Sum:           fh.Sum,
+		Schema:        fh.Schema,
+		ZeroThreshold: fh.ZeroThreshold,
+		ZeroCount:     &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans: fromSpansToSpansProto(fh.NegativeSpans),
+		// NegativeDeltas: nil,  not relevant for float Histograms
 		NegativeCounts: fh.NegativeBuckets,
 		PositiveSpans:  fromSpansToSpansProto(fh.PositiveSpans),
+		// PositiveDeltas: nil,  not relevant for float Histograms
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
