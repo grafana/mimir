@@ -473,6 +473,93 @@ func countRanges(series []partialSeriesChunksSet) (n int) {
 	return
 }
 
+func (c *rangeLoadingSeriesChunksSetIterator) refetchRanges(underfetchedRanges map[int][]underfetchedChunksRangeIdx, partialSeries []partialSeriesChunksSet, nextSet seriesChunksSet) error {
+	for sIdx, indices := range underfetchedRanges {
+		for _, idx := range indices {
+			err := c.chunkReaders.addLoadRange(idx.blockID, partialSeries[sIdx].refsRanges[idx.rangeIdx], sIdx, idx.rangeIdx)
+			if err != nil {
+				return fmt.Errorf("add load underfetched block %s first ref %d: %w", idx.blockID, partialSeries[sIdx].refsRanges[idx.rangeIdx].firstRef(), err)
+			}
+		}
+	}
+
+	refetchStartTime := time.Now()
+
+	// Go to the bucket to fetch all ranges we undefetched.
+	// We use a new stats instnace, so we can differentiate between the stats of fetching from those of refetching.
+	refetchStats := newSafeQueryStats()
+	err := c.chunkReaders.loadRanges(partialSeries, refetchStats)
+	if err != nil {
+		return errors.Wrap(err, "refetch ranges")
+	}
+
+	c.recordRefetchStats(refetchStartTime, underfetchedRanges, partialSeries, refetchStats)
+
+	for sIdx, indices := range underfetchedRanges {
+		for _, idx := range indices {
+			err = partialSeries[sIdx].reparse(idx)
+			if err != nil {
+				return errors.Wrapf(err, "reparse ranges for series %s", nextSet.series[sIdx].lset)
+			}
+		}
+	}
+	return nil
+}
+
+func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
+	writeIdx := 0
+	for i, chk := range chks {
+		if chk.MaxTime < minT || chk.MinTime > maxT {
+			continue
+		}
+		if writeIdx != i {
+			chks[i], chks[writeIdx] = chks[writeIdx], chks[i]
+		}
+		writeIdx++
+	}
+
+	return chks[:writeIdx]
+}
+
+func (c *rangeLoadingSeriesChunksSetIterator) storeChunkRanges(cachedRanges map[chunkscache.Range][]byte, partialSeries []partialSeriesChunksSet) {
+	for _, s := range partialSeries {
+		for i, g := range s.refsRanges {
+			rangeKey := toCacheKey(g)
+			if _, ok := cachedRanges[rangeKey]; ok {
+				continue
+			}
+			// We don't copy the raw range because the raw range is not pooled. This means it will be freed by the GC.
+			c.cache.StoreChunks(c.ctx, c.userID, rangeKey, s.rawRanges[i])
+		}
+	}
+}
+
+func toCacheKeys(series []seriesChunkRefs, totalRanges int) []chunkscache.Range {
+	ranges := make([]chunkscache.Range, 0, totalRanges)
+	for _, s := range series {
+		for _, g := range s.chunksRanges {
+			ranges = append(ranges, toCacheKey(g))
+		}
+	}
+	return ranges
+}
+
+func toCacheKey(g seriesChunkRefsRange) chunkscache.Range {
+	return chunkscache.Range{
+		BlockID:   g.blockID,
+		Start:     g.firstRef(),
+		NumChunks: len(g.refs),
+	}
+}
+
+func (c *rangeLoadingSeriesChunksSetIterator) At() seriesChunksSet {
+	return c.current
+}
+
+func (c *rangeLoadingSeriesChunksSetIterator) Err() error {
+	return c.err
+}
+
 type partialSeriesChunksSet struct {
 	refsRanges   []seriesChunkRefsRange
 	rawRanges    [][]byte
@@ -493,6 +580,12 @@ func newPartialSeries(nextUnloaded seriesChunkRefsSet, getPooledChunks func(size
 		partialSeries[i].parsedChunks = getPooledChunks(chunksCount)
 	}
 	return partialSeries
+}
+
+type underfetchedChunksRangeIdx struct {
+	blockID  ulid.ULID
+	rangeIdx int
+	parsed   []storepb.AggrChunk
 }
 
 // parse tries to parse the ranges in the partial set with the bytes it has in rawRanges.
@@ -612,73 +705,6 @@ func parseRange(rBytes []byte, chunks []storepb.AggrChunk) (allChunksComplete bo
 	return true, 0, rangeFullSize - len(rBytes), nil
 }
 
-func (c *rangeLoadingSeriesChunksSetIterator) refetchRanges(underfetchedRanges map[int][]underfetchedChunksRangeIdx, partialSeries []partialSeriesChunksSet, nextSet seriesChunksSet) error {
-	for sIdx, indices := range underfetchedRanges {
-		for _, idx := range indices {
-			err := c.chunkReaders.addLoadRange(idx.blockID, partialSeries[sIdx].refsRanges[idx.rangeIdx], sIdx, idx.rangeIdx)
-			if err != nil {
-				return fmt.Errorf("add load underfetched block %s first ref %d: %w", idx.blockID, partialSeries[sIdx].refsRanges[idx.rangeIdx].firstRef(), err)
-			}
-		}
-	}
-
-	refetchStartTime := time.Now()
-
-	// Go to the bucket to fetch all ranges we undefetched.
-	// We use a new stats instnace, so we can differentiate between the stats of fetching from those of refetching.
-	refetchStats := newSafeQueryStats()
-	err := c.chunkReaders.loadRanges(partialSeries, refetchStats)
-	if err != nil {
-		return errors.Wrap(err, "refetch ranges")
-	}
-
-	c.recordRefetchStats(refetchStartTime, underfetchedRanges, partialSeries, refetchStats)
-
-	for sIdx, indices := range underfetchedRanges {
-		for _, idx := range indices {
-			err = partialSeries[sIdx].reparse(idx)
-			if err != nil {
-				return errors.Wrapf(err, "reparse ranges for series %s", nextSet.series[sIdx].lset)
-			}
-		}
-	}
-	return nil
-}
-
-func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
-	writeIdx := 0
-	for i, chk := range chks {
-		if chk.MaxTime < minT || chk.MinTime > maxT {
-			continue
-		}
-		if writeIdx != i {
-			chks[i], chks[writeIdx] = chks[writeIdx], chks[i]
-		}
-		writeIdx++
-	}
-
-	return chks[:writeIdx]
-}
-
-func (c *rangeLoadingSeriesChunksSetIterator) storeChunkRanges(cachedRanges map[chunkscache.Range][]byte, partialSeries []partialSeriesChunksSet) {
-	for _, s := range partialSeries {
-		for i, g := range s.refsRanges {
-			rangeKey := toCacheKey(g)
-			if _, ok := cachedRanges[rangeKey]; ok {
-				continue
-			}
-			// We don't copy the raw range because the raw range is not pooled. This means it will be freed by the GC.
-			c.cache.StoreChunks(c.ctx, c.userID, rangeKey, s.rawRanges[i])
-		}
-	}
-}
-
-type underfetchedChunksRangeIdx struct {
-	blockID  ulid.ULID
-	rangeIdx int
-	parsed   []storepb.AggrChunk
-}
-
 // parseRanges parses the passed bytes into nextSet. In case a range was underfetched, parseRanges will return an underfetchedChunksRangeIdx
 // with the indices of the range; the keys in the map are the indices into partialSeries.
 // parseRanges will also set the correct length of the last chunk in an underfetched range in case its estimated length was wrong.
@@ -694,32 +720,6 @@ func parseRanges(partialSeries []partialSeriesChunksSet) (map[int][]underfetched
 		}
 	}
 	return underfetchedSeries, nil
-}
-
-func toCacheKeys(series []seriesChunkRefs, totalRanges int) []chunkscache.Range {
-	ranges := make([]chunkscache.Range, 0, totalRanges)
-	for _, s := range series {
-		for _, g := range s.chunksRanges {
-			ranges = append(ranges, toCacheKey(g))
-		}
-	}
-	return ranges
-}
-
-func toCacheKey(g seriesChunkRefsRange) chunkscache.Range {
-	return chunkscache.Range{
-		BlockID:   g.blockID,
-		Start:     g.firstRef(),
-		NumChunks: len(g.refs),
-	}
-}
-
-func (c *rangeLoadingSeriesChunksSetIterator) At() seriesChunksSet {
-	return c.current
-}
-
-func (c *rangeLoadingSeriesChunksSetIterator) Err() error {
-	return c.err
 }
 
 func (c *rangeLoadingSeriesChunksSetIterator) recordFetchComplete(fetchStartTime time.Time) {
