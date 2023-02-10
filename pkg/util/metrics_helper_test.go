@@ -10,6 +10,7 @@ import (
 
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,11 +48,10 @@ func TestMatchesSelectors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			counter := prometheus.NewCounterVec(prometheus.CounterOpts{
+			counter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 				Name: "mimir_test_metric",
 				Help: "a test metric",
 			}, []string{"lbl1", "lbl2"})
-			reg.MustRegister(counter)
 
 			counter.With(prometheus.Labels{"lbl1": "value1", "lbl2": "value2"}).Add(50)
 
