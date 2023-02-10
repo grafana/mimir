@@ -7,8 +7,9 @@ package ruler
 
 import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/prometheus/client_golang/prometheus"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // ManagerMetrics aggregates metrics exported by the Prometheus
