@@ -936,7 +936,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Replicas\nThe maximum and current number of distributor replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                  "description": "### Replicas\nThe maximum and current number of distributor replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                   "fill": 1,
                   "id": 13,
                   "legend": {
