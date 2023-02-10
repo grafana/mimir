@@ -744,7 +744,7 @@ func (t *Mimir) Run() error {
 	usagestats.SetTarget(t.Cfg.Target.String())
 
 	for _, module := range t.Cfg.Target {
-		if !t.ModuleManager.IsUserVisibleModule(module) {
+		if !t.ModuleManager.IsTargetableModule(module) {
 			return fmt.Errorf("selected target (%s) is an internal module, which is not allowed", module)
 		}
 	}
