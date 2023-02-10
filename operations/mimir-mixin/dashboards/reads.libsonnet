@@ -250,6 +250,10 @@ local filename = 'mimir-reads.json';
       )
     )
     .addRowIf(
+      $._config.autoscaling.query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Query-frontend'),
+    )
+    .addRowIf(
       $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
     )
