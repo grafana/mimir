@@ -529,7 +529,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           The maximum and current number of %s replicas.
           Note: The current number of replicas can still show 1 replica even when scaled to 0.
-          Since HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+          Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
         ||| % [component]
       ) +
       {
