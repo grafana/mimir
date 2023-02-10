@@ -182,7 +182,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
 
 	key := cachingKeyIter(dir)
-	data := cfg.cache.Fetch(ctx, []string{key})
+	data := map[string][]byte{}
 	if data[key] != nil {
 		list, err := cfg.codec.Decode(data[key])
 		if err == nil {
@@ -227,7 +227,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
 	key := cachingKeyExists(name)
-	hits := cfg.cache.Fetch(ctx, []string{key})
+	hits := map[string][]byte{}
 
 	if ex := hits[key]; ex != nil {
 		exists, err := strconv.ParseBool(string(ex))
@@ -271,7 +271,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	contentKey := cachingKeyContent(name)
 	existsKey := cachingKeyExists(name)
 	slabs := getMemoryPool(ctx)
-	cacheOpts := getCacheOptions(slabs)
+	//cacheOpts := getCacheOptions(slabs)
 	releaseSlabs := true
 
 	// On cache hit, the returned reader is responsible for freeing any allocated
@@ -285,7 +285,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		}()
 	}
 
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
+	hits := map[string][]byte{}
 	if hits[contentKey] != nil {
 		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 
@@ -356,7 +356,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 
 	cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
-	hits := cache.Fetch(ctx, []string{key})
+	hits := map[string][]byte{}
 	if raw, ok := hits[key]; ok {
 		var attrs objstore.ObjectAttributes
 		err := json.Unmarshal(raw, &attrs)
@@ -431,7 +431,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 
 	releaseSlabs := true
 	slabs := getMemoryPool(ctx)
-	cacheOpts := getCacheOptions(slabs)
+	//cacheOpts := getCacheOptions(slabs)
 
 	// If there's an error after fetching things from cache but before we return the subrange
 	// reader we're responsible for releasing any memory used by the slab pool.
@@ -445,7 +445,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 
 	// Try to get all subranges from the cache.
 	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys, cacheOpts...)
+	hits := map[string][]byte{}
 	for _, b := range hits {
 		totalCachedBytes += int64(len(b))
 	}
