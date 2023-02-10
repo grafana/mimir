@@ -184,7 +184,7 @@ func newSeriesSetWithChunks(
 	minT, maxT int64,
 ) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(ctx, userID, chunkscache.NoopCache{}, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, userID, cache, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -386,7 +386,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	// so can safely expand it.
 	nextSet.series = nextSet.series[:nextUnloaded.len()]
 
-	cachedRanges := c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+	cachedRanges := map[chunkscache.Range][]byte{}
 	c.chunkReaders.reset()
 
 	for i, s := range nextUnloaded.series {
