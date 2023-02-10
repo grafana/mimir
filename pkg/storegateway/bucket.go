@@ -43,6 +43,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -685,7 +686,7 @@ func blockSeries(
 				for j, meta := range chks {
 					// seriesEntry s is appended to res, but not at every outer loop iteration,
 					// therefore len(res) is the index we need here, not outer loop iteration number.
-					if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
+					if err := chunkr.addLoad(meta.Ref, len(res), j, tsdb.EstimatedMaxChunkSize); err != nil {
 						lookupErr = errors.Wrap(err, "add chunk load")
 						return
 					}

@@ -54,7 +54,7 @@ func (r *bucketChunkReader) reset() {
 
 // addLoad adds the chunk with id to the data set to be fetched.
 // Chunk will be fetched and saved to res[seriesEntry][chunk] upon r.load(res, <...>) call.
-func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error {
+func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
 	var (
 		seq = chunkSegmentFile(id)
 		off = chunkOffset(id)
@@ -62,7 +62,12 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 	if seq >= len(r.toLoad) {
 		return errors.Errorf("reference sequence %d out of range", seq)
 	}
-	r.toLoad[seq] = append(r.toLoad[seq], loadIdx{off, seriesEntry, chunk})
+	r.toLoad[seq] = append(r.toLoad[seq], loadIdx{
+		offset:      off,
+		length:      length,
+		seriesEntry: seriesEntry,
+		chunk:       chunk,
+	})
 	return nil
 }
 
@@ -82,7 +87,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPoo
 			return pIdxs[i].offset < pIdxs[j].offset
 		})
 		parts := r.block.partitioners.chunks.Partition(len(pIdxs), func(i int) (start, end uint64) {
-			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + mimir_tsdb.EstimatedMaxChunkSize
+			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + uint64(pIdxs[i].length)
 		})
 
 		for _, p := range parts {
@@ -236,7 +241,7 @@ func saveChunk(b []byte, chunksPool *pool.SafeSlabPool[byte]) []byte {
 }
 
 type loadIdx struct {
-	offset uint32
+	offset, length uint32
 	// Indices, not actual entries and chunks.
 	seriesEntry int
 	chunk       int
@@ -277,7 +282,7 @@ type bucketChunkReaders struct {
 type chunkReader interface {
 	io.Closer
 
-	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
+	addLoad(id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error
 	load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
 	reset()
 }
@@ -288,8 +293,8 @@ func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
 	}
 }
 
-func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
-	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
+func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
+	return r.readers[blockID].addLoad(id, seriesEntry, chunk, length)
 }
 
 func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
