@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -54,7 +55,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1809,7 +1809,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				require.Regexp(t, regexp.MustCompile(`{"silenceID":".+"}`), string(body))
 			}
 
-			var metrics util.MetricFamiliesPerUser
+			var metrics dskit_metrics.MetricFamiliesPerTenant
 
 			// 5. Then, make sure it is propagated successfully.
 			//    Replication is asynchronous, so we may have to wait a short period of time.

@@ -7,11 +7,11 @@ package ingester
 
 import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
