@@ -6,10 +6,9 @@
 package ruler
 
 import (
+	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // ManagerMetrics aggregates metrics exported by the Prometheus
@@ -31,9 +30,9 @@ type ManagerMetrics struct {
 }
 
 // NewManagerMetrics returns a ManagerMetrics struct
-func NewManagerMetrics() *ManagerMetrics {
+func NewManagerMetrics(logger log.Logger) *ManagerMetrics {
 	return &ManagerMetrics{
-		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 
 		EvalDuration: prometheus.NewDesc(
 			"cortex_prometheus_rule_evaluation_duration_seconds",

@@ -296,7 +296,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer),
+		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),

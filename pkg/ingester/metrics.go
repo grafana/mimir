@@ -6,12 +6,12 @@
 package ingester
 
 import (
+	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -459,9 +459,9 @@ type tsdbMetrics struct {
 	regs *dskit_metrics.TenantRegistries
 }
 
-func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
+func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 	m := &tsdbMetrics{
-		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 
 		dirSyncs: prometheus.NewDesc(
 			"cortex_ingester_shipper_dir_syncs_total",
