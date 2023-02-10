@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -20,7 +21,7 @@ import (
 func TestManagerMetrics(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	managerMetrics := NewManagerMetrics()
+	managerMetrics := NewManagerMetrics(log.NewNopLogger())
 	mainReg.MustRegister(managerMetrics)
 	managerMetrics.AddUserRegistry("user1", populateManager(1))
 	managerMetrics.AddUserRegistry("user2", populateManager(10))
@@ -270,7 +271,7 @@ func newGroupMetrics(r prometheus.Registerer) *groupMetrics {
 func TestMetricsArePerUser(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	managerMetrics := NewManagerMetrics()
+	managerMetrics := NewManagerMetrics(log.NewNopLogger())
 	mainReg.MustRegister(managerMetrics)
 	managerMetrics.AddUserRegistry("user1", populateManager(1))
 	managerMetrics.AddUserRegistry("user2", populateManager(10))
