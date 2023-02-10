@@ -7,8 +7,9 @@ package storegateway
 
 import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/prometheus/client_golang/prometheus"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // This struct aggregates metrics exported by Thanos MetaFetcher
