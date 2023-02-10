@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -294,7 +295,11 @@ func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
 }
 
 func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
-	return r.readers[blockID].addLoad(id, seriesEntry, chunk, length)
+	reader, ok := r.readers[blockID]
+	if !ok {
+		return fmt.Errorf("trying to add a chunk for an unknown block %s", blockID.String())
+	}
+	return reader.addLoad(id, seriesEntry, chunk, length)
 }
 
 func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {

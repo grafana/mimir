@@ -427,19 +427,12 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
+	c.storeRanges(nextUnloaded.series, nextSet.series, cachedRanges)
 
-	for sIdx, s := range nextUnloaded.series {
-		seriesChunkIdx := 0
-		for _, chunksRange := range s.chunksRanges {
-			if _, ok := cachedRanges[toCacheKey(chunksRange)]; ok {
-				seriesChunkIdx += len(chunksRange.refs)
-				continue
-			}
-			rangeChunks := nextSet.series[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
-			c.storeCacheRange(chunksRange, rangeChunks)
-
-			seriesChunkIdx += len(chunksRange.refs)
-		}
+	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
+	// range of chunks. After storing the chunks in the cache, we should throw away the chunks that are outside
+	// the requested time range.
+	for sIdx := range nextSet.series {
 		nextSet.series[sIdx].chks = removeChunksOutsideRange(nextSet.series[sIdx].chks, c.minTime, c.maxTime)
 	}
 
@@ -540,21 +533,49 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
-func (c *loadingSeriesChunksSetIterator) storeCacheRange(r seriesChunkRefsRange, chunks []storepb.AggrChunk) {
+func encodeChunksForCache(chunks []storepb.AggrChunk) []byte {
 	encodedSize := 0
 	for _, chk := range chunks {
 		dataLen := len(chk.Raw.Data)
 		encodedSize += varint.UvarintSize(uint64(dataLen)) + 1 + dataLen
 	}
-	toCache := make([]byte, 0, encodedSize)
+	encoded := make([]byte, 0, encodedSize)
 	for _, chk := range chunks {
-		toCache = binary.AppendUvarint(toCache, uint64(len(chk.Raw.Data)))
+		encoded = binary.AppendUvarint(encoded, uint64(len(chk.Raw.Data)))
 		// The cast to byte() below is safe because the actual type of the chunk in the TSDB is a single byte,
 		// so the type in our protos shouldn't take more than 1 byte.
-		toCache = append(toCache, byte(chk.Raw.Type))
-		toCache = append(toCache, chk.Raw.Data...)
+		encoded = append(encoded, byte(chk.Raw.Type))
+		encoded = append(encoded, chk.Raw.Data...)
 	}
-	c.cache.StoreChunks(c.ctx, c.userID, toCacheKey(r), toCache)
+	return encoded
+}
+
+func (c *loadingSeriesChunksSetIterator) storeRanges(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, ranges map[chunkscache.Range][]byte) {
+	numRanges := 0
+	for _, s := range seriesRefs {
+		for _, chunksRange := range s.chunksRanges {
+			if _, ok := ranges[toCacheKey(chunksRange)]; ok {
+				numRanges++
+				continue
+			}
+		}
+	}
+
+	toStore := make(map[chunkscache.Range][]byte, numRanges)
+	for sIdx, s := range seriesRefs {
+		seriesChunkIdx := 0
+		for _, chunksRange := range s.chunksRanges {
+			if _, ok := ranges[toCacheKey(chunksRange)]; ok {
+				seriesChunkIdx += len(chunksRange.refs)
+				continue
+			}
+			rangeChunks := seriesChunks[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
+			toStore[toCacheKey(chunksRange)] = encodeChunksForCache(rangeChunks)
+
+			seriesChunkIdx += len(chunksRange.refs)
+		}
+	}
+	c.cache.StoreChunks(c.ctx, c.userID, toStore)
 }
 
 type nextDurationMeasuringIterator[Set any] struct {
