@@ -406,9 +406,6 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 				continue
 			}
 			for _, chunk := range chunksRange.refs {
-				nextSet.series[i].chks[seriesChunkIdx].MinTime = chunk.minTime
-				nextSet.series[i].chks[seriesChunkIdx].MaxTime = chunk.maxTime
-
 				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx, chunk.length)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
