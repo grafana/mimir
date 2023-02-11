@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"sync"
 	"time"
 
@@ -388,6 +389,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	var cachedRanges map[chunkscache.Range][]byte
 	if c.cache != nil {
 		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+		c.recordCachedChunks(cachedRanges)
 	}
 	c.chunkReaders.reset()
 
@@ -443,6 +445,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	for sIdx := range nextSet.series {
 		nextSet.series[sIdx].chks = removeChunksOutsideRange(nextSet.series[sIdx].chks, c.minTime, c.maxTime)
 	}
+	c.recordReturnedChunks(nextSet.series)
 
 	nextSet.chunksReleaser = chunksPool
 	c.current = nextSet
@@ -582,6 +585,47 @@ func (c *loadingSeriesChunksSetIterator) storeRanges(seriesRefs []seriesChunkRef
 		}
 	}
 	c.cache.StoreChunks(c.ctx, c.userID, toStore)
+}
+
+func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEntry) {
+	returnedChunksBytes := 0
+	returnedChunks := 0
+	for _, s := range series {
+		// We "reverse" calculate the size of chunks in the segment file. This was the size we returned from the
+		// touched range bytes. We can measure only the data length of the chunk,
+		// but that would not account for the extra few bytes for data length, encoding and crc32.
+		// These extra few bytes may be significant if the data bytes are small.
+		returnedChunksBytes += chunksSizeInSegmentFile(s.chks)
+		returnedChunks += len(s.chks)
+	}
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksReturned += returnedChunks
+		stats.chunksReturnedSizeSum += returnedChunksBytes
+	})
+}
+
+func (c *loadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chunkscache.Range][]byte) {
+	fetchedChunks := 0
+	fetchedBytes := 0
+	for k, b := range cachedRanges {
+		fetchedChunks += k.NumChunks
+		fetchedBytes += len(b)
+	}
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksFetchCount += fetchedChunks
+		stats.chunksFetchedSizeSum += fetchedBytes
+	})
+}
+
+func chunksSizeInSegmentFile(chks []storepb.AggrChunk) int {
+	total := 0
+	for _, c := range chks {
+		dataLen := len(c.Raw.Data)
+		total += varint.UvarintSize(uint64(dataLen)) + 1 + dataLen + crc32.Size
+	}
+	return total
 }
 
 type nextDurationMeasuringIterator[Set any] struct {

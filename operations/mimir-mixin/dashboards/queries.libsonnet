@@ -225,13 +225,23 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Data fetched / sec') +
-        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
+        $.queryPanel(|||
+          sum by(data_type) (rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway", stage="", %(jobMatcher)s}[$__rate_interval]))
+          or
+          sum by(data_type) (rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway", data_type="chunks, stage="fecthed", %(jobMatcher)s}[$__rate_interval]))
+        ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Data touched / sec') +
-        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
+        $.queryPanel(|||
+          # non-streaming store-gateway will not have the stage label on any touched metrics
+          sum by(data_type) (rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway", stage="",%(jobMatcher)s}[$__rate_interval]))
+          or
+          # streaming store-gateway with new caching will have overlapping metrics for touched chunks data; we select only the most narrow one - "returned"
+          sum by(data_type) (rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway", data_type="chunks", stage="returned",%(jobMatcher)s}[$__rate_interval]))
+        ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )

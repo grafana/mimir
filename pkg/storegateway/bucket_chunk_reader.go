@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"sort"
 	"time"
@@ -182,7 +183,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 				return errors.Wrap(err, "populate chunk")
 			}
 			localStats.chunksTouched++
-			localStats.chunksTouchedSizeSum += int(chunkDataLen)
+			localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
 			continue
 		}
 
@@ -198,16 +199,16 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 			return errors.Errorf("preloaded chunk too small, expecting %d", chunkLen)
 		}
 
-		localStats.chunksFetchCount++
+		localStats.chunksRefetched++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
-		localStats.chunksFetchedSizeSum += len(*nb)
+		localStats.chunksRefetchedSizeSum += len(*nb)
 		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
 		}
 		localStats.chunksTouched++
-		localStats.chunksTouchedSizeSum += int(chunkDataLen)
+		localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
 
 		r.block.chunkPool.Put(nb)
 	}
