@@ -469,7 +469,11 @@ which allows us to keep generating everything for the default zone.
 {{- define "mimir.zoneAwareReplicationMap" -}}
 {{- $zonesMap := (dict) -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
-{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas) -}}
+{{- $defaultZone := (dict
+  "affinity" $componentSection.affinity
+  "nodeSelector" $componentSection.nodeSelector
+  "replicas" ($componentSection.hpa.enabled | ternary $componentSection.hpa.minReplicas $componentSection.replicas)
+  ) -}}
 
 {{- if $componentSection.zoneAwareReplication.enabled -}}
 {{- $numberOfZones := len $componentSection.zoneAwareReplication.zones -}}
@@ -477,7 +481,7 @@ which allows us to keep generating everything for the default zone.
 {{- fail "When zone-awareness is enabled, you must have at least 3 zones defined." -}}
 {{- end -}}
 
-{{- $requestedReplicas := $componentSection.replicas -}}
+{{- $requestedReplicas := ($componentSection.hpa.enabled | ternary $componentSection.hpa.minReplicas $componentSection.replicas) -}}
 {{- if and (has .component (list "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
 {{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
 {{- end -}}
