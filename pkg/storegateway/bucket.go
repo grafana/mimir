@@ -1169,11 +1169,11 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	var set storepb.SeriesSet
 	if !req.SkipChunks {
+		var cache chunkscache.Cache
 		if s.fineGrainedChunksCachingEnabled {
-			set = newSeriesSetWithChunks(ctx, s.userID, s.chunksCache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
-		} else {
-			set = newSeriesSetWithChunks(ctx, s.userID, nil, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+			cache = s.chunksCache
 		}
+		set = newSeriesSetWithChunks(ctx, s.userID, cache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}

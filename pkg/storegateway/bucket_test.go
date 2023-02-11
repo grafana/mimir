@@ -1712,8 +1712,6 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
-	chunksCache := newInMemoryChunksCache()
-
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
@@ -1731,7 +1729,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithChunksCache(chunksCache),
+		WithChunksCache(newInMemoryChunksCache()),
 	)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
@@ -1936,8 +1934,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(t, err)
 
-	chunksCache := newInMemoryChunksCache()
-
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
@@ -1955,7 +1951,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithChunksCache(chunksCache),
+		WithChunksCache(newInMemoryChunksCache()),
 	)
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -2221,9 +2217,7 @@ func setupStoreForHintsTest(t *testing.T, opts ...BucketStoreOption) (test.TB, *
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(tb, err)
 
-	chunksCache := newInMemoryChunksCache()
-
-	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache), WithChunksCache(chunksCache)}, opts...)
+	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache), WithChunksCache(newInMemoryChunksCache())}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
