@@ -519,6 +519,20 @@ func convertChunkEncoding(storageEncoding byte) (storepb.Chunk_Encoding, bool) {
 	return converted, exists
 }
 
+func (c *loadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chunkscache.Range][]byte) {
+	fetchedChunks := 0
+	fetchedBytes := 0
+	for k, b := range cachedRanges {
+		fetchedChunks += k.NumChunks
+		fetchedBytes += len(b)
+	}
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksFetchCount += fetchedChunks
+		stats.chunksFetchedSizeSum += fetchedBytes
+	})
+}
+
 func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
 	writeIdx := 0
 	for i, chk := range chks {
@@ -602,20 +616,6 @@ func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEnt
 	c.stats.update(func(stats *queryStats) {
 		stats.chunksReturned += returnedChunks
 		stats.chunksReturnedSizeSum += returnedChunksBytes
-	})
-}
-
-func (c *loadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chunkscache.Range][]byte) {
-	fetchedChunks := 0
-	fetchedBytes := 0
-	for k, b := range cachedRanges {
-		fetchedChunks += k.NumChunks
-		fetchedBytes += len(b)
-	}
-
-	c.stats.update(func(stats *queryStats) {
-		stats.chunksFetchCount += fetchedChunks
-		stats.chunksFetchedSizeSum += fetchedBytes
 	})
 }
 
