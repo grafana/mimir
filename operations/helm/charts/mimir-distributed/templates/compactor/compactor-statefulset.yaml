@@ -8,7 +8,9 @@ metadata:
     {{- toYaml .Values.compactor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.compactor.hpa.enabled }}
   replicas: {{ .Values.compactor.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 6 }}

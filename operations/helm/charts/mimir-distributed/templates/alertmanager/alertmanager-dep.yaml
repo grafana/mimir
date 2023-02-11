@@ -10,7 +10,9 @@ metadata:
     {{- toYaml .Values.alertmanager.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.alertmanager.hpa.enabled }}
   replicas: {{ .Values.alertmanager.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 6 }}

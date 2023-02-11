@@ -9,7 +9,9 @@ metadata:
   annotations:
     {{- toYaml .Values.query_scheduler.annotations | nindent 4 }}
 spec:
+  {{- if not .Values.query_scheduler.hpa.enabled }}
   replicas: {{ .Values.query_scheduler.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
