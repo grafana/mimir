@@ -1,0 +1,15 @@
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" (dict "ctx" $ "component" "store-gateway") | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- include "mimir.lib.horizontalPodAutoscaler" (dict
+  "ctx" $
+  "component" "store-gateway"
+  "kind" "StatefulSet"
+  "zoneName" $zoneName
+  "rolloutZone" $rolloutZone
+  "zoneAware" .Values.store_gateway.zoneAwareReplication.enabled
+  ) }}
+
+---
+{{ end }}
+{{ end }}

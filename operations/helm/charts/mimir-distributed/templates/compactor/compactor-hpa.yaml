@@ -1,0 +1,1 @@
+{{- include "mimir.lib.horizontalPodAutoscaler" (dict "ctx" $ "component" "compactor" "kind" "StatefulSet") }}
