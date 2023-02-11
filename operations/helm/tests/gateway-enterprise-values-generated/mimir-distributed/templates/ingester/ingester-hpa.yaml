@@ -1,0 +1,3 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-hpa.yaml
+---

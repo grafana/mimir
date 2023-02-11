@@ -1,0 +1,3 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-hpa.yaml
+---

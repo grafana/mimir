@@ -1,0 +1,3 @@
+---
+# Source: mimir-distributed/templates/store-gateway/store-gateway-hpa.yaml
+---
