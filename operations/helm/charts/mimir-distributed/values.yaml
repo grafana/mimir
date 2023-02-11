@@ -384,7 +384,18 @@ alertmanager:
   # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
+  # Ignored if alertmanager.hpa.enabled=true
   replicas: 1
+
+  hpa:
+    enabled: false
+    # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
+    # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
+    minReplicas: 1
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   statefulSet:
     enabled: true
@@ -607,7 +618,16 @@ alertmanager:
       extraAffinity: {}
 
 distributor:
+  # Ignored if distributor.hpa.enabled=true
   replicas: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
@@ -686,7 +706,18 @@ ingester:
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
+  # Ignored if ingester.hpa.enabled=true
   replicas: 3
+
+  hpa:
+    enabled: false
+    # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
+    # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
+    minReplicas: 3
+    maxReplicas: 9
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   statefulSet:
     enabled: true
@@ -1029,7 +1060,16 @@ ruler:
   extraEnvFrom: []
 
 querier:
+  # Ignored if querier.hpa.enabled=true
   replicas: 2
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
@@ -1104,7 +1144,16 @@ querier:
   extraEnvFrom: []
 
 query_frontend:
+  # Ignored if query_frontend.hpa.enabled=true
   replicas: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
@@ -1180,7 +1229,17 @@ query_frontend:
 
 query_scheduler:
   enabled: true
+
+  # Ignored if query_scheduler.hpa.enabled=true
   replicas: 2
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
@@ -1262,7 +1321,18 @@ store_gateway:
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
+  # Ignored if store_gateway.hpa.enabled=true
   replicas: 1
+
+  hpa:
+    enabled: false
+    # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
+    # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
+    minReplicas: 1
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
@@ -1440,7 +1510,16 @@ store_gateway:
       extraAffinity: {}
 
 compactor:
+  # Ignored if compactor.hpa.enabled=true
   replicas: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    averageMemoryUtilization: 60
+    # averageCpuUtilization: 60
+    behavior: {}
 
   service:
     annotations: {}
