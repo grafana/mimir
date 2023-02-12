@@ -413,7 +413,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 			for _, chunk := range chunksRange.refs {
 				if c.cache == nil && (chunk.minTime > c.maxTime || chunk.maxTime < c.minTime) {
 					// If the cache is not set, then we don't need to overfetch chunks that we know are outside minT/maxT.
-					// If the cache is set, then we need to do that, so we can cache the complete chunks ranges.
+					// If the cache is set, then we need to do that, so we can cache the complete chunks ranges; they will be filtered out after fetching.
 					seriesChunkIdx++
 					continue
 				}
