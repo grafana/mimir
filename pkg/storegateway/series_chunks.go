@@ -606,10 +606,6 @@ func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEnt
 	returnedChunksBytes := 0
 	returnedChunks := 0
 	for _, s := range series {
-		// We "reverse" calculate the size of chunks in the segment file. This was the size we returned from the
-		// touched range bytes. We can measure only the data length of the chunk,
-		// but that would not account for the extra few bytes for data length, encoding and crc32.
-		// These extra few bytes may be significant if the data bytes are small.
 		returnedChunksBytes += chunksSizeInSegmentFile(s.chks)
 		returnedChunks += len(s.chks)
 	}
@@ -620,6 +616,10 @@ func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEnt
 	})
 }
 
+// chunksSizeInSegmentFile "reverse" calculates the size of chunks in the segment file. This was the size we returned from the
+// touched range bytes. We can measure only the data length of the chunk,
+// but that would not account for the extra few bytes for data length, encoding and crc32.
+// These extra few bytes may be significant if the data bytes are small.
 func chunksSizeInSegmentFile(chks []storepb.AggrChunk) int {
 	total := 0
 	for _, c := range chks {
