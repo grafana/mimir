@@ -1,0 +1,3 @@
+{{- if not .Values.enterprise.enabled -}}
+{{- include "mimir.lib.horizontalPodAutoscaler" (dict "ctx" $ "component" "nginx" "kind" "Deployment") }}
+{{- end -}}

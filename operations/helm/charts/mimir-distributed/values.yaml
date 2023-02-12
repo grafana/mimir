@@ -396,7 +396,7 @@ alertmanager:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -631,7 +631,7 @@ distributor:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -724,7 +724,7 @@ ingester:
     maxReplicas: 9
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -1079,7 +1079,7 @@ querier:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -1166,7 +1166,7 @@ query_frontend:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -1255,7 +1255,7 @@ query_scheduler:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -1351,7 +1351,7 @@ store_gateway:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -1541,7 +1541,7 @@ compactor:
     maxReplicas: 5
     averageMemoryUtilization: 70
     # averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
@@ -2023,9 +2023,12 @@ nginx:
     # -- Maximum autoscaling replicas for nginx
     maxReplicas: 3
     # -- Target CPU utilisation percentage for nginx
-    targetCPUUtilizationPercentage: 60
+    averageCpuUtilization: 60
     # -- Target memory utilisation percentage for nginx
-    targetMemoryUtilizationPercentage:
+    averageMemoryUtilization: 60
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
+    behavior: {}
   # -- See `kubectl explain deployment.spec.strategy` for more,
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   deploymentStrategy:
@@ -2344,7 +2347,7 @@ gateway:
     maxReplicas: 3
     averageMemoryUtilization: 70
     averageCpuUtilization: 70
-    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
