@@ -1041,6 +1041,28 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 	}
 }
 
+func BenchmarkEncodeChunksForCache(b *testing.B) {
+	testCases := map[string]struct {
+		toEncode []storepb.AggrChunk
+	}{
+		"1 small chunk":    {generateSeriesEntriesWithChunksSize(b, 1, 1, 32)[0].chks},
+		"1 medium chunk":   {generateSeriesEntriesWithChunksSize(b, 1, 1, 256)[0].chks},
+		"1 big chunk":      {generateSeriesEntriesWithChunksSize(b, 1, 1, 4096)[0].chks},
+		"50 small chunks":  {generateSeriesEntriesWithChunksSize(b, 1, 50, 32)[0].chks},
+		"50 medium chunks": {generateSeriesEntriesWithChunksSize(b, 1, 50, 256)[0].chks},
+		"50 big chunks":    {generateSeriesEntriesWithChunksSize(b, 1, 50, 4096)[0].chks},
+	}
+
+	for testName, testCase := range testCases {
+		b.Run(testName, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				encoded := encodeChunksForCache(testCase.toEncode)
+				assert.NotEmpty(b, encoded)
+			}
+		})
+	}
+}
+
 type chunkReaderMock struct {
 	chunks              map[chunks.ChunkRef]storepb.AggrChunk
 	addLoadErr, loadErr error
@@ -1095,7 +1117,10 @@ func (f *chunkReaderMock) reset() {
 
 // generateSeriesEntriesWithChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
 func generateSeriesEntriesWithChunks(t testing.TB, numSeries, numChunksPerSeries int) []seriesEntry {
-	const chunkDataLenBytes = 256
+	return generateSeriesEntriesWithChunksSize(t, numSeries, numChunksPerSeries, 256)
+}
+
+func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSeries, chunkDataLenBytes int) []seriesEntry {
 
 	out := make([]seriesEntry, 0, numSeries)
 	labels := generateSeries([]int{numSeries})
