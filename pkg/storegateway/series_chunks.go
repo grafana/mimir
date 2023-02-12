@@ -400,7 +400,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 		for _, chunksRange := range s.chunksRanges {
 			rangeChunks := nextSet.series[i].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
-			prepareChunks(chunksRange, rangeChunks)
+			initializeChunks(chunksRange, rangeChunks)
 			if cachedRange, ok := cachedRanges[toCacheKey(chunksRange)]; ok {
 				if err := parseChunksRange(cachedRange, rangeChunks); err != nil {
 					c.err = errors.Wrap(err, "parsing cached chunks")
@@ -452,7 +452,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	return true
 }
 
-func prepareChunks(chunksRange seriesChunkRefsRange, chunks []storepb.AggrChunk) {
+func initializeChunks(chunksRange seriesChunkRefsRange, chunks []storepb.AggrChunk) {
 	for cIdx := range chunks {
 		chunks[cIdx].MinTime = chunksRange.refs[cIdx].minTime
 		chunks[cIdx].MaxTime = chunksRange.refs[cIdx].maxTime
