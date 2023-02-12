@@ -152,10 +152,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 			}
 			readOffset += int(written)
 		}
-		// Presume chunk length to be reasonably large for common use cases.
-		// However, declaration for EstimatedMaxChunkSize warns us some chunks could be larger in some rare cases.
+		// Use the chunk length estimation.
+		// However, declaration for length warns us this estimation can be wrong.
 		// This is handled further down below.
-		chunkLen = mimir_tsdb.EstimatedMaxChunkSize
+		chunkLen = int(pIdx.length)
 		if i+1 < len(pIdxs) {
 			if diff = pIdxs[i+1].offset - pIdx.offset; int(diff) < chunkLen {
 				chunkLen = int(diff)
