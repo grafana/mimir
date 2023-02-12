@@ -1073,11 +1073,11 @@ func (f *chunkReaderMock) Close() error {
 	return nil
 }
 
-func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
+func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error {
 	if f.addLoadErr != nil {
 		return f.addLoadErr
 	}
-	f.toLoad[id] = loadIdx{seriesEntry: seriesEntry, chunk: chunk}
+	f.toLoad[id] = loadIdx{seriesEntry: seriesEntry, chunk: chunkEntry}
 	return nil
 }
 

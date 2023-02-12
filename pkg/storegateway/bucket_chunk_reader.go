@@ -56,7 +56,7 @@ func (r *bucketChunkReader) reset() {
 
 // addLoad adds the chunk with id to the data set to be fetched.
 // Chunk will be fetched and saved to res[seriesEntry][chunk] upon r.load(res, <...>) call.
-func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
+func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error {
 	var (
 		seq = chunkSegmentFile(id)
 		off = chunkOffset(id)
@@ -68,7 +68,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int, 
 		offset:      off,
 		length:      length,
 		seriesEntry: seriesEntry,
-		chunk:       chunk,
+		chunk:       chunkEntry,
 	})
 	return nil
 }
@@ -284,7 +284,7 @@ type bucketChunkReaders struct {
 type chunkReader interface {
 	io.Closer
 
-	addLoad(id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error
+	addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error
 	load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
 	reset()
 }
