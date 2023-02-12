@@ -528,7 +528,7 @@ func (c *loadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chu
 	}
 
 	c.stats.update(func(stats *queryStats) {
-		stats.chunksFetchCount += fetchedChunks
+		stats.chunksFetched += fetchedChunks
 		stats.chunksFetchedSizeSum += fetchedBytes
 	})
 }
