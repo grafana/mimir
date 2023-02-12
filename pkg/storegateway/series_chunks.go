@@ -574,17 +574,17 @@ func encodeChunksForCache(chunks []storepb.AggrChunk) []byte {
 }
 
 func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, cacheHits map[chunkscache.Range][]byte) {
-	numRanges := 0
+	// Count the number of ranges that were not previously cached, and so we need to store to the cache.
+	cacheMisses := 0
 	for _, s := range seriesRefs {
 		for _, chunksRange := range s.chunksRanges {
-			if _, ok := cacheHits[toCacheKey(chunksRange)]; ok {
-				numRanges++
-				continue
+			if _, ok := cacheHits[toCacheKey(chunksRange)]; !ok {
+				cacheMisses++
 			}
 		}
 	}
 
-	toStore := make(map[chunkscache.Range][]byte, numRanges)
+	toStore := make(map[chunkscache.Range][]byte, cacheMisses)
 	for sIdx, s := range seriesRefs {
 		seriesChunkIdx := 0
 		for _, chunksRange := range s.chunksRanges {
