@@ -393,13 +393,13 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	}
 	c.chunkReaders.reset()
 
-	for i, s := range nextUnloaded.series {
-		nextSet.series[i].lset = s.lset
-		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
+	for sIdx, s := range nextUnloaded.series {
+		nextSet.series[sIdx].lset = s.lset
+		nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
 		seriesChunkIdx := 0
 
 		for _, chunksRange := range s.chunksRanges {
-			rangeChunks := nextSet.series[i].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
+			rangeChunks := nextSet.series[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
 			initializeChunks(chunksRange, rangeChunks)
 			if cachedRange, ok := cachedRanges[toCacheKey(chunksRange)]; ok {
 				if err := parseChunksRange(cachedRange, rangeChunks); err != nil {
@@ -417,7 +417,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 					seriesChunkIdx++
 					continue
 				}
-				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx, chunk.length)
+				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), sIdx, seriesChunkIdx, chunk.length)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
 					return false
