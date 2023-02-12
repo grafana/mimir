@@ -243,7 +243,11 @@ func saveChunk(b []byte, chunksPool *pool.SafeSlabPool[byte]) []byte {
 }
 
 type loadIdx struct {
-	offset, length uint32
+	offset uint32
+	// length is the estimated length of the chunk in the segment file.
+	// If the length is overestimated, the unnecessary bytes will be discarded.
+	// If the length is underestimated, the chunk will be refetched with the correct length.
+	length uint32
 	// Indices, not actual entries and chunks.
 	seriesEntry int
 	chunk       int
