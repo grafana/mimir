@@ -13,7 +13,6 @@ import (
 	"hash/crc32"
 	"io"
 	"sort"
-	"time"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
@@ -112,8 +111,6 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPoo
 // because part and pIdxs is only read, and different calls are expected to write to
 // different chunks in the res.
 func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
-	fetchBegin := time.Now()
-
 	// Get a reader for the required range.
 	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
 	if err != nil {
@@ -127,9 +124,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	localStats := queryStats{}
 	defer stats.merge(&localStats)
 
-	localStats.chunksFetchCount++
 	localStats.chunksFetched += len(pIdxs)
-	localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
 
 	var (
@@ -187,8 +182,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 			continue
 		}
 
-		fetchBegin = time.Now()
-
 		// Read entire chunk into new buffer.
 		// TODO: readChunkRange call could be avoided for any chunk but last in this particular part.
 		nb, err := r.block.readChunkRange(ctx, seq, int64(pIdx.offset), int64(chunkLen), []byteRange{{offset: 0, length: chunkLen}})
@@ -200,7 +193,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		}
 
 		localStats.chunksRefetched++
-		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 		localStats.chunksRefetchedSizeSum += len(*nb)
 		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
