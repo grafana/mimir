@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -928,7 +929,7 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 					}
 
 					// Run test
-					set := newLoadingSeriesChunksSetIterator(context.Background(), "tenant", chunksCache, *readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats(), minT, maxT)
+					set := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", chunksCache, *readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats(), minT, maxT)
 					loadedSets := readAllSeriesChunksSets(set)
 
 					// Assertions
@@ -1009,7 +1010,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(context.Background(), "tenant", newInMemoryChunksCache(), *chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats, 0, 10000)
+				it := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", newInMemoryChunksCache(), *chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats, 0, 10000)
 
 				actualSeries := 0
 				actualChunks := 0
