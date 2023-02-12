@@ -18,13 +18,13 @@ Params:
 -}}
 
 {{- if $autoscaling.enabled -}}
-apiVersion: {{ include "mimir.hpa.version" . }}
+apiVersion: {{ include "mimir.hpa.version" $.ctx }}
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "mimir.labels" $args | nindent 4 -}}
-  namespace: {{ .Release.Namespace | quote }}
+    {{- include "mimir.labels" $args | nindent 4 }}
+  namespace: {{ $.ctx.Release.Namespace | quote }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -36,7 +36,7 @@ spec:
   minReplicas: {{ $autoscaling.minReplicas }}
   {{- end }}
   maxReplicas: {{ $autoscaling.maxReplicas }}
-  {{- if eq (include "mimir.hpa.version" .) "autoscaling/v2" -}}
+  {{- if eq (include "mimir.hpa.version" $.ctx) "autoscaling/v2" }}
   metrics:
     {{- if $autoscaling.averageMemoryUtilization }}
     - type: Resource
