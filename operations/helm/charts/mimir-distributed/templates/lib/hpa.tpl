@@ -10,18 +10,21 @@ Params:
 */}}
 {{- define "mimir.lib.horizontalPodAutoscaler" -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
-{{- $hpa := $componentSection.hpa -}}
+{{- $autoscaling := $componentSection.autoscaling -}}
 {{- $args := dict "ctx" $.ctx "component" $.component -}}
 {{- $name := (and (eq ($.zoneAware | toString) "true") (ne ($.zoneName | toString) "")) | ternary
   (printf "%s-%s" (include "mimir.resourceName" $args) $.zoneName)
   (include "mimir.resourceName" $args)
 -}}
 
-{{- if $hpa.enabled -}}
+{{- if $autoscaling.enabled -}}
 apiVersion: {{ include "mimir.hpa.version" . }}
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ $name }}-hpa
+  name: {{ $name }}
+  labels:
+    {{- include "mimir.labels" $args | nindent 4 -}}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -30,42 +33,42 @@ spec:
   {{- if and $.zoneAware (ne ($.zoneName | toString) "") }}
   minReplicas: {{ $.rolloutZone.replicas }}
   {{- else }}
-  minReplicas: {{ $hpa.minReplicas }}
+  minReplicas: {{ $autoscaling.minReplicas }}
   {{- end }}
-  maxReplicas: {{ $hpa.maxReplicas }}
+  maxReplicas: {{ $autoscaling.maxReplicas }}
   {{- if eq (include "mimir.hpa.version" .) "autoscaling/v2" -}}
   metrics:
-    {{- if $hpa.averageMemoryUtilization }}
+    {{- if $autoscaling.averageMemoryUtilization }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ $hpa.averageMemoryUtilization }}
+          averageUtilization: {{ $autoscaling.averageMemoryUtilization }}
     {{- end }}
-    {{- if $hpa.averageCpuUtilization }}
+    {{- if $autoscaling.averageCpuUtilization }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $hpa.averageCpuUtilization }}
+          averageUtilization: {{ $autoscaling.averageCpuUtilization }}
     {{- end }}
   behavior:
-    {{- toYaml $hpa.behavior | nindent 4 -}}
+    {{- toYaml $autoscaling.behavior | nindent 4 -}}
   {{- else -}}
   metrics:
-    {{- if $hpa.averageMemoryUtilization }}
+    {{- if $autoscaling.averageMemoryUtilization }}
     - type: Resource
       resource:
         name: memory
-        targetAverageUtilization: {{ $hpa.averageMemoryUtilization }}
+        targetAverageUtilization: {{ $autoscaling.averageMemoryUtilization }}
     {{- end }}
-    {{- if $hpa.averageCpuUtilization }}
+    {{- if $autoscaling.averageCpuUtilization }}
     - type: Resource
       resource:
         name: cpu
-        targetAverageUtilization: {{ $hpa.averageCpuUtilization }}
+        targetAverageUtilization: {{ $autoscaling.averageCpuUtilization }}
     {{- end }}
   {{- end -}}
 {{- end -}}

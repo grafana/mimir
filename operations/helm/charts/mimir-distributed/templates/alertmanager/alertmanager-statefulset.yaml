@@ -15,7 +15,7 @@ metadata:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.alertmanager.hpa.enabled }}
+  {{- if not .Values.alertmanager.autoscaling.enabled }}
   replicas: {{ $rolloutZone.replicas }}
   {{- end }}
   selector:

@@ -43,12 +43,12 @@ distributor:
         stabilizationWindowSeconds: 180
 ```
 
-> **Note**: Enabling the HPA for a given component will cause it's `replicas` field to be ignored. Instead, the number of pods are controlled using `hpa.minReplicas` and `hpa.maxReplicas`.
+> **Note**: Enabling the HPA for a given component will cause it's `replicas` field to be ignored. Instead, the number of pods are controlled using `autoscaling.minReplicas` and `autoscaling.maxReplicas`.
 
 ## Using autoscaling with zone-aware replication
 
-When autoscaling is enabled for a component that supports zone-aware replication, such as the alertmanger, ingester, and store-gateway, individual HPAs will be deployed for each zone. The minimum replicas per zone will then be adjusted as `ceil(hpa.minReplicas) / number_of_zones)` to ensure an even spread of resources across each zone at the minimum level.
+When autoscaling is enabled for a component that supports zone-aware replication, such as the alertmanger, ingester, and store-gateway, individual HPAs will be deployed for each zone. The minimum replicas per zone will then be adjusted as `ceil(autoscaling.minReplicas) / number_of_zones)` to ensure an even spread of resources across each zone at the minimum level.
 
-> E.g. if `hpa.minReplicas` is set to 4 and there are 3 zones, then 4/3=1.33, and rounding up gives us a new `minReplicas` value of 2 pods per zone.
+> E.g. if `autoscaling.minReplicas` is set to 4 and there are 3 zones, then 4/3=1.33, and rounding up gives us a new `minReplicas` value of 2 pods per zone.
 
 The value of `maxReplicas` is taken as is.

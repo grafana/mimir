@@ -384,17 +384,20 @@ alertmanager:
   # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
-  # Ignored if alertmanager.hpa.enabled=true
+  # Ignored if alertmanager.autoscaling.enabled=true
   replicas: 1
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   statefulSet:
@@ -618,15 +621,18 @@ alertmanager:
       extraAffinity: {}
 
 distributor:
-  # Ignored if distributor.hpa.enabled=true
+  # Ignored if distributor.autoscaling.enabled=true
   replicas: 1
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -706,17 +712,20 @@ ingester:
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
-  # Ignored if ingester.hpa.enabled=true
+  # Ignored if ingester.autoscaling.enabled=true
   replicas: 3
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 3
     maxReplicas: 9
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   statefulSet:
@@ -1060,15 +1069,18 @@ ruler:
   extraEnvFrom: []
 
 querier:
-  # Ignored if querier.hpa.enabled=true
+  # Ignored if querier.autoscaling.enabled=true
   replicas: 2
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -1144,15 +1156,18 @@ querier:
   extraEnvFrom: []
 
 query_frontend:
-  # Ignored if query_frontend.hpa.enabled=true
+  # Ignored if query_frontend.autoscaling.enabled=true
   replicas: 1
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -1230,15 +1245,18 @@ query_frontend:
 query_scheduler:
   enabled: true
 
-  # Ignored if query_scheduler.hpa.enabled=true
+  # Ignored if query_scheduler.autoscaling.enabled=true
   replicas: 2
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -1321,17 +1339,20 @@ store_gateway:
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
-  # Ignored if store_gateway.hpa.enabled=true
+  # Ignored if store_gateway.autoscaling.enabled=true
   replicas: 1
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -1510,15 +1531,18 @@ store_gateway:
       extraAffinity: {}
 
 compactor:
-  # Ignored if compactor.hpa.enabled=true
+  # Ignored if compactor.autoscaling.enabled=true
   replicas: 1
 
-  hpa:
+  # -- HorizontalPodAutoscaler
+  autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 60
-    # averageCpuUtilization: 60
+    averageMemoryUtilization: 70
+    # averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
 
   service:
@@ -2318,8 +2342,11 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 70
+    averageMemoryUtilization: 70
+    averageCpuUtilization: 70
+    # -- Provide scaling behavior. Must be on K8s 1.23+ to use this.
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
+    behavior: {}
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy

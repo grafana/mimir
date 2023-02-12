@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.distributor.hpa.enabled }}
+  {{- if not .Values.distributor.autoscaling.enabled }}
   replicas: {{ .Values.distributor.replicas }}
   {{- end }}
   selector:

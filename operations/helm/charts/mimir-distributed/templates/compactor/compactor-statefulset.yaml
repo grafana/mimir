@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.compactor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.compactor.hpa.enabled }}
+  {{- if not .Values.compactor.autoscaling.enabled }}
   replicas: {{ .Values.compactor.replicas }}
   {{- end }}
   selector:

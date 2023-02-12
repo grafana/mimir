@@ -10,7 +10,7 @@ metadata:
     {{- toYaml .Values.alertmanager.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.alertmanager.hpa.enabled }}
+  {{- if not .Values.alertmanager.autoscaling.enabled }}
   replicas: {{ .Values.alertmanager.replicas }}
   {{- end }}
   selector:

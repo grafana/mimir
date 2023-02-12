@@ -472,7 +472,7 @@ which allows us to keep generating everything for the default zone.
 {{- $defaultZone := (dict
   "affinity" $componentSection.affinity
   "nodeSelector" $componentSection.nodeSelector
-  "replicas" ($componentSection.hpa.enabled | ternary $componentSection.hpa.minReplicas $componentSection.replicas)
+  "replicas" ($componentSection.autoscaling.enabled | ternary $componentSection.autoscaling.minReplicas $componentSection.replicas)
   ) -}}
 
 {{- if $componentSection.zoneAwareReplication.enabled -}}
@@ -481,7 +481,7 @@ which allows us to keep generating everything for the default zone.
 {{- fail "When zone-awareness is enabled, you must have at least 3 zones defined." -}}
 {{- end -}}
 
-{{- $requestedReplicas := ($componentSection.hpa.enabled | ternary $componentSection.hpa.minReplicas $componentSection.replicas) -}}
+{{- $requestedReplicas := ($componentSection.autoscaling.enabled | ternary $componentSection.autoscaling.minReplicas $componentSection.replicas) -}}
 {{- if and (has .component (list "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
 {{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
 {{- end -}}

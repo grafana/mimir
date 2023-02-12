@@ -9,7 +9,7 @@ metadata:
   annotations:
     {{- toYaml .Values.query_scheduler.annotations | nindent 4 }}
 spec:
-  {{- if not .Values.query_scheduler.hpa.enabled }}
+  {{- if not .Values.query_scheduler.autoscaling.enabled }}
   replicas: {{ .Values.query_scheduler.replicas }}
   {{- end }}
   selector:

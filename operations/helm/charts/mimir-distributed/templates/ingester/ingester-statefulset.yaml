@@ -14,7 +14,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
-  {{- if or (eq ($rolloutZone.replicas | int) 0) (and (ne ($rolloutZone.replicas | int) 0) (not .Values.ingester.hpa.enabled)) }}
+  {{- if or (eq ($rolloutZone.replicas | int) 0) (and (ne ($rolloutZone.replicas | int) 0) (not .Values.ingester.autoscaling.enabled)) }}
   replicas: {{ $rolloutZone.replicas }}
   {{- end }}
   selector:

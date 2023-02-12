@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.querier.hpa.enabled }}
+  {{- if not .Values.querier.autoscaling.enabled }}
   replicas: {{ .Values.querier.replicas }}
   {{- end }}
   selector:

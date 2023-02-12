@@ -13,7 +13,7 @@ metadata:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.store_gateway.hpa.enabled }}
+  {{- if not .Values.store_gateway.autoscaling.enabled }}
   replicas: {{ $rolloutZone.replicas }}
   {{- end }}
   selector:

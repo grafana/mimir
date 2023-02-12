@@ -94,7 +94,7 @@ There are two use cases in general:
 
 Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 
-> **Note**: The number of alertmanager Pods that will be started is derived from `alertmanager.replicas`. Each zone will start `alertmanager.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `alertmanager.replicas=3` will yield 1 alertmanager per zone, but `alertmanager.replicas=4` will yield 2 per zone, 6 in total. If `alertmanager.hpa.enabled=true`, the same rules apply using `alertmanager.hpa.minReplicas` instead of `alertmanager.replicas`.
+> **Note**: The number of alertmanager Pods that will be started is derived from `alertmanager.replicas`. Each zone will start `alertmanager.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `alertmanager.replicas=3` will yield 1 alertmanager per zone, but `alertmanager.replicas=4` will yield 2 per zone, 6 in total. If `alertmanager.autoscaling.enabled=true`, the same rules apply using `alertmanager.autoscaling.minReplicas` instead of `alertmanager.replicas`.
 
 ### Migrate Alertmanager
 
@@ -205,7 +205,7 @@ There are two use cases in general:
 
 Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 
-> **Note**: The number of store-gateway pods that will be started is derived from `store_gateway.replicas`. Each zone will start `store_gateway.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `store_gateway.replicas=3` will yield 1 store-gateway per zone, but `store_gateway.replicas=4` will yield 2 per zone, 6 in total. If `store_gateway.hpa.enabled=true`, the same rules apply using `store_gateway.hpa.minReplicas` instead of `store_gateway.replicas`.
+> **Note**: The number of store-gateway pods that will be started is derived from `store_gateway.replicas`. Each zone will start `store_gateway.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `store_gateway.replicas=3` will yield 1 store-gateway per zone, but `store_gateway.replicas=4` will yield 2 per zone, 6 in total. If `store_gateway.autoscaling.enabled=true`, the same rules apply using `store_gateway.autoscaling.minReplicas` instead of `store_gateway.replicas`.
 
 ### Decide which migration path to take for store-gateways
 
@@ -363,7 +363,7 @@ There are two use cases in general:
 
 Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 
-> **Note**: The number of ingester pods that will be started is derived from `ingester.replicas`. Each zone will start `ingester.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `ingester.replicas=3` will yield 1 ingester per zone, but `ingester.replicas=4` will yield 2 per zone, 6 in total. If `ingester.hpa.enabled=true`, the same rules apply using `ingester.hpa.minReplicas` instead of `ingester.replicas`.
+> **Note**: The number of ingester pods that will be started is derived from `ingester.replicas`. Each zone will start `ingester.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `ingester.replicas=3` will yield 1 ingester per zone, but `ingester.replicas=4` will yield 2 per zone, 6 in total. If `ingester.autoscaling.enabled=true`, the same rules apply using `ingester.autoscaling.minReplicas` instead of `ingester.replicas`.
 
 ### Decide which migration path to take for ingesters
 
