@@ -540,7 +540,7 @@ func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []stor
 			continue
 		}
 		if writeIdx != i {
-			chks[i], chks[writeIdx] = chks[writeIdx], chks[i]
+			chks[writeIdx] = chks[i]
 		}
 		writeIdx++
 	}
