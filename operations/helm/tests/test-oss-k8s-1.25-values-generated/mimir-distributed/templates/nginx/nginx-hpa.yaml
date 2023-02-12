@@ -1,6 +1,6 @@
 ---
-# Source: mimir-distributed/templates/nginx/nginx-v2beta1-hpa.yaml
-apiVersion: autoscaling/v2beta1
+# Source: mimir-distributed/templates/nginx/nginx-hpa.yaml
+apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: test-oss-k8s-1.25-values-mimir-nginx
@@ -20,5 +20,15 @@ spec:
   metrics:
     - type: Resource
       resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
         name: cpu
-        targetAverageUtilization: 60
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    {}
