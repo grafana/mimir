@@ -7,6 +7,7 @@ package ingester
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,6 +33,23 @@ const (
 	closing                          // Used while closing idle TSDB.
 	closed                           // Used to avoid setting closing back to active in closeAndDeleteIdleUsers method.
 )
+
+func (s tsdbState) String() string {
+	switch s {
+	case active:
+		return "active"
+	case activeShipping:
+		return "activeShipping"
+	case forceCompacting:
+		return "forceCompacting"
+	case closing:
+		return "closing"
+	case closed:
+		return "closed"
+	default:
+		return "unknown"
+	}
+}
 
 // Describes result of TSDB-close check. String is used as metric label.
 type tsdbCloseCheckResult string
@@ -226,22 +244,23 @@ func (u *userTSDB) StartTime() (int64, error) {
 	return u.db.StartTime()
 }
 
-func (u *userTSDB) casState(from, to tsdbState) bool {
+// Atomically compare-and-set state, and return state after the operation.
+func (u *userTSDB) casState(from, to tsdbState) (bool, tsdbState) {
 	u.stateMtx.Lock()
 	defer u.stateMtx.Unlock()
 
 	if u.state != from {
-		return false
+		return false, u.state
 	}
 	u.state = to
-	return true
+	return true, u.state
 }
 
 // compactHead compacts the in-order Head block with the specified block duration and the OOO Head block
 // at the chunk range duration, to avoid having huge blocks.
 func (u *userTSDB) compactHead(blockDuration int64) error {
-	if !u.casState(active, forceCompacting) {
-		return errors.New("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress)")
+	if ok, s := u.casState(active, forceCompacting); !ok {
+		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
 
 	defer u.casState(forceCompacting, active)

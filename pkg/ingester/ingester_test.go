@@ -4482,7 +4482,8 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// We mock a flushing by setting the boolean.
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.True(t, db.casState(active, forceCompacting))
+	ok, _ := db.casState(active, forceCompacting)
+	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
@@ -4491,7 +4492,8 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)
 
 	// Ingestion is successful after a flush.
-	require.True(t, db.casState(forceCompacting, active))
+	ok, _ = db.casState(forceCompacting, active)
+	require.True(t, ok)
 	pushSingleSampleWithMetadata(t, i)
 }
 
