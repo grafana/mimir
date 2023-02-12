@@ -139,11 +139,9 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
-		if chunksConfig.FineGrainedChunksCachingEnabled {
+		if !chunksConfig.FineGrainedChunksCachingEnabled {
 			// When fine-grained caching is enabled, we are caching the chunks ourselves instead of relying on the caching bucket.
 			// In that case we will want to cache the attributes of chunk objects, but not their contents.
-			cfg.CacheAttributes("chunks-attributes", attributesCache, isTSDBChunkFile, chunksConfig.AttributesTTL)
-		} else {
 			cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		}
 	}
