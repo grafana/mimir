@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/dennwc/varint"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -175,6 +177,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 
 func newSeriesSetWithChunks(
 	ctx context.Context,
+	logger log.Logger,
 	userID string,
 	cache chunkscache.Cache,
 	chunkReaders bucketChunkReaders,
@@ -184,7 +187,7 @@ func newSeriesSetWithChunks(
 	minT, maxT int64,
 ) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(ctx, userID, cache, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, logger, userID, cache, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -320,6 +323,7 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 
 type loadingSeriesChunksSetIterator struct {
 	ctx           context.Context
+	logger        log.Logger
 	userID        string
 	cache         chunkscache.Cache
 	chunkReaders  bucketChunkReaders
@@ -334,6 +338,7 @@ type loadingSeriesChunksSetIterator struct {
 
 func newLoadingSeriesChunksSetIterator(
 	ctx context.Context,
+	logger log.Logger,
 	userID string,
 	cache chunkscache.Cache,
 	chunkReaders bucketChunkReaders,
@@ -345,6 +350,7 @@ func newLoadingSeriesChunksSetIterator(
 ) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		ctx:           ctx,
+		logger:        logger,
 		userID:        userID,
 		cache:         cache,
 		chunkReaders:  chunkReaders,
@@ -402,12 +408,13 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 			rangeChunks := nextSet.series[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
 			initializeChunks(chunksRange, rangeChunks)
 			if cachedRange, ok := cachedRanges[toCacheKey(chunksRange)]; ok {
-				if err := parseChunksRange(cachedRange, rangeChunks); err != nil {
-					c.err = errors.Wrap(err, "parsing cached chunks")
-					return false
+				err := parseChunksRange(cachedRange, rangeChunks)
+				if err == nil {
+					seriesChunkIdx += len(chunksRange.refs)
+					continue
 				}
-				seriesChunkIdx += len(chunksRange.refs)
-				continue
+				// we couldn't parse the chunk range form the cache, so we will fetch its chunks from the bucket.
+				level.Warn(c.logger).Log("msg", "parsing cache chunks", "err", err)
 			}
 
 			for _, chunk := range chunksRange.refs {
@@ -504,7 +511,7 @@ func parseChunksRange(rBytes []byte, chunks []storepb.AggrChunk) error {
 		encodingByte := rBytes[n]
 		enc, ok := convertChunkEncoding(encodingByte)
 		if !ok {
-			return fmt.Errorf("unknown encoding (%d), don't know what to do", encodingByte)
+			return fmt.Errorf("unknown chunk encoding (%d)", encodingByte)
 		}
 		chunks[i].Raw.Type = enc
 		chunks[i].Raw.Data = rBytes[n+1 : totalChunkLen]
