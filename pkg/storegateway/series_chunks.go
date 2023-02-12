@@ -588,12 +588,13 @@ func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesC
 	for sIdx, s := range seriesRefs {
 		seriesChunkIdx := 0
 		for _, chunksRange := range s.chunksRanges {
-			if _, ok := cacheHits[toCacheKey(chunksRange)]; ok {
+			cacheKey := toCacheKey(chunksRange)
+			if _, ok := cacheHits[cacheKey]; ok {
 				seriesChunkIdx += len(chunksRange.refs)
 				continue
 			}
 			rangeChunks := seriesChunks[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
-			toStore[toCacheKey(chunksRange)] = encodeChunksForCache(rangeChunks)
+			toStore[cacheKey] = encodeChunksForCache(rangeChunks)
 
 			seriesChunkIdx += len(chunksRange.refs)
 		}
