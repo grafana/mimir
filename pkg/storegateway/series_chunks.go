@@ -436,7 +436,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		return false
 	}
 	if c.cache != nil {
-		c.storeRanges(nextUnloaded.series, nextSet.series, cachedRanges)
+		c.storeRangesInCache(nextUnloaded.series, nextSet.series, cachedRanges)
 	}
 
 	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
@@ -573,7 +573,7 @@ func encodeChunksForCache(chunks []storepb.AggrChunk) []byte {
 	return encoded
 }
 
-func (c *loadingSeriesChunksSetIterator) storeRanges(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, ranges map[chunkscache.Range][]byte) {
+func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, ranges map[chunkscache.Range][]byte) {
 	numRanges := 0
 	for _, s := range seriesRefs {
 		for _, chunksRange := range s.chunksRanges {
