@@ -803,7 +803,7 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 			{
 				existingBlocks: []testBlock{},
 				setsToLoad: []seriesChunkRefsSet{
-					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 1), block1.toSeriesChunkRefs(2)}},
+					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
 					{series: []seriesEntry{block1.series[0], block1.series[2]}},
@@ -815,7 +815,7 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 			{
 				existingBlocks: []testBlock{block1},
 				setsToLoad: []seriesChunkRefsSet{
-					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 1), block1.toSeriesChunkRefs(2)}},
+					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
 					{series: []seriesEntry{block1.series[0], block1.series[2]}},
@@ -954,12 +954,6 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 						s.release()
 					}
 
-					// TODO dimitarvdimitrov this is commented out because we don't use the bytes pool when reading from the cache
-					//if testCase.expectedErr != "" {
-					//	assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
-					//} else {
-					//	assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
-					//}
 					assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Balance.Load())
 					assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
 					assert.Greater(t, seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
