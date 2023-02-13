@@ -13,14 +13,14 @@ func (j jsonFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
 	return json.Marshal(resp)
 }
 
-func (j jsonFormat) DecodeResponse(buf []byte) (PrometheusResponse, error) {
+func (j jsonFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp PrometheusResponse
 
 	if err := json.Unmarshal(buf, &resp); err != nil {
-		return PrometheusResponse{}, err
+		return nil, err
 	}
 
-	return resp, nil
+	return &resp, nil
 }
 
 func (j jsonFormat) Name() string {

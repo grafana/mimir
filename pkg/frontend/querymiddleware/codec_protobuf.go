@@ -21,29 +21,29 @@ func (f protobufFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error)
 	panic("not yet implemented")
 }
 
-func (f protobufFormat) DecodeResponse(buf []byte) (PrometheusResponse, error) {
+func (f protobufFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp mimirpb.QueryResponse
 
 	if err := resp.Unmarshal(buf); err != nil {
-		return PrometheusResponse{}, err
+		return nil, err
 	}
 
 	status, err := resp.Status.ToPrometheusString()
 	if err != nil {
-		return PrometheusResponse{}, err
+		return nil, err
 	}
 
 	errorType, err := resp.ErrorType.ToPrometheusString()
 	if err != nil {
-		return PrometheusResponse{}, err
+		return nil, err
 	}
 
 	data, err := f.decodeData(resp)
 	if err != nil {
-		return PrometheusResponse{}, err
+		return nil, err
 	}
 
-	return PrometheusResponse{
+	return &PrometheusResponse{
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,

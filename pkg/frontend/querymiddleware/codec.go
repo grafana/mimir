@@ -151,7 +151,7 @@ type prometheusCodec struct {
 
 type format interface {
 	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
-	DecodeResponse([]byte) (PrometheusResponse, error)
+	DecodeResponse([]byte) (*PrometheusResponse, error)
 	Name() string
 }
 
@@ -383,7 +383,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusResponseHeader{Name: h, Values: hv})
 	}
-	return &resp, nil
+	return resp, nil
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
