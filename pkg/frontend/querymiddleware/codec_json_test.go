@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func TestJSONResponseRoundtrip(t *testing.T) {
+func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
 	expectedRespHeaders := []*PrometheusResponseHeader{
 		{

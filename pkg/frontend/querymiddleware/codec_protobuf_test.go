@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func TestProtobufFormat_EncodeResponse(t *testing.T) {
+func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
 	expectedRespHeaders := []*PrometheusResponseHeader{
 		{
