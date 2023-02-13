@@ -167,7 +167,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, Config{QueryResultPayloadFormat: formatJSON})
+			codec := NewPrometheusCodec(reg, formatJSON)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)

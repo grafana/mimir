@@ -443,7 +443,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, Config{QueryResultPayloadFormat: formatProtobuf})
+			codec := NewPrometheusCodec(reg, formatProtobuf)
 
 			body, err := tc.resp.Marshal()
 			require.NoError(t, err)

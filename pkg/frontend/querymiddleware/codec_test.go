@@ -110,7 +110,7 @@ func TestRequest(t *testing.T) {
 func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), Config{QueryResultPayloadFormat: queryResultPayloadFormat})
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
 			encodedRequest, err := codec.EncodeRequest(context.Background(), &req)
 			require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, Config{QueryResultPayloadFormat: formatJSON})
+			codec := NewPrometheusCodec(reg, formatJSON)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -670,5 +670,5 @@ func Test_DecodeOptions(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), Config{QueryResultPayloadFormat: formatJSON})
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatJSON)
 }
