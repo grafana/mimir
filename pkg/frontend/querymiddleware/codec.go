@@ -149,13 +149,13 @@ type prometheusCodec struct {
 	preferredQueryResultResponseFormat string
 }
 
-type format interface {
+type formatter interface {
 	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
 	DecodeResponse([]byte) (*PrometheusResponse, error)
 	Name() string
 }
 
-var knownFormats = map[string]format{
+var knownFormats = map[string]formatter{
 	jsonMimeType:                  jsonFormat{},
 	mimirpb.QueryResponseMimeType: protobufFormat{},
 }
