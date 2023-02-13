@@ -107,7 +107,7 @@ func TestRequest(t *testing.T) {
 	}
 }
 
-func TestEncodeRequest_AcceptHeader(t *testing.T) {
+func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), Config{QueryResultPayloadFormat: queryResultPayloadFormat})
@@ -182,7 +182,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	})
 }
 
-func TestDecodeResponse_ContentTypeHandling(t *testing.T) {
+func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		responseHeaders http.Header
