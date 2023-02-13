@@ -121,7 +121,7 @@ func TestEncodeRequest_AcceptHeader(t *testing.T) {
 			case formatProtobuf:
 				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", encodedRequest.Header.Get("Accept"))
 			default:
-				panic(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
+				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
 			}
 		})
 	}
