@@ -252,11 +252,11 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -326,11 +326,11 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -861,8 +861,8 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 	}
 }
 
-// FromLabelPairsToLabels converts dto.LabelPair into labels.Labels.
-func FromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
+// fromLabelPairsToLabels converts dto.LabelPair into labels.Labels.
+func fromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
 	builder := labels.NewBuilder(nil)
 	for _, pair := range pairs {
 		builder.Set(pair.GetName(), pair.GetValue())
@@ -870,9 +870,9 @@ func FromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
 	return builder.Labels(nil)
 }
 
-// GetSumOfHistogramSampleCount returns the sum of samples count of histograms matching the provided metric name
+// getSumOfHistogramSampleCount returns the sum of samples count of histograms matching the provided metric name
 // and optional label matchers. Returns 0 if no metric matches.
-func GetSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName string, matchers labels.Selector) uint64 {
+func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName string, matchers labels.Selector) uint64 {
 	sum := uint64(0)
 
 	for _, metric := range families {
@@ -885,7 +885,7 @@ func GetSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 		}
 
 		for _, series := range metric.GetMetric() {
-			if !matchers.Matches(FromLabelPairsToLabels(series.GetLabel())) {
+			if !matchers.Matches(fromLabelPairsToLabels(series.GetLabel())) {
 				continue
 			}
 
