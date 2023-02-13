@@ -208,7 +208,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 						BlocksStorageFlags(),
 						BlocksStorageS3Flags(),
 						map[string]string{
-							"-query-frontend.query-result-payload-format": format,
+							"-query-frontend.query-result-response-format": format,
 						},
 					)
 
