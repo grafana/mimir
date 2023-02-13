@@ -35,11 +35,19 @@ spec:
           {{ toYaml .Values.alertmanager.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
+        {{- if $rolloutZone.storageClass}}
+        {{- if (eq "-" $rolloutZone.storageClass) }}
+        storageClassName: {{ .Values.alertmanager.persistentVolume.storageClass }}
+        {{- else }}
+        storageClassName: {{ $rolloutZone.storageClass }}
+        {{- end }}
+        {{- else }}
         {{- if .Values.alertmanager.persistentVolume.storageClass }}
         {{- if (eq "-" .Values.alertmanager.persistentVolume.storageClass) }}
         storageClassName: ""
         {{- else }}
         storageClassName: "{{ .Values.alertmanager.persistentVolume.storageClass }}"
+        {{- end }}
         {{- end }}
         {{- end }}
         accessModes:
