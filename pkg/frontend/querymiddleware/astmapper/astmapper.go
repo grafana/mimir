@@ -156,7 +156,15 @@ func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
 		e.Expr = mapped
 		return e, nil
 
-	case *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector, *parser.MatrixSelector:
+	case *parser.MatrixSelector:
+		mapped, err := em.Map(e.VectorSelector)
+		if err != nil {
+			return nil, err
+		}
+		e.VectorSelector = mapped
+		return e, nil
+
+	case *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return e, nil
 
 	default:

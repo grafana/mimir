@@ -45,3 +45,7 @@ func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string, opts ...
 func (t SpanlessTracingCache) Name() string {
 	return t.c.Name()
 }
+
+func (t SpanlessTracingCache) Delete(ctx context.Context, key string) error {
+	return t.c.Delete(ctx, key)
+}

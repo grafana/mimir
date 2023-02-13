@@ -281,6 +281,19 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		# TYPE cortex_alertmanager_state_persist_total counter
 		cortex_alertmanager_state_persist_total 0
 
+		# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
+		# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
+		cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user1"} 2
+		cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user2"} 20
+		cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user3"} 200
+		# HELP cortex_alertmanager_dispatcher_aggregation_groups Number of active aggregation groups
+		# TYPE cortex_alertmanager_dispatcher_aggregation_groups gauge
+		cortex_alertmanager_dispatcher_aggregation_groups 111
+		# HELP cortex_alertmanager_dispatcher_alert_processing_duration_seconds Summary of latencies for the processing of alerts.
+		# TYPE cortex_alertmanager_dispatcher_alert_processing_duration_seconds summary
+		cortex_alertmanager_dispatcher_alert_processing_duration_seconds_sum 111
+		cortex_alertmanager_dispatcher_alert_processing_duration_seconds_count 3
+
 		# HELP cortex_alertmanager_alerts_limiter_current_alerts Number of alerts tracked by alerts limiter.
 		# TYPE cortex_alertmanager_alerts_limiter_current_alerts gauge
 		cortex_alertmanager_alerts_limiter_current_alerts{user="user1"} 10
@@ -580,6 +593,19 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 						# TYPE cortex_alertmanager_state_persist_total counter
 						cortex_alertmanager_state_persist_total 0
 
+						# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
+						# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
+						cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user1"} 2
+						cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user2"} 20
+						cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user3"} 200
+						# HELP cortex_alertmanager_dispatcher_aggregation_groups Number of active aggregation groups
+						# TYPE cortex_alertmanager_dispatcher_aggregation_groups gauge
+						cortex_alertmanager_dispatcher_aggregation_groups 111
+						# HELP cortex_alertmanager_dispatcher_alert_processing_duration_seconds Summary of latencies for the processing of alerts.
+						# TYPE cortex_alertmanager_dispatcher_alert_processing_duration_seconds summary
+						cortex_alertmanager_dispatcher_alert_processing_duration_seconds_sum 111
+						cortex_alertmanager_dispatcher_alert_processing_duration_seconds_count 3
+
 						# HELP cortex_alertmanager_alerts_limiter_current_alerts Number of alerts tracked by alerts limiter.
 						# TYPE cortex_alertmanager_alerts_limiter_current_alerts gauge
 						cortex_alertmanager_alerts_limiter_current_alerts{user="user1"} 10
@@ -828,6 +854,18 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 			# TYPE cortex_alertmanager_state_persist_total counter
 			cortex_alertmanager_state_persist_total 0
 
+			# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
+			# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
+			cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user1"} 2
+			cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total{user="user2"} 20
+			# HELP cortex_alertmanager_dispatcher_aggregation_groups Number of active aggregation groups
+			# TYPE cortex_alertmanager_dispatcher_aggregation_groups gauge
+			cortex_alertmanager_dispatcher_aggregation_groups 11
+			# HELP cortex_alertmanager_dispatcher_alert_processing_duration_seconds Summary of latencies for the processing of alerts.
+			# TYPE cortex_alertmanager_dispatcher_alert_processing_duration_seconds summary
+			cortex_alertmanager_dispatcher_alert_processing_duration_seconds_sum 111
+			cortex_alertmanager_dispatcher_alert_processing_duration_seconds_count 3
+
 			# HELP cortex_alertmanager_alerts_limiter_current_alerts Number of alerts tracked by alerts limiter.
 			# TYPE cortex_alertmanager_alerts_limiter_current_alerts gauge
 			cortex_alertmanager_alerts_limiter_current_alerts{user="user1"} 10
@@ -889,6 +927,11 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	v2APIMetrics.firing.Add(base * 2)
 	v2APIMetrics.invalid.Add(base)
 	v2APIMetrics.resolved.Add(base * 3)
+
+	dm := newDispatcherMetrics(reg)
+	dm.aggrGroups.Set(base)
+	dm.processingDuration.Observe(base)
+	dm.aggrGroupLimitReached.Add(base * 2)
 
 	lm := newLimiterMetrics(reg)
 	lm.count.Set(10 * base)
@@ -1096,6 +1139,36 @@ func newAPIMetrics(version string, r prometheus.Registerer) *apiMetrics {
 		firing:   numReceivedAlerts.WithLabelValues("firing"),
 		resolved: numReceivedAlerts.WithLabelValues("resolved"),
 		invalid:  numInvalidAlerts,
+	}
+}
+
+// Copied from github.com/alertmanager/dispatch/dispatch.go
+type dispatcherMetrics struct {
+	aggrGroups            prometheus.Gauge
+	processingDuration    prometheus.Summary
+	aggrGroupLimitReached prometheus.Counter
+}
+
+func newDispatcherMetrics(r prometheus.Registerer) *dispatcherMetrics {
+	return &dispatcherMetrics{
+		aggrGroups: promauto.With(r).NewGauge(
+			prometheus.GaugeOpts{
+				Name: "alertmanager_dispatcher_aggregation_groups",
+				Help: "Number of active aggregation groups",
+			},
+		),
+		processingDuration: promauto.With(r).NewSummary(
+			prometheus.SummaryOpts{
+				Name: "alertmanager_dispatcher_alert_processing_duration_seconds",
+				Help: "Summary of latencies for the processing of alerts.",
+			},
+		),
+		aggrGroupLimitReached: promauto.With(r).NewCounter(
+			prometheus.CounterOpts{
+				Name: "alertmanager_dispatcher_aggregation_group_limit_reached_total",
+				Help: "Number of times when dispatcher failed to create new aggregation group due to limit.",
+			},
+		),
 	}
 }
 

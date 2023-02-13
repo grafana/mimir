@@ -37,9 +37,10 @@ const shardingTimeout = 10 * time.Second
 type querySharding struct {
 	limit Limits
 
-	engine *promql.Engine
-	next   Handler
-	logger log.Logger
+	engine            *promql.Engine
+	next              Handler
+	logger            log.Logger
+	maxSeriesPerShard uint64
 
 	queryShardingMetrics
 }
@@ -61,6 +62,7 @@ func newQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	limit Limits,
+	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
 ) Middleware {
 	metrics := queryShardingMetrics{
@@ -89,6 +91,7 @@ func newQueryShardingMiddleware(
 			engine:               engine,
 			logger:               logger,
 			limit:                limit,
+			maxSeriesPerShard:    maxSeriesPerShard,
 		}
 	})
 }
@@ -269,6 +272,22 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 
 	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
+
+	if v, ok := hints.GetCardinalityEstimate().(*Hints_EstimatedSeriesCount); ok && s.maxSeriesPerShard > 0 {
+		prevTotalShards := totalShards
+		// If an estimate for query cardinality is available, use it to limit the number
+		// of shards based on linear interpolation.
+		totalShards = util_math.Min(totalShards, int(v.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
+
+		if prevTotalShards != totalShards {
+			level.Debug(spanLog).Log(
+				"msg", "number of shards has been adjusted to match the estimated series count",
+				"updated total shards", totalShards,
+				"previous total shards", prevTotalShards,
+				"estimated series count", v.EstimatedSeriesCount,
+			)
+		}
+	}
 
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.

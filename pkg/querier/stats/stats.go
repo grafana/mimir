@@ -155,6 +155,22 @@ func (s *Stats) LoadSplitQueries() uint32 {
 	return atomic.LoadUint32(&s.SplitQueries)
 }
 
+func (s *Stats) AddEstimatedSeriesCount(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.EstimatedSeriesCount, c)
+}
+
+func (s *Stats) LoadEstimatedSeriesCount() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.EstimatedSeriesCount)
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
@@ -168,6 +184,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddShardedQueries(other.LoadShardedQueries())
 	s.AddSplitQueries(other.LoadSplitQueries())
 	s.AddFetchedIndexBytes(other.LoadFetchedIndexBytes())
+	s.AddEstimatedSeriesCount(other.LoadEstimatedSeriesCount())
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {

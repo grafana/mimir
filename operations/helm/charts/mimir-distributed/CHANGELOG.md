@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 4.1.0
+
 * [CHANGE] Configured `max_total_query_length: 12000h` limit to match Mimir jsonnet-based deployment. #3879
 * [ENHANCEMENT] Enable users to specify additional Kubernetes resource manifests using the `extraObjects` variable. #4102
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
@@ -40,6 +42,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851
 * [BUGFIX] Use alertmanager headless service in `gateway` NGINX configuration. #3851
 * [BUGFIX] Use `50Gi` persistent volume for ingesters in `capped-small.yaml`. #3919
+* [BUGFIX] Set server variables in NGINX configuration so that IP addresses are re-resolved when TTLs expire. #4124
+* [BUGFIX] Do not include namespace for the PodSecurityPolicy definition as it is not needed and some tools reject it outright. #4164
 
 ## 4.0.1
 

@@ -9,6 +9,7 @@
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
+* [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121 #4177 #4188
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
@@ -16,19 +17,26 @@
 * [ENHANCEMENT] Store-gateway: add `data_type` label with values on `cortex_bucket_store_partitioner_extended_ranges_total`, `cortex_bucket_store_partitioner_expanded_ranges_total`, `cortex_bucket_store_partitioner_requested_ranges_total`, `cortex_bucket_store_partitioner_expanded_bytes_total`, `cortex_bucket_store_partitioner_requested_bytes_total` for `postings`, `series`, and `chunks`. #4095
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
 * [ENHANCEMENT] Query-frontend: track `cortex_frontend_query_response_codec_duration_seconds` and `cortex_frontend_query_response_codec_payload_bytes` metrics to measure the time taken and bytes read / written while encoding and decoding query result payloads. #4110
+* [ENHANCEMENT] Alertmanager: expose additional upstream metrics `cortex_alertmanager_dispatcher_aggregation_groups`, `cortex_alertmanager_dispatcher_alert_processing_duration_seconds`. #4151
 * [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4153
+* [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. #4163 #4174
+* [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
+* [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
+* [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
 * [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 * [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
+* [BUGFIX] Ingester: compact out-of-order data during `/ingester/flush` or when TSDB is idle. #4180
 
 ### Mixin
 
 * [CHANGE] Move auto-scaling panel rows down beneath logical network path in Reads and Writes dashboards. #4049
+* [CHANGE] Make distributor auto-scaling metric panels show desired number of replicas. #4218
 * [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
-* [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049
+* [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049 #4216
 * [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
@@ -45,6 +53,12 @@
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+
+### Tools
+
+* [ENHANCEMENT] Adapt tsdb-print-chunk for native histograms. #4186
+* [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #4186
+* [ENHANCEMENT] Adapt tsdb-chunks tool to handle native histograms. #4186
 
 ## 2.6.0
 

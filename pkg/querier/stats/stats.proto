@@ -30,4 +30,6 @@ message Stats {
   uint32 split_queries = 6;
   // The number of index bytes fetched on the store-gateway for the query
   uint64 fetched_index_bytes = 7;
+  // The estimated number of series to be fetched for the query
+  uint64 estimated_series_count = 8;
 }
