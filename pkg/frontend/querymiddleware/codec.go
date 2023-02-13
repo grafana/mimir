@@ -145,8 +145,8 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 }
 
 type prometheusCodec struct {
-	metrics               *prometheusCodecMetrics
-	requestProtobufFormat bool
+	metrics                            *prometheusCodecMetrics
+	preferredQueryResultResponseFormat string
 }
 
 type format interface {
@@ -162,8 +162,8 @@ var knownFormats = map[string]format{
 
 func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
 	return prometheusCodec{
-		metrics:               newPrometheusCodecMetrics(registerer),
-		requestProtobufFormat: queryResultResponseFormat == formatProtobuf,
+		metrics:                            newPrometheusCodecMetrics(registerer),
+		preferredQueryResultResponseFormat: queryResultResponseFormat,
 	}
 }
 
@@ -328,10 +328,13 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		Header:     http.Header{},
 	}
 
-	if c.requestProtobufFormat {
-		req.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
-	} else {
+	switch c.preferredQueryResultResponseFormat {
+	case formatJSON:
 		req.Header.Set("Accept", jsonMimeType)
+	case formatProtobuf:
+		req.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
+	default:
+		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
 	return req.WithContext(ctx), nil
