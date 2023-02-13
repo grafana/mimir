@@ -76,83 +76,210 @@ func runLimiterMaxFunctionTest(
 		ringZoneAwarenessEnabled bool
 		ringIngesterCount        int
 		ringZonesCount           int
+		ingestersInZoneCount     int
 		shardSize                int
 		expectedValue            int
 	}{
-		"limit is disabled": {
+		"zone-awareness disabled, limit is disabled": {
 			globalLimit:           0,
 			ringReplicationFactor: 1,
 			ringIngesterCount:     1,
-			ringZonesCount:        1,
 			expectedValue:         math.MaxInt32,
 		},
-		"limit is enabled with replication-factor=1, shard size 0": {
+		"zone-awareness disabled, limit is enabled with replication-factor=1, shard size 0": {
 			globalLimit:           1000,
 			ringReplicationFactor: 1,
 			ringIngesterCount:     10,
-			ringZonesCount:        1,
 			shardSize:             0,
-			expectedValue:         100,
+			expectedValue:         100, // (1000 / 10 ingesters)
 		},
-		"limit is enabled with replication-factor=1, shard size 5": {
+		"zone-awareness disabled, limit is enabled with replication-factor=1, shard size 5": {
 			globalLimit:           1000,
 			ringReplicationFactor: 1,
 			ringIngesterCount:     10,
-			ringZonesCount:        1,
 			shardSize:             5,
-			expectedValue:         200,
+			expectedValue:         200, // (1000 / 5 ingesters from the shard)
 		},
-		"limit is enabled with replication-factor=3, shard size 0": {
+		"zone-awareness disabled, limit is enabled with replication-factor=3, shard size 0": {
 			globalLimit:           1000,
 			ringReplicationFactor: 3,
 			ringIngesterCount:     10,
-			ringZonesCount:        1,
 			shardSize:             0,
-			expectedValue:         300,
+			expectedValue:         300, // (1000 / 10 ingesters) * 3 replication factor
 		},
-		"limit is enabled with replication-factor=3, shard size 5": {
+		"zone-awareness disabled, limit is enabled with replication-factor=3, shard size 5": {
 			globalLimit:           1000,
 			ringReplicationFactor: 3,
 			ringIngesterCount:     10,
-			ringZonesCount:        1,
 			shardSize:             5,
-			expectedValue:         600,
+			expectedValue:         600, // (1000 / 5 ingesters from the shard) * 3 replication factor
 		},
-		"zone-awareness enabled, limit enabled and the shard size is 0": {
+		"zone-awareness disabled, limit is enabled with replication-factor=3 and the shard size > number of ingesters": {
+			globalLimit:           1000,
+			ringReplicationFactor: 3,
+			ringIngesterCount:     10,
+			shardSize:             20,  // Greater than number of ingesters.
+			expectedValue:         300, // (1000 / 10 ingesters) * 3 replication factor
+		},
+
+		"zone-awareness enabled, limit is disabled": {
+			globalLimit:              0,
+			ringReplicationFactor:    1,
+			ringIngesterCount:        1,
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     1,
+			expectedValue:            math.MaxInt32,
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, all ingesters up and running, and shard size 0": {
 			globalLimit:              900,
 			ringReplicationFactor:    3,
-			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
+			ringZoneAwarenessEnabled: true,
 			ringZonesCount:           3,
+			ingestersInZoneCount:     3, // 9 ingesters / 3 zones
 			shardSize:                0,
-			expectedValue:            300,
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
 		},
-		"zone-awareness enabled, limit enabled and the shard size is NOT divisible by number of zones": {
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in this zone, and shard size 0": {
 			globalLimit:              900,
 			ringReplicationFactor:    3,
+			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardSize:                5,   // Not divisible by number of zones.
-			expectedValue:            450, // (900 / 6) * 3
+			ingestersInZoneCount:     2, // in this zone ingesters are scaled down from 3 to 2
+			shardSize:                0,
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
 		},
-		"zone-awareness enabled, limit enabled and the shard size is divisible by number of zones": {
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in another zone, and shard size 0": {
 			globalLimit:              900,
 			ringReplicationFactor:    3,
+			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardSize:                6,   // Divisible by number of zones.
-			expectedValue:            450, // (900 / 6) * 3
+			ingestersInZoneCount:     3, // in this zone ingesters are NOT scaled down
+			shardSize:                0,
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
 		},
-		"zone-awareness enabled, limit enabled and the shard size > number of ingesters": {
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in this zone, and shard size 0": {
 			globalLimit:              900,
 			ringReplicationFactor:    3,
+			ringIngesterCount:        10, // ingesters are scaled up from 9 to 10
 			ringZoneAwarenessEnabled: true,
-			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardSize:                20, // Greater than number of ingesters.
-			expectedValue:            300,
+			ingestersInZoneCount:     4, // in this zone ingesters are scaled up from 3 to 4
+			shardSize:                0,
+			expectedValue:            225, // (900 / 3 zones / 4 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in another zone, and shard size 0": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        10, // ingesters are scaled up from 9 to 10
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3, // in this zone ingesters are NOT scaled up
+			shardSize:                0,
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, all ingesters up and running, and shard size 5": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        9,
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // 9 ingesters / 3 zones
+			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in this zone, and shard size 5": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        7, // ingesters are scaled down from 9 to 7
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     1,   // in this zone ingesters are scaled down from 3 to 1
+			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
+			expectedValue:            900, // (900 / 3 zones / 1 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in another zone, and shard size 5": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        7, // ingesters are scaled down from 9 to 7
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled down (ignored because of shardSize)
+			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in this zone, and shard size 5": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     5,   // in this zone ingesters are scaled up from 3 to 5 (ignored because of shardSize)
+			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in another zone, and shard size 5": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled up (ignored because of shardSize)
+			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, all ingesters up and running, and the shard size > number of ingesters": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        9,
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // 9 ingesters / 3 zones
+			shardSize:                20,  // Greater than number of ingesters.
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in this zone, and the shard size > number of ingesters": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     2,   // in this zone ingesters are scaled down from 3 to 2
+			shardSize:                20,  // Greater than number of ingesters.
+			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled down in another zone, and the shard size > number of ingesters": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled down
+			shardSize:                20,  // Greater than number of ingesters.
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in this zone, and the shard size > number of ingesters": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     5,   // in this zone ingesters are scaled up from 3 to 5
+			shardSize:                20,  // Greater than number of ingesters.
+			expectedValue:            180, // (900 / 3 zones / 5 ingesters per zone) * 3 replication factor
+		},
+		"zone-awareness enabled, limit is enabled with replication-factor=3, some ingesters scaled up in another zone, and the shard size > number of ingesters": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
+			ringZoneAwarenessEnabled: true,
+			ringZonesCount:           3,
+			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled up
+			shardSize:                20,  // Greater than number of ingesters.
+			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
 		},
 	}
 
@@ -162,7 +289,8 @@ func runLimiterMaxFunctionTest(
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesInZoneCount").Return(testData.ingestersInZoneCount)
 			ring.On("ZonesCount").Return(testData.ringZonesCount)
 
 			// Mock limits
@@ -216,7 +344,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesCount").Return(testData.ringIngesterCount)
 			ring.On("ZonesCount").Return(1)
 
 			// Mock limits
@@ -269,7 +397,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesCount").Return(testData.ringIngesterCount)
 			ring.On("ZonesCount").Return(1)
 
 			// Mock limits
@@ -323,7 +451,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesCount").Return(testData.ringIngesterCount)
 			ring.On("ZonesCount").Return(1)
 
 			// Mock limits
@@ -377,7 +505,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(testData.ringIngesterCount)
+			ring.On("InstancesCount").Return(testData.ringIngesterCount)
 			ring.On("ZonesCount").Return(1)
 
 			// Mock limits
@@ -397,7 +525,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 func TestLimiter_FormatError(t *testing.T) {
 	// Mock the ring
 	ring := &ringCountMock{}
-	ring.On("HealthyInstancesCount").Return(3)
+	ring.On("InstancesCount").Return(3)
 	ring.On("ZonesCount").Return(1)
 
 	// Mock limits
@@ -432,7 +560,12 @@ type ringCountMock struct {
 	mock.Mock
 }
 
-func (m *ringCountMock) HealthyInstancesCount() int {
+func (m *ringCountMock) InstancesCount() int {
+	args := m.Called()
+	return args.Int(0)
+}
+
+func (m *ringCountMock) InstancesInZoneCount() int {
 	args := m.Called()
 	return args.Int(0)
 }
