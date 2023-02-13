@@ -57,7 +57,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.StringVar(&cfg.QueryResultPayloadFormat, "query-frontend.query-result-payload-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.StringVar(&cfg.QueryResultPayloadFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
