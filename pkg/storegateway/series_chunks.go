@@ -120,7 +120,7 @@ func (b *seriesChunksSet) release() {
 		// Reset series and chunk entries, before putting back to the pool.
 		for i := range b.series {
 			// Be sure to reset all chunks within the capacity, not just the length.
-			b.series[i].chks = b.series[i].chks[0:cap(b.series[i].chks)]
+			b.series[i].chks = b.series[i].chks[:cap(b.series[i].chks)]
 			for j := 0; j < cap(b.series[i].chks); j++ {
 				b.series[i].chks[j].Reset()
 			}
@@ -462,13 +462,17 @@ func filterNativeHistogramChunks(seriesEntries []seriesEntry) []seriesEntry {
 
 			chksWriteIdx++
 		}
-		series.chks = series.chks[:chksWriteIdx]
+		seriesEntries[i].chks = series.chks[:chksWriteIdx]
 
-		if len(series.chks) == 0 {
-			seriesEntries[i] = seriesEntry{}
+		if len(seriesEntries[i].chks) == 0 {
 			continue
 		}
-		seriesEntries[seriesWriteIdx] = series
+		// We swap the two series entries so the entry that would've just been overwritten at `seriesWriteIdx` is still
+		// reachable in `seriesChunksSet.release`.
+		swp := seriesEntries[seriesWriteIdx]
+		seriesEntries[seriesWriteIdx] = seriesEntries[i]
+		seriesEntries[i] = swp
+
 		seriesWriteIdx++
 	}
 	seriesEntries = seriesEntries[:seriesWriteIdx]

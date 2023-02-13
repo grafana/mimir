@@ -534,14 +534,13 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 	}
 
 	type loadRequest struct {
-		existingBlocks                   []testBlock
-		setsToLoad                       []seriesChunkRefsSet
-		ignoreNativeHistograms           bool
-		expectNoChunkBytesSlicePoolLoads bool
-		expectedSets                     []seriesChunksSet
-		minT, maxT                       int64 // optional; if empty, select a wide time range
-		addLoadErr, loadErr              error
-		expectedErr                      string
+		existingBlocks         []testBlock
+		setsToLoad             []seriesChunkRefsSet
+		ignoreNativeHistograms bool
+		expectedSets           []seriesChunksSet
+		minT, maxT             int64 // optional; if empty, select a wide time range
+		addLoadErr, loadErr    error
+		expectedErr            string
 	}
 
 	testCases := map[string]loadRequest{
@@ -739,9 +738,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			setsToLoad: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{block4.toSeriesChunkRefs(0), block4.toSeriesChunkRefs(1)}},
 			},
-			ignoreNativeHistograms:           true,
-			expectNoChunkBytesSlicePoolLoads: true,
-			expectedSets:                     []seriesChunksSet{},
+			ignoreNativeHistograms: true,
+			expectedSets:           []seriesChunksSet{},
 		},
 	}
 
@@ -772,12 +770,6 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				assert.ErrorContains(t, set.Err(), testCase.expectedErr)
 			} else {
 				assert.NoError(t, set.Err())
-
-				if testCase.expectNoChunkBytesSlicePoolLoads {
-					assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
-				} else {
-					assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
-				}
 			}
 			// Check that chunk bytes are what we expect
 			require.Len(t, loadedSets, len(testCase.expectedSets))
@@ -799,7 +791,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			if testCase.expectedErr != "" {
 				assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
 			} else {
-				if testCase.expectNoChunkBytesSlicePoolLoads {
+				if len(testCase.expectedSets) == 0 {
 					assert.Zero(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load())
 				} else {
 					assert.Greater(t, chunkBytesSlicePool.(*pool.TrackedPool).Gets.Load(), int64(0))
@@ -929,6 +921,8 @@ func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.SafeSlabPo
 		return f.loadErr
 	}
 	for chunkRef, indices := range f.toLoad {
+		// f.chunks[chunkRef].Raw is left nil when it is a native histogram chunk and we are filtering those out. There
+		// is no chunk data to load and it is expected that these chunks will be skipped over by the loadingSeriesChunksSetIterator.
 		if f.chunks[chunkRef].Raw != nil {
 			// Take bytes from the pool, so we can assert on number of allocations and that frees are happening
 			chunkData := f.chunks[chunkRef].Raw.Data
