@@ -336,12 +336,12 @@ func TestConfig_Validate(t *testing.T) {
 		expectedError error
 	}{
 		"happy path": {
-			config:        Config{QueryResultPayloadFormat: formatJSON},
+			config:        Config{QueryResultResponseFormat: formatJSON},
 			expectedError: nil,
 		},
 		"unknown query result payload format": {
-			config:        Config{QueryResultPayloadFormat: "something-else"},
-			expectedError: errors.New("unknown query result payload format 'something-else'. Supported values: json, protobuf"),
+			config:        Config{QueryResultResponseFormat: "something-else"},
+			expectedError: errors.New("unknown query result response format 'something-else'. Supported values: json, protobuf"),
 		},
 	}
 

@@ -160,10 +160,10 @@ var knownFormats = map[string]format{
 	mimirpb.QueryResponseMimeType: protobufFormat{},
 }
 
-func NewPrometheusCodec(registerer prometheus.Registerer, queryResultPayloadFormat string) Codec {
+func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
 	return prometheusCodec{
 		metrics:               newPrometheusCodecMetrics(registerer),
-		requestProtobufFormat: queryResultPayloadFormat == formatProtobuf,
+		requestProtobufFormat: queryResultResponseFormat == formatProtobuf,
 	}
 }
 

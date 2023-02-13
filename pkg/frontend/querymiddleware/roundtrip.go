@@ -46,7 +46,7 @@ type Config struct {
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
 	CacheSplitter CacheSplitter `yaml:"-"`
 
-	QueryResultPayloadFormat string `yaml:"query_result_payload_format" category:"experimental"`
+	QueryResultResponseFormat string `yaml:"query_result_response_format" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -57,7 +57,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.StringVar(&cfg.QueryResultPayloadFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -72,8 +72,8 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if !slices.Contains(allFormats, cfg.QueryResultPayloadFormat) {
-		return fmt.Errorf("unknown query result payload format '%s'. Supported values: %s", cfg.QueryResultPayloadFormat, strings.Join(allFormats, ", "))
+	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
+		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
 	}
 
 	return nil
