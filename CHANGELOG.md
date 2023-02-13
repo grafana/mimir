@@ -47,7 +47,8 @@
 
 ### Mimirtool
 
-* * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
+* [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
+* [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
 ### Documentation
 
