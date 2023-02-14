@@ -161,8 +161,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('MemcachedRequestErrors'),
           expr: |||
             (
-              sum by(%s, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
-              sum by(%s, name, operation) (rate(thanos_memcached_operations_total[1m]))
+              sum by(%s, name, operation) (rate(thanos_cache_operation_failures_total[1m])) /
+              sum by(%s, name, operation) (rate(thanos_cache_operations_total[1m]))
             ) * 100 > 5
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',

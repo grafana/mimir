@@ -96,8 +96,8 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemcachedrequesterrors
     expr: |
       (
-        sum by(cluster, namespace, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
-        sum by(cluster, namespace, name, operation) (rate(thanos_memcached_operations_total[1m]))
+        sum by(cluster, namespace, name, operation) (rate(thanos_cache_operation_failures_total[1m])) /
+        sum by(cluster, namespace, name, operation) (rate(thanos_cache_operations_total[1m]))
       ) * 100 > 5
     for: 5m
     labels:

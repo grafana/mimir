@@ -816,7 +816,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           sum by(operation) (
             rate(
-              thanos_memcached_operations_total{
+              thanos_cache_operations_total{
                 %(jobMatcher)s,
                 component="%(component)s",
                 name="%(cacheName)s"
@@ -832,7 +832,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.panel('Latency (getmulti)') +
       $.latencyPanel(
-        'thanos_memcached_operation_duration_seconds',
+        'thanos_cache_operation_duration_seconds',
         |||
           {
             %(jobMatcher)s,
@@ -849,7 +849,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           sum(
             rate(
-              thanos_cache_memcached_hits_total{
+              thanos_cache_hits_total{
                 %(jobMatcher)s,
                 component="%(component)s",
                 name="%(cacheName)s"
@@ -859,7 +859,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           /
           sum(
             rate(
-              thanos_cache_memcached_requests_total{
+              thanos_cache_operations_total{
                 %(jobMatcher)s,
                 component="%(component)s",
                 name="%(cacheName)s"

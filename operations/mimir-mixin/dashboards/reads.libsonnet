@@ -177,11 +177,8 @@ local filename = 'mimir-reads.json';
         $.panel('Requests / sec') +
         $.queryPanel(
           |||
-            # Query metrics before and after migration to new memcached backend.
             sum (
-              rate(cortex_cache_request_duration_seconds_count{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_memcached_operation_duration_seconds_count{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
@@ -193,7 +190,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.panel('Latency') +
         $.latencyPanel(
-          'thanos_memcached_operation_duration_seconds',
+          'thanos_cache_operation_duration_seconds',
           '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
         )
       )
@@ -366,7 +363,7 @@ local filename = 'mimir-reads.json';
           |||
             sum by(operation) (
               rate(
-                thanos_memcached_operations_total{
+                thanos_cache_operations_total{
                   component="store-gateway",
                   name="index-cache",
                   %s
@@ -381,7 +378,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.panel('Latency (getmulti)') +
         $.latencyPanel(
-          'thanos_memcached_operation_duration_seconds',
+          'thanos_cache_operation_duration_seconds',
           |||
             {
               %s,
