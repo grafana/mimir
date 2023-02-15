@@ -52,7 +52,7 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
-	f.BoolVar(&cfg.FineGrainedChunksCachingEnabled, prefix+"fine-grained-chunks-caching-enabled", false, "Enable fine-grained caching of chunks in the store-gateway. This should reduce the required bandwidth and memory utilization.")
+	f.BoolVar(&cfg.FineGrainedChunksCachingEnabled, prefix+"fine-grained-chunks-caching-enabled", false, "Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.")
 }
 
 func (cfg *ChunksCacheConfig) Validate() error {

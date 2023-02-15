@@ -288,7 +288,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
-    	[experimental] Enable fine-grained caching of chunks in the store-gateway. This should reduce the required bandwidth and memory utilization.
+    	[experimental] Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string

@@ -2999,7 +2999,7 @@ bucket_store:
     [subrange_ttl: <duration> | default = 24h]
 
     # (experimental) Enable fine-grained caching of chunks in the store-gateway.
-    # This should reduce the required bandwidth and memory utilization.
+    # This reduces the required bandwidth and memory utilization.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
     [fine_grained_chunks_caching_enabled: <boolean> | default = false]
 
