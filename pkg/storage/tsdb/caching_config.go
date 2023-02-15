@@ -140,8 +140,6 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 			}
 		}
 		if !chunksConfig.FineGrainedChunksCachingEnabled {
-			// When fine-grained caching is enabled, we are caching the chunks ourselves instead of relying on the caching bucket.
-			// In that case we will want to cache the attributes of chunk objects, but not their contents.
 			cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		}
 	}
