@@ -767,7 +767,7 @@ func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
 				},
 			},
 		},
-		"skips cached chunks when there is a different number of chunks in the rang": {
+		"skips cached chunks when there is a different number of chunks in the range": {
 			// Issue a request where the first series has its chunks only in two ranges
 			{
 				existingBlocks: []testBlock{block1},
