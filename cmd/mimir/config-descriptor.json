@@ -5322,6 +5322,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.subrange-ttl",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "fine_grained_chunks_caching_enabled",
+                  "required": false,
+                  "desc": "Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

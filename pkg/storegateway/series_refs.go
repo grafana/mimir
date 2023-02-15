@@ -119,13 +119,9 @@ type seriesChunkRefs struct {
 	chunksRanges []seriesChunkRefsRange
 }
 
-func (s seriesChunkRefs) numChunksWithinRange(minT, maxT int64) (n int) {
+func (s seriesChunkRefs) numChunks() (n int) {
 	for _, r := range s.chunksRanges {
-		for _, c := range r.refs {
-			if c.minTime <= maxT && c.maxTime >= minT {
-				n++
-			}
-		}
+		n += len(r.refs)
 	}
 	return
 }

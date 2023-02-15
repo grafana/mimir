@@ -45,8 +45,10 @@ type queryStats struct {
 	chunksTouchedSizeSum   int
 	chunksFetched          int
 	chunksFetchedSizeSum   int
-	chunksFetchCount       int
-	chunksFetchDurationSum time.Duration
+	chunksRefetched        int
+	chunksRefetchedSizeSum int
+	chunksReturned         int
+	chunksReturnedSizeSum  int
 
 	mergedSeriesCount int
 	mergedChunksCount int
@@ -110,8 +112,10 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.chunksTouchedSizeSum += o.chunksTouchedSizeSum
 	s.chunksFetched += o.chunksFetched
 	s.chunksFetchedSizeSum += o.chunksFetchedSizeSum
-	s.chunksFetchCount += o.chunksFetchCount
-	s.chunksFetchDurationSum += o.chunksFetchDurationSum
+	s.chunksRefetched += o.chunksRefetched
+	s.chunksRefetchedSizeSum += o.chunksRefetchedSizeSum
+	s.chunksReturned += o.chunksReturned
+	s.chunksReturnedSizeSum += o.chunksReturnedSizeSum
 
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
