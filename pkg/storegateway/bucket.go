@@ -43,6 +43,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -111,6 +112,9 @@ type BucketStore struct {
 	// or to load and unload them in batches and stream them to the querier. The bucketStore uses streaming when
 	// maxSeriesPerBatch is larger than zero.
 	maxSeriesPerBatch int
+	// fineGrainedChunksCachingEnabled controls whether to use the per series chunks caching
+	// or rely on the transparent caching bucket.
+	fineGrainedChunksCachingEnabled bool
 
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
@@ -213,6 +217,12 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.maxSeriesPerBatch = seriesPerBatch
+	}
+}
+
+func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.fineGrainedChunksCachingEnabled = enabled
 	}
 }
 
@@ -685,7 +695,7 @@ func blockSeries(
 				for j, meta := range chks {
 					// seriesEntry s is appended to res, but not at every outer loop iteration,
 					// therefore len(res) is the index we need here, not outer loop iteration number.
-					if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
+					if err := chunkr.addLoad(meta.Ref, len(res), j, tsdb.EstimatedMaxChunkSize); err != nil {
 						lookupErr = errors.Wrap(err, "add chunk load")
 						return
 					}
@@ -1158,8 +1168,12 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	var set storepb.SeriesSet
-	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+	if !req.SkipChunks {
+		var cache chunkscache.Cache
+		if s.fineGrainedChunksCachingEnabled {
+			cache = s.chunksCache
+		}
+		set = newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
 	}
@@ -1168,18 +1182,35 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	stats := safeStats.export()
-	s.metrics.seriesDataTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("postings").Observe(float64(stats.postingsFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("postings").Observe(float64(stats.postingsFetchedSizeSum))
-	s.metrics.seriesDataTouched.WithLabelValues("series").Observe(float64(stats.seriesTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("series").Observe(float64(stats.seriesFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("series").Observe(float64(stats.seriesTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("series").Observe(float64(stats.seriesFetchedSizeSum))
-	s.metrics.seriesDataTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("chunks").Observe(float64(stats.chunksFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks").Observe(float64(stats.chunksTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks").Observe(float64(stats.chunksFetchedSizeSum))
+	s.metrics.seriesDataTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetchedSizeSum))
+	s.metrics.seriesDataTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+
+	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
+
+	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetched))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
+
+	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouchedSizeSum))
+
+	if s.fineGrainedChunksCachingEnabled && s.maxSeriesPerBatch > 0 {
+		// With fine-grained caching we may have touched more chunks than we need because we had to fetch a
+		// whole range of chunks, which includes chunks outside the request's minT/maxT.
+		s.metrics.seriesDataTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksReturned))
+		s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksReturnedSizeSum))
+	} else {
+		// For the implementation which uses the caching bucket the bytes we touch are the bytes we return.
+		s.metrics.seriesDataTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksTouched))
+		s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksTouchedSizeSum))
+	}
+
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))

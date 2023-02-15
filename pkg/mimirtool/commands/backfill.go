@@ -84,6 +84,11 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Envar(envVars.TLSKeyPath).
 		StringVar(&c.clientConfig.TLS.KeyPath)
 
+	cmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").
+		Default("false").
+		Envar(envVars.TLSInsecureSkipVerify).
+		BoolVar(&c.clientConfig.TLS.InsecureSkipVerify)
+
 	cmd.Flag("sleep-time", "How long to sleep between checking state of block upload after uploading all files for the block.").
 		Default("20s").
 		DurationVar(&c.sleepTime)

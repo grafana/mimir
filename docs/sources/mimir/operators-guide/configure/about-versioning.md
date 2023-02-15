@@ -102,6 +102,7 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.index-header.stream-reader-enabled`
   - `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles`
   - `-blocks-storage.bucket-store.batch-series-size`
+  - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
