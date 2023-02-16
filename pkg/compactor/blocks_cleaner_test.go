@@ -909,31 +909,48 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	))
 }
 
-func TestFindMostRecentModifiedTimeForBlock(t *testing.T) {
+func TestIsPartialBlockOutsideDelayPeriod(t *testing.T) {
 	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	const tenant = "user"
 
-	blockID := createTSDBBlock(t, b, tenant, time.Now().Add(-1*time.Hour).UnixMilli(), time.Now().UnixMilli(), 2, nil)
-
-	hourAgo := time.Now().Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
+	objectTime := time.Now().Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
+	blockID := createTSDBBlock(t, b, tenant, objectTime.UnixMilli(), time.Now().UnixMilli(), 2, nil)
 	for _, f := range []string{"meta.json", "index", "chunks/000001", "tombstones"} {
-		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), hourAgo, hourAgo))
+		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), objectTime, objectTime))
 	}
 
 	userBucket := bucket.NewUserBucketClient(tenant, b, nil)
 
-	mt, err := findMostRecentModifiedTimeForBlock(context.Background(), blockID, userBucket)
+	emptyBlockID := ulid.ULID{}
+	require.NotEqual(t, blockID, emptyBlockID)
+	empty := true
+	err := userBucket.Iter(context.Background(), emptyBlockID.String(), func(_ string) error {
+		empty = false
+		return nil
+	})
 	require.NoError(t, err)
-	require.Equal(t, hourAgo.Unix(), mt.Unix())
+	require.True(t, empty)
 
-	// Now update timestamp for file inside "chunks" to be the most recent one.
-	now := time.Now().Truncate(time.Second)
-	require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash("chunks/000001")), now, now))
+	testCases := []struct {
+		name            string
+		blockID         ulid.ULID
+		cutoff          time.Time
+		expectedOutside bool
+	}{
+		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedOutside: false},
+		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedOutside: false},
+		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedOutside: false},
+		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedOutside: true},
+	}
 
-	mt, err = findMostRecentModifiedTimeForBlock(context.Background(), blockID, userBucket)
-	require.NoError(t, err)
-	require.Equal(t, now.Unix(), mt.Unix())
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			outside, err := isPartialBlockOutsideDelayPeriod(context.Background(), tc.blockID, userBucket, tc.cutoff)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedOutside, outside)
+		})
+	}
 }
 
 type mockBucketFailure struct {
