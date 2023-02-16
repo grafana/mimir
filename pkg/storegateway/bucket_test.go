@@ -29,6 +29,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,7 +64,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1220,7 +1220,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				"cortex_bucket_store_series_refs_fetch_duration_seconds":            st.maxSeriesPerBatch > 0,
 			}
 
-			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
 
 			for metricName, expected := range assertHistograms {

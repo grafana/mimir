@@ -6,11 +6,12 @@
 package ingester
 
 import (
+	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -455,12 +456,12 @@ type tsdbMetrics struct {
 	ephemeralSeriesCreatedTotal *prometheus.Desc
 	ephemeralSeriesRemovedTotal *prometheus.Desc
 
-	regs *util.UserRegistries
+	regs *dskit_metrics.TenantRegistries
 }
 
-func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
+func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 	m := &tsdbMetrics{
-		regs: util.NewUserRegistries(),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 
 		dirSyncs: prometheus.NewDesc(
 			"cortex_ingester_shipper_dir_syncs_total",
@@ -729,7 +730,7 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
-	data := sm.regs.BuildMetricFamiliesPerUser()
+	data := sm.regs.BuildMetricFamiliesPerTenant()
 
 	// OK, we have it all. Let's build results.
 	data.SendSumOfCounters(out, sm.dirSyncs, "thanos_shipper_dir_syncs_total")
@@ -753,43 +754,43 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGauges(out, sm.tsdbActiveAppenders, "prometheus_tsdb_head_active_appenders")
 	data.SendSumOfCounters(out, sm.tsdbSeriesNotFound, "prometheus_tsdb_head_series_not_found_total")
 	data.SendSumOfGauges(out, sm.tsdbChunks, "prometheus_tsdb_head_chunks")
-	data.SendSumOfCountersPerUser(out, sm.tsdbChunksCreatedTotal, "prometheus_tsdb_head_chunks_created_total")
-	data.SendSumOfCountersPerUser(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksCreatedTotal, "prometheus_tsdb_head_chunks_created_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
 	data.SendSumOfCountersWithLabels(out, sm.tsdbMmapChunkQueueOperationsTotal, "prometheus_tsdb_chunk_write_queue_operations_total", "operation")
 	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
-	data.SendSumOfGaugesPerUser(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
 	data.SendSumOfCounters(out, sm.tsdbReloads, "prometheus_tsdb_reloads_total")
 	data.SendSumOfCounters(out, sm.tsdbReloadsFailed, "prometheus_tsdb_reloads_failures_total")
 	data.SendSumOfCounters(out, sm.tsdbTimeRetentionCount, "prometheus_tsdb_time_retentions_total")
-	data.SendSumOfGaugesPerUser(out, sm.tsdbBlocksBytes, "prometheus_tsdb_storage_blocks_bytes")
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbBlocksBytes, "prometheus_tsdb_storage_blocks_bytes")
 	data.SendSumOfCounters(out, sm.checkpointDeleteFail, "prometheus_tsdb_checkpoint_deletions_failed_total")
 	data.SendSumOfCounters(out, sm.checkpointDeleteTotal, "prometheus_tsdb_checkpoint_deletions_total")
 	data.SendSumOfCounters(out, sm.checkpointCreationFail, "prometheus_tsdb_checkpoint_creations_failed_total")
 	data.SendSumOfCounters(out, sm.checkpointCreationTotal, "prometheus_tsdb_checkpoint_creations_total")
-	data.SendSumOfCountersPerUser(out, sm.tsdbExemplarsTotal, "prometheus_tsdb_exemplar_exemplars_appended_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbExemplarsTotal, "prometheus_tsdb_exemplar_exemplars_appended_total")
 	data.SendSumOfGauges(out, sm.tsdbExemplarsInStorage, "prometheus_tsdb_exemplar_exemplars_in_storage")
-	data.SendSumOfGaugesPerUser(out, sm.tsdbExemplarSeriesInStorage, "prometheus_tsdb_exemplar_series_with_exemplars_in_storage")
-	data.SendSumOfGaugesPerUser(out, sm.tsdbExemplarLastTs, "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds")
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbExemplarSeriesInStorage, "prometheus_tsdb_exemplar_series_with_exemplars_in_storage")
+	data.SendSumOfGaugesPerTenant(out, sm.tsdbExemplarLastTs, "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds")
 	data.SendSumOfCounters(out, sm.tsdbExemplarsOutOfOrder, "prometheus_tsdb_exemplar_out_of_order_exemplars_total")
 
-	data.SendSumOfCountersPerUser(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
 
-	data.SendSumOfCountersPerUser(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
-	data.SendSumOfCountersPerUser(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
+	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
+	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
 
 	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_failed_total")
 	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_total")
 	data.SendSumOfSummaries(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
-	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
-	data.SendSumOfCountersPerUser(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
+	data.SendSumOfCountersPerTenant(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
+	data.SendSumOfCountersPerTenant(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {
-	sm.regs.AddUserRegistry(userID, registry)
+	sm.regs.AddTenantRegistry(userID, registry)
 }
 
 func (sm *tsdbMetrics) removeRegistryForUser(userID string) {
-	sm.regs.RemoveUserRegistry(userID, false)
+	sm.regs.RemoveTenantRegistry(userID, false)
 }

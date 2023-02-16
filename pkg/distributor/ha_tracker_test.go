@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,6 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -252,11 +252,11 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -326,11 +326,11 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
-	assert.Equal(t, uint64(0), util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Equal(t, uint64(0), getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "5.*"),
 	}))
-	assert.Greater(t, util.GetSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
+	assert.Greater(t, getSumOfHistogramSampleCount(metrics, "cortex_kv_request_duration_seconds", labels.Selector{
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
@@ -859,4 +859,40 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 		markedForDeletion := val.(*ReplicaDesc).DeletedAt > 0
 		require.Equal(t, expectedMarkedForDeletion, markedForDeletion, "KV entry marked for deletion")
 	}
+}
+
+// fromLabelPairsToLabels converts dto.LabelPair into labels.Labels.
+func fromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
+	builder := labels.NewBuilder(nil)
+	for _, pair := range pairs {
+		builder.Set(pair.GetName(), pair.GetValue())
+	}
+	return builder.Labels(nil)
+}
+
+// getSumOfHistogramSampleCount returns the sum of samples count of histograms matching the provided metric name
+// and optional label matchers. Returns 0 if no metric matches.
+func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName string, matchers labels.Selector) uint64 {
+	sum := uint64(0)
+
+	for _, metric := range families {
+		if metric.GetName() != metricName {
+			continue
+		}
+
+		if metric.GetType() != dto.MetricType_HISTOGRAM {
+			continue
+		}
+
+		for _, series := range metric.GetMetric() {
+			if !matchers.Matches(fromLabelPairsToLabels(series.GetLabel())) {
+				continue
+			}
+
+			histogram := series.GetHistogram()
+			sum += histogram.GetSampleCount()
+		}
+	}
+
+	return sum
 }

@@ -7,10 +7,10 @@ package compactor
 
 import (
 	"github.com/go-kit/log/level"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -19,11 +19,11 @@ import (
 type aggregatedSyncerMetrics struct {
 	metaSync                  prometheus.Counter
 	metaSyncFailures          prometheus.Counter
-	metaSyncDuration          *util.HistogramDataCollector // was prometheus.Histogram before
+	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
 	metaSyncConsistencyDelay  prometheus.Gauge
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
-	garbageCollectionDuration *util.HistogramDataCollector // was prometheus.Histogram before
+	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
 }
 
 // Copied (and modified with Mimir prefix) from Thanos, pkg/compact/compact.go
@@ -39,7 +39,7 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		Name: "cortex_compactor_meta_sync_failures_total",
 		Help: "Total blocks metadata synchronization failures.",
 	})
-	m.metaSyncDuration = util.NewHistogramDataCollector(prometheus.NewDesc(
+	m.metaSyncDuration = dskit_metrics.NewHistogramDataCollector(prometheus.NewDesc(
 		"cortex_compactor_meta_sync_duration_seconds",
 		"Duration of the blocks metadata synchronization in seconds.",
 		nil, nil))
@@ -56,7 +56,7 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		Name: "cortex_compactor_garbage_collection_failures_total",
 		Help: "Total number of failed garbage collection operations.",
 	})
-	m.garbageCollectionDuration = util.NewHistogramDataCollector(prometheus.NewDesc(
+	m.garbageCollectionDuration = dskit_metrics.NewHistogramDataCollector(prometheus.NewDesc(
 		"cortex_compactor_garbage_collection_duration_seconds",
 		"Time it took to perform garbage collection iteration.",
 		nil, nil))
@@ -79,7 +79,7 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 		return
 	}
 
-	mfm, err := util.NewMetricFamilyMap(mf)
+	mfm, err := dskit_metrics.NewMetricFamilyMap(mf)
 	if err != nil {
 		level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from syncer registry after compaction", "err", err)
 		return

@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	dstest "github.com/grafana/dskit/test"
@@ -309,7 +310,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 
 				// Create the configured number of gateways.
 				var gateways []*StoreGateway
-				registries := util.NewUserRegistries()
+				registries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 				for i := 1; i <= testData.numGateways; i++ {
 					instanceID := fmt.Sprintf("gateway-%d", i)
@@ -337,7 +338,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 					t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
 					gateways = append(gateways, g)
-					registries.AddUserRegistry(instanceID, reg)
+					registries.AddTenantRegistry(instanceID, reg)
 				}
 
 				// Start all gateways concurrently.
@@ -353,7 +354,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 				// At this point we expect that all gateways have done the initial sync and
 				// they have synched only their own blocks, because they waited for a stable
 				// ring before starting the initial sync.
-				metrics := registries.BuildMetricFamiliesPerUser()
+				metrics := registries.BuildMetricFamiliesPerTenant()
 				assert.Equal(t, float64(testData.expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded"))
 				assert.Equal(t, float64(2*testData.numGateways), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_discovered"))
 
@@ -408,8 +409,8 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Create the configured number of gateways.
 	var initialGateways []*StoreGateway
-	initialRegistries := util.NewUserRegistries()
-	allRegistries := util.NewUserRegistries()
+	initialRegistries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
+	allRegistries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 	createStoreGateway := func(id int, waitStabilityMin time.Duration) (*StoreGateway, string, *prometheus.Registry) {
 		instanceID := fmt.Sprintf("gateway-%d", id)
@@ -440,8 +441,8 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	for i := 1; i <= numInitialGateways; i++ {
 		g, instanceID, reg := createStoreGateway(i, 2*time.Second)
 		initialGateways = append(initialGateways, g)
-		initialRegistries.AddUserRegistry(instanceID, reg)
-		allRegistries.AddUserRegistry(instanceID, reg)
+		initialRegistries.AddTenantRegistry(instanceID, reg)
+		allRegistries.AddTenantRegistry(instanceID, reg)
 	}
 
 	// Start all gateways concurrently.
@@ -462,7 +463,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// At this point we expect that all gateways have done the initial sync and
 	// they have synched only their own blocks.
-	metrics := initialRegistries.BuildMetricFamiliesPerUser()
+	metrics := initialRegistries.BuildMetricFamiliesPerTenant()
 	assert.Equal(t, float64(expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded"))
 	assert.Equal(t, float64(2*numInitialGateways), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_discovered"))
 
@@ -471,14 +472,14 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Scale up store-gateways.
 	var scaleUpGateways []*StoreGateway
-	scaleUpRegistries := util.NewUserRegistries()
+	scaleUpRegistries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 	numAllGateways := numInitialGateways + numScaleUpGateways
 
 	for i := numInitialGateways + 1; i <= numAllGateways; i++ {
 		g, instanceID, reg := createStoreGateway(i, 10*time.Second) // Intentionally high "wait stability min duration".
 		scaleUpGateways = append(scaleUpGateways, g)
-		scaleUpRegistries.AddUserRegistry(instanceID, reg)
-		allRegistries.AddUserRegistry(instanceID, reg)
+		scaleUpRegistries.AddTenantRegistry(instanceID, reg)
+		allRegistries.AddTenantRegistry(instanceID, reg)
 	}
 
 	// Start all new gateways concurrently.
@@ -499,7 +500,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Wait until all the initial store-gateways sees all new store-gateways too.
 	dstest.Poll(t, 11*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
-		metrics := initialRegistries.BuildMetricFamiliesPerUser()
+		metrics := initialRegistries.BuildMetricFamiliesPerTenant()
 		return metrics.GetSumOfGauges("cortex_ring_members")
 	})
 
@@ -537,7 +538,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	// At this point the new store-gateways are expected to be ACTIVE in the ring and all the initial
 	// store-gateways should unload blocks they don't own anymore.
 	dstest.Poll(t, 5*time.Second, float64(expectedBlocksLoaded), func() interface{} {
-		metrics := allRegistries.BuildMetricFamiliesPerUser()
+		metrics := allRegistries.BuildMetricFamiliesPerTenant()
 		return metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded")
 	})
 }
@@ -725,9 +726,9 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
 			// Assert on the initial state.
-			regs := util.NewUserRegistries()
-			regs.AddUserRegistry("test", reg)
-			metrics := regs.BuildMetricFamiliesPerUser()
+			regs := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
+			regs.AddTenantRegistry("test", reg)
+			metrics := regs.BuildMetricFamiliesPerTenant()
 			assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total"))
 
 			// Change the ring topology.
@@ -740,14 +741,14 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			// Assert whether the sync triggered or not.
 			if testData.expectedSync {
 				dstest.Poll(t, time.Second, float64(2), func() interface{} {
-					metrics := regs.BuildMetricFamiliesPerUser()
+					metrics := regs.BuildMetricFamiliesPerTenant()
 					return metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total")
 				})
 			} else {
 				// Give some time to the store-gateway to trigger the sync (if any).
 				time.Sleep(250 * time.Millisecond)
 
-				metrics := regs.BuildMetricFamiliesPerUser()
+				metrics := regs.BuildMetricFamiliesPerTenant()
 				assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total"))
 			}
 		})
