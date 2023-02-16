@@ -178,6 +178,8 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           |||
             sum (
+              rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              or
               rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
@@ -189,7 +191,8 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel(
+        $.backwardsCompatibleLatencyPanel(
+          'thanos_memcached_operation_duration_seconds',
           'thanos_cache_operation_duration_seconds',
           '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
         )
@@ -362,6 +365,15 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           |||
             sum by(operation) (
+              # Backwards compatibility
+              rate(
+                thanos_memcached_operations_total{
+                  component="store-gateway",
+                  name="index-cache",
+                  %s
+                }[$__rate_interval]
+              )
+              or
               rate(
                 thanos_cache_operations_total{
                   component="store-gateway",
@@ -370,14 +382,19 @@ local filename = 'mimir-reads.json';
                 }[$__rate_interval]
               )
             )
-          ||| % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}'
+          ||| % [
+            $.jobMatcher($._config.job_names.store_gateway),
+            $.jobMatcher($._config.job_names.store_gateway),
+           ],
+          '{{operation}}'
         ) +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
-        $.latencyPanel(
+        $.backwardsCompatibleLatencyPanel(
+          'thanos_memcached_operation_duration_seconds',
           'thanos_cache_operation_duration_seconds',
           |||
             {
