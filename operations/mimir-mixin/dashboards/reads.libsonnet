@@ -385,7 +385,7 @@ local filename = 'mimir-reads.json';
           ||| % [
             $.jobMatcher($._config.job_names.store_gateway),
             $.jobMatcher($._config.job_names.store_gateway),
-           ],
+          ],
           '{{operation}}'
         ) +
         $.stack +
