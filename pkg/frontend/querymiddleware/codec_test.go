@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -325,7 +326,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, decoded)
 
-			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
 			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
 			require.NoError(t, err)
@@ -346,7 +347,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			encoded, err := codec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
 
-			metrics, err = util.NewMetricFamilyMapFromGatherer(reg)
+			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
 			durationHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
 			require.NoError(t, err)
@@ -368,7 +369,7 @@ func TestResponseRoundtrip(t *testing.T) {
 	}
 }
 
-func findHistogramMatchingLabels(metrics util.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
+func findHistogramMatchingLabels(metrics dskit_metrics.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
 	metricFamily, ok := metrics[name]
 	if !ok {
 		return nil, fmt.Errorf("no metric with name %v found", name)

@@ -2998,6 +2998,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
 
+    # (experimental) Enable fine-grained caching of chunks in the store-gateway.
+    # This reduces the required bandwidth and memory utilization.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
+    [fine_grained_chunks_caching_enabled: <boolean> | default = false]
+
   metadata_cache:
     # Backend for metadata cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
