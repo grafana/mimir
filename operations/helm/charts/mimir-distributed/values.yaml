@@ -2079,6 +2079,10 @@ nginx:
       main '$remote_addr - $remote_user [$time_local]  $status '
               '"$request" $body_bytes_sent "$http_referer" '
               '"$http_user_agent" "$http_x_forwarded_for"';
+    # -- Sets the log level of the NGINX error log. One of `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`
+    errorLogLevel: error
+    # -- Enables NGINX access logs
+    accessLogEnabled: true
     # -- Allows appending custom configuration to the server block
     serverSnippet: ""
     # -- Allows appending custom configuration to the http block
@@ -2089,7 +2093,7 @@ nginx:
     # @default -- See values.yaml
     file: |
       worker_processes  5;  ## Default: 1
-      error_log  /dev/stderr;
+      error_log  /dev/stderr {{ .Values.nginx.nginxConfig.errorLogLevel }};
       pid        /tmp/nginx.pid;
       worker_rlimit_nofile 8192;
 
@@ -2115,7 +2119,7 @@ nginx:
           ~^[23]  0;
           default 1;
         }
-        access_log   /dev/stderr  main  if=$loggable;
+        access_log   {{ .Values.nginx.nginxConfig.accessLogEnabled | ternary "/dev/stderr  main  if=$loggable;" "off;" }}
         {{- end }}
 
         sendfile     on;
@@ -2424,6 +2428,10 @@ gateway:
         main '$remote_addr - $remote_user [$time_local]  $status '
                 '"$request" $body_bytes_sent "$http_referer" '
                 '"$http_user_agent" "$http_x_forwarded_for"';
+      # -- Sets the log level of the NGINX error log. One of `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`
+      errorLogLevel: error
+      # -- Enables NGINX access logs
+      accessLogEnabled: true
       # -- Allows appending custom configuration to the server block
       serverSnippet: ""
       # -- Allows appending custom configuration to the http block
@@ -2433,7 +2441,7 @@ gateway:
       # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating.
       file: |
         worker_processes  5;  ## Default: 1
-        error_log  /dev/stderr;
+        error_log  /dev/stderr {{ .Values.gateway.nginx.config.errorLogLevel }};
         pid        /tmp/nginx.pid;
         worker_rlimit_nofile 8192;
 
@@ -2459,7 +2467,7 @@ gateway:
             ~^[23]  0;
             default 1;
           }
-          access_log   /dev/stderr  main  if=$loggable;
+          access_log   {{ .Values.gateway.nginx.config.accessLogEnabled | ternary "/dev/stderr  main  if=$loggable;" "off;" }}
           {{- end }}
 
           sendfile     on;
