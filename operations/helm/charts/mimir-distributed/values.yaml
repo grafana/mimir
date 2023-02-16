@@ -2080,7 +2080,7 @@ nginx:
               '"$request" $body_bytes_sent "$http_referer" '
               '"$http_user_agent" "$http_x_forwarded_for"';
     # -- Sets the log level of the NGINX error log. One of `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`
-    errorLogLevel: info
+    errorLogLevel: error
     # -- Enables NGINX access logs
     accessLogEnabled: true
     # -- Allows appending custom configuration to the server block
@@ -2429,7 +2429,7 @@ gateway:
                 '"$request" $body_bytes_sent "$http_referer" '
                 '"$http_user_agent" "$http_x_forwarded_for"';
       # -- Sets the log level of the NGINX error log. One of `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`
-      errorLogLevel: info
+      errorLogLevel: error
       # -- Enables NGINX access logs
       accessLogEnabled: true
       # -- Allows appending custom configuration to the server block
