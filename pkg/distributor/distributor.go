@@ -706,7 +706,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
-// push wrappers will be applied in the reverse order, so the last middleware in the slice will be the outermost one.
+// push wrappers will be applied to incoming requests in the order in which they are in the slice in the config struct.
 func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	var middlewares []PushWrapper
 
