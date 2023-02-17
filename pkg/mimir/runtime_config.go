@@ -86,7 +86,7 @@ func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-ch
 	if manager == nil {
 		return nil
 	}
-	// returns function that can be used in MultiConfig.ConfigProvider
+	// returns function that can be used in MultiConfig.ShipperConfigProvider
 	return func() <-chan kv.MultiRuntimeConfig {
 		outCh := make(chan kv.MultiRuntimeConfig, 1)
 

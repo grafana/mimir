@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestProtobufFormat_DecodeResponse(t *testing.T) {
@@ -462,7 +462,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, decoded)
 
-			metrics, err := util.NewMetricFamilyMapFromGatherer(reg)
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
 			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "protobuf", "operation", "decode")
 			require.NoError(t, err)

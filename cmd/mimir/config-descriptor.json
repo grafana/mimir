@@ -3109,6 +3109,17 @@
         },
         {
           "kind": "field",
+          "name": "out_of_order_blocks_external_label_enabled",
+          "required": false,
+          "desc": "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "out-of-order-blocks-external-label-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "separate_metrics_group_label",
           "required": false,
           "desc": "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total",
