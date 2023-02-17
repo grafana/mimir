@@ -186,7 +186,7 @@ type Config struct {
 
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
-	// This function will only receive samples that don't get forwarded to an
+	// These functions will only receive samples that don't get forwarded to an
 	// alternative remote_write endpoint by the distributor's forwarding feature,
 	// or dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
@@ -708,7 +708,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
 // externalMiddlewares will be applied in the reverse order, so the last middleware in the slice will be the outermost one.
 func (d *Distributor) wrapPushWithMiddlewares(externalMiddlewares []PushWrapper, next push.Func) push.Func {
-	var middlewares []func(push.Func) push.Func
+	var middlewares []PushWrapper
 
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
@@ -721,9 +721,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddlewares []PushWrapper,
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
 
-	for middlewareIdx := len(externalMiddlewares) - 1; middlewareIdx >= 0; middlewareIdx-- {
-		middlewares = append(middlewares, externalMiddlewares[middlewareIdx])
-	}
+	middlewares = append(middlewares, externalMiddlewares...)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
 		next = middlewares[ix](next)
