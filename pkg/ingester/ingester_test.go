@@ -4551,7 +4551,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	require.Nil(t, db.Compact())
 
 	oldBlocks := db.Blocks()
-	require.Equal(t, 3, len(oldBlocks))
+	require.Len(t, oldBlocks, 3)
 
 	// Yes, we're sleeping in this test to let the retention of the newly compacted blocks expire
 	time.Sleep(1 * time.Second)
