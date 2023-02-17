@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -63,10 +64,40 @@ func (e LimitError) Error() string {
 type ForwardingRule struct {
 	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
 	Ingest bool `yaml:"ingest" json:"ingest"`
+
+	DropLabels      []string `yaml:"drop_labels" json:"drop_labels"`
+	dropLabelsMap   map[string]struct{}
+	dropLabelsValue string
 }
 
 // ForwardingRules are keyed by metric names, excluding labels.
 type ForwardingRules map[string]ForwardingRule
+
+func (f *ForwardingRule) UnmarshalYAML(value *yaml.Node) error {
+	type plain ForwardingRule
+
+	err := value.DecodeWithOptions((*plain)(f), yaml.DecodeOptions{KnownFields: true})
+	if err != nil {
+		return err
+	}
+
+	f.Prepare()
+
+	return nil
+}
+
+func (f *ForwardingRule) Prepare() {
+	f.dropLabelsMap = map[string]struct{}{}
+	for _, label := range f.DropLabels {
+		f.dropLabelsMap[label] = struct{}{}
+	}
+	sort.Strings(f.DropLabels)
+	f.dropLabelsValue = strings.Join(f.DropLabels, ",")
+}
+
+func (f *ForwardingRule) DropLabelsParsed() (string, map[string]struct{}) {
+	return f.dropLabelsValue, f.dropLabelsMap
+}
 
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
