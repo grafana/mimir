@@ -113,7 +113,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if c.compactorCfg.BlockUpload.SkipValidation {
-		if c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
+		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
 			writeBlockUploadError(err, op, "uploading meta file", logger, w)
 			return
 		}

@@ -6712,24 +6712,13 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "validation_heartbeat_interval",
+              "name": "skip_validation",
               "required": false,
-              "desc": "Duration of time between heartbeats of an in-progress block upload validation. \u003c= 0 to disable heartbeating.",
+              "desc": "Skip validation of blocks when completing a block upload",
               "fieldValue": null,
-              "fieldDefaultValue": 60000000000,
+              "fieldDefaultValue": false,
               "fieldFlag": "compactor.block-upload.validation-heartbeat-interval",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "validation_heartbeat_timeout",
-              "required": false,
-              "desc": "Maximum duration of time to wait for a block upload validation to complete. \u003c= 0 to disable.",
-              "fieldValue": null,
-              "fieldDefaultValue": 300000000000,
-              "fieldFlag": "compactor.block-upload.validation-heartbeat-timeout",
-              "fieldType": "duration",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
           ],

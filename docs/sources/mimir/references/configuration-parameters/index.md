@@ -3466,15 +3466,9 @@ sharding_ring:
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
 block_upload:
-  # (experimental) Duration of time between heartbeats of an in-progress block
-  # upload validation. <= 0 to disable heartbeating.
+  # (experimental) Skip validation of blocks when completing a block upload
   # CLI flag: -compactor.block-upload.validation-heartbeat-interval
-  [validation_heartbeat_interval: <duration> | default = 1m]
-
-  # (experimental) Maximum duration of time to wait for a block upload
-  # validation to complete. <= 0 to disable.
-  # CLI flag: -compactor.block-upload.validation-heartbeat-timeout
-  [validation_heartbeat_timeout: <duration> | default = 5m]
+  [skip_validation: <boolean> | default = false]
 ```
 
 ### store_gateway
