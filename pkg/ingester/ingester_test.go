@@ -44,6 +44,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
@@ -57,6 +58,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -3006,16 +3009,18 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 	if err != nil {
 		return nil, err
 	}
-	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, dataDir, registerer)
+	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, dataDir, "", registerer)
 }
 
-func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		dataDir = t.TempDir()
 	}
 
-	bucketDir := t.TempDir()
+	if bucketDir == "" {
+		bucketDir = t.TempDir()
+	}
 
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
@@ -5589,7 +5594,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
 
-			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -5928,7 +5933,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", registry)
+			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, "", "", registry)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -5986,7 +5991,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		<-time.After(1500 * time.Millisecond)
 	}
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -6127,7 +6132,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", nil)
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -6206,6 +6211,98 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	verifySamples(90, 110)
 	i.compactBlocks(context.Background(), true, nil) // Should be compacted because it's forced.
 	verifyCompactedHead(t, i, true)
+}
+
+// Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload tests whether out-of-order
+// data is compacted and uploaded into a block that is labeled as being out-of-order.
+func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
+	for _, addOOOLabel := range []bool{true, false} {
+		t.Run(fmt.Sprintf("AddOutOfOrderExternalLabel=%t", addOOOLabel), func(t *testing.T) {
+			const tenant = "test"
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+			tenantLimits := map[string]*validation.Limits{
+				tenant: {
+					OutOfOrderTimeWindow:                 model.Duration(30 * time.Minute),
+					OutOfOrderBlocksExternalLabelEnabled: addOOOLabel,
+				},
+			}
+
+			override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
+			require.NoError(t, err)
+
+			tmpDir := t.TempDir()
+			bucketDir := t.TempDir()
+
+			i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, tmpDir, bucketDir, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			// Wait until it's healthy
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			ctx := user.InjectOrgID(context.Background(), tenant)
+
+			pushSamples := func(start, end int64) {
+				start = start * time.Minute.Milliseconds()
+				end = end * time.Minute.Milliseconds()
+
+				s := labels.FromStrings(labels.MetricName, "test_1", "status", "200")
+				var samples []mimirpb.Sample
+				var lbls []labels.Labels
+				for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+					samples = append(samples, mimirpb.Sample{
+						TimestampMs: ts,
+						Value:       float64(ts),
+					})
+					lbls = append(lbls, s)
+				}
+
+				wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+				_, err = i.Push(ctx, wReq)
+				require.NoError(t, err)
+			}
+
+			// Push first in-order sample at minute 100.
+			pushSamples(100, 100)
+			// Push older, out-of-order samples
+			pushSamples(90, 99)
+
+			// Compact and upload the blocks
+			i.compactBlocks(ctx, true, nil)
+			i.shipBlocks(ctx, nil)
+
+			// Now check that an OOO block was uploaded and labeled correctly
+
+			bucket, err := filesystem.NewBucket(filepath.Join(bucketDir, tenant)) // need to add the tenant to the directory
+			require.NoError(t, err)
+
+			userTSDB := i.getTSDB(tenant)
+			require.Equal(t, 2, len(userTSDB.shippedBlocks), "there should be two uploaded blocks")
+
+			var foundMeta []metadata.Meta
+			for ulid := range userTSDB.shippedBlocks {
+				meta, err := block.DownloadMeta(ctx, log.NewNopLogger(), bucket, ulid)
+				require.NoError(t, err)
+				if meta.Compaction.FromOutOfOrder() {
+					foundMeta = append(foundMeta, meta)
+				}
+			}
+
+			require.Len(t, foundMeta, 1, "only one of the blocks should have an ooo compactor hint")
+
+			if addOOOLabel {
+				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue}, foundMeta[0].Thanos.Labels)
+			} else {
+				require.Empty(t, foundMeta[0].Thanos.Labels)
+			}
+		})
+	}
 }
 
 func TestNewIngestErrMsgs(t *testing.T) {

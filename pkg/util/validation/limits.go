@@ -104,7 +104,8 @@ type Limits struct {
 	// Active series custom trackers
 	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
-	OutOfOrderTimeWindow model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
+	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"experimental"`
 
 	// User defined label to give the option of subdividing specific metrics by another label
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
@@ -207,6 +208,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.")
+	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
@@ -576,6 +578,11 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
 func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
 	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
+}
+
+// OutOfOrderBlocksExternalLabelEnabled returns if the shipper is flagging out-of-order blocks with an external label.
+func (o *Overrides) OutOfOrderBlocksExternalLabelEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).OutOfOrderBlocksExternalLabelEnabled
 }
 
 // SeparateMetricsGroupLabel returns the custom label used to separate specific metrics
