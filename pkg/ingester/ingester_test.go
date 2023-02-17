@@ -6213,7 +6213,6 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 // Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload tests whether out-of-order
 // data is compacted and uploaded into a block that is labeled as being out-of-order.
-// It is only labeled if AddOutOfOrderExternalLabel is set to false.
 func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 	for _, addOOOLabel := range []bool{true, false} {
 		t.Run(fmt.Sprintf("AddOutOfOrderExternalLabel=%t", addOOOLabel), func(t *testing.T) {
@@ -6234,10 +6233,6 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 
 			tmpDir := t.TempDir()
 			bucketDir := t.TempDir()
-			t.Cleanup(func() {
-				os.RemoveAll(tmpDir)
-				os.RemoveAll(bucketDir)
-			})
 
 			i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, tmpDir, bucketDir, nil)
 			require.NoError(t, err)
@@ -6277,9 +6272,8 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			pushSamples(90, 99)
 
 			// Compact and upload the blocks
-			allowed := util.NewAllowedTenants([]string{tenant}, nil)
-			i.compactBlocks(ctx, true, allowed)
-			i.shipBlocks(ctx, allowed)
+			i.compactBlocks(ctx, true, nil)
+			i.shipBlocks(ctx, nil)
 
 			// Now check that an OOO block was uploaded and labeled correctly
 
@@ -6301,7 +6295,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			require.Len(t, foundMeta, 1, "only one of the blocks should have an ooo compactor hint")
 
 			if addOOOLabel {
-				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabelKey: OutOfOrderExternalLabelValue}, foundMeta[0].Thanos.Labels)
+				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue}, foundMeta[0].Thanos.Labels)
 			} else {
 				require.Empty(t, foundMeta[0].Thanos.Labels)
 			}

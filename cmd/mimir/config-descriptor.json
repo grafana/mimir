@@ -3111,10 +3111,12 @@
           "kind": "field",
           "name": "out_of_order_blocks_external_label_enabled",
           "required": false,
-          "desc": "",
+          "desc": "Whether the shipper should label out-of-order blocks with an external label before uploading them.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldType": "boolean"
+          "fieldFlag": "out-of-order-blocks-external-label-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

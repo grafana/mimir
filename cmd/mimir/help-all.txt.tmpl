@@ -1223,6 +1223,8 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
+  -out-of-order-blocks-external-label-enabled
+    	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them.
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration

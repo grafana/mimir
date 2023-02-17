@@ -411,7 +411,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{mimir_tsdb.OutOfOrderExternalLabelKey: OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
 		},
 		{
 			name:        "OOO block, addOOOLabel = true, additional labels",
@@ -429,7 +429,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				Thanos: metadata.Thanos{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabelKey: OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

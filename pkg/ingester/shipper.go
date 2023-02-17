@@ -30,11 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
-const (
-	// OutOfOrderExternalLabelValue is the value to be used for the OutOfOrderExternalLabelKey label
-	OutOfOrderExternalLabelValue = "true"
-)
-
 type metrics struct {
 	dirSyncs                 prometheus.Counter
 	dirSyncFailures          prometheus.Counter
@@ -70,7 +65,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	return &m
 }
 
-type ConfigProvider interface {
+type ShipperConfigProvider interface {
 	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
 }
 
@@ -79,7 +74,7 @@ type ConfigProvider interface {
 // Shipper implements BlocksUploader interface.
 type Shipper struct {
 	logger      log.Logger
-	cfgProvider ConfigProvider
+	cfgProvider ShipperConfigProvider
 	userID      string
 	dir         string
 	metrics     *metrics
@@ -92,7 +87,7 @@ type Shipper struct {
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
 func NewShipper(
 	logger log.Logger,
-	cfgProvider ConfigProvider,
+	cfgProvider ShipperConfigProvider,
 	userID string,
 	r prometheus.Registerer,
 	dir string,
@@ -212,7 +207,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	// Set out of order labels
 	if s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
 		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
-		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabelKey] = OutOfOrderExternalLabelValue
+		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
 	}
 
 	// Upload block with custom metadata.
