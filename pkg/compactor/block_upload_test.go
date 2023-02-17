@@ -1235,8 +1235,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			}
 
 			c.compactorCfg.BlockUpload = BlockUploadConfig{
-				// ensure the validation completes entirely before the finish responds with a result
-				ValidationType: SynchronousValidation,
+				SkipValidation: true,
 			}
 			c.compactorCfg.DataDir = t.TempDir()
 
@@ -1270,18 +1269,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
-			}
-
-			if tc.expUploadStateResult != nil {
-				w := httptest.NewRecorder()
-				c.GetBlockUploadStateHandler(w, r)
-
-				resp := w.Result()
-				blockState := BlockUploadStateResult{}
-				err = json.NewDecoder(resp.Body).Decode(&blockState)
+				exists, err := bkt.Exists(context.Background(), path.Join(tc.blockID, block.MetaFilename))
 				require.NoError(t, err)
-
-				require.Equal(t, *tc.expUploadStateResult, blockState)
+				require.True(t, exists)
 			}
 		})
 	}
