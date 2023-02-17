@@ -197,7 +197,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.Store(ctx, map[string][]byte{key: data}, remainingTTL)
+			cfg.cache.StoreAsync(map[string][]byte{key: data}, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
@@ -243,7 +243,7 @@ func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, 
 	}
 
 	if ttl > 0 {
-		cache.Store(ctx, map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+		cache.StoreAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
 	}
 }
 
@@ -302,7 +302,6 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	storeExistsCacheEntry(ctx, existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	return &getReader{
 		c:         cfg.cache,
-		ctx:       ctx,
 		r:         reader,
 		buf:       new(bytes.Buffer),
 		startTime: getTime,
@@ -361,7 +360,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
-		cache.Store(ctx, map[string][]byte{key: raw}, ttl)
+		cache.StoreAsync(map[string][]byte{key: raw}, ttl)
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
 	}
@@ -519,7 +518,7 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 
 				if storeToCache {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.Store(gctx, map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
+					cfg.cache.StoreAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
@@ -651,7 +650,6 @@ func (c *subrangesReader) subrangeAt(offset int64) ([]byte, error) {
 
 type getReader struct {
 	c         cache.Cache
-	ctx       context.Context
 	r         io.ReadCloser
 	buf       *bytes.Buffer
 	startTime time.Time
@@ -680,7 +678,7 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
-			g.c.Store(g.ctx, map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			g.c.StoreAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
 		}
 		// Clear reference, to avoid doing another Store on next read.
 		g.buf = nil

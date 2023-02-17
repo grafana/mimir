@@ -372,7 +372,7 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
@@ -473,7 +473,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -808,7 +808,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -2767,11 +2767,11 @@ type cacheNotExpectingToStoreSeries struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeries(userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.t.Fatalf("StoreSeries should not be called")
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
 	c.t.Fatalf("StoreSeriesForPostings should not be called")
 }
 

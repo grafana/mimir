@@ -940,7 +940,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 			// Store all extents fixtures in the cache.
 			cacheKey := cacheSplitter.GenerateCacheKey(ctx, userID, testData.req)
-			mw.storeCacheExtents(ctx, cacheKey, []string{userID}, testData.cachedExtents)
+			mw.storeCacheExtents(cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.
 			actualRes, err := mw.Do(ctx, testData.req)
@@ -990,8 +990,8 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys and some extends filled up on partial cache hit", func(t *testing.T) {
-		mw.storeCacheExtents(ctx, "key-1", nil, []Extent{mkExtent(10, 20)})
-		mw.storeCacheExtents(ctx, "key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents("key-1", nil, []Extent{mkExtent(10, 20)})
+		mw.storeCacheExtents("key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1002,9 +1002,9 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		// Simulate an hash collision on "key-1".
 		buf, err := proto.Marshal(&CachedResponse{Key: "another", Extents: []Extent{mkExtent(10, 20)}})
 		require.NoError(t, err)
-		cacheBackend.Store(ctx, map[string][]byte{cacheHashKey("key-1"): buf}, 0)
+		cacheBackend.StoreAsync(map[string][]byte{cacheHashKey("key-1"): buf}, 0)
 
-		mw.storeCacheExtents(ctx, "key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents("key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1588,11 +1588,10 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
 	for i, c := range cases {
 		// Store.
 		key := fmt.Sprintf("k%d", i)
-		m.storeCacheExtents(ctx, key, []string{"ten1"}, []Extent{
+		m.storeCacheExtents(key, []string{"ten1"}, []Extent{
 			{Start: 0, End: c.endTime.UnixMilli()},
 		})
 

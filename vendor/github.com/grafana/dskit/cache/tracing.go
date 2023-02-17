@@ -23,8 +23,8 @@ func NewSpanlessTracingCache(cache Cache, logger log.Logger, resolver spanlogger
 	return SpanlessTracingCache{c: cache, resolver: resolver, logger: logger}
 }
 
-func (t SpanlessTracingCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
-	t.c.Store(ctx, data, ttl)
+func (t SpanlessTracingCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+	t.c.StoreAsync(data, ttl)
 }
 
 func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {

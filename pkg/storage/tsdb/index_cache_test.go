@@ -44,8 +44,9 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 		"one memcached address should pass": {
 			cfg: IndexCacheConfig{
 				BackendConfig: cache.BackendConfig{Backend: IndexCacheBackendMemcached,
-					Memcached: cache.MemcachedConfig{
-						Addresses: "dns+localhost:11211",
+					Memcached: cache.MemcachedClientConfig{
+						Addresses:           []string{"dns+localhost:11211"},
+						MaxAsyncConcurrency: 1,
 					},
 				},
 			},

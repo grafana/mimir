@@ -608,7 +608,7 @@ func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesC
 			seriesChunkIdx += len(chunksRange.refs)
 		}
 	}
-	c.cache.StoreChunks(c.ctx, c.userID, toStore)
+	c.cache.StoreChunks(c.userID, toStore)
 }
 
 func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEntry) {

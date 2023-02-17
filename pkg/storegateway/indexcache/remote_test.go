@@ -109,7 +109,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StorePostings(ctx, p.userID, p.block, p.label, p.value)
+				c.StorePostings(p.userID, p.block, p.label, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -209,7 +209,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForRef(ctx, p.userID, p.block, p.id, p.value)
+				c.StoreSeriesForRef(p.userID, p.block, p.id, p.value)
 			}
 
 			// Fetch series from cached and assert on it.
@@ -296,7 +296,7 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreExpandedPostings(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreExpandedPostings(p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -400,7 +400,7 @@ func TestRemoteIndexCache_FetchSeriesForPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForPostings(ctx, p.userID, p.block, p.shard, CanonicalPostingsKey(p.postings), p.value)
+				c.StoreSeriesForPostings(p.userID, p.block, p.shard, CanonicalPostingsKey(p.postings), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -498,7 +498,7 @@ func TestRemoteIndexCache_FetchSeries(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
+				c.StoreSeries(p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -589,7 +589,7 @@ func TestRemoteIndexCache_FetchLabelNames(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreLabelNames(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreLabelNames(p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -688,7 +688,7 @@ func TestRemoteIndexCache_FetchLabelValues(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreLabelValues(ctx, p.userID, p.block, p.labelName, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreLabelValues(p.userID, p.block, p.labelName, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -876,7 +876,7 @@ func (c *mockedRemoteCacheClient) GetMulti(_ context.Context, keys []string, _ .
 	return hits
 }
 
-func (c *mockedRemoteCacheClient) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
+func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) error {
 	c.cache[key] = value
 
 	return nil
