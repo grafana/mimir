@@ -179,7 +179,7 @@ local filename = 'mimir-reads.json';
           |||
             sum (
               rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              or
+              or ignoring(backend)
               rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
@@ -373,7 +373,7 @@ local filename = 'mimir-reads.json';
                   %s
                 }[$__rate_interval]
               )
-              or
+              or ignoring(backend)
               rate(
                 thanos_cache_operations_total{
                   component="store-gateway",

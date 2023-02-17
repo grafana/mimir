@@ -821,7 +821,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               component="%(component)s",
               name="%(cacheName)s"
             }[$__rate_interval])
-            or
+            or ignoring(backend)
             rate(thanos_cache_operations_total{
               %(jobMatcher)s,
               component="%(component)s",
