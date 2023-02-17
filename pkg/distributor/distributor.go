@@ -149,7 +149,7 @@ type Distributor struct {
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 	metadataValidationMetrics *validation.MetadataValidationMetrics
 
-	pushWithMiddlewares push.Func
+	PushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -183,7 +183,17 @@ type Config struct {
 
 	// Enable the experimental feature to mark series as ephemeral.
 	EphemeralSeriesEnabled bool `yaml:"ephemeral_series_enabled" category:"experimental"`
+
+	// This allows downstream projects to wrap the distributor push function
+	// and access the deserialized write requests before/after they are pushed.
+	// These functions will only receive samples that don't get forwarded to an
+	// alternative remote_write endpoint by the distributor's forwarding feature,
+	// or dropped by HA deduplication.
+	PushWrappers []PushWrapper `yaml:"-"`
 }
+
+// PushWrapper wraps around a push. It is similar to middleware.Interface.
+type PushWrapper func(next push.Func) push.Func
 
 type InstanceLimits struct {
 	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
@@ -438,7 +448,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.forwarder)
 	}
 
-	d.pushWithMiddlewares = d.GetPushFunc(nil)
+	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -696,8 +706,9 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
-func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.Func) push.Func, next push.Func) push.Func {
-	var middlewares []func(push.Func) push.Func
+// push wrappers will be applied to incoming requests in the order in which they are in the slice in the config struct.
+func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
+	var middlewares []PushWrapper
 
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
@@ -709,9 +720,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
-	if externalMiddleware != nil {
-		middlewares = append(middlewares, externalMiddleware)
-	}
+	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
 		next = middlewares[ix](next)
@@ -1222,13 +1231,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		mimirpb.ReuseSlice(req.EphemeralTimeseries)
 	})
 
-	return d.pushWithMiddlewares(ctx, pushReq)
-}
-
-// GetPushFunc returns push.Func that can be used by push handler.
-// Wrapper, if not nil, is added to the list of distributor middlewares.
-func (d *Distributor) GetPushFunc(externalMiddleware func(next push.Func) push.Func) push.Func {
-	return d.wrapPushWithMiddlewares(externalMiddleware, d.push)
+	return d.PushWithMiddlewares(ctx, pushReq)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
