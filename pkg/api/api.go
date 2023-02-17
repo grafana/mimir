@@ -228,9 +228,8 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	pushFn := d.GetPushFunc(pushConfig.PushWrappers)
-	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, pushFn), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, pushFn), true, false, "POST")
+	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, d.PushWithMiddlewares), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, d.PushWithMiddlewares), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
