@@ -726,7 +726,12 @@ ingester:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      behavior:
+        # Scaling down automatically is disabled for the ingester to avoid data loss. Instead, follow the documentation on scaling down ingesters manually.
+        # ref: https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters
+        scaleDown:
+          selectPolicy: Disabled
 
   statefulSet:
     enabled: true
