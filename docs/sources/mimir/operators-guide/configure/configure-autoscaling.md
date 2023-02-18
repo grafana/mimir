@@ -11,14 +11,14 @@ weight: 110
 
 The Grafana Mimir Helm chart supports autoscaling for the following components:
 
-- [alertmanager]({{< relref "../../architecture/components/alertmanager.md" >}})
-- [compactor]({{< relref "../../architecture/components/compactor/index.md" >}})
-- [distributor]({{< relref "../../architecture/components/distributor.md" >}})
-- [ingester]({{< relref "../../architecture/components/ingester.md" >}})
-- [querier]({{< relref "../../architecture/components/querier.md" >}})
-- [query-frontend]({{< relref "../../architecture/components/query-frontend/index.md" >}})
-- [query-scheduler]({{< relref "../../architecture/components/query-scheduler/index.md" >}})
-- [store-gateway]({{< relref "../../architecture/components/store-gateway.md" >}})
+- [alertmanager]({{< relref "../architecture/components/alertmanager.md" >}})
+- [compactor]({{< relref "../architecture/components/compactor/index.md" >}})
+- [distributor]({{< relref "../architecture/components/distributor.md" >}})
+- [ingester]({{< relref "../architecture/components/ingester.md" >}})
+- [querier]({{< relref "../architecture/components/querier.md" >}})
+- [query-frontend]({{< relref "../architecture/components/query-frontend/index.md" >}})
+- [query-scheduler]({{< relref "../architecture/components/query-scheduler/index.md" >}})
+- [store-gateway]({{< relref "../architecture/components/store-gateway.md" >}})
 
 Autoscaling in the Mimir Helm chart is implemented using the Kubernetes Horizontal Pod Autosacler (HPA).
 
