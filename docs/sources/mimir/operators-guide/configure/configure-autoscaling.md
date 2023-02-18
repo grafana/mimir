@@ -3,7 +3,7 @@ aliases:
   - ../../configuring/configuring-autoscaling/
   - configuring/autoscaling
 description: Learn how to configure Grafana Mimir autoscaling
-title: Configure Grafana Mimir zone-aware replication
+title: Configure Grafana Mimir autoscaling
 weight: 110
 ---
 
