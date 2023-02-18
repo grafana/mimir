@@ -633,7 +633,9 @@ distributor:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   service:
     annotations: {}
@@ -727,11 +729,10 @@ ingester:
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior:
-      behavior:
-        # Scaling down automatically is disabled for the ingester to avoid data loss. Instead, follow the documentation on scaling down ingesters manually.
-        # ref: https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters
-        scaleDown:
-          selectPolicy: Disabled
+      # Scaling down automatically is disabled for the ingester to avoid data loss. Instead, follow the documentation on scaling down ingesters manually.
+      # ref: https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters
+      scaleDown:
+        selectPolicy: Disabled
 
   statefulSet:
     enabled: true
@@ -1086,7 +1087,9 @@ querier:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   service:
     annotations: {}
@@ -1173,7 +1176,9 @@ query_frontend:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   service:
     annotations: {}
@@ -1262,7 +1267,9 @@ query_scheduler:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   service:
     annotations: {}
@@ -1358,7 +1365,15 @@ store_gateway:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        # Scale down no more than 2 store gateways at the same time.
+        # ref: https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-store-gateways
+        policies:
+          - type: Pods
+            value: 2
+            periodSeconds: 120
+        stabilizationWindowSeconds: 300
 
   service:
     annotations: {}
@@ -1548,7 +1563,9 @@ compactor:
     # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   service:
     annotations: {}
@@ -2033,7 +2050,9 @@ nginx:
     targetMemoryUtilizationPercentage: 60
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
   # -- See `kubectl explain deployment.spec.strategy` for more,
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   deploymentStrategy:
@@ -2358,7 +2377,9 @@ gateway:
     targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
-    behavior: {}
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 180
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
