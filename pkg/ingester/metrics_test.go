@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -18,7 +19,7 @@ import (
 func TestTSDBMetrics(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg)
+	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
 
 	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
 	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))
@@ -282,7 +283,7 @@ func TestTSDBMetrics(t *testing.T) {
 func TestTSDBMetricsWithRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg)
+	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
 
 	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
 	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))

@@ -25,24 +25,24 @@ import (
 )
 
 const (
-	memcachedDefaultTTL = 7 * 24 * time.Hour
+	remoteDefaultTTL = 7 * 24 * time.Hour
 )
 
-// MemcachedIndexCache is a memcached-based index cache.
-type MemcachedIndexCache struct {
-	logger    log.Logger
-	memcached cache.MemcachedClient
+// RemoteIndexCache is a memcached or redis based index cache.
+type RemoteIndexCache struct {
+	logger log.Logger
+	remote cache.RemoteCacheClient
 
 	// Metrics.
 	requests *prometheus.CounterVec
 	hits     *prometheus.CounterVec
 }
 
-// NewMemcachedIndexCache makes a new MemcachedIndexCache.
-func NewMemcachedIndexCache(logger log.Logger, memcached cache.MemcachedClient, reg prometheus.Registerer) (*MemcachedIndexCache, error) {
-	c := &MemcachedIndexCache{
-		logger:    logger,
-		memcached: memcached,
+// NewRemoteIndexCache makes a new RemoteIndexCache.
+func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+	c := &RemoteIndexCache{
+		logger: logger,
+		remote: remote,
 	}
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -57,22 +57,22 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cache.MemcachedClient, 
 	}, []string{"item_type"})
 	initLabelValuesForAllCacheTypes(c.hits.MetricVec)
 
-	level.Info(logger).Log("msg", "created memcached index cache")
+	level.Info(logger).Log("msg", "created remote index cache")
 
 	return c, nil
 }
 
-// set stores a value for the given key in memcached.
-func (c *MemcachedIndexCache) set(ctx context.Context, typ string, key string, val []byte) {
-	if err := c.memcached.SetAsync(ctx, key, val, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache in memcached", "type", typ, "err", err)
+// set stores a value for the given key in the remote cache.
+func (c *RemoteIndexCache) set(ctx context.Context, typ string, key string, val []byte) {
+	if err := c.remote.SetAsync(ctx, key, val, remoteDefaultTTL); err != nil {
+		level.Error(c.logger).Log("msg", "failed to set item in remote cache", "type", typ, "err", err)
 	}
 }
 
-// get retrieves a single value from memcached, returned bool value indicates whether the value was found or not.
-func (c *MemcachedIndexCache) get(ctx context.Context, typ string, key string) ([]byte, bool) {
+// get retrieves a single value from the remote cache, returned bool value indicates whether the value was found or not.
+func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]byte, bool) {
 	c.requests.WithLabelValues(typ).Inc()
-	results := c.memcached.GetMulti(ctx, []string{key})
+	results := c.remote.GetMulti(ctx, []string{key})
 	data, ok := results[key]
 	if ok {
 		c.hits.WithLabelValues(typ).Inc()
@@ -83,14 +83,14 @@ func (c *MemcachedIndexCache) get(ctx context.Context, typ string, key string) (
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *RemoteIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
 	c.set(ctx, cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
 	// Build the cache keys, while keeping a map between input matchers and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(lbls))
@@ -103,9 +103,9 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, userID str
 		keysMapping[lbl] = key
 	}
 
-	// Fetch the keys from memcached in a single request.
+	// Fetch the keys from the remote cache in a single request.
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
-	results := c.memcached.GetMulti(ctx, keys)
+	results := c.remote.GetMulti(ctx, keys)
 	if len(results) == 0 {
 		return nil, lbls
 	}
@@ -117,11 +117,11 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, userID str
 	for _, lbl := range lbls {
 		key, ok := keysMapping[lbl]
 		if !ok {
-			level.Error(c.logger).Log("msg", "keys mapping inconsistency found in memcached index cache client", "type", "postings", "label", lbl.Name+":"+lbl.Value)
+			level.Error(c.logger).Log("msg", "keys mapping inconsistency found in remote index cache client", "type", "postings", "label", lbl.Name+":"+lbl.Value)
 			continue
 		}
 
-		// Check if the key has been found in memcached. If not, we add it to the list
+		// Check if the key has been found in the remote cache. If not, we add it to the list
 		// of missing keys.
 		value, ok := results[key]
 		if !ok {
@@ -146,14 +146,14 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+func (c *RemoteIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
 	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *RemoteIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
@@ -166,9 +166,9 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userI
 		keysMapping[id] = key
 	}
 
-	// Fetch the keys from memcached in a single request.
+	// Fetch the keys from the remote cache in a single request.
 	c.requests.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(ids)))
-	results := c.memcached.GetMulti(ctx, keys)
+	results := c.remote.GetMulti(ctx, keys)
 	if len(results) == 0 {
 		return nil, ids
 	}
@@ -180,11 +180,11 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userI
 	for _, id := range ids {
 		key, ok := keysMapping[id]
 		if !ok {
-			_ = level.Error(c.logger).Log("msg", "keys mapping inconsistency found in memcached index cache client", "type", "series", "id", id)
+			_ = level.Error(c.logger).Log("msg", "keys mapping inconsistency found in remote index cache client", "type", "series", "id", id)
 			continue
 		}
 
-		// Check if the key has been found in memcached. If not, we add it to the list
+		// Check if the key has been found in the remote cache. If not, we add it to the list
 		// of missing keys.
 		value, ok := results[key]
 		if !ok {
@@ -206,12 +206,12 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
+func (c *RemoteIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
 	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
+func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
 	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey))
 }
 
@@ -221,12 +221,12 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 }
 
 // StoreSeries stores the result of a Series() call.
-func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+func (c *RemoteIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard), v)
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+func (c *RemoteIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
 	return c.get(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard))
 }
 
@@ -237,12 +237,12 @@ func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersK
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *MemcachedIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+func (c *RemoteIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
 	c.set(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *MemcachedIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+func (c *RemoteIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
 	return c.get(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey))
 }
 
@@ -258,12 +258,12 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *MemcachedIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+func (c *RemoteIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
 	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
-func (c *MemcachedIndexCache) FetchLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+func (c *RemoteIndexCache) FetchLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
 	return c.get(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey))
 }
 
@@ -273,12 +273,12 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *MemcachedIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+func (c *RemoteIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
 	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.
-func (c *MemcachedIndexCache) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+func (c *RemoteIndexCache) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
 	return c.get(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey))
 }
 

@@ -10,6 +10,7 @@
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121 #4177 #4188
+* [ENHANCEMENT] Ingester: added `out_of_order_blocks_external_label_enabled` shipper option to label out-of-order blocks before shipping them to cloud storage. #4182
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
 * [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
@@ -18,9 +19,12 @@
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
 * [ENHANCEMENT] Query-frontend: track `cortex_frontend_query_response_codec_duration_seconds` and `cortex_frontend_query_response_codec_payload_bytes` metrics to measure the time taken and bytes read / written while encoding and decoding query result payloads. #4110
 * [ENHANCEMENT] Alertmanager: expose additional upstream metrics `cortex_alertmanager_dispatcher_aggregation_groups`, `cortex_alertmanager_dispatcher_alert_processing_duration_seconds`. #4151
-* [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. #4163 #4174
+* [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4153
+* [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
+* [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
+* [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
@@ -46,7 +50,8 @@
 
 ### Mimirtool
 
-* * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
+* [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
+* [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
 ### Documentation
 

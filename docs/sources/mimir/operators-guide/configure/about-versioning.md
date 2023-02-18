@@ -79,7 +79,8 @@ The following features are currently experimental:
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
+  - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
+  - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
@@ -102,6 +103,7 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.index-header.stream-reader-enabled`
   - `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles`
   - `-blocks-storage.bucket-store.batch-series-size`
+  - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`

@@ -186,6 +186,10 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 			Envar(envVars.TLSKeyPath).
 			StringVar(&r.ClientConfig.TLS.KeyPath)
 
+		c.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").
+			Default("false").
+			Envar(envVars.TLSInsecureSkipVerify).
+			BoolVar(&r.ClientConfig.TLS.InsecureSkipVerify)
 	}
 
 	// Print Rules Command

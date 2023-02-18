@@ -112,10 +112,10 @@ func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, regist
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
-	cache, err := indexcache.NewMemcachedIndexCache(logger, client, registerer)
+	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
 	}
 
-	return indexcache.NewTracingIndexCache(cache, logger), nil
+	return indexcache.NewTracingIndexCache(c, logger), nil
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
@@ -435,7 +436,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, streamingEnabled bool, registry *prometheus.Registry) {
 	t.Helper()
 
-	metrics, err := util.NewMetricFamilyMapFromGatherer(registry)
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
 	toLabels := func(labelValuePairs []string) (result labels.Labels) {
@@ -449,7 +450,7 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	}
 
 	numObservationsForSummaries := func(summaryName string, labelValuePairs ...string) uint64 {
-		summaryData := &util.SummaryData{}
+		summaryData := &dskit_metrics.SummaryData{}
 		for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(labelValuePairs)) {
 			summaryData.AddSummary(metric.GetSummary())
 		}
@@ -459,7 +460,7 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	}
 
 	numObservationsForHistogram := func(histogramName string, labelValuePairs ...string) uint64 {
-		histogramData := &util.HistogramData{}
+		histogramData := &dskit_metrics.HistogramData{}
 		for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(labelValuePairs)) {
 			histogramData.AddHistogram(metric.GetHistogram())
 		}

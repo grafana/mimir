@@ -174,7 +174,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    ```jsonnet
    (import 'github.com/grafana/mimir/operations/mimir/mimir.libsonnet') {
      _config+: {
-       server_http.port: 80,
+       server_http_port: 80,
      },
    }
    ```
