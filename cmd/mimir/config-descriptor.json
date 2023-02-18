@@ -4215,6 +4215,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "min_idle_connections_headroom_percentage",
+                  "required": false,
+                  "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": -1,
+                  "fieldFlag": "query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "max_idle_connections",
                   "required": false,
                   "desc": "The maximum number of idle connections that will be maintained per address.",
@@ -5064,6 +5075,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "min_idle_connections_headroom_percentage",
+                      "required": false,
+                      "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "max_idle_connections",
                       "required": false,
                       "desc": "The maximum number of idle connections that will be maintained per address.",
@@ -5197,6 +5219,17 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.timeout",
                       "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "min_idle_connections_headroom_percentage",
+                      "required": false,
+                      "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -5368,6 +5401,17 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.timeout",
                       "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "min_idle_connections_headroom_percentage",
+                      "required": false,
+                      "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",

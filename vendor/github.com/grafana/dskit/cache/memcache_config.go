@@ -14,19 +14,21 @@ var (
 )
 
 type MemcachedConfig struct {
-	Addresses              string        `yaml:"addresses"`
-	Timeout                time.Duration `yaml:"timeout"`
-	MaxIdleConnections     int           `yaml:"max_idle_connections" category:"advanced"`
-	MaxAsyncConcurrency    int           `yaml:"max_async_concurrency" category:"advanced"`
-	MaxAsyncBufferSize     int           `yaml:"max_async_buffer_size" category:"advanced"`
-	MaxGetMultiConcurrency int           `yaml:"max_get_multi_concurrency" category:"advanced"`
-	MaxGetMultiBatchSize   int           `yaml:"max_get_multi_batch_size" category:"advanced"`
-	MaxItemSize            int           `yaml:"max_item_size" category:"advanced"`
+	Addresses                            string        `yaml:"addresses"`
+	Timeout                              time.Duration `yaml:"timeout"`
+	MinIdleConnectionsHeadroomPercentage float64       `yaml:"min_idle_connections_headroom_percentage" category:"advanced"`
+	MaxIdleConnections                   int           `yaml:"max_idle_connections" category:"advanced"`
+	MaxAsyncConcurrency                  int           `yaml:"max_async_concurrency" category:"advanced"`
+	MaxAsyncBufferSize                   int           `yaml:"max_async_buffer_size" category:"advanced"`
+	MaxGetMultiConcurrency               int           `yaml:"max_get_multi_concurrency" category:"advanced"`
+	MaxGetMultiBatchSize                 int           `yaml:"max_get_multi_batch_size" category:"advanced"`
+	MaxItemSize                          int           `yaml:"max_item_size" category:"advanced"`
 }
 
 func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
 	f.DurationVar(&cfg.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
+	f.Float64Var(&cfg.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
 	f.IntVar(&cfg.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&cfg.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
 	f.IntVar(&cfg.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
@@ -52,14 +54,15 @@ func (cfg *MemcachedConfig) Validate() error {
 
 func (cfg *MemcachedConfig) ToMemcachedClientConfig() MemcachedClientConfig {
 	return MemcachedClientConfig{
-		Addresses:                 cfg.GetAddresses(),
-		Timeout:                   cfg.Timeout,
-		MaxIdleConnections:        cfg.MaxIdleConnections,
-		MaxAsyncConcurrency:       cfg.MaxAsyncConcurrency,
-		MaxAsyncBufferSize:        cfg.MaxAsyncBufferSize,
-		MaxGetMultiConcurrency:    cfg.MaxGetMultiConcurrency,
-		MaxGetMultiBatchSize:      cfg.MaxGetMultiBatchSize,
-		MaxItemSize:               flagext.Bytes(cfg.MaxItemSize),
-		DNSProviderUpdateInterval: 30 * time.Second,
+		Addresses:                            cfg.GetAddresses(),
+		Timeout:                              cfg.Timeout,
+		MinIdleConnectionsHeadroomPercentage: cfg.MinIdleConnectionsHeadroomPercentage,
+		MaxIdleConnections:                   cfg.MaxIdleConnections,
+		MaxAsyncConcurrency:                  cfg.MaxAsyncConcurrency,
+		MaxAsyncBufferSize:                   cfg.MaxAsyncBufferSize,
+		MaxGetMultiConcurrency:               cfg.MaxGetMultiConcurrency,
+		MaxGetMultiBatchSize:                 cfg.MaxGetMultiBatchSize,
+		MaxItemSize:                          flagext.Bytes(cfg.MaxItemSize),
+		DNSProviderUpdateInterval:            30 * time.Second,
 	}
 }

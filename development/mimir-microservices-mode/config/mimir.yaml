@@ -51,16 +51,19 @@ blocks_storage:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+        min_idle_connections_headroom_percentage: 50
 
     chunks_cache:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+        min_idle_connections_headroom_percentage: 50
 
     metadata_cache:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+        min_idle_connections_headroom_percentage: 50
 
   s3:
     endpoint:          minio:9000
@@ -145,6 +148,7 @@ frontend:
     backend: "memcached"
     memcached:
       addresses: "dns+memcached:11211"
+      min_idle_connections_headroom_percentage: 50
     compression: snappy
 
 frontend_worker:
