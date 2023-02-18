@@ -1209,6 +1209,11 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_max_series_per_shard: <int> | default = 0]
 
+# (experimental) Format to use when retrieving query results from queriers.
+# Supported values: json, protobuf
+# CLI flag: -query-frontend.query-result-response-format
+[query_result_response_format: <string> | default = "json"]
+
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]

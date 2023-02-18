@@ -4,6 +4,8 @@ package mimirpb
 
 import "fmt"
 
+const QueryResponseMimeType = "application/vnd.mimir.queryresponse+protobuf"
+
 func (s QueryResponse_Status) ToPrometheusString() (string, error) {
 	switch s {
 	case QueryResponse_SUCCESS:
