@@ -38,37 +38,37 @@ spec:
   maxReplicas: {{ $autoscaling.maxReplicas }}
   {{- if eq (include "mimir.hpa.version" $.ctx) "autoscaling/v2" }}
   metrics:
-    {{- if $autoscaling.averageMemoryUtilization }}
+    {{- if $autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ $autoscaling.averageMemoryUtilization }}
+          averageUtilization: {{ $autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
-    {{- if $autoscaling.averageCpuUtilization }}
+    {{- if $autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $autoscaling.averageCpuUtilization }}
+          averageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
   behavior:
     {{- toYaml $autoscaling.behavior | nindent 4 -}}
   {{- else -}}
   metrics:
-    {{- if $autoscaling.averageMemoryUtilization }}
+    {{- if $autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
-        targetAverageUtilization: {{ $autoscaling.averageMemoryUtilization }}
+        targetAverageUtilization: {{ $autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
-    {{- if $autoscaling.averageCpuUtilization }}
+    {{- if $autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
-        targetAverageUtilization: {{ $autoscaling.averageCpuUtilization }}
+        targetAverageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
   {{- end -}}
 {{- end -}}

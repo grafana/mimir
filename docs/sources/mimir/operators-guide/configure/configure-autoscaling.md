@@ -36,8 +36,8 @@ distributor:
     enabled: true
     minReplicas: 3
     maxReplicas: 6
-    averageMemoryUtilization: 60
-    averageCpuUtilization: 60
+    targetMemoryUtilizationPercentage: 60
+    targetCPUUtilizationPercentage: 60
     behavior:
       scaleDown:
         stabilizationWindowSeconds: 180

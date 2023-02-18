@@ -394,8 +394,8 @@ alertmanager:
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -629,8 +629,8 @@ distributor:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -722,8 +722,8 @@ ingester:
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 3
     maxReplicas: 9
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -1077,8 +1077,8 @@ querier:
     enabled: false
     minReplicas: 2
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -1164,8 +1164,8 @@ query_frontend:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -1253,8 +1253,8 @@ query_scheduler:
     enabled: false
     minReplicas: 2
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -1349,8 +1349,8 @@ store_gateway:
     # Otherwise each zone will have a minimum of `ceil(minReplicas / number_of_zones)` pods.
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -1539,8 +1539,8 @@ compactor:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
-    averageMemoryUtilization: 70
-    # averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    # targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -2022,10 +2022,10 @@ nginx:
     minReplicas: 1
     # -- Maximum autoscaling replicas for nginx
     maxReplicas: 3
-    # -- Target CPU utilisation percentage for nginx
-    averageCpuUtilization: 60
-    # -- Target memory utilisation percentage for nginx
-    averageMemoryUtilization: 60
+    # -- Target CPU utilization percentage for nginx
+    targetCPUUtilizationPercentage: 60
+    # -- Target memory utilization percentage for nginx
+    targetMemoryUtilizationPercentage: 60
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
@@ -2349,8 +2349,8 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
-    averageMemoryUtilization: 70
-    averageCpuUtilization: 70
+    targetMemoryUtilizationPercentage: 70
+    targetCPUUtilizationPercentage: 70
     # -- Autoscaling behavior. Must be on K8s 1.23+ to use this.
     # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior
     behavior: {}
