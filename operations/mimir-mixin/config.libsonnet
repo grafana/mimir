@@ -629,5 +629,13 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Enable experimental Loki recording rules to analyze query-frontend logs,
+    // and some additional dashboards to show the results.
+    experimental_query_loki_recording_rules_enabled: false,
+
+    // Optionally set to a suitable matcher for discovering Mimir logs stored in Loki. For example:
+    //   namespace=~".*(mimir).*"
+    loki_recording_rules_matcher: '',
   },
 }
