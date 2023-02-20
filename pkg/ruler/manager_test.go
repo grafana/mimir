@@ -32,7 +32,7 @@ func TestSyncRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	const (
-		user1  = "testUser1"
+		user1 = "testUser1"
 		user2 = "testUser2"
 	)
 
