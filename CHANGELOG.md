@@ -8,7 +8,7 @@
 * [CHANGE] Store-gateway: When a query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits, an error with the status code `422` is created and returned. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
-* [CHANGE] Experimental support for ephemeral storage introduced in Mimir 2.6.0 has been removed. Following options are no longer available:
+* [CHANGE] Experimental support for ephemeral storage introduced in Mimir 2.6.0 has been removed. Following options are no longer available: #4252
   * `-blocks-storage.ephemeral-tsdb.*`
   * `-distributor.ephemeral-series-enabled`
   * `-distributor.ephemeral-series-matchers`
