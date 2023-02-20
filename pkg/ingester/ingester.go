@@ -728,14 +728,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// Walk the samples, appending them to the users database
 	var app extendedAppender
 
-	rollback := func() {
-		if app != nil {
-			if err := app.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-			}
-		}
-	}
-
 	if len(req.Timeseries) > 0 {
 		app = db.Appender(ctx).(extendedAppender)
 
@@ -750,7 +742,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
 		if err != nil {
-			rollback()
+			if err := app.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
+			}
+
 			return nil, err
 		}
 	}
@@ -767,14 +762,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	startCommit := time.Now()
-	if app != nil {
-		app := app
-		app = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
-
-		if err := app.Commit(); err != nil {
-			rollback()
-			return nil, wrapWithUser(err, userID)
-		}
+	if err := app.Commit(); err != nil {
+		return nil, wrapWithUser(err, userID)
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -1745,7 +1734,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:           userDB.seriesLifecycleCallback(),
+		SeriesLifecycleCallback:           userDB,
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                      int64(maxExemplars),

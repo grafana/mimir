@@ -201,15 +201,7 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 	return u.db.CompactOOOHead()
 }
 
-func (u *userTSDB) seriesLifecycleCallback() tsdb.SeriesLifecycleCallback {
-	return seriesLifecycleCallback{
-		preCreation:  u.preCreation,
-		postCreation: u.postCreation,
-		postDeletion: u.postDeletion,
-	}
-}
-
-func (u *userTSDB) preCreation(metric labels.Labels) error {
+func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	if u.limiter == nil {
 		return nil
 	}
@@ -239,7 +231,7 @@ func (u *userTSDB) preCreation(metric labels.Labels) error {
 	return nil
 }
 
-func (u *userTSDB) postCreation(metric labels.Labels) {
+func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
@@ -250,7 +242,7 @@ func (u *userTSDB) postCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-func (u *userTSDB) postDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
 	for _, metric := range metrics {
@@ -395,13 +387,3 @@ func (u *userTSDB) acquireAppendLock() error {
 func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
-
-type seriesLifecycleCallback struct {
-	preCreation  func(metric labels.Labels) error
-	postCreation func(metric labels.Labels)
-	postDeletion func(metric ...labels.Labels)
-}
-
-func (s seriesLifecycleCallback) PreCreation(l labels.Labels) error { return s.preCreation(l) }
-func (s seriesLifecycleCallback) PostCreation(l labels.Labels)      { s.postCreation(l) }
-func (s seriesLifecycleCallback) PostDeletion(l ...labels.Labels)   { s.postDeletion(l...) }
