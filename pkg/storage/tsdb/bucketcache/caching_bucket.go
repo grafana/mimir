@@ -64,23 +64,10 @@ func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
 	var opts []cache.Option
 
 	if slabs != nil {
-		opts = append(opts, cache.WithAllocator(&slabPoolAdapter{pool: slabs}))
+		opts = append(opts, cache.WithAllocator(pool.NewSafeSlabPoolAllocator(slabs)))
 	}
 
 	return opts
-}
-
-type slabPoolAdapter struct {
-	pool *pool.SafeSlabPool[byte]
-}
-
-func (s *slabPoolAdapter) Get(sz int) *[]byte {
-	b := s.pool.Get(sz)
-	return &b
-}
-
-func (s *slabPoolAdapter) Put(_ *[]byte) {
-	// no-op
 }
 
 // CachingBucket implementation that provides some caching features, based on passed configuration.

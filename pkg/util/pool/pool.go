@@ -238,3 +238,28 @@ func (b *SafeSlabPool[T]) Get(size int) []T {
 
 	return b.wrapped.Get(size)
 }
+
+type SafeSlabPoolAllocator struct {
+	pool *SafeSlabPool[byte]
+}
+
+// NewSafeSlabPoolAllocator wraps the input SafeSlabPool[byte] into an allocator suitable to be used with
+// a cache client. This function returns nil if the input SafeSlabPool[byte] is nil.
+func NewSafeSlabPoolAllocator(pool *SafeSlabPool[byte]) *SafeSlabPoolAllocator {
+	if pool == nil {
+		return nil
+	}
+
+	return &SafeSlabPoolAllocator{
+		pool: pool,
+	}
+}
+
+func (a *SafeSlabPoolAllocator) Get(sz int) *[]byte {
+	b := a.pool.Get(sz)
+	return &b
+}
+
+func (a *SafeSlabPoolAllocator) Put(_ *[]byte) {
+	// no-op
+}

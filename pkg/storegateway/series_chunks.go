@@ -30,8 +30,10 @@ const (
 	// number of chunks (across series).
 	seriesChunksSlabSize = 1000
 
-	// Selected so that chunks typically fit within the slab size (16 KiB)
-	chunkBytesSlabSize = 16 * 1024
+	// Selected so that many chunks fit within the slab size with low fragmentation, either when
+	// fine-grained chunks cache is enabled (byte slices have variable size and contain many chunks) or disabled (byte slices
+	// are at most 16KB each).
+	chunkBytesSlabSize = 160 * 1024
 )
 
 var (
@@ -388,13 +390,16 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		}
 	}()
 
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
+
 	// The series slice is guaranteed to have at least the requested capacity,
 	// so can safely expand it.
 	nextSet.series = nextSet.series[:nextUnloaded.len()]
 
 	var cachedRanges map[chunkscache.Range][]byte
 	if c.cache != nil {
-		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series), chunksPool)
 		c.recordCachedChunks(cachedRanges)
 	}
 	c.chunkReaders.reset()
@@ -433,9 +438,6 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 			}
 		}
 	}
-
-	// Create a batched memory pool that can be released all at once.
-	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {
