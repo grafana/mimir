@@ -6,6 +6,7 @@
 package iterators
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -27,13 +28,13 @@ var (
 )
 
 func assertHistogramEqual(t *testing.T, expected, actual *histogram.Histogram) {
-	// Due to the merges, it's hard to know when the reset are inserted - TODO fixme
+	// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
 	actual.CounterResetHint = histogram.UnknownCounterReset
 	assert.Equal(t, expected, actual)
 }
 
 func assertFloatHistogramEqual(t *testing.T, expected, actual *histogram.FloatHistogram) {
-	// Due to the merges, it's hard to know when the reset are inserted - TODO fixme
+	// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
 	actual.CounterResetHint = histogram.UnknownCounterReset
 	assert.Equal(t, expected, actual)
 }
@@ -165,12 +166,12 @@ func TestChunkMergeIterator(t *testing.T) {
 				case chunkenc.ValHistogram:
 					ts, h := iter.AtHistogram()
 					assert.Equal(t, i, ts)
-					assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(i)), h)
+					assertHistogramEqual(t, generateTestHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				case chunkenc.ValFloatHistogram:
 					ts, h := iter.AtFloatHistogram()
 					assert.Equal(t, i, ts)
-					assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(i)), h)
+					assertFloatHistogramEqual(t, generateTestFloatHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				default:
 					require.FailNowf(t, "Unexpected encoding", "%v", tc.enc)
@@ -199,12 +200,12 @@ func TestChunkMergeIteratorMixed(t *testing.T) {
 		case chunkenc.ValHistogram:
 			ts, h := iter.AtHistogram()
 			assert.Equal(t, i, ts)
-			assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(i)), h)
+			assertHistogramEqual(t, generateTestHistogram(int(i)), h)
 			assert.NoError(t, iter.Err())
 		case chunkenc.ValFloatHistogram:
 			ts, h := iter.AtFloatHistogram()
 			assert.Equal(t, i, ts)
-			assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(i)), h)
+			assertFloatHistogramEqual(t, generateTestFloatHistogram(int(i)), h)
 			assert.NoError(t, iter.Err())
 		default:
 			require.FailNowf(t, "Unexpected encoding", "%v", valType)
@@ -260,12 +261,12 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 				case chunkenc.ValHistogram:
 					ts, h := iter.AtHistogram()
 					assert.Equal(t, i, ts)
-					assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(i)), h)
+					assertHistogramEqual(t, generateTestHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				case chunkenc.ValFloatHistogram:
 					ts, h := iter.AtFloatHistogram()
 					assert.Equal(t, i, ts)
-					assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(i)), h)
+					assertFloatHistogramEqual(t, generateTestFloatHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				default:
 					require.FailNowf(t, "Unexpected encoding", "%v", tc.enc)
@@ -282,12 +283,12 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 					case chunkenc.ValHistogram:
 						ts, h := iter.AtHistogram()
 						assert.Equal(t, j, ts)
-						assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(j)), h)
+						assertHistogramEqual(t, generateTestHistogram(int(j)), h)
 						assert.NoError(t, iter.Err())
 					case chunkenc.ValFloatHistogram:
 						ts, h := iter.AtFloatHistogram()
 						assert.Equal(t, j, ts)
-						assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(j)), h)
+						assertFloatHistogramEqual(t, generateTestFloatHistogram(int(j)), h)
 						assert.NoError(t, iter.Err())
 					default:
 						require.FailNowf(t, "Unexpected encoding", "%v", tc.enc)
@@ -338,12 +339,12 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 				case chunkenc.ValHistogram:
 					ts, h := iter.AtHistogram()
 					assert.Equal(t, i, ts)
-					assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(i)), h)
+					assertHistogramEqual(t, generateTestHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				case chunkenc.ValFloatHistogram:
 					ts, h := iter.AtFloatHistogram()
 					assert.Equal(t, i, ts)
-					assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(i)), h)
+					assertFloatHistogramEqual(t, generateTestFloatHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
 				default:
 					require.FailNowf(t, "Unexpected encoding", "%v", tc.enc)
@@ -360,12 +361,12 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 					case chunkenc.ValHistogram:
 						ts, h := iter.AtHistogram()
 						assert.Equal(t, j, ts)
-						assertHistogramEqual(t, tsdb.GenerateTestHistogram(int(j)), h)
+						assertHistogramEqual(t, generateTestHistogram(int(j)), h)
 						assert.NoError(t, iter.Err())
 					case chunkenc.ValFloatHistogram:
 						ts, h := iter.AtFloatHistogram()
 						assert.Equal(t, j, ts)
-						assertFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(j)), h)
+						assertFloatHistogramEqual(t, generateTestFloatHistogram(int(j)), h)
 						assert.NoError(t, iter.Err())
 					default:
 						require.FailNowf(t, "Unexpected encoding", "%v", tc.enc)
@@ -377,24 +378,31 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 }
 
 func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding chunk.Encoding) chunk.Chunk {
+	var addPair func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error)
+	switch encoding {
+	case chunk.PrometheusXorChunk:
+		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
+			return pc.Add(model.SamplePair{
+				Timestamp: ts,
+				Value:     model.SampleValue(float64(ts)),
+			})
+		}
+	case chunk.PrometheusHistogramChunk:
+		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
+			return pc.AddHistogram(int64(ts), generateTestHistogram(int(ts)))
+		}
+	case chunk.PrometheusFloatHistogramChunk:
+		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
+			return pc.AddFloatHistogram(int64(ts), generateTestFloatHistogram(int(ts)))
+		}
+	default:
+		panic(fmt.Sprintf("mkChunk - unhandled encoding: %v", encoding))
+	}
 	metric := labels.FromStrings(model.MetricNameLabel, "foo")
 	pc, err := chunk.NewForEncoding(encoding)
 	require.NoError(t, err)
 	for i := mint; i.Before(maxt); i = i.Add(step) {
-		var npc chunk.EncodedChunk
-		switch encoding {
-		case chunk.PrometheusXorChunk:
-			npc, err = pc.Add(model.SamplePair{
-				Timestamp: i,
-				Value:     model.SampleValue(float64(i)),
-			})
-		case chunk.PrometheusHistogramChunk:
-			npc, err = pc.AddHistogram(int64(i), generateTestHistogram(int(i)))
-		case chunk.PrometheusFloatHistogramChunk:
-			npc, err = pc.AddFloatHistogram(int64(i), generateTestFloatHistogram(int(i)))
-		default:
-			require.FailNowf(t, "Unexpected encoding", "%v", encoding)
-		}
+		npc, err := addPair(pc, i)
 		require.NoError(t, err)
 		require.Nil(t, npc)
 	}

@@ -15,9 +15,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -261,6 +263,93 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
+func genTestHistogram(timestamp int64, value int) mimirpb.Histogram {
+	return mimirpb.FromHistogramToHistogramProto(timestamp, tsdb.GenerateTestHistogram(value))
+}
+
+func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
+	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, tsdb.GenerateTestFloatHistogram(value))
+}
+
+func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
+	// TODO(histograms): Add similar test for mixed samples and histograms?
+	const (
+		mint = 0
+		maxt = 10000
+	)
+	// TODO(histograms): define merge behaviour when float and integer histograms are at the same timestamp? currently it prefers the one in s1
+	s1 := []mimirpb.Histogram{
+		genTestHistogram(1000, 1),
+		genTestHistogram(2000, 2),
+		genTestHistogram(3000, 3),
+		genTestFloatHistogram(4000, 4),
+		genTestHistogram(5000, 5),
+	}
+	s2 := []mimirpb.Histogram{
+		genTestHistogram(1000, 1),
+		genTestFloatHistogram(2500, 25),
+		genTestHistogram(3000, 3),
+		genTestHistogram(5500, 55),
+	}
+
+	mergedSamplesS1S2 := []mimirpb.Histogram{
+		genTestHistogram(1000, 1),
+		genTestHistogram(2000, 2),
+		genTestFloatHistogram(2500, 25),
+		genTestHistogram(3000, 3),
+		genTestFloatHistogram(4000, 4),
+		genTestHistogram(5000, 5),
+		genTestHistogram(5500, 55),
+	}
+
+	d := &mockDistributor{}
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&client.QueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToHistogramChunks(t, s1),
+				},
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Chunks: convertToHistogramChunks(t, s1),
+				},
+			},
+
+			Timeseries: []mimirpb.TimeSeries{
+				{
+					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Histograms: s2,
+				},
+				{
+					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+					Histograms: s1,
+				},
+			},
+		},
+		nil)
+
+	ctx := user.InjectOrgID(context.Background(), "0")
+	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	querier, err := queryable.Querier(ctx, mint, maxt)
+	require.NoError(t, err)
+
+	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	require.NoError(t, seriesSet.Err())
+
+	require.True(t, seriesSet.Next())
+	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), s1)
+
+	require.True(t, seriesSet.Next())
+	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), s1)
+
+	require.True(t, seriesSet.Next())
+	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
+
+	require.False(t, seriesSet.Next())
+	require.NoError(t, seriesSet.Err())
+}
+
 func TestDistributorQuerier_LabelNames(t *testing.T) {
 	const mint, maxt = 0, 10
 
@@ -352,6 +441,33 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 	require.Nil(t, it.Err())
 }
 
+func verifyHistogramSeries(t *testing.T, series storage.Series, l labels.Labels, hs []mimirpb.Histogram) {
+	require.Equal(t, l, series.Labels())
+
+	it := series.Iterator(nil)
+	for _, eh := range hs {
+		valType := it.Next()
+		require.NotEqual(t, chunkenc.ValNone, valType)
+		require.Nil(t, it.Err())
+		switch valType {
+		case chunkenc.ValHistogram:
+			ts, h := it.AtHistogram()
+			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
+			h.CounterResetHint = histogram.UnknownCounterReset
+			require.Equal(t, eh, mimirpb.FromHistogramToHistogramProto(ts, h))
+		case chunkenc.ValFloatHistogram:
+			ts, fh := it.AtFloatHistogram()
+			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
+			fh.CounterResetHint = histogram.UnknownCounterReset
+			require.Equal(t, eh, mimirpb.FromFloatHistogramToHistogramProto(ts, fh))
+		default:
+			panic(fmt.Sprintf("verifyHistogramSeries - unhandled value type: %v", valType))
+		}
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.Nil(t, it.Err())
+}
+
 func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
@@ -367,6 +483,42 @@ func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
 		chunk.NewChunk(nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
 	})
+	require.NoError(t, err)
+
+	return clientChunks
+}
+
+func convertToHistogramChunks(t *testing.T, hs []mimirpb.Histogram) []client.Chunk {
+	// We need to make sure that there is at least one chunk present,
+	// else no series will be selected.
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
+	require.NoError(t, err)
+	promChunkF, err := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk)
+	require.NoError(t, err)
+	hasFloatH := false // using this instead of promChunk.Len() as implementations may be expensive
+	hasIntH := false
+
+	var c chunk.EncodedChunk
+	for _, h := range hs {
+		if h.IsFloatHistogram() {
+			c, err = promChunkF.AddFloatHistogram(h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h))
+			hasFloatH = true
+		} else {
+			c, err = promChunk.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
+			hasIntH = true
+		}
+		require.NoError(t, err)
+		require.Nil(t, c)
+	}
+
+	chunks := []chunk.Chunk{}
+	if hasIntH {
+		chunks = append(chunks, chunk.NewChunk(nil, promChunk, model.Time(hs[0].Timestamp), model.Time(hs[len(hs)-1].Timestamp)))
+	}
+	if hasFloatH {
+		chunks = append(chunks, chunk.NewChunk(nil, promChunkF, model.Time(hs[0].Timestamp), model.Time(hs[len(hs)-1].Timestamp)))
+	}
+	clientChunks, err := chunkcompat.ToChunks(chunks)
 	require.NoError(t, err)
 
 	return clientChunks

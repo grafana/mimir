@@ -315,7 +315,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 		Timeseries: []prompb.TimeSeries{
 			{
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistogram(0)),
 				},
 			},
 		},
@@ -338,11 +338,11 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestHistograms(1)[0],
+			tsdbHistogram: tsdb.GenerateTestHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeHistograms(1)[0],
+			tsdbHistogram: tsdb.GenerateTestGaugeHistogram(0),
 			expectGauge:   true,
 		},
 	}
@@ -373,11 +373,11 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestFloatHistograms(1)[0],
+			tsdbHistogram: tsdb.GenerateTestFloatHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeFloatHistograms(1)[0],
+			tsdbHistogram: tsdb.GenerateTestGaugeFloatHistogram(0),
 			expectGauge:   true,
 		},
 	}

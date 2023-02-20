@@ -205,7 +205,7 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 		sum = series[0].Samples[0].Value
 	} else {
 		sum = series[0].Histograms[0].Sum
-		metric["foo"] = model.LabelValue("bar") // TODO(zenador): why is this necessary?
+		metric["foo"] = model.LabelValue("bar") // TODO(histograms): why is this necessary?
 	}
 
 	expectedVector := model.Vector{

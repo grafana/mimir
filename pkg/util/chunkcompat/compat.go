@@ -103,7 +103,7 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 				Value:     model.SampleValue(sam.Value),
 			})
 
-			// TODO(zenador): add histograms, but this only seems to be used in tests
+			// TODO(histograms): add histograms, but this only seems to be used in tests
 		}
 
 		result = append(result, &model.SampleStream{
