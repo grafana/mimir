@@ -1196,7 +1196,7 @@ results_cache:
 # sharding, but a hint given to the query sharding when the query execution is
 # initially planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
-[query_sharding_max_series_per_shard: <int> | default = 0]
+[query_sharding_target_series_per_shard: <int> | default = 0]
 
 # (experimental) Format to use when retrieving query results from queriers.
 # Supported values: json, protobuf
