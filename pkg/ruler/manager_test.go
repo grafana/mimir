@@ -29,7 +29,10 @@ func TestSyncRuleGroups(t *testing.T) {
 	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
-	const user = "testUser"
+	const (
+		user  = "testUser"
+		user1 = "testUser1"
+	)
 
 	userRules := map[string]rulespb.RuleGroupList{
 		user: {
@@ -40,21 +43,36 @@ func TestSyncRuleGroups(t *testing.T) {
 				User:      user,
 			},
 		},
+		user1: {
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: "ns",
+				Interval:  1 * time.Minute,
+				User:      user1,
+			},
+		},
 	}
 	m.SyncRuleGroups(context.Background(), userRules)
 
 	mgr := getManager(m, user)
 	require.NotNil(t, mgr)
-
 	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return mgr.(*mockRulesManager).running.Load()
+	})
+
+	mgr1 := getManager(m, user1)
+	require.NotNil(t, mgr1)
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return mgr1.(*mockRulesManager).running.Load()
 	})
 
 	// Verify that user rule groups are now cached locally.
 	{
 		users, err := m.mapper.users()
 		require.NoError(t, err)
-		require.Equal(t, []string{user}, users)
+		require.Contains(t, users, user)
+		require.Contains(t, users, user1)
+		require.Equal(t, 2, len(users))
 	}
 
 	// Passing empty map / nil stops all managers.
@@ -64,6 +82,10 @@ func TestSyncRuleGroups(t *testing.T) {
 	// Make sure old manager was stopped.
 	test.Poll(t, 1*time.Second, false, func() interface{} {
 		return mgr.(*mockRulesManager).running.Load()
+	})
+
+	test.Poll(t, 1*time.Second, false, func() interface{} {
+		return mgr1.(*mockRulesManager).running.Load()
 	})
 
 	// Verify that local rule groups were removed.
@@ -88,7 +110,7 @@ func TestSyncRuleGroups(t *testing.T) {
 	{
 		users, err := m.mapper.users()
 		require.NoError(t, err)
-		require.Equal(t, []string{user}, users)
+		require.Contains(t, users, user)
 	}
 
 	m.Stop()

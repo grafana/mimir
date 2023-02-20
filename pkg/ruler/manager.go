@@ -105,9 +105,17 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
 
+	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
+	// Since users are different, we can sync rules in parallel.
+	var wg sync.WaitGroup
 	for userID, ruleGroup := range ruleGroups {
-		r.syncRulesToManager(ctx, userID, ruleGroup)
+		wg.Add(1)
+		go func(id string, rg rulespb.RuleGroupList) {
+			defer wg.Done()
+			r.syncRulesToManager(ctx, id, rg)
+		}(userID, ruleGroup)
 	}
+	wg.Wait()
 
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
