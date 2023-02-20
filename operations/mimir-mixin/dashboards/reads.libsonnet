@@ -254,6 +254,10 @@ local filename = 'mimir-reads.json';
       $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
     )
     .addRowIf(
+      $._config.autoscaling.query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Query-frontend'),
+    )
+    .addRowIf(
       $._config.autoscaling.querier.enabled,
       $.row('Querier - autoscaling')
       .addPanel(

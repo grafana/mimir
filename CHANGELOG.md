@@ -57,6 +57,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
 * [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049 #4216
 * [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
+* [ENHANCEMENT] Add query-frontend and ruler-query-frontend auto-scaling panels to Reads and Ruler dashboards. #4199
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
 
@@ -64,6 +65,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 * [ENHANCEMENT] Add optional `weight` param to `newQuerierScaledObject` and `newRulerQuerierScaledObject` to allow running multiple querier deployments on different node types. #4141
+* [ENHANCEMENT] Add support for query-frontend and ruler-query-frontend auto-scaling. #4199
 
 ### Mimirtool
 

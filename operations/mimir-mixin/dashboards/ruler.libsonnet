@@ -105,6 +105,10 @@ local filename = 'mimir-ruler.json';
       $._config.autoscaling.ruler.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Ruler'),
     )
+    .addRowIf(
+      $._config.autoscaling.ruler_query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler-query-frontend'),
+    )
     .addRow(
       $.kvStoreRow('Ruler - key-value store for rulers ring', 'ruler', 'ruler')
     )

@@ -489,6 +489,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local component = std.asciiLower(componentTitle);
+    local field = std.strReplace(component, '-', '_');
     super.row('%s - autoscaling' % [componentTitle])
     .addPanel(
       local title = 'Replicas';
@@ -502,7 +503,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
           ||| % {
             namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
           |||
@@ -515,7 +516,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
           ||| % {
             namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
         ],
@@ -559,7 +560,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 "metric", "$1", "metric_name", "(.+)"
             )
           ||| % {
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
@@ -587,7 +588,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 "metric", "$1", "metric_name", "(.+)"
             )
           ||| % {
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
@@ -606,7 +607,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       local title = 'Autoscaler failures rate';
       $.panel(title) +
       $.queryPanel(
-        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[component].hpa_name),
+        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[field].hpa_name),
         '{{metric}} failures'
       ) +
       $.panelDescription(
