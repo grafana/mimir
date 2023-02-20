@@ -45,7 +45,6 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -117,8 +116,6 @@ type Distributor struct {
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
-
-	ephemeralCheckerByUser ephemeral.SeriesCheckerByUser
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
@@ -237,7 +234,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, ephemeralChecker ephemeral.SeriesCheckerByUser, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -255,15 +252,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices = append(subservices, haTracker)
 
 	d := &Distributor{
-		cfg:                    cfg,
-		log:                    log,
-		ingestersRing:          ingestersRing,
-		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		ephemeralCheckerByUser: ephemeralChecker,
-		healthyInstancesCount:  atomic.NewUint32(0),
-		limits:                 limits,
-		HATracker:              haTracker,
-		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                   cfg,
+		log:                   log,
+		ingestersRing:         ingestersRing,
+		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount: atomic.NewUint32(0),
+		limits:                limits,
+		HATracker:             haTracker,
+		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -729,7 +725,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
-	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -1057,61 +1052,6 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 		}
 
 		return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
-	}
-}
-
-// prePushEphemeralMiddleware is used as push.Func middleware in front of push method.
-// If marking series as ephemeral is enabled, this middleware uses the ephemeral series
-// provider to determine whether a time series should be marked as ephemeral.
-func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
-	if !d.cfg.EphemeralSeriesEnabled {
-		return next
-	}
-
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return nil, err
-		}
-
-		// Ensure that only time series which shall be marked as ephemeral according to the ephemeral checker get
-		// ingested into the ephemeral store.
-		req.EphemeralTimeseries = nil
-
-		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID, req.Source)
-		if ephemeralChecker != nil {
-			first := true
-			var deleteTs []int
-			for ix := 0; ix < len(req.Timeseries); ix++ {
-				ts := req.Timeseries[ix]
-
-				if !ephemeralChecker.ShouldMarkEphemeral(ts.Labels) {
-					continue
-				}
-
-				if first {
-					req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
-					deleteTs = make([]int, 0, len(req.Timeseries)-ix)
-					first = false
-				}
-
-				// Move this series from persistent to ephemeral storage. We don't ingest exemplars for ephemeral series.
-				mimirpb.ClearExemplars(ts.TimeSeries)
-				req.EphemeralTimeseries = append(req.EphemeralTimeseries, ts)
-				deleteTs = append(deleteTs, ix)
-			}
-
-			if len(deleteTs) > 0 {
-				req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, deleteTs)
-			}
-		}
-
-		return next(ctx, pushReq)
 	}
 }
 
