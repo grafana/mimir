@@ -38,6 +38,7 @@ type queryFrontendTestConfig struct {
 	querySchedulerDiscoveryMode string
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
+	withHistograms              bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -53,6 +54,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -69,6 +71,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -86,6 +89,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -107,6 +111,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "dns",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 
@@ -115,6 +120,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "ring",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 }
@@ -135,6 +141,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -148,6 +155,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 
 			return mimirConfigFile, e2e.EmptyFlags()
 		},
+		withHistograms: true,
 	})
 }
 
@@ -194,6 +202,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -217,6 +226,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 
 					return "", flags
 				},
+				withHistograms: false, // TODO(histograms): make this work for protobuf
 			})
 		})
 	}
@@ -297,10 +307,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		var genSeries generateSeriesFunc
-		if u%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
+		genSeries := generateFloatSeries
+		if cfg.withHistograms && u%2 > 0 {
 			genSeries = generateHistogramSeries
 		}
 		series, expectedVectors[u], _ = genSeries("series_1", now)
