@@ -65,7 +65,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // Validate validates the config.
 func (cfg *Config) Validate() error {
-	if cfg.CacheResults || cardinalityBasedShardingEnabled(cfg) {
+	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		if cfg.SplitQueriesByInterval <= 0 {
 			return errors.New("-query-frontend.cache-results may only be enabled in conjunction with -query-frontend.split-queries-by-interval. Please set the latter")
 		}
@@ -81,7 +81,7 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-func cardinalityBasedShardingEnabled(cfg *Config) bool {
+func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
 }
 
@@ -190,7 +190,7 @@ func newQueryTripperware(
 	}
 
 	var c cache.Cache
-	if cfg.CacheResults || cardinalityBasedShardingEnabled(&cfg) {
+	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
 
 		c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
@@ -239,7 +239,7 @@ func newQueryTripperware(
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
-		if cardinalityBasedShardingEnabled(&cfg) {
+		if cfg.cardinalityBasedShardingEnabled() {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
