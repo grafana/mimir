@@ -726,28 +726,23 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	// Walk the samples, appending them to the users database
-	var app extendedAppender
+	app := db.Appender(ctx).(extendedAppender)
+	level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Timeseries))
 
-	if len(req.Timeseries) > 0 {
-		app = db.Appender(ctx).(extendedAppender)
+	var activeSeries *activeseries.ActiveSeries
+	if i.cfg.ActiveSeriesMetricsEnabled {
+		activeSeries = db.activeSeries
+	}
 
-		level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Timeseries))
+	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-		var activeSeries *activeseries.ActiveSeries
-		if i.cfg.ActiveSeriesMetricsEnabled {
-			activeSeries = db.activeSeries
+	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		if err := app.Rollback(); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
-
-		err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
-		if err != nil {
-			if err := app.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-			}
-
-			return nil, err
-		}
+		return nil, err
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
