@@ -64,9 +64,16 @@ func TestStoreGatewayIndexHeaderReaders(t *testing.T) {
 
 			// Push some data to the cluster.
 			now := time.Now()
-			series, expectedVector, expectedMatrix := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+			series1Name := "test_series_1"
+			series2Name := "test_series_2"
+			series1, expectedVector1, expectedMatrix1 := generateFloatSeries(series1Name, now, prompb.Label{Name: "foo", Value: "bar"})
+			series2, expectedVector2, expectedMatrix2 := generateHistogramSeries(series2Name, now, prompb.Label{Name: "foo", Value: "bar"})
 
-			res, err := c.Push(series)
+			res, err := c.Push(series1)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
+
+			res, err = c.Push(series2)
 			require.NoError(t, err)
 			require.Equal(t, 200, res.StatusCode)
 
@@ -77,15 +84,25 @@ func TestStoreGatewayIndexHeaderReaders(t *testing.T) {
 			require.NoError(t, mimirInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_bucket_store_blocks_loaded"))
 
 			// Verify we can read the data we just pushed, both with an instant query and a range query.
-			queryResult, err := c.Query("test_series_1", now)
+			queryResult, err := c.Query(series1Name, now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, queryResult.Type())
-			require.Equal(t, expectedVector, queryResult.(model.Vector))
+			require.Equal(t, expectedVector1, queryResult.(model.Vector))
 
-			rangeResult, err := c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+			rangeResult, err := c.QueryRange(series1Name, now.Add(-5*time.Minute), now, 15*time.Second)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, rangeResult.Type())
-			require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+			require.Equal(t, expectedMatrix1, rangeResult.(model.Matrix))
+
+			queryResult, err = c.Query(series2Name, now)
+			require.NoError(t, err)
+			require.Equal(t, model.ValVector, queryResult.Type())
+			require.Equal(t, expectedVector2, queryResult.(model.Vector))
+
+			rangeResult, err = c.QueryRange(series2Name, now.Add(-5*time.Minute), now, 15*time.Second)
+			require.NoError(t, err)
+			require.Equal(t, model.ValMatrix, rangeResult.Type())
+			require.Equal(t, expectedMatrix2, rangeResult.(model.Matrix))
 
 			// Verify we can retrieve the labels we just pushed.
 			labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)

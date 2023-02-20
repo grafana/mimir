@@ -463,7 +463,7 @@ overrides:
 	require.NoError(t, err)
 
 	for i := 0; i < 50; i++ {
-		series, _, _ := generateSeries(
+		series, _, _ := generateFloatSeries(
 			"metric",
 			now,
 			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
@@ -771,7 +771,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateSeries("series_1", now)
+	series, _, _ = generateFloatSeries("series_1", now)
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
