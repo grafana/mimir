@@ -670,6 +670,7 @@ loop:
 type GenericSamplePair interface {
 	Sample | SampleHistogramPair | Histogram
 	GetTimestampVal() int64
+	GetBaseVal() float64
 }
 
 func (s Sample) GetTimestampVal() int64 {
@@ -682,4 +683,19 @@ func (vs SampleHistogramPair) GetTimestampVal() int64 {
 
 func (m Histogram) GetTimestampVal() int64 {
 	return m.Timestamp
+}
+
+func (s Sample) GetBaseVal() float64 {
+	return s.Value
+}
+
+func (vs SampleHistogramPair) GetBaseVal() float64 {
+	if vs.Histogram == nil {
+		return 0
+	}
+	return vs.Histogram.Sum
+}
+
+func (m Histogram) GetBaseVal() float64 {
+	return m.Sum
 }

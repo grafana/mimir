@@ -308,11 +308,11 @@ func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToHistogramChunks(t, s1),
+					Chunks: convertToChunks(t, s1),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToHistogramChunks(t, s1),
+					Chunks: convertToChunks(t, s1),
 				},
 			},
 
@@ -338,13 +338,13 @@ func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
-	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), s1)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), s1)
 
 	require.True(t, seriesSet.Next())
-	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), s1)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), s1)
 
 	require.True(t, seriesSet.Next())
-	verifyHistogramSeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
@@ -426,40 +426,29 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	}
 }
 
-func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []mimirpb.Sample) {
+func verifySeries[S mimirpb.GenericSamplePair](t *testing.T, series storage.Series, l labels.Labels, samples []S) {
 	require.Equal(t, l, series.Labels())
 
 	it := series.Iterator(nil)
 	for _, s := range samples {
-		require.Equal(t, chunkenc.ValFloat, it.Next())
-		require.Nil(t, it.Err())
-		ts, v := it.At()
-		require.Equal(t, s.Value, v)
-		require.Equal(t, s.TimestampMs, ts)
-	}
-	require.Equal(t, chunkenc.ValNone, it.Next())
-	require.Nil(t, it.Err())
-}
-
-func verifyHistogramSeries(t *testing.T, series storage.Series, l labels.Labels, hs []mimirpb.Histogram) {
-	require.Equal(t, l, series.Labels())
-
-	it := series.Iterator(nil)
-	for _, eh := range hs {
 		valType := it.Next()
 		require.NotEqual(t, chunkenc.ValNone, valType)
 		require.Nil(t, it.Err())
 		switch valType {
+		case chunkenc.ValFloat:
+			ts, v := it.At()
+			require.Equal(t, s.GetBaseVal(), v)
+			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValHistogram:
 			ts, h := it.AtHistogram()
 			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
 			h.CounterResetHint = histogram.UnknownCounterReset
-			require.Equal(t, eh, mimirpb.FromHistogramToHistogramProto(ts, h))
+			require.Equal(t, s, mimirpb.FromHistogramToHistogramProto(ts, h))
 		case chunkenc.ValFloatHistogram:
 			ts, fh := it.AtFloatHistogram()
 			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
 			fh.CounterResetHint = histogram.UnknownCounterReset
-			require.Equal(t, eh, mimirpb.FromFloatHistogramToHistogramProto(ts, fh))
+			require.Equal(t, s, mimirpb.FromFloatHistogramToHistogramProto(ts, fh))
 		default:
 			panic(fmt.Sprintf("verifyHistogramSeries - unhandled value type: %v", valType))
 		}
@@ -468,55 +457,53 @@ func verifyHistogramSeries(t *testing.T, series storage.Series, l labels.Labels,
 	require.Nil(t, it.Err())
 }
 
-func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
+func convertToChunks[S mimirpb.GenericSamplePair](t *testing.T, samples []S) []client.Chunk {
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
 	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(t, err)
-
-	for _, s := range samples {
-		c, err := promChunk.Add(model.SamplePair{Value: model.SampleValue(s.Value), Timestamp: model.Time(s.TimestampMs)})
-		require.NoError(t, err)
-		require.Nil(t, c)
-	}
-
-	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
-	})
+	promChunkH, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
 	require.NoError(t, err)
-
-	return clientChunks
-}
-
-func convertToHistogramChunks(t *testing.T, hs []mimirpb.Histogram) []client.Chunk {
-	// We need to make sure that there is at least one chunk present,
-	// else no series will be selected.
-	promChunk, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
+	promChunkFH, err := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk)
 	require.NoError(t, err)
-	promChunkF, err := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk)
-	require.NoError(t, err)
-	hasFloatH := false // using this instead of promChunk.Len() as implementations may be expensive
+	hasSamples := false
 	hasIntH := false
+	hasFloatH := false // using this instead of promChunk.Len() as implementations may be expensive
 
 	var c chunk.EncodedChunk
-	for _, h := range hs {
-		if h.IsFloatHistogram() {
-			c, err = promChunkF.AddFloatHistogram(h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h))
-			hasFloatH = true
-		} else {
-			c, err = promChunk.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
-			hasIntH = true
+	for _, s := range samples {
+		switch x := interface{}(s).(type) {
+		case mimirpb.Sample:
+			c, err = promChunk.Add(model.SamplePair{Value: model.SampleValue(s.GetBaseVal()), Timestamp: model.Time(s.GetTimestampVal())})
+			hasSamples = true
+		case mimirpb.Histogram:
+			h, ok := interface{}(s).(mimirpb.Histogram)
+			if !ok {
+				panic(fmt.Sprintf("convertToChunks - can't convert type %v to Histogram", x))
+			}
+			if h.IsFloatHistogram() {
+				c, err = promChunkFH.AddFloatHistogram(s.GetTimestampVal(), mimirpb.FromHistogramProtoToFloatHistogram(&h))
+				hasFloatH = true
+			} else {
+				c, err = promChunkH.AddHistogram(s.GetTimestampVal(), mimirpb.FromHistogramProtoToHistogram(&h))
+				hasIntH = true
+			}
+		default:
+			panic(fmt.Sprintf("convertToChunks - unhandled type: %v", x))
 		}
 		require.NoError(t, err)
 		require.Nil(t, c)
 	}
 
 	chunks := []chunk.Chunk{}
+	if hasSamples {
+		chunks = append(chunks, chunk.NewChunk(nil, promChunk, model.Time(samples[0].GetTimestampVal()), model.Time(samples[len(samples)-1].GetTimestampVal())))
+	}
 	if hasIntH {
-		chunks = append(chunks, chunk.NewChunk(nil, promChunk, model.Time(hs[0].Timestamp), model.Time(hs[len(hs)-1].Timestamp)))
+		chunks = append(chunks, chunk.NewChunk(nil, promChunkH, model.Time(samples[0].GetTimestampVal()), model.Time(samples[len(samples)-1].GetTimestampVal())))
 	}
 	if hasFloatH {
-		chunks = append(chunks, chunk.NewChunk(nil, promChunkF, model.Time(hs[0].Timestamp), model.Time(hs[len(hs)-1].Timestamp)))
+		chunks = append(chunks, chunk.NewChunk(nil, promChunkFH, model.Time(samples[0].GetTimestampVal()), model.Time(samples[len(samples)-1].GetTimestampVal())))
 	}
 	clientChunks, err := chunkcompat.ToChunks(chunks)
 	require.NoError(t, err)
