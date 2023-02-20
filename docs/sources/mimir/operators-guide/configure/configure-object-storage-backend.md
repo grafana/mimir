@@ -44,7 +44,7 @@ common:
     backend: s3
     s3:
       endpoint: s3.us-east-2.amazonaws.com
-      region: us-east
+      region: us-east-2
       secret_access_key: "${AWS_SECRET_ACCESS_KEY}" # This is a secret injected via an environment variable
       access_key_id: "${AWS_ACCESS_KEY_ID}" # This is a secret injected via an environment variable
 

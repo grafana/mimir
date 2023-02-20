@@ -4,12 +4,19 @@ package storegateway
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
+	"hash/crc32"
 	"sync"
 	"time"
 
+	"github.com/dennwc/varint"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -170,6 +177,9 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 
 func newSeriesSetWithChunks(
 	ctx context.Context,
+	logger log.Logger,
+	userID string,
+	cache chunkscache.Cache,
 	chunkReaders bucketChunkReaders,
 	refsIterator seriesChunkRefsSetIterator,
 	refsIteratorBatchSize int,
@@ -177,7 +187,7 @@ func newSeriesSetWithChunks(
 	minT, maxT int64,
 ) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, logger, userID, cache, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return newSeriesChunksSeriesSet(iterator)
 }
@@ -312,6 +322,10 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 }
 
 type loadingSeriesChunksSetIterator struct {
+	ctx           context.Context
+	logger        log.Logger
+	userID        string
+	cache         chunkscache.Cache
 	chunkReaders  bucketChunkReaders
 	from          seriesChunkRefsSetIterator
 	fromBatchSize int
@@ -323,6 +337,10 @@ type loadingSeriesChunksSetIterator struct {
 }
 
 func newLoadingSeriesChunksSetIterator(
+	ctx context.Context,
+	logger log.Logger,
+	userID string,
+	cache chunkscache.Cache,
 	chunkReaders bucketChunkReaders,
 	from seriesChunkRefsSetIterator,
 	fromBatchSize int,
@@ -331,6 +349,10 @@ func newLoadingSeriesChunksSetIterator(
 	maxT int64,
 ) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
+		ctx:           ctx,
+		logger:        logger,
+		userID:        userID,
+		cache:         cache,
 		chunkReaders:  chunkReaders,
 		from:          from,
 		fromBatchSize: fromBatchSize,
@@ -370,22 +392,39 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	// so can safely expand it.
 	nextSet.series = nextSet.series[:nextUnloaded.len()]
 
+	var cachedRanges map[chunkscache.Range][]byte
+	if c.cache != nil {
+		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series))
+		c.recordCachedChunks(cachedRanges)
+	}
 	c.chunkReaders.reset()
 
-	for i, s := range nextUnloaded.series {
-		nextSet.series[i].lset = s.lset
-		nextSet.series[i].chks = nextSet.newSeriesAggrChunkSlice(s.numChunksWithinRange(c.minTime, c.maxTime))
+	for sIdx, s := range nextUnloaded.series {
+		nextSet.series[sIdx].lset = s.lset
+		nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
 		seriesChunkIdx := 0
 
 		for _, chunksRange := range s.chunksRanges {
-			for _, chunk := range chunksRange.refs {
-				if chunk.minTime > c.maxTime || chunk.maxTime < c.minTime {
+			rangeChunks := nextSet.series[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
+			initializeChunks(chunksRange, rangeChunks)
+			if cachedRange, ok := cachedRanges[toCacheKey(chunksRange)]; ok {
+				err := parseChunksRange(cachedRange, rangeChunks)
+				if err == nil {
+					seriesChunkIdx += len(chunksRange.refs)
 					continue
 				}
-				nextSet.series[i].chks[seriesChunkIdx].MinTime = chunk.minTime
-				nextSet.series[i].chks[seriesChunkIdx].MaxTime = chunk.maxTime
+				// we couldn't parse the chunk range form the cache, so we will fetch its chunks from the bucket.
+				level.Warn(c.logger).Log("msg", "parsing cache chunks", "err", err)
+			}
 
-				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), i, seriesChunkIdx)
+			for _, chunk := range chunksRange.refs {
+				if c.cache == nil && (chunk.minTime > c.maxTime || chunk.maxTime < c.minTime) {
+					// If the cache is not set, then we don't need to overfetch chunks that we know are outside minT/maxT.
+					// If the cache is set, then we need to do that, so we can cache the complete chunks ranges; they will be filtered out after fetching.
+					seriesChunkIdx++
+					continue
+				}
+				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), sIdx, seriesChunkIdx, chunk.length)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
 					return false
@@ -403,10 +442,117 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
+	if c.cache != nil {
+		c.storeRangesInCache(nextUnloaded.series, nextSet.series, cachedRanges)
+	}
+
+	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
+	// range of chunks. After storing the chunks in the cache, we should throw away the chunks that are outside
+	// the requested time range.
+	for sIdx := range nextSet.series {
+		nextSet.series[sIdx].chks = removeChunksOutsideRange(nextSet.series[sIdx].chks, c.minTime, c.maxTime)
+	}
+	c.recordReturnedChunks(nextSet.series)
 
 	nextSet.chunksReleaser = chunksPool
 	c.current = nextSet
 	return true
+}
+
+func initializeChunks(chunksRange seriesChunkRefsRange, chunks []storepb.AggrChunk) {
+	for cIdx := range chunks {
+		chunks[cIdx].MinTime = chunksRange.refs[cIdx].minTime
+		chunks[cIdx].MaxTime = chunksRange.refs[cIdx].maxTime
+		if chunks[cIdx].Raw == nil {
+			chunks[cIdx].Raw = &storepb.Chunk{}
+		}
+	}
+}
+
+func toCacheKeys(series []seriesChunkRefs) []chunkscache.Range {
+	totalRanges := 0
+	for _, s := range series {
+		totalRanges += len(s.chunksRanges)
+	}
+	ranges := make([]chunkscache.Range, 0, totalRanges)
+	for _, s := range series {
+		for _, g := range s.chunksRanges {
+			ranges = append(ranges, toCacheKey(g))
+		}
+	}
+	return ranges
+}
+
+func toCacheKey(g seriesChunkRefsRange) chunkscache.Range {
+	return chunkscache.Range{
+		BlockID:   g.blockID,
+		Start:     g.firstRef(),
+		NumChunks: len(g.refs),
+	}
+}
+
+func parseChunksRange(rBytes []byte, chunks []storepb.AggrChunk) error {
+	for i := range chunks {
+		// ┌───────────────┬───────────────────┬──────────────┐
+		// │ len <uvarint> │ encoding <1 byte> │ data <bytes> │
+		// └───────────────┴───────────────────┴──────────────┘
+		chunkDataLen, n := varint.Uvarint(rBytes)
+		if n == 0 {
+			return fmt.Errorf("not enough bytes (%d) to read length of chunk %d/%d", len(rBytes), i, len(chunks))
+		}
+		if n < 0 {
+			return fmt.Errorf("chunk length doesn't fit into uint64 %d/%d", i, len(chunks))
+		}
+		totalChunkLen := n + 1 + int(chunkDataLen)
+		// The length was estimated, but at this point we know the exact length of the chunk, so we can set it.
+		if totalChunkLen > len(rBytes) {
+			return fmt.Errorf("malformed cached chunk range")
+		}
+		encodingByte := rBytes[n]
+		enc, ok := convertChunkEncoding(encodingByte)
+		if !ok {
+			return fmt.Errorf("unknown chunk encoding (%d)", encodingByte)
+		}
+		chunks[i].Raw.Type = enc
+		chunks[i].Raw.Data = rBytes[n+1 : totalChunkLen]
+		rBytes = rBytes[totalChunkLen:]
+	}
+	return nil
+}
+
+func convertChunkEncoding(storageEncoding byte) (storepb.Chunk_Encoding, bool) {
+	converted := storepb.Chunk_Encoding(storageEncoding)
+	_, exists := storepb.Chunk_Encoding_name[int32(converted)]
+	return converted, exists
+}
+
+func (c *loadingSeriesChunksSetIterator) recordCachedChunks(cachedRanges map[chunkscache.Range][]byte) {
+	fetchedChunks := 0
+	fetchedBytes := 0
+	for k, b := range cachedRanges {
+		fetchedChunks += k.NumChunks
+		fetchedBytes += len(b)
+	}
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksFetched += fetchedChunks
+		stats.chunksFetchedSizeSum += fetchedBytes
+	})
+}
+
+func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
+	writeIdx := 0
+	for i, chk := range chks {
+		if chk.MaxTime < minT || chk.MinTime > maxT {
+			continue
+		}
+		if writeIdx != i {
+			chks[writeIdx] = chks[i]
+		}
+		writeIdx++
+	}
+
+	return chks[:writeIdx]
 }
 
 func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
@@ -415,6 +561,79 @@ func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
 
 func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
+}
+
+func encodeChunksForCache(chunks []storepb.AggrChunk) []byte {
+	encodedSize := 0
+	for _, chk := range chunks {
+		dataLen := len(chk.Raw.Data)
+		encodedSize += varint.UvarintSize(uint64(dataLen)) + 1 + dataLen
+	}
+	encoded := make([]byte, 0, encodedSize)
+	for _, chk := range chunks {
+		encoded = binary.AppendUvarint(encoded, uint64(len(chk.Raw.Data)))
+		// The cast to byte() below is safe because the actual type of the chunk in the TSDB is a single byte,
+		// so the type in our protos shouldn't take more than 1 byte.
+		encoded = append(encoded, byte(chk.Raw.Type))
+		encoded = append(encoded, chk.Raw.Data...)
+	}
+	return encoded
+}
+
+func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, cacheHits map[chunkscache.Range][]byte) {
+	// Count the number of ranges that were not previously cached, and so we need to store to the cache.
+	cacheMisses := 0
+	for _, s := range seriesRefs {
+		for _, chunksRange := range s.chunksRanges {
+			if _, ok := cacheHits[toCacheKey(chunksRange)]; !ok {
+				cacheMisses++
+			}
+		}
+	}
+
+	toStore := make(map[chunkscache.Range][]byte, cacheMisses)
+	for sIdx, s := range seriesRefs {
+		seriesChunkIdx := 0
+		for _, chunksRange := range s.chunksRanges {
+			cacheKey := toCacheKey(chunksRange)
+			if _, ok := cacheHits[cacheKey]; ok {
+				seriesChunkIdx += len(chunksRange.refs)
+				continue
+			}
+			rangeChunks := seriesChunks[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
+			toStore[cacheKey] = encodeChunksForCache(rangeChunks)
+
+			seriesChunkIdx += len(chunksRange.refs)
+		}
+	}
+	c.cache.StoreChunks(c.ctx, c.userID, toStore)
+}
+
+func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEntry) {
+	returnedChunksBytes := 0
+	returnedChunks := 0
+	for _, s := range series {
+		returnedChunksBytes += chunksSizeInSegmentFile(s.chks)
+		returnedChunks += len(s.chks)
+	}
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksReturned += returnedChunks
+		stats.chunksReturnedSizeSum += returnedChunksBytes
+	})
+}
+
+// chunksSizeInSegmentFile "reverse" calculates the size of chunks in the segment file. This was the size we returned from the
+// touched range bytes. We can measure only the data length of the chunk,
+// but that would not account for the extra few bytes for data length, encoding and crc32.
+// These extra few bytes may be significant if the data bytes are small.
+func chunksSizeInSegmentFile(chks []storepb.AggrChunk) int {
+	total := 0
+	for _, c := range chks {
+		dataLen := len(c.Raw.Data)
+		total += varint.UvarintSize(uint64(dataLen)) + 1 + dataLen + crc32.Size
+	}
+	return total
 }
 
 type nextDurationMeasuringIterator[Set any] struct {

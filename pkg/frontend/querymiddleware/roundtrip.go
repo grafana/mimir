@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -48,6 +49,8 @@ type Config struct {
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
 	CacheSplitter CacheSplitter `yaml:"-"`
+
+	QueryResultResponseFormat string `yaml:"query_result_response_format" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -59,6 +62,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.Uint64Var(&cfg.MaxSeriesPerShard, maxSeriesPerShardFlagName, 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
+	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -76,6 +80,11 @@ func (cfg *Config) Validate() error {
 			return fmt.Errorf("-%s may only be enabled in conjunction with -%s", maxSeriesPerShardFlagName, cacheResultsFlagName)
 		}
 	}
+
+	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
+		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
+	}
+
 	return nil
 }
 

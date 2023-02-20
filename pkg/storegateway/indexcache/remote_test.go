@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
+func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -85,7 +85,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			expectedHits:   map[labels.Label][]byte{label1: value1},
 			expectedMisses: []labels.Label{label2},
 		},
-		"should return no hits on memcached error": {
+		"should return no hits on remote cache error": {
 			setup: []mockedPostings{
 				{userID: user1, block: block1, label: label1, value: value1},
 				{userID: user1, block: block1, label: label2, value: value2},
@@ -102,8 +102,8 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -128,7 +128,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
+func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -185,7 +185,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			expectedHits:   map[storage.SeriesRef][]byte{1: value1},
 			expectedMisses: []storage.SeriesRef{2},
 		},
-		"should return no hits on memcached error": {
+		"should return no hits on remote cache error": {
 			setup: []mockedSeriesForRef{
 				{userID: user1, block: block1, id: 1, value: value1},
 				{userID: user1, block: block1, id: 2, value: value2},
@@ -202,8 +202,8 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the series expected before running the test.
@@ -228,7 +228,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
+func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -272,7 +272,7 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 			expectedData: value1,
 			expectedOk:   true,
 		},
-		"should return no hit on memcached error": {
+		"should return no hit on remote cache error": {
 			setup: []mockedExpandedPostings{
 				{userID: user1, block: block1, matchers: matchers1, value: value1},
 				{userID: user1, block: block1, matchers: matchers2, value: value2},
@@ -289,8 +289,8 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -319,7 +319,7 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
+func TestRemoteIndexCache_FetchSeriesForPostings(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -374,7 +374,7 @@ func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
 			expectedData: value1,
 			expectedOk:   true,
 		},
-		"should return no hit on memcached error": {
+		"should return no hit on remote cache error": {
 			setup: []mockedSeries{
 				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
 				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2},
@@ -393,8 +393,8 @@ func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -423,7 +423,7 @@ func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
+func TestRemoteIndexCache_FetchSeries(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -473,7 +473,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			expectedData: value1,
 			expectedOk:   true,
 		},
-		"should return no hit on memcached error": {
+		"should return no hit on remote cache error": {
 			setup: []mockedSeries{
 				{userID: user1, block: block1, matchers: matchers1, shard: shard1, value: value1},
 				{userID: user1, block: block1, matchers: matchers2, shard: shard1, value: value2},
@@ -491,8 +491,8 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -521,7 +521,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
+func TestRemoteIndexCache_FetchLabelNames(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -565,7 +565,7 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 			expectedData: value1,
 			expectedOk:   true,
 		},
-		"should return no hit on memcached error": {
+		"should return no hit on remote cache error": {
 			setup: []mockedLabelNames{
 				{userID: user1, block: block1, matchers: matchers1, value: value1},
 				{userID: user1, block: block1, matchers: matchers2, value: value2},
@@ -582,8 +582,8 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -612,7 +612,7 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 	}
 }
 
-func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
+func TestRemoteIndexCache_FetchLabelValues(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -662,7 +662,7 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 			expectedData:   value1,
 			expectedOk:     true,
 		},
-		"should return no hit on memcached error": {
+		"should return no hit on remote cache error": {
 			setup: []mockedLabelValues{
 				{userID: user1, block: block1, labelName: labelName1, matchers: matchers1, value: value1},
 				{userID: user1, block: block1, labelName: labelName2, matchers: matchers2, value: value2},
@@ -681,8 +681,8 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			client := newMockedRemoteCacheClient(testData.mockedErr)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -848,19 +848,19 @@ type mockedLabelValues struct {
 	value     []byte
 }
 
-type mockedMemcachedClient struct {
+type mockedRemoteCacheClient struct {
 	cache             map[string][]byte
 	mockedGetMultiErr error
 }
 
-func newMockedMemcachedClient(mockedGetMultiErr error) *mockedMemcachedClient {
-	return &mockedMemcachedClient{
+func newMockedRemoteCacheClient(mockedGetMultiErr error) *mockedRemoteCacheClient {
+	return &mockedRemoteCacheClient{
 		cache:             map[string][]byte{},
 		mockedGetMultiErr: mockedGetMultiErr,
 	}
 }
 
-func (c *mockedMemcachedClient) GetMulti(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
+func (c *mockedRemoteCacheClient) GetMulti(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
 	if c.mockedGetMultiErr != nil {
 		return nil
 	}
@@ -876,19 +876,19 @@ func (c *mockedMemcachedClient) GetMulti(_ context.Context, keys []string, _ ...
 	return hits
 }
 
-func (c *mockedMemcachedClient) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
+func (c *mockedRemoteCacheClient) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
 	c.cache[key] = value
 
 	return nil
 }
 
-func (c *mockedMemcachedClient) Delete(_ context.Context, key string) error {
+func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {
 	delete(c.cache, key)
 
 	return nil
 }
 
-func (c *mockedMemcachedClient) Stop() {
+func (c *mockedRemoteCacheClient) Stop() {
 	// Nothing to do.
 }
 

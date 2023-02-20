@@ -46,8 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 )
 
-// DistributorPushWrapper wraps around a push. It is similar to middleware.Interface.
-type DistributorPushWrapper func(next push.Func) push.Func
 type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.HandlerFunc
 
 type Config struct {
@@ -59,13 +57,6 @@ type Config struct {
 	// The following configs are injected by the upstream caller.
 	ServerPrefix       string               `yaml:"-"`
 	HTTPAuthMiddleware middleware.Interface `yaml:"-"`
-
-	// This allows downstream projects to wrap the distributor push function
-	// and access the deserialized write requests before/after they are pushed.
-	// This function will only receive samples that don't get forwarded to an
-	// alternative remote_write endpoint by the distributor's forwarding feature,
-	// or dropped by HA deduplication.
-	DistributorPushWrapper DistributorPushWrapper `yaml:"-"`
 
 	// The CustomConfigHandler allows for providing a different handler for the
 	// `/config` endpoint. If this field is set _before_ the API module is
@@ -237,9 +228,8 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	pushFn := d.GetPushFunc(a.cfg.DistributorPushWrapper)
-	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, pushFn), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, pushFn), true, false, "POST")
+	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, d.PushWithMiddlewares), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, d.PushWithMiddlewares), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
