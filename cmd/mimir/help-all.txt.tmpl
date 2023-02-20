@@ -1049,6 +1049,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
+  -ingester.native-histograms-ingestion-enabled
+    	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.
   -ingester.out-of-order-time-window duration
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.
   -ingester.rate-update-period duration

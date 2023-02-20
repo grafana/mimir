@@ -550,7 +550,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
-
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
@@ -677,6 +676,17 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 	}
 
+	for _, h := range ts.Histograms {
+		delta := now - model.Time(h.Timestamp)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+			return err
+		}
+	}
+
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		mimirpb.ClearExemplars(ts.TimeSeries)
 		return nil
@@ -767,7 +777,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		numSamples := 0
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
@@ -905,6 +915,10 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
 				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
 			}
+			for _, h := range ts.Histograms {
+				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, h.Timestamp)
+			}
 		}
 		// Update this metric even in case of errors.
 		if latestSampleTimestampMs > 0 {
@@ -945,7 +959,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				continue
 			}
 
-			validatedSamples += len(ts.Samples)
+			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
 		if len(removeIndexes) > 0 {
@@ -1125,7 +1139,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		numSamples := 0
 		numExemplars := 0
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 			numExemplars += len(ts.Exemplars)
 		}
 
@@ -1361,7 +1375,7 @@ func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.Preallo
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples)
+		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 	}
 	receivedMetadata = len(req.Metadata)

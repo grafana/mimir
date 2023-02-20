@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/common/model"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -107,6 +108,7 @@ const (
 	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
 	appendedSamplesStatsName               = "ingester_appended_samples"
 	appendedExemplarsStatsName             = "ingester_appended_exemplars"
+	appendedHistogramsStatsName            = "ingester_appended_histograms"
 	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
@@ -645,6 +647,12 @@ func (i *Ingester) applyTSDBSettings() {
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
+		if i.limits.NativeHistogramsIngestionEnabled(userID) {
+			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
+			db.db.EnableNativeHistograms()
+		} else {
+			db.db.DisableNativeHistograms()
+		}
 	}
 }
 
@@ -791,7 +799,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		case err != nil && errors.Is(err, errEphemeralStorageDisabledForUser):
 			// Add all samples for ephemeral series as "failed".
 			for _, ts := range req.EphemeralTimeseries {
-				ephemeralStats.failedSamplesCount += len(ts.Samples)
+				ephemeralStats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 			}
 
 			updateFirstPartial(func() error {
@@ -823,7 +831,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		"failedSamplesCount", persistentStats.failedSamplesCount,
 		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
 		"failedExemplarsCount", persistentStats.failedExemplarsCount,
-
 		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
 		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
 		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
@@ -928,6 +935,77 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64, ephemeral bool) error {
+
+	// Return true if handled as soft error, and we can ingest more series.
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+		// Check if the error is a soft error we can proceed on. If so, we keep track
+		// of it, so that we can return it back to the distributor, which will return a
+		// 400 error to the client. The client (Prometheus) will not retry on 400, and
+		// we actually ingested all samples which haven't failed.
+		//nolint:errorlint // We don't expect the cause error to be wrapped.
+		switch cause := errors.Cause(err); cause {
+		case storage.ErrOutOfBounds:
+			stats.sampleOutOfBoundsCount++
+			updateFirstPartial(func() error {
+				if ephemeral {
+					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+				}
+				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrOutOfOrderSample:
+			stats.sampleOutOfOrderCount++
+			updateFirstPartial(func() error {
+				if ephemeral {
+					return newEphemeralIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+				}
+				return newIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrTooOldSample:
+			stats.sampleTooOldCount++
+			updateFirstPartial(func() error {
+				// OOO is not enabled for ephemeral storage, so we can't get this error.
+				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
+			})
+			return true
+
+		case storage.ErrDuplicateSampleForTimestamp:
+			stats.newValueForTimestampCount++
+			updateFirstPartial(func() error {
+				if ephemeral {
+					return newEphemeralIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+				}
+				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+			})
+			return true
+
+		case errMaxSeriesPerUserLimitExceeded, errMaxEphemeralSeriesPerUserLimitExceeded: // we have special error for this, as we want different help message from FormatError.
+			stats.perUserSeriesLimitCount++
+			updateFirstPartial(func() error {
+				if ephemeral {
+					return makeLimitError(i.limiter.FormatError(userID, cause))
+				}
+				return makeLimitError(i.limiter.FormatError(userID, cause))
+			})
+			return true
+
+		case errMaxSeriesPerMetricLimitExceeded:
+			stats.perMetricSeriesLimitCount++
+			updateFirstPartial(func() error {
+				// Ephemeral storage doesn't have this limit.
+				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.FormatError(userID, cause))
+			})
+			return true
+		}
+		return false
+	}
+
+	// fetch once per push request to avoid processing half the request differently
+	nativeHistogramsIngestionEnabled := i.limits.NativeHistogramsIngestionEnabled(userID)
+
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -936,18 +1014,49 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
-		if outOfOrderWindow <= 0 && minAppendTimeAvailable &&
-			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
-			stats.failedSamplesCount += len(ts.Samples)
-			stats.sampleOutOfBoundsCount += len(ts.Samples)
+		if nativeHistogramsIngestionEnabled {
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
+				allOutOfBoundsFloats(ts.Samples, minAppendTime) &&
+				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
 
-			updateFirstPartial(func() error {
-				if ephemeral {
-					return newEphemeralIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
+				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
+
+				var firstTimestamp int64
+				if len(ts.Samples) > 0 {
+					firstTimestamp = ts.Samples[0].TimestampMs
 				}
-				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
-			})
-			continue
+				if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
+					firstTimestamp = ts.Histograms[0].Timestamp
+				}
+
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					}
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+				})
+				continue
+			}
+		} else {
+			// ignore native histograms in the condition and statitics as well
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
+				len(ts.Samples) > 0 && allOutOfBoundsFloats(ts.Samples, minAppendTime) {
+
+				stats.failedSamplesCount += len(ts.Samples)
+				stats.sampleOutOfBoundsCount += len(ts.Samples)
+
+				firstTimestamp := ts.Samples[0].TimestampMs
+
+				updateFirstPartial(func() error {
+					if ephemeral {
+						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					}
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+				})
+				continue
+			}
 		}
 
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
@@ -979,70 +1088,54 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 			stats.failedSamplesCount++
 
-			// Check if the error is a soft error we can proceed on. If so, we keep track
-			// of it, so that we can return it back to the distributor, which will return a
-			// 400 error to the client. The client (Prometheus) will not retry on 400, and
-			// we actually ingested all samples which haven't failed.
-			//nolint:errorlint // We don't expect the cause error to be wrapped.
-			switch cause := errors.Cause(err); cause {
-			case storage.ErrOutOfBounds:
-				stats.sampleOutOfBoundsCount++
-				updateFirstPartial(func() error {
-					if ephemeral {
-						return newEphemeralIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels)
-					}
-					return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels)
-				})
-				continue
-
-			case storage.ErrOutOfOrderSample:
-				stats.sampleOutOfOrderCount++
-				updateFirstPartial(func() error {
-					if ephemeral {
-						return newEphemeralIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels)
-					}
-					return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels)
-				})
-				continue
-
-			case storage.ErrTooOldSample:
-				stats.sampleTooOldCount++
-				updateFirstPartial(func() error {
-					// OOO is not enabled for ephemeral storage, so we can't get this error.
-					return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(s.TimestampMs), ts.Labels, outOfOrderWindow)
-				})
-				continue
-
-			case storage.ErrDuplicateSampleForTimestamp:
-				stats.newValueForTimestampCount++
-				updateFirstPartial(func() error {
-					if ephemeral {
-						return newEphemeralIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
-					}
-					return newIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
-				})
-				continue
-
-			case errMaxSeriesPerUserLimitExceeded, errMaxEphemeralSeriesPerUserLimitExceeded: // we have special error for this, as we want different help message from FormatError.
-				stats.perUserSeriesLimitCount++
-				updateFirstPartial(func() error {
-					if ephemeral {
-						return makeLimitError(i.limiter.FormatError(userID, cause))
-					}
-					return makeLimitError(i.limiter.FormatError(userID, cause))
-				})
-				continue
-
-			case errMaxSeriesPerMetricLimitExceeded:
-				stats.perMetricSeriesLimitCount++
-				updateFirstPartial(func() error {
-					// Ephemeral storage doesn't have this limit.
-					return makeMetricLimitError(copiedLabels, i.limiter.FormatError(userID, cause))
-				})
+			// If it's a soft error it will be returned back to the distributor later as a 400.
+			if handleAppendError(err, s.TimestampMs, ts.Labels) {
 				continue
 			}
 
+			// Otherwise, return a 500.
 			return wrapWithUser(err, userID)
+		}
+
+		if nativeHistogramsIngestionEnabled {
+			for _, h := range ts.Histograms {
+				var (
+					err error
+					ih  *histogram.Histogram
+					fh  *histogram.FloatHistogram
+				)
+
+				if h.IsFloatHistogram() {
+					fh = mimirpb.FromHistogramProtoToFloatHistogram(&h)
+				} else {
+					ih = mimirpb.FromHistogramProtoToHistogram(&h)
+				}
+
+				// If the cached reference exists, we try to use it.
+				if ref != 0 {
+					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+						stats.succeededSamplesCount++
+						continue
+					}
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+
+					// Retain the reference in case there are multiple samples for the series.
+					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+						stats.succeededSamplesCount++
+						continue
+					}
+				}
+
+				stats.failedSamplesCount++
+
+				if handleAppendError(err, h.Timestamp, ts.Labels) {
+					continue
+				}
+
+				return wrapWithUser(err, userID)
+			}
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
@@ -1515,13 +1608,19 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
+			switch valType {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
+			case chunkenc.ValHistogram:
+				// ignore
+			case chunkenc.ValFloatHistogram:
+				// ignore
+			default:
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
-			t, v := it.At()
-			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}
-		numSamples += len(ts.Samples)
+		numSamples += len(ts.Samples) + len(ts.Histograms)
 		numSeries++
 		tsSize := ts.Size()
 
@@ -1618,6 +1717,10 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 			switch meta.Chunk.Encoding() {
 			case chunkenc.EncXOR:
 				ch.Encoding = int32(chunk.PrometheusXorChunk)
+			case chunkenc.EncHistogram:
+				continue // ignore
+			case chunkenc.EncFloatHistogram:
+				continue // ignore
 			default:
 				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 			}
@@ -1780,6 +1883,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheTTL:   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
 		HeadPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
 		HeadPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
+		EnableNativeHistograms:            i.limits.NativeHistogramsIngestionEnabled(userID),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -2693,10 +2797,20 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 	return hints
 }
 
-// allOutOfBounds returns whether all the provided samples are out of bounds.
-func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
+// allOutOfBounds returns whether all the provided (float) samples are out of bounds.
+func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	for _, s := range samples {
 		if s.TimestampMs >= minValidTime {
+			return false
+		}
+	}
+	return true
+}
+
+// allOutOfBoundsHistograms returns whether all the provided histograms are out of bounds.
+func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64) bool {
+	for _, s := range histograms {
+		if s.Timestamp >= minValidTime {
 			return false
 		}
 	}

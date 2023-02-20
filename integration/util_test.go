@@ -15,7 +15,7 @@ import (
 func TestSampleHistogram(t *testing.T) {
 	for _, i := range []int{0, 1, 3, 100} {
 		h := GenerateTestHistogram(i)
-		sampleH := mimirpb.FromFloatHistogramToSampleHistogramProto(h.ToFloat())
+		sampleH := mimirpb.FromFloatHistogramToSampleHistogram(h.ToFloat())
 		promH := mimirpb.FromMimirSampleToPromHistogram(sampleH)
 
 		require.Equal(t, promH, GenerateTestSampleHistogram(i))
@@ -25,7 +25,7 @@ func TestSampleHistogram(t *testing.T) {
 func TestSampleFloatHistogram(t *testing.T) {
 	for _, i := range []int{0, 1, 3, 100} {
 		h := GenerateTestFloatHistogram(i)
-		sampleH := mimirpb.FromFloatHistogramToSampleHistogramProto(h)
+		sampleH := mimirpb.FromFloatHistogramToSampleHistogram(h)
 		promH := mimirpb.FromMimirSampleToPromHistogram(sampleH)
 
 		require.Equal(t, promH, GenerateTestSampleHistogram(i))
