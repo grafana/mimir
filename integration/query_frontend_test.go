@@ -197,6 +197,31 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 	})
 }
 
+func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
+	formats := []string{"json", "protobuf"}
+
+	for _, format := range formats {
+		t.Run(format, func(t *testing.T) {
+			runQueryFrontendTest(t, queryFrontendTestConfig{
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(
+						BlocksStorageFlags(),
+						BlocksStorageS3Flags(),
+						map[string]string{
+							"-query-frontend.query-result-response-format": format,
+						},
+					)
+
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(minio))
+
+					return "", flags
+				},
+			})
+		})
+	}
+}
+
 func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	const numUsers = 10
 	const numQueriesPerUser = 10

@@ -87,8 +87,15 @@ func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 
 			// Store the postings expected before running the test.
 			ctx := context.Background()
+			toStore := make(map[string]map[Range][]byte)
 			for _, p := range testData.setup {
-				c.StoreChunks(ctx, p.userID, p.r, p.value)
+				if toStore[p.userID] == nil {
+					toStore[p.userID] = make(map[Range][]byte)
+				}
+				toStore[p.userID][p.r] = p.value
+			}
+			for userID, userRanges := range toStore {
+				c.StoreChunks(ctx, userID, userRanges)
 			}
 
 			// Fetch postings from cached and assert on it.

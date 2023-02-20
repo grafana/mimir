@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -64,15 +65,21 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	return &m
 }
 
+type ShipperConfigProvider interface {
+	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
+}
+
 // Shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
 // Shipper implements BlocksUploader interface.
 type Shipper struct {
-	logger  log.Logger
-	dir     string
-	metrics *metrics
-	bucket  objstore.Bucket
-	source  metadata.SourceType
+	logger      log.Logger
+	cfgProvider ShipperConfigProvider
+	userID      string
+	dir         string
+	metrics     *metrics
+	bucket      objstore.Bucket
+	source      metadata.SourceType
 }
 
 // NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
@@ -80,6 +87,8 @@ type Shipper struct {
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
 func NewShipper(
 	logger log.Logger,
+	cfgProvider ShipperConfigProvider,
+	userID string,
 	r prometheus.Registerer,
 	dir string,
 	bucket objstore.Bucket,
@@ -90,11 +99,13 @@ func NewShipper(
 	}
 
 	return &Shipper{
-		logger:  logger,
-		dir:     dir,
-		bucket:  bucket,
-		metrics: newMetrics(r),
-		source:  source,
+		logger:      logger,
+		cfgProvider: cfgProvider,
+		userID:      userID,
+		dir:         dir,
+		bucket:      bucket,
+		metrics:     newMetrics(r),
+		source:      source,
 	}
 }
 
@@ -192,6 +203,11 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 	meta.Thanos.Source = s.source
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
+
+	if s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
+		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+	}
 
 	// Upload block with custom metadata.
 	return block.Upload(ctx, s.logger, s.bucket, blockDir, meta)

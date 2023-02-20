@@ -103,13 +103,6 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		}
 		return e, true, nil
 
-	case *parser.MatrixSelector:
-		if summer.currentShard != nil {
-			mapped, err := shardMatrixSelector(*summer.currentShard, summer.shards, e)
-			return mapped, true, err
-		}
-		return e, true, nil
-
 	case *parser.Call:
 		// only shard the most outer function call.
 		if summer.currentShard == nil {
@@ -501,32 +494,6 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 			selector.LabelMatchers...,
 		),
 	}, nil
-}
-
-func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) (parser.Expr, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
-	if err != nil {
-		return nil, err
-	}
-
-	if vs, ok := selector.VectorSelector.(*parser.VectorSelector); ok {
-		return &parser.MatrixSelector{
-			VectorSelector: &parser.VectorSelector{
-				Name:           vs.Name,
-				OriginalOffset: vs.OriginalOffset,
-				Offset:         vs.Offset,
-				Timestamp:      copyTimestamp(vs.Timestamp),
-				StartOrEnd:     vs.StartOrEnd,
-				LabelMatchers: append(
-					[]*labels.Matcher{shardMatcher},
-					vs.LabelMatchers...,
-				),
-			},
-			Range: selector.Range,
-		}, nil
-	}
-
-	return nil, fmt.Errorf("invalid selector type: %T", selector.VectorSelector)
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,

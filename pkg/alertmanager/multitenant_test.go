@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -54,7 +55,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -769,11 +769,11 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		user3 = "user3"
 	)
 
-	createInstance := func(i int, zone string, registries *util.UserRegistries) *MultitenantAlertmanager {
+	createInstance := func(i int, zone string, registries *dskit_metrics.TenantRegistries) *MultitenantAlertmanager {
 		reg := prometheus.NewPedanticRegistry()
 		cfg := mockAlertmanagerConfig(t)
 		instanceID := fmt.Sprintf("instance-%d", i)
-		registries.AddUserRegistry(instanceID, reg)
+		registries.AddTenantRegistry(instanceID, reg)
 
 		cfg.ShardingRing.ReplicationFactor = 2
 		cfg.ShardingRing.Common.InstanceID = instanceID
@@ -791,8 +791,8 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		return am
 	}
 
-	registriesZoneA := util.NewUserRegistries()
-	registriesZoneB := util.NewUserRegistries()
+	registriesZoneA := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
+	registriesZoneB := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 	am1ZoneA := createInstance(1, "zoneA", registriesZoneA)
 	am2ZoneA := createInstance(2, "zoneA", registriesZoneA)
@@ -823,8 +823,8 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	metricsZoneA := registriesZoneA.BuildMetricFamiliesPerUser()
-	metricsZoneB := registriesZoneB.BuildMetricFamiliesPerUser()
+	metricsZoneA := registriesZoneA.BuildMetricFamiliesPerTenant()
+	metricsZoneB := registriesZoneB.BuildMetricFamiliesPerTenant()
 
 	assert.Equal(t, float64(3), metricsZoneA.GetSumOfGauges("cortex_alertmanager_tenants_owned"))
 	assert.Equal(t, float64(3), metricsZoneB.GetSumOfGauges("cortex_alertmanager_tenants_owned"))
@@ -1303,7 +1303,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 
 			var instances []*MultitenantAlertmanager
 			var instanceIDs []string
-			registries := util.NewUserRegistries()
+			registries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 			// First, add the number of configs to the store.
 			for i := 1; i <= tt.configs; i++ {
@@ -1337,7 +1337,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 
 				instances = append(instances, am)
 				instanceIDs = append(instanceIDs, instanceID)
-				registries.AddUserRegistry(instanceID, reg)
+				registries.AddTenantRegistry(instanceID, reg)
 			}
 
 			// We need make sure the ring is settled.
@@ -1360,7 +1360,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				numInstances += len(am.alertmanagers)
 			}
 
-			metrics := registries.BuildMetricFamiliesPerUser()
+			metrics := registries.BuildMetricFamiliesPerTenant()
 			assert.Equal(t, tt.expectedTenants, numConfigs)
 			assert.Equal(t, tt.expectedTenants, numInstances)
 			assert.Equal(t, float64(tt.expectedTenants), metrics.GetSumOfGauges("cortex_alertmanager_tenants_owned"))
@@ -1497,9 +1497,9 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
 			// Make sure the initial sync happened.
-			regs := util.NewUserRegistries()
-			regs.AddUserRegistry("test", reg)
-			metrics := regs.BuildMetricFamiliesPerUser()
+			regs := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
+			regs.AddTenantRegistry("test", reg)
+			metrics := regs.BuildMetricFamiliesPerTenant()
 			assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_alertmanager_sync_configs_total"))
 
 			// Change the ring topology.
@@ -1515,7 +1515,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 				expectedSyncs++
 			}
 			test.Poll(t, 3*time.Second, float64(expectedSyncs), func() interface{} {
-				metrics := regs.BuildMetricFamiliesPerUser()
+				metrics := regs.BuildMetricFamiliesPerTenant()
 				return metrics.GetSumOfCounters("cortex_alertmanager_sync_configs_total")
 			})
 		})
@@ -1598,7 +1598,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 
 	var instances []*MultitenantAlertmanager
 	var instanceIDs []string
-	registries := util.NewUserRegistries()
+	registries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 	// First, create the alertmanager instances, we'll use a replication factor of 3 and create 3 instances so that we can get the tenant on each replica.
 	for i := 1; i <= 3; i++ {
@@ -1623,7 +1623,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 
 		instances = append(instances, am)
 		instanceIDs = append(instanceIDs, instanceID)
-		registries.AddUserRegistry(instanceID, reg)
+		registries.AddTenantRegistry(instanceID, reg)
 	}
 
 	// We need make sure the ring is settled. The alertmanager is ready to be tested once all instances are ACTIVE and the ring settles.
@@ -1693,7 +1693,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 
 			var instances []*MultitenantAlertmanager
 			var instanceIDs []string
-			registries := util.NewUserRegistries()
+			registries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 			// First, add the number of configs to the store.
 			for i := 1; i <= 12; i++ {
@@ -1732,7 +1732,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 
 				instances = append(instances, am)
 				instanceIDs = append(instanceIDs, instanceID)
-				registries.AddUserRegistry(instanceID, reg)
+				registries.AddTenantRegistry(instanceID, reg)
 			}
 
 			// We need make sure the ring is settled.
@@ -1809,13 +1809,13 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				require.Regexp(t, regexp.MustCompile(`{"silenceID":".+"}`), string(body))
 			}
 
-			var metrics util.MetricFamiliesPerUser
+			var metrics dskit_metrics.MetricFamiliesPerTenant
 
 			// 5. Then, make sure it is propagated successfully.
 			//    Replication is asynchronous, so we may have to wait a short period of time.
 			if tt.replicationFactor > 1 {
 				assert.Eventually(t, func() bool {
-					metrics = registries.BuildMetricFamiliesPerUser()
+					metrics = registries.BuildMetricFamiliesPerTenant()
 					return (float64(tt.replicationFactor) == metrics.GetSumOfGauges("cortex_alertmanager_silences") &&
 						float64(tt.replicationFactor) == metrics.GetSumOfCounters("cortex_alertmanager_state_replication_total"))
 				}, 5*time.Second, 100*time.Millisecond)
@@ -1835,7 +1835,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 			nMerges := nFanOut + (nFanOut * nFanOut)
 
 			assert.Eventually(t, func() bool {
-				metrics = registries.BuildMetricFamiliesPerUser()
+				metrics = registries.BuildMetricFamiliesPerTenant()
 				return float64(nMerges) == metrics.GetSumOfCounters("cortex_alertmanager_partial_state_merges_total")
 			}, 5*time.Second, 100*time.Millisecond)
 
@@ -1873,7 +1873,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 			var instances []*MultitenantAlertmanager
 			var instanceIDs []string
-			registries := util.NewUserRegistries()
+			registries := dskit_metrics.NewTenantRegistries(log.NewNopLogger())
 
 			// Create only two users - no need for more for these test cases.
 			for i := 1; i <= 2; i++ {
@@ -1913,7 +1913,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 				instances = append(instances, am)
 				instanceIDs = append(instanceIDs, instanceID)
-				registries.AddUserRegistry(instanceID, reg)
+				registries.AddTenantRegistry(instanceID, reg)
 
 				// Make sure the ring is settled.
 				{
@@ -1984,16 +1984,16 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 			checkSilence(i1, "u-1")
 			// 2.b. Check the relevant metrics were updated.
 			{
-				metrics := registries.BuildMetricFamiliesPerUser()
+				metrics := registries.BuildMetricFamiliesPerTenant()
 				assert.Equal(t, float64(1), metrics.GetSumOfGauges("cortex_alertmanager_silences"))
 			}
 			// 2.c. Wait for the silence replication to be attempted; note this is asynchronous.
 			{
 				test.Poll(t, 5*time.Second, float64(1), func() interface{} {
-					metrics := registries.BuildMetricFamiliesPerUser()
+					metrics := registries.BuildMetricFamiliesPerTenant()
 					return metrics.GetSumOfCounters("cortex_alertmanager_state_replication_total")
 				})
-				metrics := registries.BuildMetricFamiliesPerUser()
+				metrics := registries.BuildMetricFamiliesPerTenant()
 				assert.Equal(t, float64(0), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_failed_total"))
 			}
 
@@ -2005,7 +2005,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 			// 3.b. Check the metrics: We should see the additional silences without any replication activity.
 			{
-				metrics := registries.BuildMetricFamiliesPerUser()
+				metrics := registries.BuildMetricFamiliesPerTenant()
 				assert.Equal(t, float64(2), metrics.GetSumOfGauges("cortex_alertmanager_silences"))
 				assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_total"))
 				assert.Equal(t, float64(0), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_failed_total"))
@@ -2020,7 +2020,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 				// 4.b. Check the metrics one more time. We should have three replicas of the silence.
 				{
-					metrics := registries.BuildMetricFamiliesPerUser()
+					metrics := registries.BuildMetricFamiliesPerTenant()
 					assert.Equal(t, float64(3), metrics.GetSumOfGauges("cortex_alertmanager_silences"))
 					assert.Equal(t, float64(1), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_total"))
 					assert.Equal(t, float64(0), metrics.GetSumOfCounters("cortex_alertmanager_state_replication_failed_total"))

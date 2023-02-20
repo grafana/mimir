@@ -298,7 +298,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer),
+		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
@@ -1919,6 +1919,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = NewShipper(
 			userLogger,
+			i.limits,
+			userID,
 			tsdbPromReg,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
@@ -2213,8 +2215,8 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 
 		// Run the shipper's Sync() to upload unshipped blocks. Make sure the TSDB state is active, in order to
 		// avoid any race condition with closing idle TSDBs.
-		if !userDB.casState(active, activeShipping) {
-			level.Info(i.logger).Log("msg", "shipper skipped because the TSDB is not active", "user", userID)
+		if ok, s := userDB.casState(active, activeShipping); !ok {
+			level.Info(i.logger).Log("msg", "shipper skipped because the TSDB is not active", "user", userID, "state", s.String())
 			return nil
 		}
 		defer userDB.casState(activeShipping, active)
@@ -2350,7 +2352,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}
 
 	// This disables pushes and force-compactions. Not allowed to close while shipping is in progress.
-	if !userDB.casState(active, closing) {
+	if ok, _ := userDB.casState(active, closing); !ok {
 		return tsdbNotActive
 	}
 
@@ -2824,7 +2826,7 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reg := i.tsdbMetrics.regs.GetRegistryForUser(userID)
+	reg := i.tsdbMetrics.regs.GetRegistryForTenant(userID)
 	if reg == nil {
 		http.Error(w, "user registry not found", http.StatusNotFound)
 		return

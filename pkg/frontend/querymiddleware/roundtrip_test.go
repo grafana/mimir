@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -43,6 +44,7 @@ func TestRangeTripperware(t *testing.T) {
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var err error
 				if r.RequestURI == query {
+					w.Header().Set("Content-Type", jsonMimeType)
 					_, err = w.Write([]byte(responseBody))
 				} else {
 					_, err = w.Write([]byte("bar"))
@@ -268,6 +270,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", jsonMimeType)
 				_, err := w.Write([]byte("{}"))
 				require.NoError(t, err)
 			}),
@@ -323,6 +326,29 @@ func TestTripperware_Metrics(t *testing.T) {
 			`, testData.expectedNotAlignedCount)),
 				"cortex_query_frontend_non_step_aligned_queries_total",
 			))
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		config        Config
+		expectedError error
+	}{
+		"happy path": {
+			config:        Config{QueryResultResponseFormat: formatJSON},
+			expectedError: nil,
+		},
+		"unknown query result payload format": {
+			config:        Config{QueryResultResponseFormat: "something-else"},
+			expectedError: errors.New("unknown query result response format 'something-else'. Supported values: json, protobuf"),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := test.config.Validate()
+			require.Equal(t, test.expectedError, err)
 		})
 	}
 }
