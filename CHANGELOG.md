@@ -174,10 +174,6 @@
 
 ### Tools
 
-* [ENHANCEMENT] Adapt tsdb-print-chunk for native histograms. #3950
-* [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #3948
-* [ENHANCEMENT] Adapt tsdb-chunks tool to handle native histograms. #3946
-
 ## 2.5.0
 
 ### Grafana Mimir
