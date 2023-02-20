@@ -1391,21 +1391,6 @@ How to **fix** it:
 
 - See [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook.
 
-### err-mimir-ingester-max-ephemeral-series
-
-This critical error occurs when an ingester rejects a write request because it reached the maximum number of ephemeral series.
-
-How it **works**:
-
-- The ingester keeps all ephemeral series in memory.
-- The ingester has a per-instance limit on the number of ephemeral series, used to protect the ingester from overloading in case of high traffic.
-- When the limit on the number of ephemeral series is reached, new ephemeral series are rejected, while samples can still be appended to existing ones.
-- To configure the limit, set the `-ingester.instance-limits.max-ephemeral-series` option (or `max_ephemeral_series` in the runtime config).
-
-How to **fix** it:
-
-- Increase the limit, or reshard the tenants between ingesters. Please see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook for more details (it describes persistent storage, but same principles apply to ephemeral storage).
-
 ### err-mimir-ingester-max-inflight-push-requests
 
 This error occurs when an ingester rejects a write request because the maximum in-flight requests limit has been reached.
@@ -1433,18 +1418,6 @@ How to **fix** it:
 
 - Ensure the actual number of series written by the affected tenant is legit.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
-
-### err-mimir-max-ephemeral-series-per-user
-
-This error occurs when the number of ephemeral series for a given tenant exceeds the configured limit.
-
-The limit is used to protect ingesters from overloading in case a tenant writes a high number of ephemeral series, as well as to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-ephemeral-series-per-user` option (or `max_ephemeral_series_per_user` in the runtime configuration).
-
-How to **fix** it:
-
-- Ensure the actual number of ephemeral series written by the affected tenant is legit.
-- Consider increasing the per-tenant limit by using the `-ingester.max-ephemeral-series-per-user` option (or `max_ephemeral_series_per_user` in the runtime configuration).
 
 ### err-mimir-max-series-per-metric
 
@@ -1611,14 +1584,6 @@ How it **works**:
 
 > **Note:** If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
 
-### err-mimir-ephemeral-sample-timestamp-too-old
-
-This error occurs when the ingester rejects a sample because its timestamp older than configured retention of ephemeral storage.
-
-How it **works**:
-
-- Ephemeral storage in ingesters can only hold samples that not older than `-blocks-storage.ephemeral-tsdb.retention-period` value. If the incoming timestamp is older than "now - retention", it is rejected.
-
 ### err-mimir-sample-out-of-order
 
 This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested.
@@ -1638,26 +1603,9 @@ Common **causes**:
 
 > **Note:** You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
-### err-mimir-ephemeral-sample-out-of-order
-
-This error occurs when the ingester rejects a sample because another sample with a more recent timestamp has already been ingested for the same series in the ephemeral storage.
-
-Please refer to [err-mimir-sample-out-of-order](#err-mimir-sample-out-of-order) for possible reasons.
-
-> **Note**: It is not possible to enable out-of-order sample ingestion for ephemeral storage.
-
 ### err-mimir-sample-duplicate-timestamp
 
 This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value in the same time series.
-
-Common **causes**:
-
-- Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
-- Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
-
-### err-mimir-ephemeral-sample-duplicate-timestamp
-
-This error occurs when the ingester rejects a sample because it is a duplicate of a previously received sample with the same timestamp but different value for the same ephemeral series.
 
 Common **causes**:
 
@@ -1718,18 +1666,6 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
-
-### err-mimir-ephemeral-storage-not-enabled-for-user
-
-Ingester returns this error when a write request contains ephemeral series, but ephemeral storage is disabled for user.
-
-Ephemeral storage is disabled when `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) is set to 0 for given tenant.
-
-How to **fix** it:
-
-- Disable support for ephemeral series in distributor by setting `-distributor.ephemeral-series-enabled` to `false`.
-- Remove rules for marking incoming series as ephemeral for given tenant by removing `-distributor.ephemeral-series-matchers` (or `ephemeral_series_matchers` in runtime configuration).
-- Enable ephemeral storage for tenant by setting the `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) to positive number.
 
 ## Mimir routes by path
 

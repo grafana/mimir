@@ -201,15 +201,15 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 	return u.db.CompactOOOHead()
 }
 
-func (u *userTSDB) persistentSeriesCallback() tsdb.SeriesLifecycleCallback {
+func (u *userTSDB) seriesLifecycleCallback() tsdb.SeriesLifecycleCallback {
 	return seriesLifecycleCallback{
-		preCreation:  u.persistentPreCreation,
-		postCreation: u.persistentPostCreation,
-		postDeletion: u.persistentPostDeletion,
+		preCreation:  u.preCreation,
+		postCreation: u.postCreation,
+		postDeletion: u.postDeletion,
 	}
 }
 
-func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
+func (u *userTSDB) preCreation(metric labels.Labels) error {
 	if u.limiter == nil {
 		return nil
 	}
@@ -239,7 +239,7 @@ func (u *userTSDB) persistentPreCreation(metric labels.Labels) error {
 	return nil
 }
 
-func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
+func (u *userTSDB) postCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
@@ -250,7 +250,7 @@ func (u *userTSDB) persistentPostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-func (u *userTSDB) persistentPostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) postDeletion(metrics ...labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
 	for _, metric := range metrics {

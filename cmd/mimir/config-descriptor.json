@@ -1695,17 +1695,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "ephemeral_series_enabled",
-          "required": false,
-          "desc": "Enable marking series as ephemeral based on the given matchers in the runtime config.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "distributor.ephemeral-series-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

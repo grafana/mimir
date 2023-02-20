@@ -726,20 +726,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	// Walk the samples, appending them to the users database
-	var persistentApp extendedAppender
+	var app extendedAppender
 
 	rollback := func() {
-		if persistentApp != nil {
-			if err := persistentApp.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback persistent appender on error", "user", userID, "err", err)
+		if app != nil {
+			if err := app.Rollback(); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 			}
 		}
 	}
 
 	if len(req.Timeseries) > 0 {
-		persistentApp = db.Appender(ctx).(extendedAppender)
+		app = db.Appender(ctx).(extendedAppender)
 
-		level.Debug(spanlog).Log("event", "got appender for persistent series", "series", len(req.Timeseries))
+		level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Timeseries))
 
 		var activeSeries *activeseries.ActiveSeries
 		if i.cfg.ActiveSeriesMetricsEnabled {
@@ -748,7 +748,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+		err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
 		if err != nil {
 			rollback()
 			return nil, err
@@ -767,9 +767,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	startCommit := time.Now()
-	if persistentApp != nil {
-		app := persistentApp
-		persistentApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
+	if app != nil {
+		app := app
+		app = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
 
 		if err := app.Commit(); err != nil {
 			rollback()
@@ -798,7 +798,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discardedPersistent)
+	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
@@ -1735,7 +1735,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
 	const storageKey = "storage"
-	db, err := tsdb.Open(udir, log.With(userLogger, storageKey, "persistent"), tsdbPromReg, &tsdb.Options{
+	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                  blockRanges[0],
 		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
@@ -1745,7 +1745,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:           userDB.persistentSeriesCallback(),
+		SeriesLifecycleCallback:           userDB.seriesLifecycleCallback(),
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                      int64(maxExemplars),
@@ -2106,7 +2106,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 			return nil
 		}
 
-		// Don't do anything, if there is nothing to compact (in persistent storage).
+		// Don't do anything, if there is nothing to compact.
 		h := userDB.Head()
 		if h.NumSeries() == 0 {
 			return nil

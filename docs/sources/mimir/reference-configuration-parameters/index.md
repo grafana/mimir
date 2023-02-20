@@ -749,11 +749,6 @@ forwarding:
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
-
-# (experimental) Enable marking series as ephemeral based on the given matchers
-# in the runtime config.
-# CLI flag: -distributor.ephemeral-series-enabled
-[ephemeral_series_enabled: <boolean> | default = false]
 ```
 
 ### ingester

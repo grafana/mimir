@@ -178,9 +178,6 @@ type Config struct {
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
 
-	// Enable the experimental feature to mark series as ephemeral.
-	EphemeralSeriesEnabled bool `yaml:"ephemeral_series_enabled" category:"experimental"`
-
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get forwarded to an
@@ -210,7 +207,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.BoolVar(&cfg.EphemeralSeriesEnabled, "distributor.ephemeral-series-enabled", false, "Enable marking series as ephemeral based on the given matchers in the runtime config.")
 }
 
 // Validate config and returns error on failure
@@ -1240,7 +1236,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
-	// All tokens, stored in order: series, metadata, ephemeral series.
+	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
 	initialMetadataIndex := len(seriesKeys)
 	copy(keys, seriesKeys)

@@ -3438,7 +3438,6 @@ type prepConfig struct {
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	forwarding                         bool
 	getForwarder                       func() forwarding.Forwarder
-	markEphemeral                      bool
 
 	timeOut bool
 }
@@ -3554,10 +3553,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			distributorCfg.Forwarding.Enabled = true
 			distributorCfg.Forwarding.RequestTimeout = 10 * time.Second
 			distributorCfg.Forwarding.RequestConcurrency = 5
-		}
-
-		if cfg.markEphemeral {
-			distributorCfg.EphemeralSeriesEnabled = true
 		}
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
@@ -5081,7 +5076,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		}
 	}
 
-	// Verify that timeseries were forwarded as timeseries, and ephemeral timeseries as ephemeral timeseries, and there is no mixup.
+	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
 		token := distrib.tokenForLabels(userName, ts.Labels)
 		ingIx := getIngesterIndexForToken(token, ing)

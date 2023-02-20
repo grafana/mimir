@@ -753,8 +753,6 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.ephemeral-series-enabled
-    	[experimental] Enable marking series as ephemeral based on the given matchers in the runtime config.
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
   -distributor.forwarding.grpc-client.backoff-max-period duration

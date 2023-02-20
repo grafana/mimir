@@ -54,7 +54,7 @@ type ingesterMetrics struct {
 	appenderCommitDuration prometheus.Histogram
 	idleTsdbChecks         *prometheus.CounterVec
 
-	discardedPersistent *discardedMetrics
+	discarded *discardedMetrics
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -263,13 +263,13 @@ func newIngesterMetrics(
 		}),
 		appenderCommitDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_tsdb_appender_commit_duration_seconds",
-			Help:    "The total time it takes for a push request to commit samples appended to TSDB (both persistent and ephemeral).",
+			Help:    "The total time it takes for a push request to commit samples appended to TSDB.",
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
 
-		discardedPersistent: newDiscardedMetrics(r),
+		discarded: newDiscardedMetrics(r),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
@@ -285,14 +285,14 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
-	m.discardedPersistent.DeletePartialMatch(filter)
+	m.discarded.DeletePartialMatch(filter)
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
-	m.discardedPersistent.DeleteLabelValues(userID, group)
+	m.discarded.DeleteLabelValues(userID, group)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
