@@ -7580,7 +7580,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", registry)
+		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", registry)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
