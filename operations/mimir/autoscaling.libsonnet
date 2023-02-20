@@ -322,7 +322,7 @@
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
     if $._config.autoscaling_ruler_query_frontend_enabled then removeReplicasFromSpec else
-      if $._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled then
+      if ($._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled) then
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
   ),
