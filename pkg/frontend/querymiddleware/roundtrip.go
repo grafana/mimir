@@ -65,12 +65,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // Validate validates the config.
 func (cfg *Config) Validate() error {
-	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
+	if cfg.CacheResults {
 		if cfg.SplitQueriesByInterval <= 0 {
 			return errors.New("-query-frontend.cache-results may only be enabled in conjunction with -query-frontend.split-queries-by-interval. Please set the latter")
 		}
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid ResultsCache config")
+		}
+	}
+
+	if cfg.cardinalityBasedShardingEnabled() {
+		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
+			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
 	}
 
