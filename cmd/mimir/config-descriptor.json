@@ -1695,17 +1695,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "ephemeral_series_enabled",
-          "required": false,
-          "desc": "Enable marking series as ephemeral based on the given matchers in the runtime config.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "distributor.ephemeral-series-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -2782,17 +2771,6 @@
             },
             {
               "kind": "field",
-              "name": "max_ephemeral_series",
-              "required": false,
-              "desc": "Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingester.instance-limits.max-ephemeral-series",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "max_inflight_push_requests",
               "required": false,
               "desc": "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.",
@@ -3042,17 +3020,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.max-global-series-per-metric",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "max_ephemeral_series_per_user",
-          "required": false,
-          "desc": "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "ingester.max-ephemeral-series-per-user",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -3587,17 +3554,6 @@
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldType": "map of string to validation.ForwardingRule"
-        },
-        {
-          "kind": "field",
-          "name": "ephemeral_series_matchers",
-          "required": false,
-          "desc": "Lists of series matchers prefixed by the source. The source must be one of any, api, rule. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace=\"dev\"};rule:{host=\"server1\",namespace=\"prod\"}",
-          "fieldValue": null,
-          "fieldDefaultValue": {},
-          "fieldFlag": "distributor.ephemeral-series-matchers",
-          "fieldType": "map of source name (string) to series matchers ([]string)",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -6072,104 +6028,6 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            }
-          ],
-          "fieldValue": null,
-          "fieldDefaultValue": null
-        },
-        {
-          "kind": "block",
-          "name": "ephemeral_tsdb",
-          "required": false,
-          "desc": "",
-          "blockEntries": [
-            {
-              "kind": "field",
-              "name": "retention_period",
-              "required": false,
-              "desc": "Retention of ephemeral series.",
-              "fieldValue": null,
-              "fieldDefaultValue": 600000000000,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.retention-period",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_chunks_write_buffer_size_bytes",
-              "required": false,
-              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.",
-              "fieldValue": null,
-              "fieldDefaultValue": 4194304,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_chunks_end_time_variance",
-              "required": false,
-              "desc": "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance",
-              "fieldType": "float",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "stripe_size",
-              "required": false,
-              "desc": "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance.",
-              "fieldValue": null,
-              "fieldDefaultValue": 16384,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.stripe-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_chunks_write_queue_size",
-              "required": false,
-              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
-              "fieldValue": null,
-              "fieldDefaultValue": 1000000,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_postings_for_matchers_cache_ttl",
-              "required": false,
-              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
-              "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_postings_for_matchers_cache_size",
-              "required": false,
-              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl \u003e 0.",
-              "fieldValue": null,
-              "fieldDefaultValue": 100,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "head_postings_for_matchers_cache_force",
-              "required": false,
-              "desc": "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

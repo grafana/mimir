@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestOverridesManager_GetOverrides(t *testing.T) {
@@ -667,36 +666,4 @@ func TestEnabledByAnyTenant(t *testing.T) {
 	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
-}
-
-func TestYamlUnmarshalMarshalLabelMatchers(t *testing.T) {
-	cfg := `
-ephemeral_series_matchers:
-    any:
-        - '{__name__!=""}'
-`
-
-	limits := Limits{}
-	err := yaml.Unmarshal([]byte(cfg), &limits)
-	require.NoError(t, err)
-
-	require.True(t, limits.EphemeralSeriesMatchers.ForSource(mimirpb.API).HasMatchers())
-
-	out, err := yaml.Marshal(&limits)
-	require.NoError(t, err)
-	require.Contains(t, string(out), cfg) // output contains many fields from Limits struct, but we only care for ephemeral_series_matchers
-}
-
-func TestJsonUnmarshalMarshalLabelMatchers(t *testing.T) {
-	cfg := `"ephemeral_series_matchers":{"any":["{__name__!=\"\"}"]}`
-
-	limits := Limits{}
-	err := json.Unmarshal([]byte("{"+cfg+"}"), &limits)
-	require.NoError(t, err)
-
-	require.True(t, limits.EphemeralSeriesMatchers.ForSource(mimirpb.API).HasMatchers())
-
-	out, err := json.Marshal(&limits)
-	require.NoError(t, err)
-	require.Contains(t, string(out), cfg) // output contains many fields from Limits struct, but we only care for ephemeral_series_matchers
 }

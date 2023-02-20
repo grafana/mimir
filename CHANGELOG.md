@@ -8,6 +8,22 @@
 * [CHANGE] Store-gateway: When a query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits, an error with the status code `422` is created and returned. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
+* [CHANGE] Experimental support for ephemeral storage introduced in Mimir 2.6.0 has been removed. Following options are no longer available: #4252
+  * `-blocks-storage.ephemeral-tsdb.*`
+  * `-distributor.ephemeral-series-enabled`
+  * `-distributor.ephemeral-series-matchers`
+  * `-ingester.max-ephemeral-series-per-user`
+  * `-ingester.instance-limits.max-ephemeral-series`
+Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. All label values with `ephemeral-` prefix in `reason` label of `cortex_discarded_samples_total` metric are no longer available. Following metrics have been removed:
+  * `cortex_ingester_ephemeral_series`
+  * `cortex_ingester_ephemeral_series_created_total`
+  * `cortex_ingester_ephemeral_series_removed_total`
+  * `cortex_ingester_ingested_ephemeral_samples_total`
+  * `cortex_ingester_ingested_ephemeral_samples_failures_total`
+  * `cortex_ingester_memory_ephemeral_users`
+  * `cortex_ingester_queries_ephemeral_total`
+  * `cortex_ingester_queried_ephemeral_samples`
+  * `cortex_ingester_queried_ephemeral_series`
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. #4159
 * [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121 #4177 #4188

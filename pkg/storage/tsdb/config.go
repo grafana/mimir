@@ -95,10 +95,9 @@ var (
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket        bucket.Config       `yaml:",inline"`
-	BucketStore   BucketStoreConfig   `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB          TSDBConfig          `yaml:"tsdb"`
-	EphemeralTSDB EphemeralTSDBConfig `yaml:"ephemeral_tsdb"`
+	Bucket      bucket.Config     `yaml:",inline"`
+	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB        TSDBConfig        `yaml:"tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -143,7 +142,6 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
 	cfg.BucketStore.RegisterFlags(f, logger)
 	cfg.TSDB.RegisterFlags(f)
-	cfg.EphemeralTSDB.RegisterFlags(f)
 }
 
 // Validate the config.
@@ -388,41 +386,4 @@ func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.DurationVar(&cfg.UpdateOnErrorInterval, prefix+"update-on-error-interval", time.Minute, "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.")
 	f.DurationVar(&cfg.IdleTimeout, prefix+"idle-timeout", time.Hour, "How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier.")
 	f.DurationVar(&cfg.MaxStalePeriod, prefix+"max-stale-period", time.Hour, "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).")
-}
-
-// EphemeralTSDBConfig holds the config for Ephemeral Storage opened in the ingesters.
-type EphemeralTSDBConfig struct {
-	Retention                         time.Duration `yaml:"retention_period" category:"experimental"`
-	HeadChunksWriteBufferSize         int           `yaml:"head_chunks_write_buffer_size_bytes" category:"experimental"`
-	HeadChunksEndTimeVariance         float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                        int           `yaml:"stripe_size" category:"experimental"`
-	HeadChunksWriteQueueSize          int           `yaml:"head_chunks_write_queue_size" category:"experimental"`
-	HeadPostingsForMatchersCacheTTL   time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
-	HeadPostingsForMatchersCacheSize  int           `yaml:"head_postings_for_matchers_cache_size" category:"experimental"`
-	HeadPostingsForMatchersCacheForce bool          `yaml:"head_postings_for_matchers_cache_force" category:"experimental"`
-}
-
-// RegisterFlags registers the TSDBConfig flags.
-func (cfg *EphemeralTSDBConfig) RegisterFlags(f *flag.FlagSet) {
-	f.DurationVar(&cfg.Retention, "blocks-storage.ephemeral-tsdb.retention-period", 10*time.Minute, "Retention of ephemeral series.")
-	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, headChunkWriterBufferSizeHelp)
-	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance", 0, headChunksEndTimeVarianceHelp)
-	f.IntVar(&cfg.StripeSize, "blocks-storage.ephemeral-tsdb.stripe-size", 16384, headStripeSizeHelp)
-	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
-	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl", 10*time.Second, headPostingsForMatchersCacheTTLHelp)
-	f.IntVar(&cfg.HeadPostingsForMatchersCacheSize, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size", 100, headPostingsForMatchersCacheSizeHelp)
-	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force", false, headPostingsForMatchersCacheForce)
-}
-
-// Validate the config.
-func (cfg *EphemeralTSDBConfig) Validate() error {
-	if cfg.HeadChunksWriteBufferSize < chunks.MinWriteBufferSize || cfg.HeadChunksWriteBufferSize > chunks.MaxWriteBufferSize || cfg.HeadChunksWriteBufferSize%1024 != 0 {
-		return errors.Errorf("head chunks write buffer size must be a multiple of 1024 between %d and %d", chunks.MinWriteBufferSize, chunks.MaxWriteBufferSize)
-	}
-
-	if cfg.StripeSize <= 1 || (cfg.StripeSize&(cfg.StripeSize-1)) != 0 { // ensure stripe size is a positive power of 2
-		return errInvalidStripeSize
-	}
-
-	return nil
 }
