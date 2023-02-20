@@ -1718,7 +1718,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
-	const storageKey = "storage"
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                  blockRanges[0],
