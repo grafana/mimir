@@ -99,9 +99,6 @@ const (
 	perUserSeriesLimit   = "per_user_series_limit"
 	perMetricSeriesLimit = "per_metric_series_limit"
 
-	// Prefix for discard reasons when ingesting ephemeral series.
-	ephemeralDiscardPrefix = "ephemeral-"
-
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
@@ -720,7 +717,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
-	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 {
+	if len(req.Timeseries) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -743,7 +740,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		persistentStats, ephemeralStats pushStats
+		stats pushStats
 
 		firstPartialErr    error
 		updateFirstPartial = func(errFn func() error) {
@@ -754,17 +751,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	// Walk the samples, appending them to the users database
-	var persistentApp, ephemeralApp extendedAppender
+	var persistentApp extendedAppender
 
 	rollback := func() {
 		if persistentApp != nil {
 			if err := persistentApp.Rollback(); err != nil {
 				level.Warn(i.logger).Log("msg", "failed to rollback persistent appender on error", "user", userID, "err", err)
-			}
-		}
-		if ephemeralApp != nil {
-			if err := ephemeralApp.Rollback(); err != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback ephemeral appender on error", "user", userID, "err", err)
 			}
 		}
 	}
@@ -781,44 +773,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &persistentStats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, false)
+		err = i.pushSamplesToAppender(userID, req.Timeseries, persistentApp, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime, false)
 		if err != nil {
 			rollback()
 			return nil, err
-		}
-	}
-
-	if len(req.EphemeralTimeseries) > 0 {
-		a, err := db.EphemeralAppender(ctx)
-
-		switch {
-		case err != nil && !errors.Is(err, errEphemeralStorageDisabledForUser):
-			rollback()
-			return nil, err
-
-		case err != nil && errors.Is(err, errEphemeralStorageDisabledForUser):
-			// Add all samples for ephemeral series as "failed".
-			for _, ts := range req.EphemeralTimeseries {
-				ephemeralStats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-			}
-
-			updateFirstPartial(func() error {
-				return fmt.Errorf(globalerror.EphemeralStorageNotEnabledForUser.Message(errEphemeralStorageDisabledForUser.Error()))
-			})
-			// No rollback, we will append persistent samples.
-
-		default:
-			ephemeralApp = a.(extendedAppender)
-
-			level.Debug(spanlog).Log("event", "got appender for ephemeral series", "ephemeralSeries", len(req.EphemeralTimeseries))
-
-			minAppendTime, minAppendTimeAvailable := db.getEphemeralStorage().AppendableMinValidTime()
-
-			err = i.pushSamplesToAppender(userID, req.EphemeralTimeseries, ephemeralApp, startAppend, &ephemeralStats, updateFirstPartial, nil, 0, minAppendTimeAvailable, minAppendTime, true)
-			if err != nil {
-				rollback()
-				return nil, err
-			}
 		}
 	}
 
@@ -827,14 +785,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", persistentStats.succeededSamplesCount,
-		"failedSamplesCount", persistentStats.failedSamplesCount,
-		"succeededExemplarsCount", persistentStats.succeededExemplarsCount,
-		"failedExemplarsCount", persistentStats.failedExemplarsCount,
-		"ephemeralSucceededSamplesCount", ephemeralStats.succeededSamplesCount,
-		"ephemeralFailedSamplesCount", ephemeralStats.failedSamplesCount,
-		"ephemeralSucceededExemplarsCount", ephemeralStats.succeededExemplarsCount,
-		"ephemeralFailedExemplarsCount", ephemeralStats.failedExemplarsCount,
+		"succeededSamplesCount", stats.succeededSamplesCount,
+		"failedSamplesCount", stats.failedSamplesCount,
+		"succeededExemplarsCount", stats.succeededExemplarsCount,
+		"failedExemplarsCount", stats.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
@@ -847,46 +801,29 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			return nil, wrapWithUser(err, userID)
 		}
 	}
-	if ephemeralApp != nil {
-		app := ephemeralApp
-		ephemeralApp = nil // Disable rollback for appender. If Commit fails, it auto-rollbacks.
-
-		if err := app.Commit(); err != nil {
-			rollback()
-			return nil, wrapWithUser(err, userID)
-		}
-	}
 
 	commitDuration := time.Since(startCommit)
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if persistentStats.succeededSamplesCount > 0 || ephemeralStats.succeededSamplesCount > 0 {
+	if stats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(persistentStats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(persistentStats.failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(persistentStats.succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(persistentStats.failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(persistentStats.succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(persistentStats.succeededExemplarsCount))
-
-	if ephemeralStats.succeededSamplesCount > 0 || ephemeralStats.failedSamplesCount > 0 {
-		i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralStats.succeededSamplesCount))
-		i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralStats.failedSamplesCount))
-
-		i.appendedSamplesStats.Inc(int64(ephemeralStats.succeededSamplesCount))
-	}
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
-	i.updateMetricsFromPushStats(userID, group, &persistentStats, req.Source, db, i.metrics.discardedPersistent)
-	i.updateMetricsFromPushStats(userID, group, &ephemeralStats, req.Source, db, i.metrics.discardedEphemeral)
+	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discardedPersistent)
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
@@ -1524,11 +1461,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	ephemeral := storageType == EphemeralStorageLabelValue
-	if ephemeral {
-		i.metrics.ephemeralQueries.Inc()
-	} else {
-		i.metrics.queries.Inc()
-	}
+	i.metrics.queries.Inc()
 
 	db := i.getTSDB(userID)
 	if db == nil {
@@ -1566,13 +1499,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	if ephemeral {
-		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
-		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
-	} else {
-		i.metrics.queriedSeries.Observe(float64(numSeries))
-		i.metrics.queriedSamples.Observe(float64(numSamples))
-	}
+	i.metrics.queriedSeries.Observe(float64(numSeries))
+	i.metrics.queriedSamples.Observe(float64(numSamples))
 	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples, "storage", storageType)
 	return nil
 }
@@ -1966,8 +1894,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			return nil, err
 		}
 
-		i.metrics.memEphemeralUsers.Inc()
-
 		// Don't allow ingestion of old samples into ephemeral storage. We use Truncate here on empty head, which is pointless,
 		// but we do it for its side effects: it sets both minTime and minValidTime to specified timestamp.
 		//
@@ -1995,8 +1921,6 @@ func (i *Ingester) closeAllTSDB() {
 		go func(db *userTSDB) {
 			defer wg.Done()
 
-			ephemeral := db.hasEphemeralStorage()
-
 			if err := db.Close(); err != nil {
 				level.Warn(i.logger).Log("msg", "unable to close TSDB", "err", err, "user", userID)
 				return
@@ -2012,9 +1936,6 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.deletePerUserCustomTrackerMetrics(userID, db.activeSeries.CurrentMatcherNames())
-			if ephemeral {
-				i.metrics.memEphemeralUsers.Dec()
-			}
 		}(userDB)
 	}
 
@@ -2402,9 +2323,6 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
-	if eph != nil {
-		i.metrics.memEphemeralUsers.Dec()
-	}
 	i.tsdbMetrics.removeRegistryForUser(userID)
 
 	i.deleteUserMetadata(userID)
@@ -2639,7 +2557,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
-		mimirpb.ReuseSlice(req.EphemeralTimeseries)
 	})
 	return i.PushWithCleanup(ctx, pushReq)
 }

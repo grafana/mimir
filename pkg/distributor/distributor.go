@@ -1182,7 +1182,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
-		mimirpb.ReuseSlice(req.EphemeralTimeseries)
 	})
 
 	return d.PushWithMiddlewares(ctx, pushReq)
@@ -1212,7 +1211,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	d.updateReceivedMetrics(req, userID)
 
-	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 && len(req.Metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -1222,7 +1221,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
-	ephemeralSeriesKeys := d.getTokensForSeries(userID, req.EphemeralTimeseries)
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 
 	for _, m := range req.Metadata {
@@ -1243,23 +1241,19 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	// All tokens, stored in order: series, metadata, ephemeral series.
-	keys := make([]uint32, len(seriesKeys)+len(metadataKeys)+len(ephemeralSeriesKeys))
+	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
 	initialMetadataIndex := len(seriesKeys)
-	initialEphemeralIndex := initialMetadataIndex + len(metadataKeys)
 	copy(keys, seriesKeys)
 	copy(keys[initialMetadataIndex:], metadataKeys)
-	copy(keys[initialEphemeralIndex:], ephemeralSeriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		var timeseriesCount, ephemeralCount, metadataCount int
+		var timeseriesCount, metadataCount int
 		for _, i := range indexes {
-			if i >= initialEphemeralIndex {
-				ephemeralCount++
-			} else if i >= initialMetadataIndex {
+			if i >= initialMetadataIndex {
 				metadataCount++
 			} else {
 				timeseriesCount++
@@ -1267,20 +1261,17 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		}
 
 		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-		ephemeral := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](ephemeralCount)
 		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
 		for _, i := range indexes {
-			if i >= initialEphemeralIndex {
-				ephemeral = append(ephemeral, req.EphemeralTimeseries[i-initialEphemeralIndex])
-			} else if i >= initialMetadataIndex {
+			if i >= initialMetadataIndex {
 				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
 			} else {
 				timeseries = append(timeseries, req.Timeseries[i])
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, ephemeral, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1351,7 +1342,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	})
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries, ephemeral []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1359,10 +1350,9 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	c := h.(ingester_client.IngesterClient)
 
 	req := mimirpb.WriteRequest{
-		Timeseries:          timeseries,
-		Metadata:            metadata,
-		Source:              source,
-		EphemeralTimeseries: ephemeral,
+		Timeseries: timeseries,
+		Metadata:   metadata,
+		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
