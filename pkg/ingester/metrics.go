@@ -396,13 +396,6 @@ type tsdbMetrics struct {
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
 
-	ephemeralHeadTruncateFail  *prometheus.Desc
-	ephemeralHeadTruncateTotal *prometheus.Desc
-	ephemeralHeadGcDuration    *prometheus.Desc
-
-	ephemeralSeriesCreatedTotal *prometheus.Desc
-	ephemeralSeriesRemovedTotal *prometheus.Desc
-
 	regs *dskit_metrics.TenantRegistries
 }
 
@@ -590,28 +583,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
-
-		ephemeralHeadTruncateFail: prometheus.NewDesc(
-			"cortex_ingester_ephemeral_head_truncations_failed_total",
-			"Total number of TSDB head truncations that failed for ephemeral storage.",
-			nil, nil),
-		ephemeralHeadTruncateTotal: prometheus.NewDesc(
-			"cortex_ingester_ephemeral_head_truncations_total",
-			"Total number of TSDB head truncations attempted for ephemeral storage.",
-			nil, nil),
-		ephemeralHeadGcDuration: prometheus.NewDesc(
-			"cortex_ingester_ephemeral_head_gc_duration_seconds",
-			"Runtime of garbage collection in the TSDB head for ephemeral storage.",
-			nil, nil),
-
-		ephemeralSeriesCreatedTotal: prometheus.NewDesc(
-			"cortex_ingester_ephemeral_series_created_total",
-			"The total number of series in ephemeral storage that were created per user.",
-			[]string{"user"}, nil),
-		ephemeralSeriesRemovedTotal: prometheus.NewDesc(
-			"cortex_ingester_ephemeral_series_removed_total",
-			"The total number of series in ephemeral storage that were removed per user.",
-			[]string{"user"}, nil),
 	}
 
 	if r != nil {
@@ -668,12 +639,6 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
-
-	out <- sm.ephemeralHeadTruncateFail
-	out <- sm.ephemeralHeadTruncateTotal
-	out <- sm.ephemeralHeadGcDuration
-	out <- sm.ephemeralSeriesCreatedTotal
-	out <- sm.ephemeralSeriesRemovedTotal
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -726,12 +691,6 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
-
-	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateFail, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_failed_total")
-	data.SendSumOfCounters(out, sm.ephemeralHeadTruncateTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_truncations_total")
-	data.SendSumOfSummaries(out, sm.ephemeralHeadGcDuration, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_gc_duration_seconds")
-	data.SendSumOfCountersPerTenant(out, sm.ephemeralSeriesCreatedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_created_total")
-	data.SendSumOfCountersPerTenant(out, sm.ephemeralSeriesRemovedTotal, ephemeralPrometheusMetricsPrefix+"prometheus_tsdb_head_series_removed_total")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {
