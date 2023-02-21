@@ -80,6 +80,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Log errors that occur while performing requests to compare two endpoints. #4262
 * [ENHANCEMENT] When comparing two responses that both contain an error, only consider the comparison failed if the errors differ. Previously, if either response contained an error, the comparison always failed, even if both responses contained the same error. #4262
 * [ENHANCEMENT] Include the value of the `X-Scope-OrgID` header when logging a comparison failure. #4262
+* [BUGFIX] Parameters (expression, time range etc.) for a query request where the parameters are in the HTTP request body rather than in the URL are now logged correctly when responses differ. #4265
 
 ### Documentation
 
