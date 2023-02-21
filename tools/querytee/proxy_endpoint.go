@@ -165,7 +165,7 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 		err := p.compareResponses(expectedResponse, actualResponse)
 		if err != nil {
 			level.Error(util_log.Logger).Log("msg", "response comparison failed", "route-name", p.routeName,
-				"query", r.URL.RawQuery, "err", err)
+				"query", r.URL.RawQuery, "org-id", r.Header.Get("X-Scope-OrgID"), "err", err)
 			result = comparisonFailed
 		}
 
