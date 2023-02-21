@@ -64,7 +64,12 @@ receivers:
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
-      
+        - job_name: mimir-microservices-mode/memcached-exporter
+          static_configs:
+            - targets: ['memcached-exporter:9150']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-microservices-mode'
 
 service:
   pipelines:

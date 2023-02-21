@@ -1196,7 +1196,7 @@ results_cache:
 # sharding, but a hint given to the query sharding when the query execution is
 # initially planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
-[query_sharding_max_series_per_shard: <int> | default = 0]
+[query_sharding_target_series_per_shard: <int> | default = 0]
 
 # (experimental) Format to use when retrieving query results from queriers.
 # Supported values: json, protobuf
@@ -3610,6 +3610,12 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]
+
+# (advanced) The minimum number of idle connections to keep open as a percentage
+# (0-100) of the number of recently used idle connections. If negative, idle
+# connections are kept open indefinitely.
+# CLI flag: -<prefix>.memcached.min-idle-connections-headroom-percentage
+[min_idle_connections_headroom_percentage: <float> | default = -1]
 
 # (advanced) The maximum number of idle connections that will be maintained per
 # address.

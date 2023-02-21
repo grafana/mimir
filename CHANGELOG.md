@@ -26,7 +26,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
   * `cortex_ingester_queried_ephemeral_series`
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. #4159
-* [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121 #4177 #4188
+* [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. This feature uses the same cache that's used for results caching. #4121 #4177 #4188 #4254
 * [ENHANCEMENT] Ingester: added `out_of_order_blocks_external_label_enabled` shipper option to label out-of-order blocks before shipping them to cloud storage. #4182
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
@@ -42,6 +42,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227
+* [ENHANCEMENT] Memcached: added `-*.memcached.min-idle-connections-headroom-percentage` support to configure the minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. This feature is disabled when set to a negative value (default), which means idle connections are kept open indefinitely. #4249
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
@@ -83,6 +84,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+* [BUGFIX] Added indentation to azure an swift backend definition.
 
 ### Tools
 

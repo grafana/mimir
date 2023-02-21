@@ -492,7 +492,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230207131021-02a38c36f006
+# github.com/grafana/dskit v0.0.0-20230221092330-02c947faa1a0
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -534,7 +534,7 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20230105173749-11f792309e1f
+# github.com/grafana/gomemcache v0.0.0-20230221082510-6cde04bf2270
 ## explicit; go 1.18
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

@@ -36,6 +36,7 @@ type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
+	Close()
 }
 
 // updatableServerSelector extends the interface used for picking a memcached server
@@ -61,6 +62,11 @@ type MemcachedClientConfig struct {
 
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
+
+	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
+	// to keep open as a percentage of the number of recently used idle connections.
+	// If negative, idle connections are kept open indefinitely.
+	MinIdleConnectionsHeadroomPercentage float64 `yaml:"min_idle_connections_headroom_percentage"`
 
 	// MaxIdleConnections specifies the maximum number of idle connections that
 	// will be maintained per address. For better performances, this should be
@@ -163,6 +169,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 
 	client := memcache.NewFromSelector(selector)
 	client.Timeout = config.Timeout
+	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
 	client.MaxIdleConns = config.MaxIdleConnections
 
 	if reg != nil {
@@ -215,14 +222,15 @@ func newMemcachedClient(
 		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
-			"timeout":                      config.Timeout.String(),
-			"max_idle_connections":         strconv.Itoa(config.MaxIdleConnections),
-			"max_async_concurrency":        strconv.Itoa(config.MaxAsyncConcurrency),
-			"max_async_buffer_size":        strconv.Itoa(config.MaxAsyncBufferSize),
-			"max_item_size":                strconv.FormatUint(uint64(config.MaxItemSize), 10),
-			"max_get_multi_concurrency":    strconv.Itoa(config.MaxGetMultiConcurrency),
-			"max_get_multi_batch_size":     strconv.Itoa(config.MaxGetMultiBatchSize),
-			"dns_provider_update_interval": config.DNSProviderUpdateInterval.String(),
+			"timeout": config.Timeout.String(),
+			"min_idle_connections_headroom_percentage": fmt.Sprintf("%f.2", config.MinIdleConnectionsHeadroomPercentage),
+			"max_idle_connections":                     strconv.Itoa(config.MaxIdleConnections),
+			"max_async_concurrency":                    strconv.Itoa(config.MaxAsyncConcurrency),
+			"max_async_buffer_size":                    strconv.Itoa(config.MaxAsyncBufferSize),
+			"max_item_size":                            strconv.FormatUint(uint64(config.MaxItemSize), 10),
+			"max_get_multi_concurrency":                strconv.Itoa(config.MaxGetMultiConcurrency),
+			"max_get_multi_batch_size":                 strconv.Itoa(config.MaxGetMultiBatchSize),
+			"dns_provider_update_interval":             config.DNSProviderUpdateInterval.String(),
 		},
 	},
 		func() float64 { return 1 },
@@ -244,6 +252,9 @@ func (c *memcachedClient) Stop() {
 
 	// Stop running async operations.
 	c.asyncQueue.stop()
+
+	// Stop the underlying client.
+	c.client.Close()
 }
 
 func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
