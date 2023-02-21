@@ -109,31 +109,27 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 		}
 	}
 
-	for {
-		if lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone {
-			t1, t2 := left.atTime(), right.atTime()
-			if t1 < t2 {
-				ensureBatch(lt)
-				populate(b, left, lt)
-				left.next()
-			} else if t1 > t2 {
+	for lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = left.hasNext(), right.hasNext() {
+		t1, t2 := left.atTime(), right.atTime()
+		if t1 < t2 {
+			ensureBatch(lt)
+			populate(b, left, lt)
+			left.next()
+		} else if t1 > t2 {
+			ensureBatch(rt)
+			populate(b, right, rt)
+			right.next()
+		} else {
+			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
+				// Prefer historgrams over floats. Take left side if both has histograms.
 				ensureBatch(rt)
 				populate(b, right, rt)
-				right.next()
 			} else {
-				if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-					// Prefer historgrams over floats. Take left side if both has histograms.
-					ensureBatch(rt)
-					populate(b, right, rt)
-				} else {
-					ensureBatch(lt)
-					populate(b, left, lt)
-				}
-				left.next()
-				right.next()
+				ensureBatch(lt)
+				populate(b, left, lt)
 			}
-		} else {
-			break
+			left.next()
+			right.next()
 		}
 	}
 
