@@ -73,6 +73,13 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 * [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
+### Query-tee
+
+* [CHANGE] Increase default value of `-backend.read-timeout` to 150s, to accommodate default querier and query frontend timeout of 120s. #4262
+* [ENHANCEMENT] Log errors that occur while performing requests to compare two endpoints. #4262
+* [ENHANCEMENT] When comparing two responses that both contain an error, only consider the comparison failed if the errors differ. Previously, if either response contained an error, the comparison always failed, even if both responses contained the same error. #4262
+* [ENHANCEMENT] Include the value of the `X-Scope-OrgID` header when logging a comparison failure. #4262
+
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
