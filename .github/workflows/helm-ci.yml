@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:pr4266-00d4b87f1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
