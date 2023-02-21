@@ -60,7 +60,7 @@ func CreateBlock(
 	// For calculating the next series value type (float, histogram, etc)
 	batchOffset := 0
 	// prep some histogram test data
-	testHistorams := tsdb.GenerateTestHistograms(numSamples)
+	testHistograms := tsdb.GenerateTestHistograms(numSamples)
 	testFloatHistograms := tsdb.GenerateTestFloatHistograms(numSamples)
 
 	for len(series) > 0 {
@@ -85,7 +85,7 @@ func CreateBlock(
 					case 0:
 						_, err = app.Append(0, lset, t, rand.Float64())
 					case 1:
-						_, err = app.AppendHistogram(0, lset, t, testHistorams[i], nil)
+						_, err = app.AppendHistogram(0, lset, t, testHistograms[i], nil)
 					case 2:
 						_, err = app.AppendHistogram(0, lset, t, nil, testFloatHistograms[i])
 					}
