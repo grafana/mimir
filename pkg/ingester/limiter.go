@@ -187,24 +187,21 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 
 	zonesCount := l.getZonesCount()
 	var ingestersInZoneCount int
-	var ingestersInZoneCountShardFn func(int, int) int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters in the corresponding zone
 		ingestersInZoneCount = l.ring.InstancesInZoneCount()
-		ingestersInZoneCountShardFn = util.ShuffleShardExpectedInstancesPerZone
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
 		// the total number of ingesters
 		ingestersInZoneCount = l.ring.InstancesCount()
-		ingestersInZoneCountShardFn = util.ShuffleShardExpectedInstances
 	}
 	shardSize := l.getShardSize(userID)
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
 	// cannot be written to more ingesters than that.
 	if shardSize > 0 {
-		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, ingestersInZoneCountShardFn(shardSize, zonesCount))
+		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(shardSize, zonesCount))
 	}
 
 	// This may happen, for example when the total number of ingesters is asynchronously updated, or
