@@ -42,7 +42,7 @@ const (
 	DebugMetas = "debug/metas"
 )
 
-// Download downloads directory that is mean to be block directory. If any of the files
+// Download downloads directory that is meant to be block directory. If any of the files
 // have a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
 func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
