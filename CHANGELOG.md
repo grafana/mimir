@@ -55,6 +55,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [CHANGE] Move auto-scaling panel rows down beneath logical network path in Reads and Writes dashboards. #4049
 * [CHANGE] Make distributor auto-scaling metric panels show desired number of replicas. #4218
+* [CHANGE] Alerts: The alert `MimirMemcachedRequestErrors` has been renamed to `MimirCacheRequestErrors`. #4242
 * [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
 * [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049 #4216
