@@ -575,7 +575,7 @@ var errStopIter = errors.New("stop iteration")
 
 // stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
 func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
-	var lastModifiedTime time.Time
+	var lastModified time.Time
 	err := userBucket.WithExpectedErrs(func(err error) bool {
 		return errors.Is(err, errStopIter) // sentinel error
 	}).Iter(ctx, blockID.String(), func(name string) error {
@@ -589,8 +589,8 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 		if !attrib.LastModified.Before(partialDeletionCutoffTime) {
 			return errStopIter
 		}
-		if attrib.LastModified.After(lastModifiedTime) {
-			lastModifiedTime = attrib.LastModified
+		if attrib.LastModified.After(lastModified) {
+			lastModified = attrib.LastModified
 		}
 		return nil
 	}, objstore.WithRecursiveIter)
@@ -598,5 +598,5 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil
 	}
-	return lastModifiedTime, err
+	return lastModified, err
 }

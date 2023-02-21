@@ -933,22 +933,22 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 	require.True(t, empty)
 
 	testCases := []struct {
-		name                     string
-		blockID                  ulid.ULID
-		cutoff                   time.Time
-		expectedLastModifiedTime time.Time
+		name                 string
+		blockID              ulid.ULID
+		cutoff               time.Time
+		expectedLastModified time.Time
 	}{
-		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModifiedTime: time.Time{}},
-		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModifiedTime: time.Time{}},
-		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModifiedTime: time.Time{}},
-		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModifiedTime: objectTime},
+		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}},
+		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModified: time.Time{}},
+		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}},
+		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lastModified, err := stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, userBucket, tc.cutoff)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedLastModifiedTime, lastModified)
+			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
 	}
 }
