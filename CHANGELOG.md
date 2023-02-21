@@ -77,6 +77,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 * [CHANGE] Increase default value of `-backend.read-timeout` to 150s, to accommodate default querier and query frontend timeout of 120s. #4262
 * [ENHANCEMENT] Log errors that occur while performing requests to compare two endpoints. #4262
+* [ENHANCEMENT] When comparing two responses that both contain an error, only consider the comparison failed if the errors differ. Previously, if either response contained an error, the comparison always failed, even if both responses contained the same error. #4262
 
 ### Documentation
 
