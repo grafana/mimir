@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr4266-72b1c7816
+      image: grafana/mimir-build-image:goupdate-72d66708c
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -228,7 +228,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr4266-72b1c7816
+      image: grafana/mimir-build-image:goupdate-72d66708c
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2

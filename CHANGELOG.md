@@ -1,6 +1,7 @@
 # Changelog
 
 ## main / unreleased
+
 ### Grafana Mimir
 
 * [CHANGE] Querier: Errors with status code `422` coming from the store-gateway are propagated and not converted to the consistency check error anymore. #4100
