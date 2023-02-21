@@ -513,13 +513,13 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	// Check if partial blocks are older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
 		for _, blockID := range partialBlocksWithoutDeletionMarker {
-			outside, err := isPartialBlockOutsideDelayPeriod(ctx, blockID, userBucket, partialDeletionCutoffTime)
+			lastModified, err := stalePartialBlockLastModifiedTime(ctx, blockID, userBucket, partialDeletionCutoffTime)
 			if err != nil {
 				level.Warn(userLogger).Log("msg", "failed while determining if partial block should be marked for deletion", "block", blockID, "err", err)
 				continue
 			}
-			if outside {
-				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID)
+			if !lastModified.IsZero() {
+				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
 				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, "stale partial block", c.partialBlocksMarkedForDeletion); err != nil {
 					level.Warn(userLogger).Log("msg", "failed to mark partial block for deletion", "block", blockID, "err", err)
 				}
@@ -573,13 +573,12 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 
 var errStopIter = errors.New("stop iteration")
 
-// isPartialBlockOutsideDelayPeriod checks if the objects of a block were last modified before the provided cutoff time
-func isPartialBlockOutsideDelayPeriod(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (bool, error) {
-	empty := true
+// stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
+func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
+	var lastModifiedTime time.Time
 	err := userBucket.WithExpectedErrs(func(err error) bool {
 		return errors.Is(err, errStopIter) // sentinel error
 	}).Iter(ctx, blockID.String(), func(name string) error {
-		empty = false
 		if strings.HasSuffix(name, objstore.DirDelim) {
 			return nil
 		}
@@ -590,11 +589,14 @@ func isPartialBlockOutsideDelayPeriod(ctx context.Context, blockID ulid.ULID, us
 		if !attrib.LastModified.Before(partialDeletionCutoffTime) {
 			return errStopIter
 		}
+		if attrib.LastModified.After(lastModifiedTime) {
+			lastModifiedTime = attrib.LastModified
+		}
 		return nil
 	}, objstore.WithRecursiveIter)
 
 	if errors.Is(err, errStopIter) {
-		return false, nil
+		return time.Time{}, nil
 	}
-	return !empty, err
+	return lastModifiedTime, err
 }

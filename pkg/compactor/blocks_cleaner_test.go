@@ -909,7 +909,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	))
 }
 
-func TestIsPartialBlockOutsideDelayPeriod(t *testing.T) {
+func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	const tenant = "user"
@@ -933,22 +933,22 @@ func TestIsPartialBlockOutsideDelayPeriod(t *testing.T) {
 	require.True(t, empty)
 
 	testCases := []struct {
-		name            string
-		blockID         ulid.ULID
-		cutoff          time.Time
-		expectedOutside bool
+		name                     string
+		blockID                  ulid.ULID
+		cutoff                   time.Time
+		expectedLastModifiedTime time.Time
 	}{
-		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedOutside: false},
-		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedOutside: false},
-		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedOutside: false},
-		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedOutside: true},
+		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModifiedTime: time.Time{}},
+		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModifiedTime: time.Time{}},
+		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModifiedTime: time.Time{}},
+		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModifiedTime: objectTime},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			outside, err := isPartialBlockOutsideDelayPeriod(context.Background(), tc.blockID, userBucket, tc.cutoff)
+			lastModified, err := stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, userBucket, tc.cutoff)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedOutside, outside)
+			require.Equal(t, tc.expectedLastModifiedTime, lastModified)
 		})
 	}
 }
