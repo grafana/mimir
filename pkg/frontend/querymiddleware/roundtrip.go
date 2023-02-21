@@ -30,9 +30,6 @@ const (
 	day                    = 24 * time.Hour
 	queryRangePathSuffix   = "/query_range"
 	instantQueryPathSuffix = "/query"
-
-	cacheResultsFlagName      = "query-frontend.cache-results"
-	maxSeriesPerShardFlagName = "query-frontend.query-sharding-target-series-per-shard"
 )
 
 // Config for query_range middleware chain.
@@ -44,7 +41,7 @@ type Config struct {
 	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	MaxSeriesPerShard      uint64 `yaml:"query_sharding_max_series_per_shard" category:"experimental"`
+	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard" category:"experimental"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -58,10 +55,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
-	f.BoolVar(&cfg.CacheResults, cacheResultsFlagName, false, "Cache query results.")
+	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.Uint64Var(&cfg.MaxSeriesPerShard, maxSeriesPerShardFlagName, 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
+	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
@@ -72,12 +69,11 @@ func (cfg *Config) Validate() error {
 		if cfg.SplitQueriesByInterval <= 0 {
 			return errors.New("-query-frontend.cache-results may only be enabled in conjunction with -query-frontend.split-queries-by-interval. Please set the latter")
 		}
+	}
+
+	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
-			return errors.Wrap(err, "invalid ResultsCache config")
-		}
-	} else {
-		if cfg.MaxSeriesPerShard > 0 {
-			return fmt.Errorf("-%s may only be enabled in conjunction with -%s", maxSeriesPerShardFlagName, cacheResultsFlagName)
+			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
 	}
 
@@ -86,6 +82,10 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (cfg *Config) cardinalityBasedShardingEnabled() bool {
+	return cfg.TargetSeriesPerShard > 0
 }
 
 // HandlerFunc is like http.HandlerFunc, but for Handler.
@@ -193,19 +193,18 @@ func newQueryTripperware(
 	}
 
 	var c cache.Cache
+	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
+		var err error
+
+		c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
+		if err != nil {
+			return nil, err
+		}
+		c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
+	}
+
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-
-		// Init the cache client.
-		if cfg.CacheResults {
-			var err error
-
-			c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
-			if err != nil {
-				return nil, err
-			}
-			c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
-		}
 
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
@@ -243,7 +242,7 @@ func newQueryTripperware(
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
-		if cfg.MaxSeriesPerShard > 0 {
+		if cfg.cardinalityBasedShardingEnabled() {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
@@ -261,7 +260,7 @@ func newQueryTripperware(
 			log,
 			engine,
 			limits,
-			cfg.MaxSeriesPerShard,
+			cfg.TargetSeriesPerShard,
 			registerer,
 		)
 

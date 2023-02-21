@@ -146,7 +146,8 @@ Queries that return more series, such as those that are of high cardinality, nee
 Queries that return few or no series should be executed with fewer or no shards at all.
 When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality (number of series) observed during previous executions of the same query for similar time ranges.
 
-To enable this experimental feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and enable result caching (the result cache is used to store cardinality estimates).
+To enable this experimental feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and configure the results cache via the `query-frontend.results-cache.*` flags.
+This is necessary even when results caching is disabled, as the estimates are stored in the same cache that's used for query result caching.
 The value that you set for this flag is one of several parameters that the sharding logic uses to determine the appropriate number of shards for a query.
 Therefore, it will not strictly be complied with in all cases, and the actual number of series fetched per shard might exceed the limit.
 This is likely to happen in cases where the cardinality of a query changes rapidly within a short period of time.
