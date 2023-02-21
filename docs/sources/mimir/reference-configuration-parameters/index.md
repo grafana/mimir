@@ -3611,6 +3611,12 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]
 
+# (advanced) The minimum number of idle connections to keep open as a percentage
+# (0-100) of the number of recently used idle connections. If negative, idle
+# connections are kept open indefinitely.
+# CLI flag: -<prefix>.memcached.min-idle-connections-headroom-percentage
+[min_idle_connections_headroom_percentage: <float> | default = -1]
+
 # (advanced) The maximum number of idle connections that will be maintained per
 # address.
 # CLI flag: -<prefix>.memcached.max-idle-connections

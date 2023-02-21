@@ -305,6 +305,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
@@ -333,6 +335,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
@@ -375,6 +379,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
@@ -1469,6 +1475,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -query-frontend.results-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string

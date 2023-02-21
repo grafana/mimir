@@ -31,6 +31,7 @@ std.manifestYamlDoc({
     self.grafana_agent +
     self.otel_collector +
     self.memcached +
+    self.memcached_exporter +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     {},
@@ -215,6 +216,13 @@ std.manifestYamlDoc({
   memcached:: {
     memcached: {
       image: 'memcached:1.6.17-alpine',
+    },
+  },
+
+  memcached_exporter:: {
+    'memcached-exporter': {
+      image: 'prom/memcached-exporter:v0.6.0',
+      command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
     },
   },
 
