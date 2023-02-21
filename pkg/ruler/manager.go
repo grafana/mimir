@@ -14,6 +14,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,8 +26,6 @@ import (
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
-
-	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 type DefaultMultiTenantManager struct {
@@ -107,15 +107,19 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 
 	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
 	// Since users are different, we can sync rules in parallel.
-	var wg sync.WaitGroup
-	for userID, ruleGroup := range ruleGroups {
-		wg.Add(1)
-		go func(id string, rg rulespb.RuleGroupList) {
-			defer wg.Done()
-			r.syncRulesToManager(ctx, id, rg)
-		}(userID, ruleGroup)
+	users := make([]string, 0, len(ruleGroups))
+	for userID := range ruleGroups {
+		users = append(users, userID)
 	}
-	wg.Wait()
+	err := concurrency.ForEachJob(ctx, len(users), 10, func(ctx context.Context, idx int) error {
+		userId := users[idx]
+		r.syncRulesToManager(ctx, userId, ruleGroups[userId])
+		return nil
+	})
+	if err != nil {
+		level.Error(r.logger).Log("msg", "unable to sync rules to disk", "err", err)
+		return
+	}
 
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()

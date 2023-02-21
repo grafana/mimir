@@ -7,6 +7,8 @@ package ruler
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,7 +74,7 @@ func TestSyncRuleGroups(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, users, user)
 		require.Contains(t, users, user1)
-		require.Equal(t, 2, len(users))
+		require.Len(t, users, 2)
 	}
 
 	// Passing empty map / nil stops all managers.
@@ -118,6 +120,64 @@ func TestSyncRuleGroups(t *testing.T) {
 	test.Poll(t, 1*time.Second, false, func() interface{} {
 		return newMgr.(*mockRulesManager).running.Load()
 	})
+}
+
+func TestSyncRulesToManager(t *testing.T) {
+	dir := t.TempDir()
+
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	const (
+		user = "testUser"
+	)
+
+	userRules := make(map[string]rulespb.RuleGroupList)
+
+	for i := 0; i < 11; i++ {
+		userId := user + strconv.Itoa(i)
+		userRules[userId] = rulespb.RuleGroupList{
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: "ns",
+				Interval:  1 * time.Minute,
+				User:      userId,
+			}}
+	}
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 11; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			userId := user + strconv.Itoa(idx)
+			m.syncRulesToManager(context.Background(), userId, userRules[userId])
+		}(i)
+	}
+	wg.Wait()
+
+	ruleManagers := []RulesManager{}
+	for i := 0; i < 11; i++ {
+		userId := user + strconv.Itoa(i)
+		mgr := getManager(m, userId)
+		ruleManagers = append(ruleManagers, mgr)
+		require.NotNil(t, mgr)
+		test.Poll(t, 1*time.Second, true, func() interface{} {
+			return mgr.(*mockRulesManager).running.Load()
+		})
+
+		users, err := m.mapper.users()
+		require.NoError(t, err)
+		require.Contains(t, users, userId)
+	}
+
+	m.Stop()
+
+	for _, rm := range ruleManagers {
+		test.Poll(t, 1*time.Second, false, func() interface{} {
+			return rm.(*mockRulesManager).running.Load()
+		})
+	}
 }
 
 func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
