@@ -103,10 +103,10 @@ ruler_storage:
 common:
   storage:
     backend: azure
-  azure:
-    account_key: "${SWIFT_ACCOUNT_KEY}" # This is a secret injected via an environment variable
-    account_name: mimir-prod
-    endpoint_suffix: "blob.core.windows.net"
+    azure:
+      account_key: "${SWIFT_ACCOUNT_KEY}" # This is a secret injected via an environment variable
+      account_name: mimir-prod
+      endpoint_suffix: "blob.core.windows.net"
 
 blocks_storage:
   azure:
