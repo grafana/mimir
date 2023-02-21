@@ -18,13 +18,10 @@
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
-  local queryFrontendDisableCacheArgs =
+  local queryFrontendDisableResultCaching =
     {
-      // Query cache is of no benefit to rule evaluation.
+      // Result caching is of no benefit to rule evaluation, but the cache can be used for storing cardinality estimates.
       'query-frontend.cache-results': false,
-      'query-frontend.results-cache.backend': null,
-      'query-frontend.results-cache.memcached.addresses': null,
-      'query-frontend.results-cache.memcached.timeout': null,
     },
 
   //
@@ -53,7 +50,7 @@
     $._config.grpcIngressConfig +
     $.query_frontend_args +
     $.queryFrontendUseQuerySchedulerArgs(rulerQuerySchedulerName) +
-    queryFrontendDisableCacheArgs,
+    queryFrontendDisableResultCaching,
 
   ruler_query_frontend_container::
     $.newQueryFrontendContainer('ruler-query-frontend', $.ruler_query_frontend_args),

@@ -26,7 +26,6 @@ const (
 	MaxSeriesPerMetric            ID = "max-series-per-metric"
 	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
 	MaxSeriesPerUser              ID = "max-series-per-user"
-	MaxEphemeralSeriesPerUser     ID = "max-ephemeral-series-per-user"
 	MaxMetadataPerUser            ID = "max-metadata-per-user"
 	MaxChunksPerQuery             ID = "max-chunks-per-query"
 	MaxSeriesPerQuery             ID = "max-series-per-query"
@@ -36,11 +35,10 @@ const (
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
 	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"
 
-	IngesterMaxIngestionRate           ID = "ingester-max-ingestion-rate"
-	IngesterMaxTenants                 ID = "ingester-max-tenants"
-	IngesterMaxInMemorySeries          ID = "ingester-max-series"
-	IngesterMaxInMemoryEphemeralSeries ID = "ingester-max-ephemeral-series"
-	IngesterMaxInflightPushRequests    ID = "ingester-max-inflight-push-requests"
+	IngesterMaxIngestionRate        ID = "ingester-max-ingestion-rate"
+	IngesterMaxTenants              ID = "ingester-max-tenants"
+	IngesterMaxInMemorySeries       ID = "ingester-max-series"
+	IngesterMaxInflightPushRequests ID = "ingester-max-inflight-push-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
@@ -62,16 +60,10 @@ const (
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
 
-	EphemeralSampleTimestampTooOld    ID = "ephemeral-sample-timestamp-too-old"
-	EphemeralSampleOutOfOrder         ID = "ephemeral-sample-out-of-order"
-	EphemeralSampleDuplicateTimestamp ID = "ephemeral-sample-duplicate-timestamp"
-
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
-
-	EphemeralStorageNotEnabledForUser ID = "ephemeral-storage-not-enabled-for-user"
 )
 
 // Message returns the provided msg, appending the error id.

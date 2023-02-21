@@ -127,31 +127,6 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489
 
-			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB head for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_gc_duration_seconds summary
-			cortex_ingester_ephemeral_head_gc_duration_seconds_sum 5.154812e+06
-        	cortex_ingester_ephemeral_head_gc_duration_seconds_count 3
-
-			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failed for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_truncations_failed_total counter
-			cortex_ingester_ephemeral_head_truncations_failed_total 4.95655e+06
-
-			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attempted for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_truncations_total counter
-			cortex_ingester_ephemeral_head_truncations_total 5.055681e+06
-
-			# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
-			# TYPE cortex_ingester_ephemeral_series_created_total counter
-			cortex_ingester_ephemeral_series_created_total{user="user1"} 654285
-			cortex_ingester_ephemeral_series_created_total{user="user2"} 4.546711e+06
-			cortex_ingester_ephemeral_series_created_total{user="user3"} 52947
-			
-			# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
-			# TYPE cortex_ingester_ephemeral_series_removed_total counter
-			cortex_ingester_ephemeral_series_removed_total{user="user1"} 666630
-			cortex_ingester_ephemeral_series_removed_total{user="user2"} 4.632498e+06
-			cortex_ingester_ephemeral_series_removed_total{user="user3"} 53946
-
 			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 			# TYPE cortex_ingester_memory_series_created_total counter
 			# 5 * (12345, 85787 and 999 respectively)
@@ -506,29 +481,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
-
-			# HELP cortex_ingester_ephemeral_head_gc_duration_seconds Runtime of garbage collection in the TSDB head for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_gc_duration_seconds summary
-			cortex_ingester_ephemeral_head_gc_duration_seconds_sum 5.154812e+06
-        	cortex_ingester_ephemeral_head_gc_duration_seconds_count 3
-
-			# HELP cortex_ingester_ephemeral_head_truncations_failed_total Total number of TSDB head truncations that failed for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_truncations_failed_total counter
-			cortex_ingester_ephemeral_head_truncations_failed_total 4.95655e+06
-
-			# HELP cortex_ingester_ephemeral_head_truncations_total Total number of TSDB head truncations attempted for ephemeral storage.
-			# TYPE cortex_ingester_ephemeral_head_truncations_total counter
-			cortex_ingester_ephemeral_head_truncations_total 5.055681e+06
-
-			# HELP cortex_ingester_ephemeral_series_created_total The total number of series in ephemeral storage that were created per user.
-			# TYPE cortex_ingester_ephemeral_series_created_total counter
-			cortex_ingester_ephemeral_series_created_total{user="user1"} 654285
-			cortex_ingester_ephemeral_series_created_total{user="user2"} 4.546711e+06
-			
-			# HELP cortex_ingester_ephemeral_series_removed_total The total number of series in ephemeral storage that were removed per user.
-			# TYPE cortex_ingester_ephemeral_series_removed_total counter
-			cortex_ingester_ephemeral_series_removed_total{user="user1"} 666630
-			cortex_ingester_ephemeral_series_removed_total{user="user2"} 4.632498e+06
 	`))
 	require.NoError(t, err)
 }
@@ -800,34 +752,6 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of appended out-of-order samples.",
 	})
 	outOfOrderSamplesAppendedTotal.Add(3)
-
-	ephHeadTruncateFail := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: ephemeralPrometheusMetricsPrefix + "prometheus_tsdb_head_truncations_failed_total",
-		Help: "Total number of head truncations that failed.",
-	})
-	ephHeadTruncateFail.Add(50 * base)
-
-	ephHeadTruncateTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: ephemeralPrometheusMetricsPrefix + "prometheus_tsdb_head_truncations_total",
-		Help: "Total number of head truncations attempted.",
-	})
-	ephHeadTruncateTotal.Add(51 * base)
-
-	ephGcDuration := promauto.With(r).NewSummary(prometheus.SummaryOpts{
-		Name: ephemeralPrometheusMetricsPrefix + "prometheus_tsdb_head_gc_duration_seconds",
-		Help: "Runtime of garbage collection in the head block.",
-	})
-	ephGcDuration.Observe(52 * base)
-
-	ephSeriesCreated := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: ephemeralPrometheusMetricsPrefix + "prometheus_tsdb_head_series_created_total",
-	})
-	ephSeriesCreated.Add(53 * base)
-
-	ephSeriesRemoved := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: ephemeralPrometheusMetricsPrefix + "prometheus_tsdb_head_series_removed_total",
-	})
-	ephSeriesRemoved.Add(54 * base)
 
 	return r
 }

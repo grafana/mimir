@@ -24,7 +24,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -349,8 +348,6 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
-	case reflect.TypeOf(ephemeral.LabelMatchers{}).String():
-		return "map of source name (string) to series matchers ([]string)", true
 	default:
 		return "", false
 	}
@@ -431,8 +428,6 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
-	case reflect.TypeOf(ephemeral.LabelMatchers{}).String():
-		return "map of source name (string) to series matchers ([]string)", true
 	default:
 		return "", false
 	}
@@ -468,8 +463,6 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(tsdb.DurationList{})
 	case "map of string to validation.ForwardingRule":
 		return reflect.TypeOf(map[string]validation.ForwardingRule{})
-	case "map of source name (string) to series matchers ([]string)":
-		return reflect.TypeOf(ephemeral.LabelMatchers{})
 	default:
 		panic("unknown field type " + typ)
 	}

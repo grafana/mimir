@@ -165,7 +165,7 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 		err := p.compareResponses(expectedResponse, actualResponse)
 		if err != nil {
 			level.Error(util_log.Logger).Log("msg", "response comparison failed", "route-name", p.routeName,
-				"query", r.URL.RawQuery, "err", err)
+				"query", r.URL.RawQuery, "user", r.Header.Get("X-Scope-OrgID"), "err", err)
 			result = comparisonFailed
 		}
 
@@ -209,13 +209,12 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 }
 
 func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) error {
-	// compare response body only if we get a 200
-	if expectedResponse.status != 200 {
-		return fmt.Errorf("skipped comparison of response because we got status code %d from preferred backend's response", expectedResponse.status)
+	if expectedResponse.err != nil {
+		return fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
 	}
 
-	if actualResponse.status != 200 {
-		return fmt.Errorf("skipped comparison of response because we got status code %d from secondary backend's response", actualResponse.status)
+	if actualResponse.err != nil {
+		return fmt.Errorf("skipped comparison of response because the request to the secondary backend failed: %w", actualResponse.err)
 	}
 
 	if expectedResponse.status != actualResponse.status {
