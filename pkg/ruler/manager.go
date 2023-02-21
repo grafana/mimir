@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,6 +25,8 @@ import (
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
+
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 type DefaultMultiTenantManager struct {
@@ -112,8 +113,8 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		users = append(users, userID)
 	}
 	err := concurrency.ForEachJob(ctx, len(users), 10, func(ctx context.Context, idx int) error {
-		userId := users[idx]
-		r.syncRulesToManager(ctx, userId, ruleGroups[userId])
+		userID := users[idx]
+		r.syncRulesToManager(ctx, userID, ruleGroups[userID])
 		return nil
 	})
 	if err != nil {

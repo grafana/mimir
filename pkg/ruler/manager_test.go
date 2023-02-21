@@ -135,13 +135,13 @@ func TestSyncRulesToManager(t *testing.T) {
 	userRules := make(map[string]rulespb.RuleGroupList)
 
 	for i := 0; i < 11; i++ {
-		userId := user + strconv.Itoa(i)
-		userRules[userId] = rulespb.RuleGroupList{
+		userID := user + strconv.Itoa(i)
+		userRules[userID] = rulespb.RuleGroupList{
 			&rulespb.RuleGroupDesc{
 				Name:      "group1",
 				Namespace: "ns",
 				Interval:  1 * time.Minute,
-				User:      userId,
+				User:      userID,
 			}}
 	}
 
@@ -150,16 +150,16 @@ func TestSyncRulesToManager(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			userId := user + strconv.Itoa(idx)
-			m.syncRulesToManager(context.Background(), userId, userRules[userId])
+			userID := user + strconv.Itoa(idx)
+			m.syncRulesToManager(context.Background(), userID, userRules[userID])
 		}(i)
 	}
 	wg.Wait()
 
 	ruleManagers := []RulesManager{}
 	for i := 0; i < 11; i++ {
-		userId := user + strconv.Itoa(i)
-		mgr := getManager(m, userId)
+		userID := user + strconv.Itoa(i)
+		mgr := getManager(m, userID)
 		ruleManagers = append(ruleManagers, mgr)
 		require.NotNil(t, mgr)
 		test.Poll(t, 1*time.Second, true, func() interface{} {
@@ -168,7 +168,7 @@ func TestSyncRulesToManager(t *testing.T) {
 
 		users, err := m.mapper.users()
 		require.NoError(t, err)
-		require.Contains(t, users, userId)
+		require.Contains(t, users, userID)
 	}
 
 	m.Stop()
