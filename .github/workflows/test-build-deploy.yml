@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -60,7 +60,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -84,7 +84,7 @@ jobs:
   lint-helm:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -111,7 +111,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -142,7 +142,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -184,7 +184,7 @@ jobs:
       - name: Upgrade golang
         uses: actions/setup-go@v2
         with:
-          go-version: 1.19.3
+          go-version: 1.20.1
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Install Docker Client
@@ -228,7 +228,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
