@@ -127,13 +127,13 @@ ruler_storage:
 common:
   storage:
     backend: swift
-  swift:
-    auth_url: http://10.121.xx.xx:5000/v3
-    username: mimir
-    user_domain_name: Default
-    password: "${OPENSTACK_API_KEY}" # This is a secret injected via an environment variable
-    project_name: mimir-prod
-    domain_name: Default
+    swift:
+      auth_url: http://10.121.xx.xx:5000/v3
+      username: mimir
+      user_domain_name: Default
+      password: "${OPENSTACK_API_KEY}" # This is a secret injected via an environment variable
+      project_name: mimir-prod
+      domain_name: Default
 
 blocks_storage:
   swift:
