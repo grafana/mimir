@@ -335,7 +335,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 		},
 	}
 	for _, tt := range tests {
-		tt := tt // this is needed see https://github.com/golang/go/issues/55972
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, cardinalityEstimateBucketSize)
