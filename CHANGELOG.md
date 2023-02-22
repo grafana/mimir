@@ -87,7 +87,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
-* [BUGFIX] Added indentation to azure an swift backend definition.
+* [BUGFIX] Added indentation to Azure and SWIFT backend definition. #4263
 
 ### Tools
 
