@@ -5,7 +5,7 @@ aliases:
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration
-title: Grafana Mimir configuration reference parameters
+title: Grafana Mimir configuration parameters
 weight: 130
 ---
 
