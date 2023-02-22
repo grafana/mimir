@@ -226,7 +226,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 
 					return "", flags
 				},
-				withHistograms: false, // TODO(histograms): make this work for protobuf
+				withHistograms: true,
 			})
 		})
 	}
