@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Do not set `securityContext` on Mimir components when `rbad.type` equals `scc`, since it conflicts with OpenShift.
+* [BUGFIX] Do not set `securityContext` on Mimir components when `rbad.type` equals `scc`, since it conflicts with OpenShift. #4272
 
 ## 4.1.0
 
