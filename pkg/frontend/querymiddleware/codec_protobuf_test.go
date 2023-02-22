@@ -28,6 +28,79 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 		},
 	}
 
+	responseHistogram := mimirpb.FloatHistogram{
+		Timestamp: 1234,
+
+		ResetHint:      mimirpb.Histogram_GAUGE,
+		Schema:         3,
+		ZeroThreshold:  1.23,
+		ZeroCountFloat: 456,
+		CountFloat:     9001,
+		Sum:            789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveCounts: []float64{100, 200, 300},
+		NegativeCounts: []float64{400, 500, 600, 700},
+	}
+
+	expectedHistogram := mimirpb.SampleHistogram{
+		Count: 9001,
+		Sum:   789.1,
+		Buckets: []*mimirpb.HistogramBucket{
+			{
+				Boundaries: 1,
+				Count:      700,
+				Lower:      -5.187358218604039,
+				Upper:      -4.756828460010884,
+			},
+			{
+				Boundaries: 1,
+				Count:      600,
+				Lower:      -2.1810154653305154,
+				Upper:      -2,
+			},
+			{
+				Boundaries: 1,
+				Count:      500,
+				Lower:      -2,
+				Upper:      -1.8340080864093422,
+			},
+			{
+				Boundaries: 1,
+				Count:      400,
+				Lower:      -1.8340080864093422,
+				Upper:      -1.6817928305074288,
+			},
+			{
+				Boundaries: 3,
+				Count:      456,
+				Lower:      -1.23,
+				Upper:      1.23,
+			},
+			{
+				Count: 100,
+				Lower: 1.2968395546510096,
+				Upper: 1.414213562373095,
+			},
+			{
+				Count: 200,
+				Lower: 1.8340080864093422,
+				Upper: 2,
+			},
+			{
+				Count: 300,
+				Lower: 2,
+				Upper: 2.1810154653305154,
+			},
+		},
+	}
+
 	for _, tc := range []struct {
 		name        string
 		resp        mimirpb.QueryResponse
@@ -190,6 +263,71 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 					Result: []SampleStream{
 						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
 						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful vector response with histogram value",
+			resp: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Histograms: []mimirpb.VectorHistogram{
+							{
+								Metric:    []string{"name-1", "value-1"},
+								Histogram: responseHistogram,
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}},
+							Histograms: []mimirpb.SampleHistogramPair{{Timestamp: 1234, Histogram: &expectedHistogram}},
+						},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful vector response with float and histogram values",
+			resp: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
+						},
+						Histograms: []mimirpb.VectorHistogram{
+							{
+								Metric:    []string{"baz", "blah"},
+								Histogram: responseHistogram,
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
+						},
+						{
+							Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
+							Histograms: []mimirpb.SampleHistogramPair{{Timestamp: 1234, Histogram: &expectedHistogram}},
+						},
 					},
 				},
 				Headers: expectedRespHeaders,

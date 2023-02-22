@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -98,7 +99,7 @@ func (f protobufFormat) decodeScalarData(data *mimirpb.ScalarData) *PrometheusDa
 }
 
 func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusData, error) {
-	streams := make([]SampleStream, len(data.Samples))
+	streams := make([]SampleStream, len(data.Samples)+len(data.Histograms))
 
 	for i, sample := range data.Samples {
 		l, err := labelsFromStringArray(sample.Metric)
@@ -114,10 +115,64 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 		}
 	}
 
+	for i, sample := range data.Histograms {
+		l, err := labelsFromStringArray(sample.Metric)
+		if err != nil {
+			return nil, err
+		}
+
+		h, err := f.decodeHistogram(sample.Histogram)
+		if err != nil {
+			return nil, err
+		}
+
+		streams[i+len(data.Samples)] = SampleStream{
+			Labels: l,
+			Histograms: []mimirpb.SampleHistogramPair{
+				{Timestamp: sample.Histogram.Timestamp, Histogram: h},
+			},
+		}
+	}
+
 	return &PrometheusData{
 		ResultType: model.ValVector.String(),
 		Result:     streams,
 	}, nil
+}
+
+func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) (*mimirpb.SampleHistogram, error) {
+	counterResetHint, err := protobuf.ResetHint.ToPrometheusModelType()
+	if err != nil {
+		return nil, err
+	}
+
+	h := histogram.FloatHistogram{
+		CounterResetHint: counterResetHint,
+		Schema:           protobuf.Schema,
+		ZeroThreshold:    protobuf.ZeroThreshold,
+		ZeroCount:        protobuf.ZeroCountFloat,
+		Count:            protobuf.CountFloat,
+		Sum:              protobuf.Sum,
+		PositiveSpans:    f.decodeHistogramSpans(protobuf.PositiveSpans),
+		PositiveBuckets:  protobuf.PositiveCounts,
+		NegativeSpans:    f.decodeHistogramSpans(protobuf.NegativeSpans),
+		NegativeBuckets:  protobuf.NegativeCounts,
+	}
+
+	return mimirpb.FromFloatHistogramToSampleHistogram(&h), nil
+}
+
+func (f protobufFormat) decodeHistogramSpans(spans []mimirpb.BucketSpan) []histogram.Span {
+	converted := make([]histogram.Span, len(spans))
+
+	for i, s := range spans {
+		converted[i] = histogram.Span{
+			Offset: s.Offset,
+			Length: s.Length,
+		}
+	}
+
+	return converted
 }
 
 func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
