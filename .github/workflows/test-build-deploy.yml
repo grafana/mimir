@@ -23,7 +23,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -63,7 +63,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -87,7 +87,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -114,7 +114,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
@@ -145,7 +145,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
@@ -186,7 +186,7 @@ jobs:
         with:
           go-version: 1.20.1
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
@@ -231,7 +231,7 @@ jobs:
       image: grafana/mimir-build-image:arve-goupdate-0baf8cc94
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
