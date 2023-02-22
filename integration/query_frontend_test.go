@@ -208,26 +208,31 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 
 func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	formats := []string{"json", "protobuf"}
+	histograms := map[string]bool{"with native histograms": true, "without native histograms": false}
 
 	for _, format := range formats {
 		t.Run(format, func(t *testing.T) {
-			runQueryFrontendTest(t, queryFrontendTestConfig{
-				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-					flags = mergeFlags(
-						BlocksStorageFlags(),
-						BlocksStorageS3Flags(),
-						map[string]string{
-							"-query-frontend.query-result-response-format": format,
+			for name, withHistograms := range histograms {
+				t.Run(name, func(t *testing.T) {
+					runQueryFrontendTest(t, queryFrontendTestConfig{
+						setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+							flags = mergeFlags(
+								BlocksStorageFlags(),
+								BlocksStorageS3Flags(),
+								map[string]string{
+									"-query-frontend.query-result-response-format": format,
+								},
+							)
+
+							minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+							require.NoError(t, s.StartAndWaitReady(minio))
+
+							return "", flags
 						},
-					)
-
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-					require.NoError(t, s.StartAndWaitReady(minio))
-
-					return "", flags
-				},
-				withHistograms: false, // TODO(histograms): make this work for protobuf
-			})
+						withHistograms: withHistograms,
+					})
+				})
+			}
 		})
 	}
 }
