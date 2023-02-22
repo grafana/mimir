@@ -23,6 +23,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
+      - name: Run Git Config
+        run: git config --global --add safe.directory /__w/mimir/mimir
+
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt
 
