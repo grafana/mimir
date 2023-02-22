@@ -478,9 +478,6 @@ func SetFlagMapper(set map[string]string) FlagMapper {
 func copyFlags(flags map[string]string) map[string]string {
 	cp := make(map[string]string)
 	for f, v := range flags {
-		if v == "" {
-			continue
-		}
 		cp[f] = v
 	}
 	return cp
