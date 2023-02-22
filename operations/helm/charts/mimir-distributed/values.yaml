@@ -481,6 +481,7 @@ alertmanager:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for alermeneger pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -653,6 +654,7 @@ distributor:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for distributor pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -776,6 +778,7 @@ ingester:
       port: http-metrics
     initialDelaySeconds: 60
 
+  # -- SecurityContext for ingester pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -906,6 +909,7 @@ overrides_exporter:
     #  topologyKey: kubernetes.io/hostname
     #  whenUnsatisfiable: ScheduleAnyway
 
+  # -- SecurityContext for overrides-exporter pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -914,7 +918,7 @@ overrides_exporter:
     seccompProfile:
       type: RuntimeDefault
 
-  # -- The SecurityContext for overrides_exporter containers
+  # -- The SecurityContext for overrides-exporter containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -997,6 +1001,7 @@ ruler:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for ruler pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1075,6 +1080,7 @@ querier:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for querier pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1150,6 +1156,7 @@ query_frontend:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for query-fronted pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1158,7 +1165,7 @@ query_frontend:
     seccompProfile:
       type: RuntimeDefault
 
-  # -- The SecurityContext for query_frontend containers
+  # -- The SecurityContext for query-frontend containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -1226,6 +1233,7 @@ query_scheduler:
       port: http-metrics
     initialDelaySeconds: 45
 
+  # -- SecurityContext for query-scheduler pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1234,7 +1242,7 @@ query_scheduler:
     seccompProfile:
       type: RuntimeDefault
 
-  # -- The SecurityContext for query_scheduler containers
+  # -- The SecurityContext for query-scheduler containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -1350,6 +1358,7 @@ store_gateway:
       port: http-metrics
     initialDelaySeconds: 60
 
+  # -- SecurityContext for store-gateway pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1358,7 +1367,7 @@ store_gateway:
     seccompProfile:
       type: RuntimeDefault
 
-  # -- The SecurityContext for store_gateway containers
+  # -- The SecurityContext for store-gateway containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -1522,6 +1531,7 @@ compactor:
       port: http-metrics
     initialDelaySeconds: 60
 
+  # -- SecurityContext for compactor pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -1559,7 +1569,7 @@ memcached:
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
-  # -- The SecurityContext for memcached pods
+  # -- The SecurityContext for memcached pods, ignored if rbac.type==scc
   podSecurityContext:
     fsGroup: 11211
     runAsGroup: 11211
@@ -1954,7 +1964,7 @@ nginx:
   extraVolumes: []
   # -- Volume mounts to add to the nginx pods
   extraVolumeMounts: []
-  # -- The SecurityContext for nginx containers
+  # -- The SecurityContext for nginx containers, ignored if rbac.type==scc
   podSecurityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -2287,6 +2297,7 @@ gateway:
   # -- Init containers https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
   initContainers: []
 
+  # -- SecurityContext for gateway pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -2837,6 +2848,7 @@ tokengenJob:
   annotations: {}
   initContainers: []
 
+  # -- SecurityContext for tokengenjob pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -2845,7 +2857,7 @@ tokengenJob:
     seccompProfile:
       type: RuntimeDefault
 
-  # -- The SecurityContext for tokenjobgen containers
+  # -- The SecurityContext for tokengenjob containers
   containerSecurityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -2889,6 +2901,7 @@ admin_api:
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
 
+  # -- SecurityContext for admin-api pods, ignored if rbac.type==scc
   securityContext:
     fsGroup: 10001
     runAsGroup: 10001
@@ -2997,6 +3010,7 @@ graphite:
     persistence:
       subPath:
 
+    # -- SecurityContext for graphite querier pods, ignored if rbac.type==scc
     securityContext:
       fsGroup: 10001
       runAsGroup: 10001
@@ -3076,6 +3090,8 @@ graphite:
     annotations: {}
     persistence:
       subPath:
+
+    # -- SecurityContext for graphite write-proxy pods, ignored if rbac.type==scc
     securityContext:
       fsGroup: 10001
       runAsGroup: 10001
@@ -3150,6 +3166,7 @@ graphite:
     # -- Pod Disruption Budget
     podDisruptionBudget: {}
 
+    # -- SecurityContext for graphite web pods, ignored if rbac.type==scc
     securityContext:
       fsGroup: 10001
       runAsGroup: 10001
@@ -3370,7 +3387,7 @@ continuous_test:
     requests:
       cpu: "1"
       memory: 512Mi
-  # -- Security context for the continuous test Deployment
+  # -- Security context for the continuous test Deployment, ignored if rbac.type==scc
   securityContext: {}
   # -- Service for monitoring continuous test
   service:

@@ -45,11 +45,13 @@ spec:
       tolerations:
 {{ toYaml . | indent 8 }}
 {{- end }}
+{{- if ne .Values.rbac.type "scc" }}
 {{- if .Values.minio.makeBucketJob.securityContext.enabled }}
       securityContext:
         runAsUser: {{ .Values.minio.makeBucketJob.securityContext.runAsUser }}
         runAsGroup: {{ .Values.minio.makeBucketJob.securityContext.runAsGroup }}
         fsGroup: {{ .Values.minio.makeBucketJob.securityContext.fsGroup }}
+{{- end }}
 {{- end }}
       volumes:
         - name: minio-configuration

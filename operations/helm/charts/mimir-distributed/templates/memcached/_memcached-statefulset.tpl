@@ -40,8 +40,10 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
+      {{- if ne $.ctx.Values.rbac.type "scc" }}
       securityContext:
         {{- toYaml $.ctx.Values.memcached.podSecurityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       nodeSelector:

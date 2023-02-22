@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Do not set `securityContext` on Mimir components when `rbad.type` equals `scc`, since it conflicts with OpenShift.
+
 ## 4.1.0
 
 * [CHANGE] Configured `max_total_query_length: 12000h` limit to match Mimir jsonnet-based deployment. #3879
