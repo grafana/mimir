@@ -939,8 +939,8 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 		expectedLastModified time.Time
 	}{
 		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}},
-		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModified: time.Time{}},
 		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}},
+		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime},
 		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime},
 	}
 

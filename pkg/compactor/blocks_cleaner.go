@@ -586,7 +586,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 		if err != nil {
 			return errors.Wrapf(err, "failed to get attributes for %s", name)
 		}
-		if !attrib.LastModified.Before(partialDeletionCutoffTime) {
+		if attrib.LastModified.After(partialDeletionCutoffTime) {
 			return errStopIter
 		}
 		if attrib.LastModified.After(lastModified) {
