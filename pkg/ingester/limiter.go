@@ -214,7 +214,7 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 	// Global limit is equally distributed among all the active zones.
 	// The portion of global limit related to each zone is then equally distributed
 	// among all the ingesters belonging to that zone.
-	return ((globalLimit * l.replicationFactor) / zonesCount) / ingestersInZoneCount
+	return int((float64(globalLimit*l.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
 }
 
 func (l *Limiter) getShardSize(userID string) int {
