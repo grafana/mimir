@@ -304,7 +304,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
+							{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1000, Value: 200},
 						},
 						Histograms: []mimirpb.VectorHistogram{
 							{
@@ -533,6 +533,66 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 					Result: []SampleStream{
 						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
 						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful matrix response with histogram value",
+			resp: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Matrix{
+					Matrix: &mimirpb.MatrixData{
+						Series: []mimirpb.MatrixSeries{
+							{
+								Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
+								Histograms: []mimirpb.FloatHistogram{responseHistogram},
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+							Histograms: []mimirpb.SampleHistogramPair{{Timestamp: 1234, Histogram: &expectedHistogram}},
+						},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful matrix response with float and histogram values",
+			resp: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Matrix{
+					Matrix: &mimirpb.MatrixData{
+						Series: []mimirpb.MatrixSeries{
+							{
+								Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
+								Samples:    []mimirpb.MatrixSample{{TimestampMilliseconds: 1000, Value: 200}},
+								Histograms: []mimirpb.FloatHistogram{responseHistogram},
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+							Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
+							Histograms: []mimirpb.SampleHistogramPair{{Timestamp: 1234, Histogram: &expectedHistogram}},
+						},
 					},
 				},
 				Headers: expectedRespHeaders,

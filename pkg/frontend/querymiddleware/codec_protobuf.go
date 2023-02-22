@@ -121,7 +121,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 			return nil, err
 		}
 
-		h, err := f.decodeHistogram(sample.Histogram)
+		decodedHistogram, err := f.decodeHistogram(sample.Histogram)
 		if err != nil {
 			return nil, err
 		}
@@ -129,7 +129,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 		streams[i+len(data.Samples)] = SampleStream{
 			Labels: l,
 			Histograms: []mimirpb.SampleHistogramPair{
-				{Timestamp: sample.Histogram.Timestamp, Histogram: h},
+				{Timestamp: sample.Histogram.Timestamp, Histogram: decodedHistogram},
 			},
 		}
 	}
@@ -193,9 +193,24 @@ func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusD
 			}
 		}
 
+		histograms := make([]mimirpb.SampleHistogramPair, len(series.Histograms))
+
+		for histogramIdx, sample := range series.Histograms {
+			decodedHistogram, err := f.decodeHistogram(sample)
+			if err != nil {
+				return nil, err
+			}
+
+			histograms[histogramIdx] = mimirpb.SampleHistogramPair{
+				Timestamp: sample.Timestamp,
+				Histogram: decodedHistogram,
+			}
+		}
+
 		streams[seriesIdx] = SampleStream{
-			Labels:  l,
-			Samples: samples,
+			Labels:     l,
+			Samples:    samples,
+			Histograms: histograms,
 		}
 	}
 
