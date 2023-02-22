@@ -151,11 +151,13 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
+	assert.Nil(t, dst.Histograms)
 
 	dst = PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, false)
 	assert.NotNil(t, dst.Exemplars)
 	assert.Len(t, dst.Exemplars, 0)
+	assert.Nil(t, dst.Histograms)
 }
 
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {

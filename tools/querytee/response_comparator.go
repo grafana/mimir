@@ -22,8 +22,10 @@ import (
 type SamplesComparatorFunc func(expected, actual json.RawMessage, opts SampleComparisonOptions) error
 
 type SamplesResponse struct {
-	Status string
-	Data   struct {
+	Status    string
+	ErrorType string
+	Error     string
+	Data      struct {
 		ResultType string
 		Result     json.RawMessage
 	}
@@ -73,8 +75,20 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) err
 		return fmt.Errorf("expected status %s but got %s", expected.Status, actual.Status)
 	}
 
+	if expected.ErrorType != actual.ErrorType {
+		return fmt.Errorf("expected error type '%s' but got '%s'", expected.ErrorType, actual.ErrorType)
+	}
+
+	if expected.Error != actual.Error {
+		return fmt.Errorf("expected error '%s' but got '%s'", expected.Error, actual.Error)
+	}
+
 	if expected.Data.ResultType != actual.Data.ResultType {
 		return fmt.Errorf("expected resultType %s but got %s", expected.Data.ResultType, actual.Data.ResultType)
+	}
+
+	if expected.Data.ResultType == "" && actual.Data.ResultType == "" && expected.Data.Result == nil && actual.Data.Result == nil {
+		return nil
 	}
 
 	comparator, ok := s.sampleTypesComparator[expected.Data.ResultType]

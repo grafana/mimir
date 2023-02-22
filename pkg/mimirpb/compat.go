@@ -28,17 +28,51 @@ import (
 // ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
+//
+// For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
 func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
-	req := &WriteRequest{
+	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
+}
+
+// NewWriteRequest creates a new empty WriteRequest with metadata
+func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+	return &WriteRequest{
 		Timeseries: PreallocTimeseriesSliceFromPool(),
 		Metadata:   metadata,
 		Source:     source,
 	}
+}
 
+// AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
+// proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
+// method implies that only a single sample and optionally exemplar can be set for each series.
+func (req *WriteRequest) AddFloatSeries(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
 		ts.Samples = append(ts.Samples, s)
+
+		if exemplars != nil {
+			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
+			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
+			if e := exemplars[i]; e != nil {
+				ts.Exemplars = append(ts.Exemplars, *e)
+			}
+		}
+
+		req.Timeseries = append(req.Timeseries, PreallocTimeseries{TimeSeries: ts})
+	}
+	return req
+}
+
+// AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
+// proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
+// method implies that only a single sample and optionally exemplar can be set for each series.
+func (req *WriteRequest) AddHistogramSeries(lbls []labels.Labels, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+	for i, s := range histograms {
+		ts := TimeseriesFromPool()
+		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
+		ts.Histograms = append(ts.Histograms, s)
 
 		if exemplars != nil {
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
@@ -157,7 +191,13 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 	return result
 }
 
-func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
+func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
+	if hp == nil {
+		return nil
+	}
+	if hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToHistogram called on float histogram")
+	}
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -172,7 +212,13 @@ func FromHistogramProtoToHistogram(hp Histogram) *histogram.Histogram {
 	}
 }
 
-func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram {
+func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
+	if hp == nil {
+		return nil
+	}
+	if !hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToFloatHistogram called on integer histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -186,10 +232,68 @@ func FromHistogramProtoToFloatHistogram(hp Histogram) *histogram.FloatHistogram 
 		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
+
 func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
+	if len(s) == 0 {
+		return nil
+	}
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+	if h == nil {
+		panic("FromHistogramToHistogramProto called on nil histogram")
+	}
+	return Histogram{
+		Count:          &Histogram_CountInt{CountInt: h.Count},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeSpans:  fromSpansToSpansProto(h.NegativeSpans),
+		NegativeDeltas: h.NegativeBuckets,
+		// NegativeCounts: nil,  not relevant for integer Histogram
+		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
+		PositiveDeltas: h.PositiveBuckets,
+		// PositiveCounts: nil,  not relevant for integer Histogram
+		ResetHint: Histogram_ResetHint(h.CounterResetHint),
+		Timestamp: timestamp,
+	}
+}
+
+func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+	if fh == nil {
+		panic("FromFloatHistogramToHistogramProto called on nil histogram")
+	}
+	return Histogram{
+		Count:         &Histogram_CountFloat{CountFloat: fh.Count},
+		Sum:           fh.Sum,
+		Schema:        fh.Schema,
+		ZeroThreshold: fh.ZeroThreshold,
+		ZeroCount:     &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans: fromSpansToSpansProto(fh.NegativeSpans),
+		// NegativeDeltas: nil,  not relevant for float Histograms
+		NegativeCounts: fh.NegativeBuckets,
+		PositiveSpans:  fromSpansToSpansProto(fh.PositiveSpans),
+		// PositiveDeltas: nil,  not relevant for float Histograms
+		PositiveCounts: fh.PositiveBuckets,
+		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
+		Timestamp:      timestamp,
+	}
+}
+
+func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
+	if len(s) == 0 {
+		return nil
+	}
+	spans := make([]BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans
@@ -323,8 +427,11 @@ func FromMimirSampleToPromHistogram(src *SampleHistogram) *model.SampleHistogram
 	return (*model.SampleHistogram)(unsafe.Pointer(src))
 }
 
-// FromFloatHistogramToSampleHistogramProto converts histogram.FloatHistogram to SampleHistogram.
-func FromFloatHistogramToSampleHistogramProto(h *histogram.FloatHistogram) *SampleHistogram {
+// FromFloatHistogramToSampleHistogram converts histogram.FloatHistogram to SampleHistogram.
+func FromFloatHistogramToSampleHistogram(h *histogram.FloatHistogram) *SampleHistogram {
+	if h == nil {
+		return nil
+	}
 	// The extra +1 in the capacity is for the zero count bucket (which may optionally exist).
 	buckets := make([]*HistogramBucket, 0, len(h.PositiveBuckets)+len(h.NegativeBuckets)+1)
 
@@ -484,4 +591,22 @@ loop:
 	}
 
 	return numLabels, true
+}
+
+// Generics
+type GenericSamplePair interface {
+	Sample | SampleHistogramPair | Histogram
+	GetTimestampVal() int64
+}
+
+func (s Sample) GetTimestampVal() int64 {
+	return s.TimestampMs
+}
+
+func (vs SampleHistogramPair) GetTimestampVal() int64 {
+	return vs.Timestamp
+}
+
+func (m Histogram) GetTimestampVal() int64 {
+	return m.Timestamp
 }

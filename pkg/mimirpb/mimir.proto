@@ -30,9 +30,6 @@ message WriteRequest {
 
   // Skip validation of label names.
   bool skip_label_name_validation = 1000;
-
-  // Timeseries that are stored to ephemeral storage only.
-  repeated TimeSeries ephemeral_timeseries = 1001 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocTimeseries"];
 }
 
 message WriteResponse {}

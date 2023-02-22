@@ -39,6 +39,7 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	allFormats        = []string{formatJSON, formatProtobuf}
 )
 
 const (
@@ -55,7 +56,8 @@ const (
 	operationEncode = "encode"
 	operationDecode = "decode"
 
-	formatJSON = "json"
+	formatJSON     = "json"
+	formatProtobuf = "protobuf"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -145,12 +147,25 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 }
 
 type prometheusCodec struct {
-	metrics *prometheusCodecMetrics
+	metrics                            *prometheusCodecMetrics
+	preferredQueryResultResponseFormat string
 }
 
-func NewPrometheusCodec(registerer prometheus.Registerer) Codec {
+type formatter interface {
+	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
+	DecodeResponse([]byte) (*PrometheusResponse, error)
+	Name() string
+}
+
+var knownFormats = map[string]formatter{
+	jsonMimeType:                  jsonFormat{},
+	mimirpb.QueryResponseMimeType: protobufFormat{},
+}
+
+func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
 	return prometheusCodec{
-		metrics: newPrometheusCodecMetrics(registerer),
+		metrics:                            newPrometheusCodecMetrics(registerer),
+		preferredQueryResultResponseFormat: queryResultResponseFormat,
 	}
 }
 
@@ -282,7 +297,7 @@ func decodeOptions(r *http.Request, opts *Options) {
 	}
 }
 
-func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
+func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -315,11 +330,19 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 		Header:     http.Header{},
 	}
 
+	switch c.preferredQueryResultResponseFormat {
+	case formatJSON:
+		req.Header.Set("Accept", jsonMimeType)
+	case formatProtobuf:
+		req.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
+	default:
+		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
+	}
+
 	return req.WithContext(ctx), nil
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	var resp PrometheusResponse
 	if r.StatusCode/100 == 5 {
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
@@ -342,13 +365,21 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	}
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
+	contentType := r.Header.Get("Content-Type")
+	f, ok := knownFormats[contentType]
+
+	if !ok {
+		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
+	}
+
 	start := time.Now()
-	if err := json.Unmarshal(buf, &resp); err != nil {
+	resp, err := f.DecodeResponse(buf)
+	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationDecode, formatJSON).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationDecode, formatJSON).Observe(float64(len(buf)))
+	c.metrics.duration.WithLabelValues(operationDecode, f.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, f.Name()).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -357,8 +388,9 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusResponseHeader{Name: h, Values: hv})
 	}
-	return &resp, nil
+	return resp, nil
 }
+
 func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
@@ -371,14 +403,17 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
+	// TODO: select format based on Accept header
+	f := knownFormats[jsonMimeType]
+
 	start := time.Now()
-	b, err := json.Marshal(a)
+	b, err := f.EncodeResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatJSON).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatJSON).Observe(float64(len(b)))
+	c.metrics.duration.WithLabelValues(operationEncode, f.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, f.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{

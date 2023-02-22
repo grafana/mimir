@@ -305,6 +305,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
@@ -333,6 +335,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
@@ -375,6 +379,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
@@ -403,22 +409,6 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
     	Maximum number of concurrent tenants synching blocks. (default 10)
-  -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance float
-    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
-  -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes int
-    	[experimental] The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
-  -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size int
-    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size int
-    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0. (default 100)
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
-  -blocks-storage.ephemeral-tsdb.retention-period duration
-    	[experimental] Retention of ephemeral series. (default 10m0s)
-  -blocks-storage.ephemeral-tsdb.stripe-size int
-    	[experimental] The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -769,10 +759,6 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.ephemeral-series-enabled
-    	[experimental] Enable marking series as ephemeral based on the given matchers in the runtime config.
-  -distributor.ephemeral-series-matchers value
-    	Lists of series matchers prefixed by the source. The source must be one of any, api, rule. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
   -distributor.forwarding.grpc-client.backoff-max-period duration
@@ -1025,8 +1011,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
-  -ingester.instance-limits.max-ephemeral-series int
-    	[experimental] Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
@@ -1035,8 +1019,6 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.max-ephemeral-series-per-user int
-    	[experimental] The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -1049,6 +1031,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
+  -ingester.native-histograms-ingestion-enabled
+    	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.
   -ingester.out-of-order-time-window duration
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.
   -ingester.rate-update-period duration
@@ -1463,6 +1447,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-frontend.query-result-response-format string
+    	[experimental] Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "json")
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-target-series-per-shard uint
@@ -1489,6 +1475,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -query-frontend.results-cache.memcached.max-item-size int
     	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string

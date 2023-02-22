@@ -31,8 +31,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -51,8 +53,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
-	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -61,8 +61,9 @@ import (
 )
 
 var (
-	errFail       = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
-	emptyResponse = &mimirpb.WriteResponse{}
+	errFail               = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
+	emptyResponse         = &mimirpb.WriteResponse{}
+	generateTestHistogram = tsdb.GenerateTestHistogram
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -214,10 +215,10 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_seconds_sum 80000
-				cortex_distributor_sample_delay_seconds_count 1
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum 160000
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
@@ -229,21 +230,21 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_seconds_sum 1.000
-				cortex_distributor_sample_delay_seconds_count 1
+				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum 2.000
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A push to ingesters without samples should report the correct metrics": {
@@ -301,7 +302,7 @@ func TestDistributor_Push(t *testing.T) {
 				timeOut:         tc.timeOut,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
+			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedError == nil {
@@ -351,7 +352,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	request := makeWriteRequest(123456789000, 1, 1, false)
+	request := makeWriteRequest(123456789000, 1, 1, false, false)
 	_, err := ds[0].Push(ctx, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -528,7 +529,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, 1, 1, false)
+				request := makeWriteRequest(0, 1, 1, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -604,7 +605,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 			// Push samples in multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -782,7 +783,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			d.ingestionRate.Tick()
 
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				_, err := d.Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -1011,7 +1012,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			ds, ingesters, _ := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false)
+			request := makeWriteRequest(0, tc.samples, tc.metadata, false, false)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
@@ -1069,7 +1070,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 	// Push a number of series below the max chunks limit. Each series has 1 sample,
 	// so expect 1 chunk per series when querying back.
 	initialSeries := maxChunksLimit / 3
-	writeReq := makeWriteRequest(0, initialSeries, 0, false)
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1121,7 +1122,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 	// Push a number of series below the max series limit.
 	initialSeries := maxSeriesLimit
-	writeReq := makeWriteRequest(0, initialSeries, 0, false)
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1193,7 +1194,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
-	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false)
+	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1489,6 +1490,54 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			} else {
 				assert.Nil(t, err)
 			}
+		})
+	}
+}
+
+func TestDistributor_Push_HistogramValidation(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	tests := map[string]struct {
+		req    *mimirpb.WriteRequest
+		errMsg string
+		errID  globalerror.ID
+	}{
+		"valid histogram": {
+			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0)),
+		},
+		"too new histogram": {
+			req:    makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, math.MaxInt64, generateTestHistogram(0)),
+			errMsg: "received a sample whose timestamp is too far in the future",
+			errID:  globalerror.SampleTooFarInFuture,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.CreationGracePeriod = model.Duration(time.Minute)
+
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:     2,
+				happyIngesters:   2,
+				numDistributors:  1,
+				shuffleShardSize: 0,
+				limits:           limits,
+			})
+
+			_, err := ds[0].Push(ctx, tc.req)
+			if tc.errMsg != "" {
+				fromError, _ := status.FromError(err)
+				assert.Contains(t, fromError.Message(), tc.errMsg)
+				assert.Contains(t, fromError.Message(), tc.errID)
+			} else {
+				assert.Nil(t, err)
+			}
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
 		})
 	}
 }
@@ -1836,7 +1885,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -2111,7 +2160,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Push metadata
 			ctx := user.InjectOrgID(context.Background(), "test")
 
-			req := makeWriteRequest(0, 0, 10, false)
+			req := makeWriteRequest(0, 0, 10, false, false)
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
@@ -2300,7 +2349,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 	testcases := []testcase{
 		{
 			name:                  "do ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2331,7 +2380,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -2362,7 +2411,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "do ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2393,7 +2442,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -2424,7 +2473,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "do ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2455,7 +2504,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -3124,86 +3173,6 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
-func TestMarkEphemeralMiddleware(t *testing.T) {
-	tenant := "user"
-	ctx := user.InjectOrgID(context.Background(), tenant)
-
-	type testCase struct {
-		name            string
-		ephemeralSeries []string
-		reqs            []*mimirpb.WriteRequest
-		expectedReqs    []*mimirpb.WriteRequest
-	}
-	testCases := []testCase{
-		{
-			name: "half - half",
-			ephemeralSeries: []string{
-				"metric2",
-				"metric3",
-			},
-			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
-			expectedReqs: []*mimirpb.WriteRequest{markEphemeral(makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3"), 2, 3)},
-		}, {
-			name: "no ephemeral",
-			ephemeralSeries: []string{
-				"metric100",
-				"metric101",
-			},
-			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
-			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
-		}, {
-			name: "all ephemeral",
-			ephemeralSeries: []string{
-				"metric0",
-				"metric1",
-				"metric2",
-				"metric3",
-			},
-			reqs:         []*mimirpb.WriteRequest{makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3")},
-			expectedReqs: []*mimirpb.WriteRequest{markEphemeral(makeWriteRequest(1000, 1, 0, false, "metric0", "metric1", "metric2", "metric3"), 0, 1, 2, 3)},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cleanupCallCount := 0
-			cleanup := func() {
-				cleanupCallCount++
-			}
-
-			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-				req, err := pushReq.WriteRequest()
-				require.NoError(t, err)
-				gotReqs = append(gotReqs, req)
-				pushReq.CleanUp()
-				return nil, nil
-			}
-
-			ds, _, _ := prepare(t, prepConfig{
-				numDistributors: 1,
-				markEphemeral:   true,
-				getEphemeralSeriesProvider: func() ephemeral.SeriesCheckerByUser {
-					memp := &mockEphemeralSeriesProvider{t, tc.ephemeralSeries}
-					return memp
-				},
-			})
-			middleware := ds[0].prePushEphemeralMiddleware(next)
-
-			for _, req := range tc.reqs {
-				pushReq := push.NewParsedRequest(req)
-				pushReq.AddCleanup(cleanup)
-				_, _ = middleware(ctx, pushReq)
-			}
-
-			assert.Equal(t, tc.expectedReqs, gotReqs)
-
-			// Cleanup must have been called once per request.
-			assert.Equal(t, len(tc.reqs), cleanupCallCount)
-		})
-	}
-}
-
 func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"
@@ -3373,6 +3342,8 @@ func TestValidationBeforeForwarding(t *testing.T) {
 	// but since validation removes samples 1 and 2 we need to increase the values by 2.
 	expectedWriteReq.Timeseries[1].Samples[0].Value += 2
 	expectedWriteReq.Timeseries[1].Samples[0].TimestampMs += 2
+	// We need to do something similar to samples for histograms, but because the data type has more fields to update it's neater to regenerate it
+	expectedWriteReq.Timeseries[1].Histograms = makeWriteRequestHistograms(103, generateTestHistogram(3))
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -3467,8 +3438,6 @@ type prepConfig struct {
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	forwarding                         bool
 	getForwarder                       func() forwarding.Forwarder
-	getEphemeralSeriesProvider         func() ephemeral.SeriesCheckerByUser
-	markEphemeral                      bool
 
 	timeOut bool
 }
@@ -3586,10 +3555,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			distributorCfg.Forwarding.RequestConcurrency = 5
 		}
 
-		if cfg.markEphemeral {
-			distributorCfg.EphemeralSeriesEnabled = true
-		}
-
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
 		if cfg.enableTracker {
@@ -3611,13 +3576,8 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		overrides, err := validation.NewOverrides(*cfg.limits, nil)
 		require.NoError(t, err)
 
-		var ephemeralChecker ephemeral.SeriesCheckerByUser
-		if cfg.markEphemeral && cfg.getEphemeralSeriesProvider != nil {
-			ephemeralChecker = cfg.getEphemeralSeriesProvider()
-		}
-
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, ephemeralChecker, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 
 		if cfg.forwarding && cfg.getForwarder != nil {
@@ -3652,17 +3612,7 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 	r.StopAsync()
 }
 
-func markEphemeral(req *mimirpb.WriteRequest, indexes ...int) *mimirpb.WriteRequest {
-	var deletedCount int
-	for _, idx := range indexes {
-		req.EphemeralTimeseries = append(req.EphemeralTimeseries, req.Timeseries[idx-deletedCount])
-		req.Timeseries = append(req.Timeseries[:idx-deletedCount], req.Timeseries[idx-deletedCount+1:]...)
-		deletedCount++
-	}
-	return req
-}
-
-func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exemplars bool, metrics ...string) *mimirpb.WriteRequest {
+func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
 
 	if len(metrics) == 0 {
@@ -3691,6 +3641,10 @@ func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exempla
 					startTimestampMs+int64(i),
 					float64(i),
 				)
+			}
+
+			if histograms {
+				req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
 			}
 
 			request.Timeseries = append(request.Timeseries, req)
@@ -3729,6 +3683,10 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 		Value:       value,
 		TimestampMs: ts,
 	}}
+}
+
+func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
+	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
@@ -3814,7 +3772,7 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 				TimestampMs: int64(100 + i),
 			}}
 		}
-
+		ts.Histograms = makeWriteRequestHistograms(int64(100+i), generateTestHistogram(i))
 		request.Timeseries = append(request.Timeseries, ts)
 
 	}
@@ -3838,6 +3796,14 @@ func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLa
 	}
 }
 
+func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) *mimirpb.WriteRequest {
+	return &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeHistogramTimeseries(seriesLabels, timestamp, histogram),
+		},
+	}
+}
+
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -3848,6 +3814,15 @@ func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabe
 					TimestampMs: timestamp,
 				},
 			},
+		},
+	}
+}
+
+func makeHistogramTimeseries(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Histograms: makeWriteRequestHistograms(timestamp, histogram),
 		},
 	}
 }
@@ -3887,7 +3862,6 @@ type mockIngester struct {
 	happy                         bool
 	stats                         client.UsersStatsResponse
 	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
-	ephemeralTimeseries           map[uint32]*mimirpb.PreallocTimeseries
 	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
 	queryDelay                    time.Duration
 	pushDelay                     time.Duration
@@ -3943,10 +3917,6 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		i.timeseries = map[uint32]*mimirpb.PreallocTimeseries{}
 	}
 
-	if len(req.EphemeralTimeseries) > 0 && i.ephemeralTimeseries == nil {
-		i.ephemeralTimeseries = map[uint32]*mimirpb.PreallocTimeseries{}
-	}
-
 	if i.metadata == nil {
 		i.metadata = map[uint32]map[mimirpb.MetricMetadata]struct{}{}
 	}
@@ -3956,23 +3926,9 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		return nil, err
 	}
 
-	for j := range append(req.Timeseries, req.EphemeralTimeseries...) {
-		var series mimirpb.PreallocTimeseries
-		ephemeral := false
-		if j < len(req.Timeseries) {
-			series = req.Timeseries[j]
-		} else {
-			series = req.EphemeralTimeseries[j-len(req.Timeseries)]
-			ephemeral = true
-		}
+	for _, series := range req.Timeseries {
 		hash := shardByAllLabels(orgid, series.Labels)
-		var existing *mimirpb.PreallocTimeseries
-		var ok bool
-		if ephemeral {
-			existing, ok = i.ephemeralTimeseries[hash]
-		} else {
-			existing, ok = i.timeseries[hash]
-		}
+		existing, ok := i.timeseries[hash]
 		if !ok {
 			// Make a copy because the request Timeseries are reused
 			item := mimirpb.TimeSeries{
@@ -3983,11 +3939,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 			copy(item.Labels, series.TimeSeries.Labels)
 			copy(item.Samples, series.TimeSeries.Samples)
 
-			if ephemeral {
-				i.ephemeralTimeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
-			} else {
-				i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
-			}
+			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
 		}
@@ -4383,32 +4335,6 @@ func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwar
 
 func (m *mockForwarder) DeleteMetricsForUser(user string) {}
 
-type mockEphemeralSeriesProvider struct {
-	t                *testing.T
-	ephemeralMetrics []string
-}
-
-func (m mockEphemeralSeriesProvider) EphemeralChecker(user string, source mimirpb.WriteRequest_SourceEnum) ephemeral.SeriesChecker {
-	return &mockEphemeralSeriesChecker{m}
-}
-
-type mockEphemeralSeriesChecker struct {
-	mockEphemeralSeriesProvider
-}
-
-func (m mockEphemeralSeriesChecker) ShouldMarkEphemeral(lset []mimirpb.LabelAdapter) bool {
-	metricName, err := extract.UnsafeMetricNameFromLabelAdapters(lset)
-	require.NoError(m.t, err)
-
-	for _, m := range m.ephemeralMetrics {
-		if m == metricName {
-			return true
-		}
-	}
-
-	return false
-}
-
 func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
 	return ts
 }
@@ -4797,11 +4723,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   10,
+			receivedSamples:   20,
 			receivedExemplars: 10,
 			receivedMetadata:  10})
 
@@ -4827,11 +4753,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   5,
+			receivedSamples:   10,
 			receivedExemplars: 5,
 			receivedMetadata:  10})
 
@@ -4852,7 +4778,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
@@ -4895,11 +4821,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        4,
-			samplesIn:         40,
+			samplesIn:         80,
 			exemplarsIn:       40,
 			metadataIn:        40,
 			receivedRequests:  2,
-			receivedSamples:   20,
+			receivedSamples:   40,
 			receivedExemplars: 20,
 			receivedMetadata:  20})
 
@@ -4931,11 +4857,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   5,
+			receivedSamples:   10,
 			receivedExemplars: 5,
 			receivedMetadata:  10})
 
@@ -4957,11 +4883,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   10,
+			receivedSamples:   20,
 			receivedExemplars: 0,
 			receivedMetadata:  10})
 
@@ -4994,11 +4920,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   5,
+			receivedSamples:   10,
 			receivedExemplars: 5,
 			receivedMetadata:  10})
 
@@ -5045,11 +4971,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
 			requestsIn:        1,
-			samplesIn:         10,
+			samplesIn:         20,
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
-			receivedSamples:   10,
+			receivedSamples:   20,
 			receivedExemplars: 10,
 			receivedMetadata:  4})
 
@@ -5121,9 +5047,6 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	const userName = "userName"
 
 	req := makeWriteRequestForGenerators(series, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
-	all := req.Timeseries
-	req.Timeseries = all[:len(all)/2]
-	req.EphemeralTimeseries = all[len(all)/2:]
 
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
@@ -5133,20 +5056,12 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that each ingester only received series and metadata that it should receive.
 	totalSeries := 0
-	totalEphemeral := 0
 	totalMetadata := 0
 	for ix := range ing {
 		totalSeries += len(ing[ix].timeseries)
-		totalEphemeral += len(ing[ix].ephemeralTimeseries)
 		totalMetadata += len(ing[ix].metadata)
 
 		for _, ts := range ing[ix].timeseries {
-			token := distrib.tokenForLabels(userName, ts.Labels)
-			ingIx := getIngesterIndexForToken(token, ing)
-			assert.Equal(t, ix, ingIx)
-		}
-
-		for _, ts := range ing[ix].ephemeralTimeseries {
 			token := distrib.tokenForLabels(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ing)
 			assert.Equal(t, ix, ingIx)
@@ -5161,25 +5076,15 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		}
 	}
 
-	// Verify that timeseries were forwarded as timeseries, and ephemeral timeseries as ephemeral timeseries, and there is no mixup.
+	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
 		token := distrib.tokenForLabels(userName, ts.Labels)
 		ingIx := getIngesterIndexForToken(token, ing)
 
 		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
-		assert.Equal(t, (*mimirpb.PreallocTimeseries)(nil), ing[ingIx].ephemeralTimeseries[token])
 	}
 
-	for _, ts := range req.EphemeralTimeseries {
-		token := distrib.tokenForLabels(userName, ts.Labels)
-		ingIx := getIngesterIndexForToken(token, ing)
-
-		assert.Equal(t, ts.Labels, ing[ingIx].ephemeralTimeseries[token].Labels)
-		assert.Equal(t, (*mimirpb.PreallocTimeseries)(nil), ing[ingIx].timeseries[token])
-	}
-
-	assert.Equal(t, series/2, totalSeries)
-	assert.Equal(t, series/2, totalEphemeral)
+	assert.Equal(t, series, totalSeries)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
 }
 

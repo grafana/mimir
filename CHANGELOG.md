@@ -8,8 +8,25 @@
 * [CHANGE] Store-gateway: When a query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits, an error with the status code `422` is created and returned. #4056
 * [CHANGE] Packaging: Migrate FPM packaging solution to NFPM. Rationalize packages dependencies and add package for all binaries. #3911
 * [CHANGE] Store-gateway: Deprecate flag `-blocks-storage.bucket-store.chunks-cache.subrange-size` since there's no benefit to changing the default of `16000`. #4135
+* [CHANGE] Experimental support for ephemeral storage introduced in Mimir 2.6.0 has been removed. Following options are no longer available: #4252
+  * `-blocks-storage.ephemeral-tsdb.*`
+  * `-distributor.ephemeral-series-enabled`
+  * `-distributor.ephemeral-series-matchers`
+  * `-ingester.max-ephemeral-series-per-user`
+  * `-ingester.instance-limits.max-ephemeral-series`
+Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. All label values with `ephemeral-` prefix in `reason` label of `cortex_discarded_samples_total` metric are no longer available. Following metrics have been removed:
+  * `cortex_ingester_ephemeral_series`
+  * `cortex_ingester_ephemeral_series_created_total`
+  * `cortex_ingester_ephemeral_series_removed_total`
+  * `cortex_ingester_ingested_ephemeral_samples_total`
+  * `cortex_ingester_ingested_ephemeral_samples_failures_total`
+  * `cortex_ingester_memory_ephemeral_users`
+  * `cortex_ingester_queries_ephemeral_total`
+  * `cortex_ingester_queried_ephemeral_samples`
+  * `cortex_ingester_queried_ephemeral_series`
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
-* [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. #4121 #4177 #4188
+* [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. #4159
+* [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. This feature uses the same cache that's used for results caching. #4121 #4177 #4188 #4254
 * [ENHANCEMENT] Ingester: added `out_of_order_blocks_external_label_enabled` shipper option to label out-of-order blocks before shipping them to cloud storage. #4182
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
@@ -19,12 +36,15 @@
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
 * [ENHANCEMENT] Query-frontend: track `cortex_frontend_query_response_codec_duration_seconds` and `cortex_frontend_query_response_codec_payload_bytes` metrics to measure the time taken and bytes read / written while encoding and decoding query result payloads. #4110
 * [ENHANCEMENT] Alertmanager: expose additional upstream metrics `cortex_alertmanager_dispatcher_aggregation_groups`, `cortex_alertmanager_dispatcher_alert_processing_duration_seconds`. #4151
+* [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4153
 * [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
+* [ENHANCEMENT] Update Docker base images from `alpine:3.17.1` to `alpine:3.17.2`. #4240
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227
 * [ENHANCEMENT] Compactor: improve the partial block check related to `compactor.partial-block-deletion-delay` to potentially issue less requests to object storage. #4246
+* [ENHANCEMENT] Memcached: added `-*.memcached.min-idle-connections-headroom-percentage` support to configure the minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. This feature is disabled when set to a negative value (default), which means idle connections are kept open indefinitely. #4249
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
@@ -36,26 +56,39 @@
 
 * [CHANGE] Move auto-scaling panel rows down beneath logical network path in Reads and Writes dashboards. #4049
 * [CHANGE] Make distributor auto-scaling metric panels show desired number of replicas. #4218
+* [CHANGE] Alerts: The alert `MimirMemcachedRequestErrors` has been renamed to `MimirCacheRequestErrors`. #4242
 * [ENHANCEMENT] Alerts: Added `MimirAutoscalerKedaFailing` alert firing when a KEDA scaler is failing. #4045
 * [ENHANCEMENT] Add auto-scaling panels to ruler dashboard. #4046
 * [ENHANCEMENT] Add gateway auto-scaling panels to Reads and Writes dashboards. #4049 #4216
 * [ENHANCEMENT] Dashboards: distinguish between label names and label values queries. #4065
+* [ENHANCEMENT] Add query-frontend and ruler-query-frontend auto-scaling panels to Reads and Ruler dashboards. #4199
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
 
 ### Jsonnet
 
+* [CHANGE] Add results cache backend config to `ruler-query-frontend` configuration to allow cache reuse for cardinality-estimation based sharding. #4257
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 * [ENHANCEMENT] Add optional `weight` param to `newQuerierScaledObject` and `newRulerQuerierScaledObject` to allow running multiple querier deployments on different node types. #4141
+* [ENHANCEMENT] Add support for query-frontend and ruler-query-frontend auto-scaling. #4199
 
 ### Mimirtool
 
 * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 * [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
+### Query-tee
+
+* [CHANGE] Increase default value of `-backend.read-timeout` to 150s, to accommodate default querier and query frontend timeout of 120s. #4262
+* [ENHANCEMENT] Log errors that occur while performing requests to compare two endpoints. #4262
+* [ENHANCEMENT] When comparing two responses that both contain an error, only consider the comparison failed if the errors differ. Previously, if either response contained an error, the comparison always failed, even if both responses contained the same error. #4262
+* [ENHANCEMENT] Include the value of the `X-Scope-OrgID` header when logging a comparison failure. #4262
+* [BUGFIX] Parameters (expression, time range etc.) for a query request where the parameters are in the HTTP request body rather than in the URL are now logged correctly when responses differ. #4265
+
 ### Documentation
 
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+* [BUGFIX] Added indentation to azure an swift backend definition.
 
 ### Tools
 

@@ -21,33 +21,30 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
 )
 
 const (
-	MaxSeriesPerMetricFlag        = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag      = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag          = "ingester.max-global-series-per-user"
-	MaxEphemeralSeriesPerUserFlag = "ingester.max-ephemeral-series-per-user"
-	MaxMetadataPerUserFlag        = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag         = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag     = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag         = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag    = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag        = "validation.max-length-label-name"
-	maxLabelValueLengthFlag       = "validation.max-length-label-value"
-	maxMetadataLengthFlag         = "validation.max-metadata-length"
-	creationGracePeriodFlag       = "validation.create-grace-period"
-	maxQueryLengthFlag            = "store.max-query-length"
-	maxPartialQueryLengthFlag     = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag       = "query-frontend.max-total-query-length"
-	requestRateFlag               = "distributor.request-rate-limit"
-	requestBurstSizeFlag          = "distributor.request-burst-size"
-	ingestionRateFlag             = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag        = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag      = "distributor.ha-tracker.max-clusters"
+	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
+	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag     = "validation.max-length-label-name"
+	maxLabelValueLengthFlag    = "validation.max-length-label-value"
+	maxMetadataLengthFlag      = "validation.max-metadata-length"
+	creationGracePeriodFlag    = "validation.create-grace-period"
+	maxQueryLengthFlag         = "store.max-query-length"
+	maxPartialQueryLengthFlag  = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
+	requestRateFlag            = "distributor.request-rate-limit"
+	requestBurstSizeFlag       = "distributor.request-burst-size"
+	ingestionRateFlag          = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -94,13 +91,13 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
-	// Ephemeral series
-	MaxEphemeralSeriesPerUser int `yaml:"max_ephemeral_series_per_user" json:"max_ephemeral_series_per_user" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
+	// Native histograms
+	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 	// Active series custom trackers
 	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
@@ -175,8 +172,6 @@ type Limits struct {
 	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
-
-	EphemeralSeriesMatchers ephemeral.LabelMatchers `yaml:"ephemeral_series_matchers" json:"ephemeral_series_matchers" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -201,13 +196,13 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxEphemeralSeriesPerUser, MaxEphemeralSeriesPerUserFlag, 0, "The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.")
+	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
@@ -267,8 +262,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
-
-	f.Var(&l.EphemeralSeriesMatchers, "distributor.ephemeral-series-matchers", fmt.Sprintf("Lists of series matchers prefixed by the source. The source must be one of %s. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: %s:{namespace=\"dev\"};%s:{host=\"server1\",namespace=\"prod\"}", strings.Join(ephemeral.ValidSourceStrings, ", "), ephemeral.API, ephemeral.RULE))
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -462,11 +455,6 @@ func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
 }
 
-// MaxEphemeralSeriesPerUser returns the maximum number of ephemeral series a user is allowed to store across the cluster.
-func (o *Overrides) MaxEphemeralSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxEphemeralSeriesPerUser
-}
-
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
 }
@@ -644,6 +632,11 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return o.getOverridesForUser(userID).MetricRelabelConfigs
 }
 
+// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
+func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
+}
+
 // RulerTenantShardSize returns shard size (number of rulers) used by this tenant when using shuffle-sharding strategy.
 func (o *Overrides) RulerTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).RulerTenantShardSize
@@ -786,15 +779,6 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
 }
 
-func (o *Overrides) EphemeralChecker(user string, source mimirpb.WriteRequest_SourceEnum) ephemeral.SeriesChecker {
-	m := o.getOverridesForUser(user).EphemeralSeriesMatchers.ForSource(source)
-	if m.HasMatchers() {
-		return &m
-	}
-
-	return nil
-}
-
 func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
 	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
 }
@@ -890,4 +874,13 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 		}
 	}
 	return result
+}
+
+func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if f(tenantID) {
+			return true
+		}
+	}
+	return false
 }

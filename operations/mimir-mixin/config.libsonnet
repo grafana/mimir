@@ -594,6 +594,14 @@
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
     autoscaling: {
+      query_frontend: {
+        enabled: false,
+        hpa_name: 'keda-hpa-query-frontend',
+      },
+      ruler_query_frontend: {
+        enabled: false,
+        hpa_name: 'keda-hpa-ruler-query-frontend',
+      },
       querier: {
         enabled: false,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".

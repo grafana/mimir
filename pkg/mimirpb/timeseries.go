@@ -38,9 +38,10 @@ var (
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:    make([]LabelAdapter, 0, expectedLabels),
-				Samples:   make([]Sample, 0, expectedSamplesPerSeries),
-				Exemplars: make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Labels:     make([]LabelAdapter, 0, expectedLabels),
+				Samples:    make([]Sample, 0, expectedSamplesPerSeries),
+				Exemplars:  make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Histograms: nil,
 			}
 		},
 	}
@@ -314,6 +315,7 @@ func ReuseTimeseries(ts *TimeSeries) {
 	}
 	ts.Labels = ts.Labels[:0]
 	ts.Samples = ts.Samples[:0]
+	ts.Histograms = ts.Histograms[:0]
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -353,7 +355,7 @@ func reuseYoloSlice(val *[]byte) {
 }
 
 // DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
-// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
+// It copies all the properties (except histograms), sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
 func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) PreallocTimeseries {
@@ -365,18 +367,18 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 	dstTs := dst.TimeSeries
 
 	// Prepare a buffer which is large enough to hold all the label names and values of src.
-	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries, keepExemplars)
+	requiredYoloSliceCap := countTotalLabelLen(srcTs, keepExemplars)
 	dst.yoloSlice = yoloSliceFromPool()
 	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
 
 	// Copy the time series labels by using the prepared buffer.
-	dst.TimeSeries.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
+	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
 	// Copy the samples.
-	if cap(dst.TimeSeries.Samples) < len(src.TimeSeries.Samples) {
-		dstTs.Samples = make([]Sample, len(src.Samples))
+	if cap(dstTs.Samples) < len(srcTs.Samples) {
+		dstTs.Samples = make([]Sample, len(srcTs.Samples))
 	} else {
-		dstTs.Samples = dstTs.Samples[:len(src.Samples)]
+		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
 	}
 	copy(dstTs.Samples, srcTs.Samples)
 
@@ -388,17 +390,20 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
 		}
 
-		for exemplarIdx := range src.Exemplars {
+		for exemplarIdx := range srcTs.Exemplars {
 			// Copy the exemplar labels by using the prepared buffer.
-			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
+			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, srcTs.Exemplars[exemplarIdx].Labels)
 
 			// Copy the other exemplar properties.
-			dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
-			dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+			dstTs.Exemplars[exemplarIdx].Value = srcTs.Exemplars[exemplarIdx].Value
+			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
+
+	// do not keep histograms
+	dstTs.Histograms = nil
 
 	return dst
 }

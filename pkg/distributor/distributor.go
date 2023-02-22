@@ -45,7 +45,6 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -118,8 +117,6 @@ type Distributor struct {
 	inflightPushRequests      atomic.Int64
 	inflightPushRequestsBytes atomic.Int64
 
-	ephemeralCheckerByUser ephemeral.SeriesCheckerByUser
-
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	ingesterChunksDeduplicated       prometheus.Counter
@@ -181,9 +178,6 @@ type Config struct {
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
 
-	// Enable the experimental feature to mark series as ephemeral.
-	EphemeralSeriesEnabled bool `yaml:"ephemeral_series_enabled" category:"experimental"`
-
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get forwarded to an
@@ -213,7 +207,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.BoolVar(&cfg.EphemeralSeriesEnabled, "distributor.ephemeral-series-enabled", false, "Enable marking series as ephemeral based on the given matchers in the runtime config.")
 }
 
 // Validate config and returns error on failure
@@ -237,7 +230,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, ephemeralChecker ephemeral.SeriesCheckerByUser, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -255,15 +248,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices = append(subservices, haTracker)
 
 	d := &Distributor{
-		cfg:                    cfg,
-		log:                    log,
-		ingestersRing:          ingestersRing,
-		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		ephemeralCheckerByUser: ephemeralChecker,
-		healthyInstancesCount:  atomic.NewUint32(0),
-		limits:                 limits,
-		HATracker:              haTracker,
-		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                   cfg,
+		log:                   log,
+		ingestersRing:         ingestersRing,
+		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount: atomic.NewUint32(0),
+		limits:                limits,
+		HATracker:             haTracker,
+		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -550,7 +542,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
-
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
@@ -677,6 +668,17 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 	}
 
+	for _, h := range ts.Histograms {
+		delta := now - model.Time(h.Timestamp)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+			return err
+		}
+	}
+
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		mimirpb.ClearExemplars(ts.TimeSeries)
 		return nil
@@ -719,7 +721,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
-	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -767,7 +768,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		numSamples := 0
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
@@ -905,6 +906,10 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
 				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
 			}
+			for _, h := range ts.Histograms {
+				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, h.Timestamp)
+			}
 		}
 		// Update this metric even in case of errors.
 		if latestSampleTimestampMs > 0 {
@@ -945,7 +950,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				continue
 			}
 
-			validatedSamples += len(ts.Samples)
+			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
 		if len(removeIndexes) > 0 {
@@ -1046,61 +1051,6 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
-// prePushEphemeralMiddleware is used as push.Func middleware in front of push method.
-// If marking series as ephemeral is enabled, this middleware uses the ephemeral series
-// provider to determine whether a time series should be marked as ephemeral.
-func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
-	if !d.cfg.EphemeralSeriesEnabled {
-		return next
-	}
-
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return nil, err
-		}
-
-		// Ensure that only time series which shall be marked as ephemeral according to the ephemeral checker get
-		// ingested into the ephemeral store.
-		req.EphemeralTimeseries = nil
-
-		ephemeralChecker := d.ephemeralCheckerByUser.EphemeralChecker(userID, req.Source)
-		if ephemeralChecker != nil {
-			first := true
-			var deleteTs []int
-			for ix := 0; ix < len(req.Timeseries); ix++ {
-				ts := req.Timeseries[ix]
-
-				if !ephemeralChecker.ShouldMarkEphemeral(ts.Labels) {
-					continue
-				}
-
-				if first {
-					req.EphemeralTimeseries = mimirpb.PreallocTimeseriesSliceFromPool()
-					deleteTs = make([]int, 0, len(req.Timeseries)-ix)
-					first = false
-				}
-
-				// Move this series from persistent to ephemeral storage. We don't ingest exemplars for ephemeral series.
-				mimirpb.ClearExemplars(ts.TimeSeries)
-				req.EphemeralTimeseries = append(req.EphemeralTimeseries, ts)
-				deleteTs = append(deleteTs, ix)
-			}
-
-			if len(deleteTs) > 0 {
-				req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, deleteTs)
-			}
-		}
-
-		return next(ctx, pushReq)
-	}
-}
-
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
@@ -1125,7 +1075,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		numSamples := 0
 		numExemplars := 0
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 			numExemplars += len(ts.Exemplars)
 		}
 
@@ -1228,7 +1178,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
-		mimirpb.ReuseSlice(req.EphemeralTimeseries)
 	})
 
 	return d.PushWithMiddlewares(ctx, pushReq)
@@ -1258,7 +1207,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	d.updateReceivedMetrics(req, userID)
 
-	if len(req.Timeseries) == 0 && len(req.EphemeralTimeseries) == 0 && len(req.Metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -1268,7 +1217,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
-	ephemeralSeriesKeys := d.getTokensForSeries(userID, req.EphemeralTimeseries)
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 
 	for _, m := range req.Metadata {
@@ -1288,24 +1236,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
-	// All tokens, stored in order: series, metadata, ephemeral series.
-	keys := make([]uint32, len(seriesKeys)+len(metadataKeys)+len(ephemeralSeriesKeys))
+	// All tokens, stored in order: series, metadata.
+	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
 	initialMetadataIndex := len(seriesKeys)
-	initialEphemeralIndex := initialMetadataIndex + len(metadataKeys)
 	copy(keys, seriesKeys)
 	copy(keys[initialMetadataIndex:], metadataKeys)
-	copy(keys[initialEphemeralIndex:], ephemeralSeriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		var timeseriesCount, ephemeralCount, metadataCount int
+		var timeseriesCount, metadataCount int
 		for _, i := range indexes {
-			if i >= initialEphemeralIndex {
-				ephemeralCount++
-			} else if i >= initialMetadataIndex {
+			if i >= initialMetadataIndex {
 				metadataCount++
 			} else {
 				timeseriesCount++
@@ -1313,20 +1257,17 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		}
 
 		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-		ephemeral := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](ephemeralCount)
 		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
 		for _, i := range indexes {
-			if i >= initialEphemeralIndex {
-				ephemeral = append(ephemeral, req.EphemeralTimeseries[i-initialEphemeralIndex])
-			} else if i >= initialMetadataIndex {
+			if i >= initialMetadataIndex {
 				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
 			} else {
 				timeseries = append(timeseries, req.Timeseries[i])
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, ephemeral, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1361,7 +1302,7 @@ func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.Preallo
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples)
+		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 	}
 	receivedMetadata = len(req.Metadata)
@@ -1397,7 +1338,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	})
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries, ephemeral []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1405,10 +1346,9 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	c := h.(ingester_client.IngesterClient)
 
 	req := mimirpb.WriteRequest{
-		Timeseries:          timeseries,
-		Metadata:            metadata,
-		Source:              source,
-		EphemeralTimeseries: ephemeral,
+		Timeseries: timeseries,
+		Metadata:   metadata,
+		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
