@@ -21,8 +21,8 @@ To evaluate rules, the ruler connects directly to ingesters and store-gateways, 
 
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../../../reference-configuration-parameters/index.md#querier" >}})
-- [Distributor]({{< relref "../../../../reference-configuration-parameters/index.md#distributor" >}})
+- [Querier]({{< relref "../../../../references/configuration-parameters/index.md#querier" >}})
+- [Distributor]({{< relref "../../../../references/configuration-parameters/index.md#distributor" >}})
 
 > **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
 

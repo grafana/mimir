@@ -63,7 +63,7 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_SOURCES_PATH := docs/sources/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := $(DOC_SOURCES_PATH)/reference-configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/references/configuration-parameters/index.template
 
 # Documents to run through embedding
 DOC_EMBED := $(DOC_SOURCES_PATH)/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
@@ -178,7 +178,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr3976-e7cae18e3
+LATEST_BUILD_IMAGE_TAG ?= goupdate-751733fe1
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
