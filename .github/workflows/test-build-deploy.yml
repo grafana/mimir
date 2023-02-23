@@ -26,6 +26,10 @@ jobs:
         run: |
           id
           env
+          ls -la /__w
+          ls -la /__w/mimir
+          ls -la /__w/mimir/mimir
+          cat $HOME/.gitconfig
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Id, env, ls
@@ -34,28 +38,36 @@ jobs:
           env
           ls -la /__w/mimir
           ls -la /__w/mimir/mimir
+          cat $HOME/.gitconfig
       - name: Run Git Config
         run: git config --global --add safe.directory /__w/mimir/mimir
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
-      - name: Symlink Expected Path to Workspace
+      - name: Id, env, ls, after setting config.
         run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Lint
-        run: make BUILD_IN_CONTAINER=false lint
-      - name: Check Vendor Directory
-        run: make BUILD_IN_CONTAINER=false mod-check
-      - name: Check Protos
-        run: make BUILD_IN_CONTAINER=false check-protos
-      - name: Check Generated Documentation
-        run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check White Noise.
-        run: make BUILD_IN_CONTAINER=false check-white-noise
-      - name: Check License Header
-        run: make BUILD_IN_CONTAINER=false check-license
-      - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
+          id
+          env
+          ls -la /__w/mimir
+          ls -la /__w/mimir/mimir
+          cat $HOME/.gitconfig
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Lint
+#        run: make BUILD_IN_CONTAINER=false lint
+#      - name: Check Vendor Directory
+#        run: make BUILD_IN_CONTAINER=false mod-check
+#      - name: Check Protos
+#        run: make BUILD_IN_CONTAINER=false check-protos
+#      - name: Check Generated Documentation
+#        run: make BUILD_IN_CONTAINER=false check-doc
+#      - name: Check White Noise.
+#        run: make BUILD_IN_CONTAINER=false check-white-noise
+#      - name: Check License Header
+#        run: make BUILD_IN_CONTAINER=false check-license
+#      - name: Check Docker-Compose YAML
+#        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
 
 #  doc-validator:
 #    runs-on: ubuntu-latest
