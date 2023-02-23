@@ -50,7 +50,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Git Config
         run: |
@@ -78,7 +77,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Git Config
         run: |
@@ -107,7 +105,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Git Config
         run: |
@@ -135,7 +132,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Git Config
         run: |
