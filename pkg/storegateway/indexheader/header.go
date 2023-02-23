@@ -45,11 +45,9 @@ type Reader interface {
 }
 
 type Config struct {
-	MapPopulateEnabled             bool `yaml:"map_populate_enabled" category:"experimental"`
-	StreamReaderMaxIdleFileHandles uint `yaml:"stream_reader_max_idle_file_handles" category:"experimental"`
+	StreamReaderMaxIdleFileHandles uint `yaml:"stream_reader_max_idle_file_handles" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
-	f.UintVar(&cfg.StreamReaderMaxIdleFileHandles, prefix+"stream-reader-max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.")
+	f.UintVar(&cfg.StreamReaderMaxIdleFileHandles, prefix+"stream-reader-max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
 }

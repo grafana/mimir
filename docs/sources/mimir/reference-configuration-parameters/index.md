@@ -3142,14 +3142,8 @@ bucket_store:
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
   index_header:
-    # (experimental) If enabled, the store-gateway will attempt to pre-populate
-    # the file system cache when memory-mapping index-header files.
-    # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
-    [map_populate_enabled: <boolean> | default = false]
-
-    # (experimental) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file when using the streaming reader. This
-    # option is used only when the index-header streaming reader is enabled.
+    # (advanced) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file.
     # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles
     [stream_reader_max_idle_file_handles: <int> | default = 1]
 
