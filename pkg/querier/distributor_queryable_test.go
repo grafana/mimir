@@ -441,13 +441,17 @@ func verifySeries[S mimirpb.GenericSamplePair](t *testing.T, series storage.Seri
 			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValHistogram:
 			ts, h := it.AtHistogram()
-			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
-			h.CounterResetHint = histogram.UnknownCounterReset
+			if h.CounterResetHint != histogram.GaugeType {
+				// Ignore counter resets injected by tsdb
+				h.CounterResetHint = histogram.UnknownCounterReset
+			}
 			require.Equal(t, s, mimirpb.FromHistogramToHistogramProto(ts, h))
 		case chunkenc.ValFloatHistogram:
 			ts, fh := it.AtFloatHistogram()
-			// TODO(histograms): Due to the merges, it's hard to know when the reset are inserted
-			fh.CounterResetHint = histogram.UnknownCounterReset
+			if fh.CounterResetHint != histogram.GaugeType {
+				// Ignore counter resets injected by tsdb
+				fh.CounterResetHint = histogram.UnknownCounterReset
+			}
 			require.Equal(t, s, mimirpb.FromFloatHistogramToHistogramProto(ts, fh))
 		default:
 			panic(fmt.Sprintf("verifyHistogramSeries - unhandled value type: %v", valType))
