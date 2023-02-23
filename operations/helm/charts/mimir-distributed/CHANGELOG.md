@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23.
+
 ## 4.2.0
 
 * [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
