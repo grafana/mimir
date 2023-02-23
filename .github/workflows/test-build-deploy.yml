@@ -17,6 +17,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Id, env
+        run: |
+          id
+          env
+          ls -la /__w
+          ls -la /__w/mimir
+          ls -la /__w/mimir/mimir
+          cat $HOME/.gitconfig || true
+
   lint:
     runs-on: ubuntu-latest
     container:
