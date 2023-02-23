@@ -24,6 +24,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Install jq tool
+        run: |
+          env
+          sudo apt-get update
+          sudo apt-get install sudo
       - name: Setup upterm session
         uses: lhotari/action-upterm@v1
       - name: Run Git Config
