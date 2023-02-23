@@ -35,9 +35,11 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Lint
         run: |
+          chown root:root $GITHUB_WORKSPACE
           git --version
           which git
-          make BUILD_IN_CONTAINER=false lint
+          git status
+          make BUILD_IN_CONTAINER=false -v lint
 #      - name: Check Vendor Directory
 #        run: make BUILD_IN_CONTAINER=false mod-check
 #      - name: Check Protos
