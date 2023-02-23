@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-test:
+  test-no-container:
     runs-on: ubuntu-latest
     steps:
       - name: Id, env
@@ -28,12 +28,12 @@ jobs:
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
 
-  lint:
+  test-container-new-image-checkout-v3:
     runs-on: ubuntu-latest
     container:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
-      - name: Id, env
+      - name: Before checkout
         run: |
           id
           env
@@ -42,7 +42,7 @@ jobs:
           cat $HOME/.gitconfig || true
       - name: Checkout repository
         uses: actions/checkout@v3
-      - name: Id, env, ls
+      - name: After checkout
         run: |
           id
           env
@@ -50,10 +50,93 @@ jobs:
           ls -la $GITHUB_WORKSPACE
           ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
-      - name: Run Git Config
+      - name: Git Config
         run: |
           git config --global --add safe.directory /__w/mimir/mimir
           cat $HOME/.gitconfig || true
+
+  test-container-old-image-checkout-v3:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:pr3976-e7cae18e3
+    steps:
+      - name: Before checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          cat $HOME/.gitconfig || true
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: After checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          ls -la $GITHUB_WORKSPACE/mimir
+          cat $HOME/.gitconfig || true
+      - name: Git Config
+        run: |
+          git config --global --add safe.directory /__w/mimir/mimir
+          cat $HOME/.gitconfig || true
+  
+
+  test-container-new-image-checkout-v2:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:goupdate-751733fe1
+    steps:
+      - name: Before checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          cat $HOME/.gitconfig || true
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: After checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          ls -la $GITHUB_WORKSPACE/mimir
+          cat $HOME/.gitconfig || true
+      - name: Git Config
+        run: |
+          git config --global --add safe.directory /__w/mimir/mimir
+          cat $HOME/.gitconfig || true          
+
+  test-container-old-image-checkout-v2:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:pr3976-e7cae18e3
+    steps:
+      - name: Before checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          cat $HOME/.gitconfig || true
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: After checkout
+        run: |
+          id
+          env
+          ls -la $RUNNER_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          ls -la $GITHUB_WORKSPACE/mimir
+          cat $HOME/.gitconfig || true
+      - name: Git Config
+        run: |
+          git config --global --add safe.directory /__w/mimir/mimir
+          cat $HOME/.gitconfig || true
+
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
 #      - name: Symlink Expected Path to Workspace
