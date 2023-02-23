@@ -67,7 +67,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.11.2
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20230124195608-d38c7dcee874
-	golang.org/x/sys v0.4.0
 	google.golang.org/api v0.108.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
@@ -213,6 +212,7 @@ require (
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/oauth2 v0.4.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
