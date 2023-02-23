@@ -1,7 +1,7 @@
 ---
 title: "Grafana Mimir references"
 menuTitle: "References"
-description: "What do I add here?"
+description: "Learn about the Grafana Mimir via reference material."
 weight: 200
 keywords:
   -
@@ -9,12 +9,6 @@ keywords:
 
 # Grafana Mimir references
 
-TODO
-
-- tbd
-
-<!-- This guide contains the following sections:
+To learn more about the available configuration parameters for Grafana Mimir, see the reference material that follows.
 
 {{< section menuTitle="true" >}}
-
--->
