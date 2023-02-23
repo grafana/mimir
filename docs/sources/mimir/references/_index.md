@@ -11,4 +11,4 @@ keywords:
 
 To learn more about the available configuration parameters for Grafana Mimir, see the reference material that follows.
 
-{{< section menuTitle="true" >}}
+{{< section >}}
