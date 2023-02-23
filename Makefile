@@ -455,6 +455,7 @@ endif
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
+	git --version
 	@git diff --exit-code -- $(MAKE_FILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
 
 .PHONY: format-makefiles
