@@ -26,7 +26,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
 
   lint:
@@ -40,7 +39,6 @@ jobs:
           env
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
-          ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -53,16 +51,11 @@ jobs:
           ls -la $GITHUB_WORKSPACE/mimir
           cat $HOME/.gitconfig || true
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: |
+          git config --global --add safe.directory /__w/mimir/mimir
+          cat $HOME/.gitconfig || true
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
-      - name: Id, env, ls, after setting config.
-        run: |
-          id
-          env
-          ls -la /__w/mimir
-          ls -la /__w/mimir/mimir
-          cat $HOME/.gitconfig || true
 #      - name: Symlink Expected Path to Workspace
 #        run: |
 #          mkdir -p /go/src/github.com/grafana/mimir
