@@ -72,7 +72,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{}
-			ring.On("HealthyInstancesCount").Return(1)
+			ring.On("InstancesCount").Return(1)
 			ring.On("ZonesCount").Return(1)
 
 			// Mock limiter
