@@ -25,7 +25,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -65,9 +65,9 @@ jobs:
       image: grafana/mimir-build-image:goupdate-72d66708c
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -91,9 +91,9 @@ jobs:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
@@ -120,9 +120,9 @@ jobs:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
@@ -136,9 +136,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "Check out code"
-        uses: "actions/checkout@v3"
+        uses: "actions/checkout@v2"
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir
+        run: git config --global --add safe.directory '*'
       - name: "Build website"
         run: |
           docker run \
@@ -155,9 +155,9 @@ jobs:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Run Git Config
-        run: git config --global --add safe.directory /__w/mimir/mimir 
+        run: git config --global --add safe.directory '*'
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
@@ -198,7 +198,7 @@ jobs:
         with:
           go-version: 1.20.1
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
@@ -243,7 +243,7 @@ jobs:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
