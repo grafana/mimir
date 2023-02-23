@@ -80,7 +80,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 
 func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(path, cfg.StreamReaderMaxIdleFileHandles, logger, metrics.decbufFactory),
+		factory: streamencoding.NewDecbufFactory(path, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to

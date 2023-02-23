@@ -3144,8 +3144,8 @@ bucket_store:
   index_header:
     # (advanced) Maximum number of idle file handles the store-gateway keeps
     # open for each index-header file.
-    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles
-    [stream_reader_max_idle_file_handles: <int> | default = 1]
+    # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
+    [max_idle_file_handles: <int> | default = 1]
 
   # (experimental) If larger than 0, this option enables store-gateway series
   # streaming. The store-gateway will load series from the bucket in batches

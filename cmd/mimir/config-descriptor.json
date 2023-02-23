@@ -5779,12 +5779,12 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "stream_reader_max_idle_file_handles",
+                  "name": "max_idle_file_handles",
                   "required": false,
                   "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles",
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 }

@@ -45,9 +45,9 @@ type Reader interface {
 }
 
 type Config struct {
-	StreamReaderMaxIdleFileHandles uint `yaml:"stream_reader_max_idle_file_handles" category:"advanced"`
+	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.UintVar(&cfg.StreamReaderMaxIdleFileHandles, prefix+"stream-reader-max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
 }
