@@ -24,6 +24,7 @@ jobs:
         run: |
           id
           env
+          git --version
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
@@ -37,6 +38,7 @@ jobs:
         run: |
           id
           env
+          git --version
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
@@ -64,6 +66,7 @@ jobs:
         run: |
           id
           env
+          git --version
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
@@ -92,6 +95,7 @@ jobs:
         run: |
           id
           env
+          git --version
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
@@ -119,6 +123,7 @@ jobs:
         run: |
           id
           env
+          git --version
           ls -la $RUNNER_WORKSPACE
           ls -la $GITHUB_WORKSPACE
           cat $HOME/.gitconfig || true
