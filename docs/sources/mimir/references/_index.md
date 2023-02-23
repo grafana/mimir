@@ -1,7 +1,7 @@
 ---
 title: "Grafana Mimir references"
 menuTitle: "References"
-description: "Learn about the Grafana Mimir via reference material."
+description: "Learn about Grafana Mimir via reference material."
 weight: 200
 keywords:
   -
