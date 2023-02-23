@@ -3147,11 +3147,6 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 
-    # (experimental) If enabled, the store-gateway will use an experimental
-    # streaming reader to load and parse index-header files.
-    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
-    [stream_reader_enabled: <boolean> | default = false]
-
     # (experimental) Maximum number of idle file handles the store-gateway keeps
     # open for each index-header file when using the streaming reader. This
     # option is used only when the index-header streaming reader is enabled.

@@ -141,7 +141,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 	return r, nil
 }
 
-// newBinaryTOCFromByteSlice return parsed TOC from given Decbuf. The Decbuf is expected to be
+// newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
 // configured to access the entirety of the index-header file.
 func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
 	tocOffset := indexHeaderSize - binaryTOCLen
