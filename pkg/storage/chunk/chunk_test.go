@@ -133,17 +133,17 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 	for i := 0; i < samples; i++ {
 		switch encoding {
 		case PrometheusXorChunk:
-			require.True(t, iter.Scan() == chunkenc.ValFloat)
+			require.Equal(t, chunkenc.ValFloat, iter.Scan())
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
 		case PrometheusHistogramChunk:
-			require.True(t, iter.Scan() == chunkenc.ValHistogram)
+			require.Equal(t, chunkenc.ValHistogram, iter.Scan())
 			ts, h := iter.AtHistogram()
 			require.EqualValues(t, model.Time(i*step), ts)
 			require.EqualValues(t, expectedHistogram(i), h)
 		case PrometheusFloatHistogramChunk:
-			require.True(t, iter.Scan() == chunkenc.ValFloatHistogram)
+			require.Equal(t, chunkenc.ValFloatHistogram, iter.Scan())
 			ts, h := iter.AtFloatHistogram()
 			require.EqualValues(t, model.Time(i*step), ts)
 			require.EqualValues(t, expectedFloatHistogram(i), h)
