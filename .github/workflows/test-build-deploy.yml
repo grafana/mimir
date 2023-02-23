@@ -28,7 +28,8 @@ jobs:
         # Symlink ensures paths specified in previous commands don’t break
       - name: Symlink Expected Path to Workspace
         run: |
-          chown $USER $GITHUB_WORKSPACE
+          echo chown $USER: $GITHUB_WORKSPACE
+          chown $USER: $GITHUB_WORKSPACE
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Lint
