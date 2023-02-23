@@ -34,8 +34,6 @@ jobs:
           env
           ls -la /__w/mimir
           ls -la /__w/mimir/mimir
-      - name: Setup upterm session
-        uses: lhotari/action-upterm@v1
       - name: Run Git Config
         run: git config --global --add safe.directory /__w/mimir/mimir
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
