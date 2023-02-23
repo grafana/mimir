@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -134,7 +133,7 @@ func applyPrepareOptions(opts ...prepareOption) prepareOptions {
 	applied := prepareOptions{
 		// Default limits in the ruler tests.
 		limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-			defaults.RulerEvaluationDelay = model.Duration(time.Minute)
+			defaults.RulerEvaluationDelay = 0
 			defaults.RulerMaxRuleGroupsPerTenant = 20
 			defaults.RulerMaxRulesPerRuleGroup = 15
 		}),
@@ -395,7 +394,7 @@ func TestGetRules(t *testing.T) {
 				}
 
 				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-					defaults.RulerEvaluationDelay = model.Duration(time.Minute)
+					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
 
@@ -840,7 +839,7 @@ func TestSharding(t *testing.T) {
 				}
 
 				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-					defaults.RulerEvaluationDelay = model.Duration(time.Minute)
+					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
 
