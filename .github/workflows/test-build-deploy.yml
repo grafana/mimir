@@ -22,14 +22,18 @@ jobs:
     container:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Install jq tool
+      - name: Id, env
         run: |
           id
           env
-          apt-get update
-          apt-get install sudo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Id, env, ls
+        run: |
+          id
+          env
+          ls -la /__w/mimir
+          ls -la /__w/mimir/mimir
       - name: Setup upterm session
         uses: lhotari/action-upterm@v1
       - name: Run Git Config
