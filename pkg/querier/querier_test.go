@@ -235,7 +235,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
@@ -503,8 +502,6 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	})
 	cfg := Config{}
 	for _, c := range testCases {
-		//TODO: Remove all the cfg.QueryIngestersWithin references in this file
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
@@ -782,7 +779,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
@@ -1141,7 +1137,6 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	for _, c := range testCases {
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		cfg.QueryStoreAfter = c.queryStoreAfter
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
