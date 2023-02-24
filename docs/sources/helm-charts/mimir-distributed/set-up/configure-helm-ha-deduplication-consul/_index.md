@@ -2,16 +2,16 @@
 aliases:
   - ../configuring/configure-helm-ha-deduplication-consul/
 description:
-  Learn how to configure the Grafana Mimir Helm chart to handle HA Prometheus
+  Configure the Grafana Mimir Helm chart to handle HA Prometheus
   server deduplication with Consul.
-menuTitle: Configure high-availability deduplication with Consul
+menuTitle: Configure HA deduplication with Consul
 title:
-  Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication
+  Configure the mimir-distributed Helm Chart for high-availability deduplication
   with Consul
-weight: 70
+weight: 60
 ---
 
-# Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication with Consul
+# Configure mimir-distributed Helm Chart for high-availability deduplication with Consul
 
 Grafana Mimir can deduplicate data from a high-availability (HA) Prometheus setup. You can configure
 the deduplication by using the Grafana Mimir helm chart deployment that uses external Consul. For more information, see [Configure high availability](/docs/mimir/v2.6.x/operators-guide/configure/configure-high-availability-deduplication/).
@@ -60,62 +60,65 @@ Before you begin, make sure that Mimir was installed using the mimir-distributed
 
 1. Merge the following configuration to your `custom.yaml` file:
 
-```yaml
-mimir:
-  structuredConfig:
-    limits:
-      accept_ha_samples: true
-      # The following two configurations must match those of external_labels in Prometheus
-      # The config values below are the default and can be removed if you don't want to override to a new value
-      ha_cluster_label: cluster
-      ha_replica_label: __replica__
-    distributor:
-      ha_tracker:
-        enable_ha_tracker: true
-        kvstore:
-          store: consul
-          consul:
-            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
-```
+    ```yaml
+    mimir:
+      structuredConfig:
+        limits:
+          accept_ha_samples: true
+          # The following two configurations must match those of external_labels in Prometheus.
+          ha_cluster_label: cluster
+          ha_replica_label: __replica__
+          # The configuration values that follow are defaults,
+          # and you can remove them if you don't want to override to a new value.
+        distributor:
+          ha_tracker:
+            enable_ha_tracker: true
+            kvstore:
+              store: consul
+              consul:
+                host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
+    ```
 
-2. Upgrade the Mimir's helm release using the following command:
+2. Upgrade the Mimir’s helm release with the following command:
 
-```bash
- helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
-```
+    ```bash
+    helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
+    ```
 
 ### Configure HA deduplication per tenant
 
 Before you begin, make sure that Mimir was installed using the mimir-distributed Helm chart.
 
-1. Merge the following configuration to the `custom.yaml` file:
+1. Merge the following configuration into the `custom.yaml` file:
 
-```yaml
-mimir:
-  structuredConfig:
-    limits:
-      accept_ha_samples: true
-      # The following two configurations must match those of external_labels in Prometheus
-      # The config values below are the default and can be removed if you don't want to override to a new value
-      ha_cluster_label: cluster
-      ha_replica_label: __replica__
-    distributor:
-      ha_tracker:
-        enable_ha_tracker: true
-        kvstore:
-          store: consul
-          consul:
-            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
-runtimeConfig:
-  overrides:
-    <tenant-id>: # put real tenant ID here
-      accept_ha_samples: true
-      ha_cluster_label: cluster
-      ha_replica_label: __replica__
-```
+    ```yaml
+    mimir:
+      structuredConfig:
+        limits:
+          accept_ha_samples: true
+          # The following two configurations must match those of external_labels in Prometheus.
+          ha_cluster_label: cluster
+          ha_replica_label: __replica__
+          # The configuration values that follow are defaults,
+          # and you can remove them if you don't want to override to a new value.
+        distributor:
+          ha_tracker:
+            enable_ha_tracker: true
+            kvstore:
+              store: consul
+              consul:
+                host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
+    runtimeConfig:
+      overrides:
+        <tenant-id>: # Put the real tenant ID here.
+          accept_ha_samples: true
+          ha_cluster_label: cluster
+          ha_replica_label: __replica__
+    ```
 
-The `mimir` configuration block is similar with Globally configure HA deduplication setup. The `runtimeConfig` block
-is the configuration for per tenant HA deduplication.
+The `mimir` configuration block is similar to that which is found in
+[Globally configure HA deduplication]({{< relref "#globally-configure-ha-deduplication" >}}). The `runtimeConfig` block
+is the configuration for per-tenant HA deduplication.
 
 2. Upgrade the Mimir's helm release using the following command:
 
@@ -123,14 +126,14 @@ is the configuration for per tenant HA deduplication.
  helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
 ```
 
-## Verifying deduplication
+## Verify deduplication
 
-After Consul, Prometheus and Mimir running we can verify deduplication in several way.
+After Consul, Prometheus, and Mimir are running, you can verify deduplication in the ways that follow.
 
 ### ha_tracker's page
 
-Port forward Mimir distributor service. The argument after port-forward must
-match your Mimir's distributor name.
+Port forward Mimir distributor service. The argument after `port-forward` must
+match your Mimir’s distributor name.
 
 ```bash
 kubectl -n <mimir-namespace> port-forward service/mimir-distributor 8080:8080
@@ -149,7 +152,7 @@ If the table is empty, it means there is something wrong with the configuration.
 
 ### Distributor metrics
 
-If you [Monitor the health of your system]({{<relref "../run-production-environment-with-helm/monitor-system-health.md">}}), be it Mimir or GEM, or if you monitor the health of GEM via its built-in [Self monitoring](/docs/enterprise-metrics/v2.6.x/operations/self-monitoring/) functionality, the
+If you [Monitor the health of your system]({{<relref "../prepare-production-environment/run-production-environment-with-helm/monitor-system-health.md">}}), be it Mimir or GEM, or if you monitor the health of GEM via its built-in [Self monitoring](/docs/enterprise-metrics/v2.6.x/operations/self-monitoring/) functionality, the
 Mimir [distributor](/docs/mimir/v2.6.x/operators-guide/architecture/components/distributor/)
 exposes some metrics related to HA deduplication. The relevant metrics are prefixed with `cortex_ha_tracker_`.
 

@@ -10,7 +10,7 @@ weight: 40
 
 # Run Grafana Mimir in production using the Helm chart
 
-In addition to the guide [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts/" >}}),
+In addition to the guide [Get started with Grafana Mimir using the Helm chart]({{< relref "../../../get-started/" >}}),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
 within a low-risk development environment, you can prepare Grafana Mimir
 for production.
@@ -147,7 +147,7 @@ store_gateway:
 ### Existing installations
 
 If you are upgrading from a previous `mimir-distributed` Helm chart version
-to v4.0, then refer to the [migration guide]({{< relref "../migration-guides/migrate-from-single-zone-with-helm" >}}) to configure
+to v4.0, then refer to the [migration guide]({{< relref "../../../migrate/migrate-from-single-zone-with-helm" >}}) to configure
 zone-aware replication.
 
 ## Configure Mimir to use object storage
@@ -271,8 +271,8 @@ Your Grafana Mimir cluster can now ingest metrics in production.
 
 ## Configure clients to write metrics to Mimir
 
-To configure each client to remote-write metrics to Mimir, refer to [Configure Prometheus to write to Grafana Mimir]({{< relref "../get-started-helm-charts/#configure-prometheus-to-write-to-grafana-mimir">}})
-and [Configure Grafana Agent to write to Grafana Mimir]({{< relref "../get-started-helm-charts/#configure-grafana-agent-to-write-to-grafana-mimir">}}).
+To configure each client to remote-write metrics to Mimir, refer to [Configure Prometheus to write to Grafana Mimir]({{< relref "../set-up/../../configure-prometheus-to-write-to-grafana-mimir">}})
+and [Configure Grafana Agent to write to Grafana Mimir]({{< relref "../set-up/../../configure-grafana-agent-to-write-to-grafana-mimir">}}).
 
 ## Set up redundant Prometheus or Grafana Agent instances for high availability
 

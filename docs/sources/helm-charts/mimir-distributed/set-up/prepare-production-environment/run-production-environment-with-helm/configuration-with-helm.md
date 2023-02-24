@@ -36,7 +36,7 @@ See the [Example](#example-of-configuration-managed-with-helm) for a practical a
 
 ### How the configuration is applied
 
-Grafana Mimir components are run with a configuration calculcated by the following process:
+Grafana Mimir components are run with a configuration calculated by the following process:
 
 1. The configuration YAML in `mimir.config` is evaluated as a Helm template. This step ensures that the configuration applies to the Kubernetes cluster where it will be installed. For example, setting up cluster-specific addresses.
 1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step applies user-specific customizations. For example, S3 storage details.
