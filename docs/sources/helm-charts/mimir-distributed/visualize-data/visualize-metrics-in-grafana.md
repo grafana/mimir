@@ -1,9 +1,9 @@
 ---
 aliases:
   - 
-description: Learn how to query metrics in Grafana.
-menuTitle: Query metrics in Grafana
-title: Query metrics in Grafana
+description: Learn how to visualize metrics in Grafana.
+menuTitle: Visualize metrics in Grafana
+title: Visualize metrics in Grafana
 weight: 50
 keywords:
   - Helm chart
@@ -11,7 +11,7 @@ keywords:
   - Grafana Mimir
 ---
 
-# Query metrics in Grafana
+# Visualize metrics in Grafana
 
 The Grafana Mimir [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 

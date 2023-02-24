@@ -1,7 +1,7 @@
 ---
-title: "Query data"
-menuTitle: "Query data"
-description: "Query data"
+title: "Visualize data"
+menuTitle: "Visualize data"
+description: "Visualize data"
 weight: 40
 keywords:
   - Grafana Mimir
@@ -9,6 +9,6 @@ keywords:
   - Grafana metrics
 ---
 
-# Query data
+# Visualize data
 
 {{< section >}}
