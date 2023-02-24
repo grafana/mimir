@@ -1,6 +1,6 @@
 ---
 aliases:
-  - 
+  -
 description: Learn how to set up metamonitoring of Grafana Mimir of GEM.
 menuTitle: Set up metamonitoring
 title: Set up metamonitoring
@@ -70,34 +70,3 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
    ```
 
 1. From [Grafana Explore](http://localhost:3000/explore), verify that your metrics are being written to Grafana Mimir, by querying `sum(rate(cortex_ingester_ingested_samples_total[$__rate_interval]))`.
-
-## Query metrics in Grafana that is running within the same Kubernetes cluster
-
-1. Install Grafana in the same Kubernetes cluster.
-
-   For details, see [Deploy Grafana on Kubernetes](/docs/grafana/latest/setup-grafana/installation/kubernetes/).
-
-1. Stop the Grafana instance that is running in the Docker container, to allow for port-forwarding.
-
-1. Port-forward Grafana to `localhost`, by using the `kubectl` command:
-
-   ```bash
-   kubectl port-forward service/grafana 3000:3000
-   ```
-
-1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
-1. Sign in using the default username `admin` and password `admin`.
-1. On the left-hand side, go to **Configuration** > **Data sources**.
-1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
-
-   | Field | Value                                           |
-   | ----- | ----------------------------------------------- |
-   | Name  | Mimir                                           |
-   | URL   | http://mimir-nginx.mimir-test.svc:80/prometheus |
-
-   To add a data source, see [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
-
-1. Verify success:
-
-   You should be able to query metrics in [Grafana Explore](/docs/grafana/latest/explore/),
-   as well as create dashboard panels by using your newly configured `Mimir` data source.

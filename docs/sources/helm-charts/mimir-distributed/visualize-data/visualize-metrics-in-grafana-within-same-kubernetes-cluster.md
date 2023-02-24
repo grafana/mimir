@@ -1,6 +1,6 @@
 ---
 aliases:
-  - 
+  -
 description: Visualize metrics in Grafana, which is running within the same Kubernetes cluster.
 menuTitle: Visualize metrics Grafana within the same Kubernetes cluster
 title: Visualize metrics in Grafana that is running within the same Kubernetes cluster
@@ -49,18 +49,18 @@ It also assumes that you have an understanding of what the `kubectl` command doe
 1. On the left-hand side, go to **Configuration** > **Data sources**.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
-   | Field      | Mimir and GEM values                            |
-   | ---------- | ----------------------------------------------- |
-   | Name       | \<arbitrary-name>                               |
-   | URL        | \<internal-prometheus-url>, for example:        |
-   |            | http://mimir-nginx.mimir-test.svc:80/prometheus |
-   
-   | Field      | GEM-specific values                             |
-   | ---------- | ----------------------------------------------- |
-   | Name       | \<arbitrary-name>                               |
-   | Basic auth | Enabled                                         |
-   | User       | *                                               |
-   | Password   | \<token>                                        |
+   | Field | Mimir and GEM values                            |
+   | ----- | ----------------------------------------------- |
+   | Name  | \<arbitrary-name>                               |
+   | URL   | \<internal-prometheus-url>, for example:        |
+   |       | http://mimir-nginx.mimir-test.svc:80/prometheus |
+
+   | Field      | GEM-specific values |
+   | ---------- | ------------------- |
+   | Name       | \<arbitrary-name>   |
+   | Basic auth | Enabled             |
+   | User       | \*                  |
+   | Password   | \<token>            |
 
    To add a data source, see [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
 

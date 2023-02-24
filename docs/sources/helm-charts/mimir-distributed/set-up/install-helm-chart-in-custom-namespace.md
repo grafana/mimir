@@ -1,8 +1,8 @@
 ---
 aliases:
-  - 
+  -
 description: Learn how to install the Grafana Mimir Helm chart in a custom namespace.
-menuTitle: Install in a custom namespace 
+menuTitle: Install in a custom namespace
 title: Install the Helm chart in a custom namespace
 weight: 20
 keywords:

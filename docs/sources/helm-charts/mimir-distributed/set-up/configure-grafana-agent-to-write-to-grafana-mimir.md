@@ -1,6 +1,6 @@
 ---
 aliases:
-  - 
+  -
 description: Learn how to configure Grafana Agent to write to Grafana Mimir.
 menuTitle: Configure Grafana Agent
 title: Configure Grafana Agent to write to Grafana Mimir

@@ -2,7 +2,7 @@
 title: "Prepare a production environment"
 menuTitle: "Prepare a production environment"
 description: "Learn how to prepare a production environment"
-weight: 1
+weight: 90
 keywords:
   - Grafana Mimir
   - Grafana Enterprise Metrics

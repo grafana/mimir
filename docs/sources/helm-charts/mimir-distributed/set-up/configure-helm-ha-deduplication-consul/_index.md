@@ -1,8 +1,7 @@
 ---
 aliases:
   - ../configuring/configure-helm-ha-deduplication-consul/
-description:
-  Configure the Grafana Mimir Helm chart to handle HA Prometheus
+description: Configure the Grafana Mimir Helm chart to handle HA Prometheus
   server deduplication with Consul.
 menuTitle: Configure HA deduplication with Consul
 title:
@@ -60,30 +59,30 @@ Before you begin, make sure that Mimir was installed using the mimir-distributed
 
 1. Merge the following configuration to your `custom.yaml` file:
 
-    ```yaml
-    mimir:
-      structuredConfig:
-        limits:
-          accept_ha_samples: true
-          # The following two configurations must match those of external_labels in Prometheus.
-          ha_cluster_label: cluster
-          ha_replica_label: __replica__
-          # The configuration values that follow are defaults,
-          # and you can remove them if you don't want to override to a new value.
-        distributor:
-          ha_tracker:
-            enable_ha_tracker: true
-            kvstore:
-              store: consul
-              consul:
-                host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
-    ```
+   ```yaml
+   mimir:
+     structuredConfig:
+       limits:
+         accept_ha_samples: true
+         # The following two configurations must match those of external_labels in Prometheus.
+         ha_cluster_label: cluster
+         ha_replica_label: __replica__
+         # The configuration values that follow are defaults,
+         # and you can remove them if you don't want to override to a new value.
+       distributor:
+         ha_tracker:
+           enable_ha_tracker: true
+           kvstore:
+             store: consul
+             consul:
+               host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
+   ```
 
 2. Upgrade the Mimir’s helm release with the following command:
 
-    ```bash
-    helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
-    ```
+   ```bash
+   helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
+   ```
 
 ### Configure HA deduplication per tenant
 
@@ -91,30 +90,30 @@ Before you begin, make sure that Mimir was installed using the mimir-distributed
 
 1. Merge the following configuration into the `custom.yaml` file:
 
-    ```yaml
-    mimir:
-      structuredConfig:
-        limits:
-          accept_ha_samples: true
-          # The following two configurations must match those of external_labels in Prometheus.
-          ha_cluster_label: cluster
-          ha_replica_label: __replica__
-          # The configuration values that follow are defaults,
-          # and you can remove them if you don't want to override to a new value.
-        distributor:
-          ha_tracker:
-            enable_ha_tracker: true
-            kvstore:
-              store: consul
-              consul:
-                host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
-    runtimeConfig:
-      overrides:
-        <tenant-id>: # Put the real tenant ID here.
-          accept_ha_samples: true
-          ha_cluster_label: cluster
-          ha_replica_label: __replica__
-    ```
+   ```yaml
+   mimir:
+     structuredConfig:
+       limits:
+         accept_ha_samples: true
+         # The following two configurations must match those of external_labels in Prometheus.
+         ha_cluster_label: cluster
+         ha_replica_label: __replica__
+         # The configuration values that follow are defaults,
+         # and you can remove them if you don't want to override to a new value.
+       distributor:
+         ha_tracker:
+           enable_ha_tracker: true
+           kvstore:
+             store: consul
+             consul:
+               host: <consul-endpoint> # For example, http://consul.consul.svc.cluster.local:8500
+   runtimeConfig:
+     overrides:
+       <tenant-id>: # Put the real tenant ID here.
+         accept_ha_samples: true
+         ha_cluster_label: cluster
+         ha_replica_label: __replica__
+   ```
 
 The `mimir` configuration block is similar to that which is found in
 [Globally configure HA deduplication]({{< relref "#globally-configure-ha-deduplication" >}}). The `runtimeConfig` block

@@ -1,6 +1,6 @@
 ---
 aliases:
-  - 
+  -
 description: Learn how to configure Prometheus to write to Grafana Mimir.
 menuTitle: Configure Prometheus
 title: Configure Prometheus to write to Grafana Mimir
