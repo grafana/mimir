@@ -157,7 +157,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/requirements/#additional-resources-metrics).
+   > To understand the required metrics sources, refer to [Additional resources metrics](/docs/mimir/v2.6.x/operators-guide/monitor-grafana-mimir/requirements/#additional-resources-metrics).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
@@ -252,4 +252,4 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
    ```
 
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/dashboards/).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards](/docs/mimir/v2.6.x/operators-guide/monitor-grafana-mimir/dashboards/).
