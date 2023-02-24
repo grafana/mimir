@@ -67,7 +67,6 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 
 	// Reset the Index and Length of existing batches.
 	for i := range result {
-		result[i].ValueType = chunkenc.ValFloat // assume that most metrics are simple floats
 		result[i].Index = 0
 		result[i].Length = 0
 	}
@@ -87,46 +86,47 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			result = append(result, chunk.Batch{})
 		}
 		b = &result[resultLen-1]
+		b.ValueType = valueType
 	}
 
-	// Ensure that the batch we're writing to is not full and of the right type.
-	ensureBatch := func(valueType chunkenc.ValueType) {
-		if b.Index == size {
-			// The batch reached its intended size.
+	populate := func(s batchStream, valueType chunkenc.ValueType) {
+		if b.Index == 0 {
+			// Starting to write this Batch, it is safe to set the value type
+			b.ValueType = valueType
+		} else if b.Index == size || b.ValueType != valueType {
+			// The batch reached its intended size or is the wrong value type
 			// Add another batch the the result
 			// and use it for further appending.
 			nextBatch(valueType)
 		}
-		for b.ValueType != valueType {
-			if b.ValueType == chunkenc.ValNone || b.Index == 0 {
-				// Uninitialized or unstarted Batch
-				b.ValueType = valueType
-				return
-			}
-			// Batch already started, finish and start new
-			// We don't know its type so let the loop run one more time
-			nextBatch(valueType)
+
+		switch valueType {
+		case chunkenc.ValFloat:
+			b.Timestamps[b.Index], b.Values[b.Index] = s.at()
+		case chunkenc.ValHistogram:
+			t, v := s.atHistogram()
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
+		case chunkenc.ValFloatHistogram:
+			t, v := s.atFloatHistogram()
+			b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
 		}
+		b.Index++
 	}
 
 	for lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = left.hasNext(), right.hasNext() {
 		t1, t2 := left.atTime(), right.atTime()
 		if t1 < t2 {
-			ensureBatch(lt)
-			populate(b, left, lt)
+			populate(left, lt)
 			left.next()
 		} else if t1 > t2 {
-			ensureBatch(rt)
-			populate(b, right, rt)
+			populate(right, rt)
 			right.next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer historgrams over floats. Take left side if both has histograms.
-				ensureBatch(rt)
-				populate(b, right, rt)
+				populate(right, rt)
 			} else {
-				ensureBatch(lt)
-				populate(b, left, lt)
+				populate(left, lt)
 			}
 			left.next()
 			right.next()
@@ -138,8 +138,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	addToResult := func(bs batchStream) {
 		for {
 			if t := bs.hasNext(); t != chunkenc.ValNone {
-				ensureBatch(t)
-				populate(b, bs, t)
+				populate(bs, t)
 				b.Length++
 				bs.next()
 			} else {
@@ -160,18 +159,4 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	result = result[:resultLen]
 	result.reset()
 	return result
-}
-
-func populate(b *chunk.Batch, s batchStream, valueTypes chunkenc.ValueType) {
-	switch valueTypes {
-	case chunkenc.ValFloat:
-		b.Timestamps[b.Index], b.Values[b.Index] = s.at()
-	case chunkenc.ValHistogram:
-		t, v := s.atHistogram()
-		b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
-	case chunkenc.ValFloatHistogram:
-		t, v := s.atFloatHistogram()
-		b.Timestamps[b.Index], b.PointerValues[b.Index] = t, unsafe.Pointer(v)
-	}
-	b.Index++
 }
