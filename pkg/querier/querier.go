@@ -78,10 +78,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(limits validation.Limits) error {
 	// Ensure the config wont create a situation where no queriers are returned.
-	if cfg.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
-		if cfg.QueryStoreAfter >= cfg.QueryIngestersWithin {
+	if limits.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
+		if cfg.QueryStoreAfter >= time.Duration(limits.QueryIngestersWithin) {
 			return errBadLookbackConfigs
 		}
 	}

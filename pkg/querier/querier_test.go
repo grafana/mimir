@@ -1230,27 +1230,27 @@ func TestStoreQueryable(t *testing.T) {
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(cfg *Config)
+		setup    func(cfg *Config, limits *validation.Limits)
 		expected error
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(cfg *Config, limits *validation.Limits) {},
 		},
 		"should pass if 'query store after' is enabled and shuffle-sharding is disabled": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},
 		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 		},
 		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = 3 * time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 			expected: errBadLookbackConfigs,
 		},
@@ -1260,8 +1260,9 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
-			testData.setup(cfg)
-			assert.Equal(t, testData.expected, cfg.Validate())
+			limits := defaultLimitsConfig()
+			testData.setup(cfg, &limits)
+			assert.Equal(t, testData.expected, cfg.Validate(limits))
 		})
 	}
 }
