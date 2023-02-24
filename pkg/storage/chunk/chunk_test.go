@@ -17,14 +17,15 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // TSDB updates the reset hint automatically for histograms inserted into TSDB
 func expectedHistogram(i int) *histogram.Histogram {
-	h := tsdb.GenerateTestHistogram(i)
+	h := test.GenerateTestHistogram(i)
 	if i > 0 {
 		h.CounterResetHint = histogram.NotCounterReset
 	}
@@ -33,7 +34,7 @@ func expectedHistogram(i int) *histogram.Histogram {
 
 // TSDB updates the reset hint automatically for histograms inserted into TSDB
 func expectedFloatHistogram(i int) *histogram.FloatHistogram {
-	h := tsdb.GenerateTestFloatHistogram(i)
+	h := test.GenerateTestFloatHistogram(i)
 	if i > 0 {
 		h.CounterResetHint = histogram.NotCounterReset
 	}
@@ -99,9 +100,9 @@ func mkChunk(t *testing.T, encoding Encoding, samples int) EncodedChunk {
 				Value:     model.SampleValue(i),
 			})
 		case PrometheusHistogramChunk:
-			overflowChunk, err = chunk.AddHistogram(int64(i*step), tsdb.GenerateTestHistogram(i))
+			overflowChunk, err = chunk.AddHistogram(int64(i*step), test.GenerateTestHistogram(i))
 		case PrometheusFloatHistogramChunk:
-			overflowChunk, err = chunk.AddFloatHistogram(int64(i*step), tsdb.GenerateTestFloatHistogram(i))
+			overflowChunk, err = chunk.AddFloatHistogram(int64(i*step), test.GenerateTestFloatHistogram(i))
 		default:
 			require.FailNowf(t, "Unexpected encoding", "%v", encoding)
 		}

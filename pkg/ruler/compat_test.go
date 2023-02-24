@@ -27,12 +27,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -111,7 +111,7 @@ func TestPusherAppendable(t *testing.T) {
 			samples: []sample{
 				{
 					series:    "foo_bar",
-					histogram: tsdb.GenerateTestHistogram(10),
+					histogram: test.GenerateTestHistogram(10),
 					ts:        200_000,
 				},
 			},
@@ -121,7 +121,7 @@ func TestPusherAppendable(t *testing.T) {
 			samples: []sample{
 				{
 					series:         "foo_bar",
-					floatHistogram: tsdb.GenerateTestFloatHistogram(10),
+					floatHistogram: test.GenerateTestFloatHistogram(10),
 					ts:             230_000,
 				},
 			},
@@ -141,12 +141,12 @@ func TestPusherAppendable(t *testing.T) {
 				},
 				{
 					series:         "foo_bar2",
-					floatHistogram: tsdb.GenerateTestFloatHistogram(10),
+					floatHistogram: test.GenerateTestFloatHistogram(10),
 					ts:             230_000,
 				},
 				{
 					series:         "foo_bar4",
-					floatHistogram: tsdb.GenerateTestFloatHistogram(99),
+					floatHistogram: test.GenerateTestFloatHistogram(99),
 					ts:             230_000,
 				},
 			},

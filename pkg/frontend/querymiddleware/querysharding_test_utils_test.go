@@ -18,13 +18,13 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // genLabels will create a slice of labels where each label has an equal chance to occupy a value from [0,labelBuckets]. It returns a slice of length labelBuckets^len(labelSet)
@@ -75,7 +75,7 @@ func newMockShardedQueryable(
 	}
 	histograms := make([]mimirpb.Histogram, 0, nHistograms)
 	for i := 0; i < nHistograms; i++ {
-		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(int64(i*1000), tsdb.GenerateTestHistogram(i)))
+		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(int64(i*1000), test.GenerateTestHistogram(i)))
 	}
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))

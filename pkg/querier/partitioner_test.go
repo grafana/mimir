@@ -13,10 +13,10 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // Make sure that chunkSeries implements SeriesWithChunks
@@ -34,11 +34,11 @@ func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, enco
 		}
 	case chunk.PrometheusHistogramChunk:
 		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
-			return pc.AddHistogram(int64(ts), tsdb.GenerateTestHistogram(int(ts)))
+			return pc.AddHistogram(int64(ts), test.GenerateTestHistogram(int(ts)))
 		}
 	case chunk.PrometheusFloatHistogramChunk:
 		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
-			return pc.AddFloatHistogram(int64(ts), tsdb.GenerateTestFloatHistogram(int(ts)))
+			return pc.AddFloatHistogram(int64(ts), test.GenerateTestFloatHistogram(int(ts)))
 		}
 	default:
 		panic(fmt.Sprintf("mkChunk - unhandled encoding: %v", encoding))

@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -57,14 +56,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
 	errFail                    = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
 	emptyResponse              = &mimirpb.WriteResponse{}
-	generateTestHistogram      = tsdb.GenerateTestHistogram
-	generateTestFloatHistogram = tsdb.GenerateTestFloatHistogram
+	generateTestHistogram      = util_test.GenerateTestHistogram
+	generateTestFloatHistogram = util_test.GenerateTestFloatHistogram
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -963,7 +963,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, barMatcher},
-					expectedResponse:  expectedResponse(0, 10, false),
+					expectedResponse:  expectedResponse(0, 10, true),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -975,7 +975,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-					expectedResponse:  expectedResponse(0, 0, false),
+					expectedResponse:  expectedResponse(0, 0, true),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -988,7 +988,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 						happyIngesters:    happyIngesters,
 						samples:           10,
 						matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-						expectedResponse:  expectedResponse(i, i+1, false),
+						expectedResponse:  expectedResponse(i, i+1, true),
 						expectedIngesters: expectedIngesters,
 						shuffleShardSize:  shuffleShardSize,
 					})
@@ -3928,10 +3928,10 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 }
 
 func expectedResponse(start, end int, histograms bool) model.Matrix {
-	// TODO(histograms): add expected histograms
+	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
 	for i := start; i < end; i++ {
-		result = append(result, &model.SampleStream{
+		ss := &model.SampleStream{
 			Metric: model.Metric{
 				model.MetricNameLabel: "foo",
 				"bar":                 "baz",
@@ -3943,7 +3943,16 @@ func expectedResponse(start, end int, histograms bool) model.Matrix {
 					Timestamp: model.Time(i),
 				},
 			},
-		})
+		}
+		if histograms {
+			ss.Histograms = []model.SampleHistogramPair{
+				{
+					Histogram: util_test.GenerateTestSampleHistogram(i),
+					Timestamp: model.Time(i),
+				},
+			}
+		}
+		result = append(result, ss)
 	}
 	return result
 }
@@ -4033,16 +4042,19 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		if !ok {
 			// Make a copy because the request Timeseries are reused
 			item := mimirpb.TimeSeries{
-				Labels:  make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
-				Samples: make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
+				Labels:     make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
+				Samples:    make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
+				Histograms: make([]mimirpb.Histogram, len(series.TimeSeries.Histograms)),
 			}
 
 			copy(item.Labels, series.TimeSeries.Labels)
 			copy(item.Samples, series.TimeSeries.Samples)
+			copy(item.Histograms, series.TimeSeries.Histograms)
 
 			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
+			existing.Histograms = append(existing.Histograms, series.Histograms...)
 		}
 	}
 
@@ -4124,10 +4136,13 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
+		hexists := false
+		fhexists := false
 		hchunks := []chunk.EncodedChunk{hc}
 		fhchunks := []chunk.EncodedChunk{fhc}
 		for _, h := range ts.Histograms {
 			if h.IsFloatHistogram() {
+				fhexists = true
 				newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h))
 				if err != nil {
 					panic(err)
@@ -4137,6 +4152,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 					fhchunks = append(fhchunks, newChunk)
 				}
 			} else {
+				hexists = true
 				newChunk, err := hc.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
 				if err != nil {
 					panic(err)
@@ -4152,13 +4168,18 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		for _, c := range chunks {
 			wireChunks = append(wireChunks, makeWireChunk(c))
 		}
-		// TODO(histograms): make this work
-		// for _, c := range hchunks {
-		// 	wireChunks = append(wireChunks, makeWireChunk(c))
-		// }
-		// for _, c := range fhchunks {
-		// 	wireChunks = append(wireChunks, makeWireChunk(c))
-		// }
+		if hexists {
+			for _, c := range hchunks {
+				// panic("got hist")
+				wireChunks = append(wireChunks, makeWireChunk(c))
+			}
+		}
+		if fhexists {
+			for _, c := range fhchunks {
+				// panic("got fhist")
+				wireChunks = append(wireChunks, makeWireChunk(c))
+			}
+		}
 
 		results = append(results, &client.QueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{

@@ -20,7 +20,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -33,10 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-)
-
-var (
-	generateTestHistogram = tsdb.GenerateTestHistogram
 )
 
 func TestCompactBlocksContainingNativeHistograms(t *testing.T) {

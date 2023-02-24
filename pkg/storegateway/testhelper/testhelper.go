@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // CreateBlock writes a block with the given series and numSamples samples each.
@@ -60,8 +61,8 @@ func CreateBlock(
 	// For calculating the next series value type (float, histogram, etc)
 	batchOffset := 0
 	// prep some histogram test data
-	testHistograms := tsdb.GenerateTestHistograms(numSamples)
-	testFloatHistograms := tsdb.GenerateTestFloatHistograms(numSamples)
+	testHistograms := test.GenerateTestHistograms(numSamples)
+	testFloatHistograms := test.GenerateTestFloatHistograms(numSamples)
 
 	for len(series) > 0 {
 		l := batchSize
