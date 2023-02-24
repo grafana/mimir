@@ -364,7 +364,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 		},
 		{
 			name:        "in-order block, addOOOLabel = true",
-			addOOOLabel: false,
+			addOOOLabel: true,
 			meta: metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
