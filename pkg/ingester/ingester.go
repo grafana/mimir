@@ -2545,11 +2545,11 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 
 	userMetadata := i.getOrCreateUserMetadata(userID)
 	var firstMetadataErr error
-	for _, metadata := range metadata {
-		if metadata == nil {
+	for _, m := range metadata {
+		if m == nil {
 			continue
 		}
-		err := userMetadata.add(metadata.MetricFamilyName, metadata)
+		err := userMetadata.add(m.MetricFamilyName, m)
 		if err == nil {
 			ingestedMetadata++
 			continue
