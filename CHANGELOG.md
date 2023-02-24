@@ -24,6 +24,10 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
   * `cortex_ingester_queries_ephemeral_total`
   * `cortex_ingester_queried_ephemeral_samples`
   * `cortex_ingester_queried_ephemeral_series`
+* [CHANGE] Store-gateway: use mmap-less index-header reader by default and remove mmap-based index header reader. The following flags have changed: #4280
+   * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. #4159
 * [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. This feature uses the same cache that's used for results caching. #4121 #4177 #4188 #4254

@@ -89,14 +89,8 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var reader Reader
 	var err error
 
-	if cfg.StreamReaderEnabled {
-		readerFactory = func() (Reader, error) {
-			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
-		}
-	} else {
-		readerFactory = func() (Reader, error) {
-			return NewBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
-		}
+	readerFactory = func() (Reader, error) {
+		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 	}
 
 	if p.lazyReaderEnabled {

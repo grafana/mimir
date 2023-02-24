@@ -5779,36 +5779,14 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "map_populate_enabled",
+                  "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "stream_reader_enabled",
-                  "required": false,
-                  "desc": "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "stream_reader_max_idle_file_handles",
-                  "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles",
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

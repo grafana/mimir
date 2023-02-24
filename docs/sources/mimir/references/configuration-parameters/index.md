@@ -3143,21 +3143,10 @@ bucket_store:
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
   index_header:
-    # (experimental) If enabled, the store-gateway will attempt to pre-populate
-    # the file system cache when memory-mapping index-header files.
-    # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
-    [map_populate_enabled: <boolean> | default = false]
-
-    # (experimental) If enabled, the store-gateway will use an experimental
-    # streaming reader to load and parse index-header files.
-    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
-    [stream_reader_enabled: <boolean> | default = false]
-
-    # (experimental) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file when using the streaming reader. This
-    # option is used only when the index-header streaming reader is enabled.
-    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles
-    [stream_reader_max_idle_file_handles: <int> | default = 1]
+    # (advanced) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file.
+    # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
+    [max_idle_file_handles: <int> | default = 1]
 
   # (experimental) If larger than 0, this option enables store-gateway series
   # streaming. The store-gateway will load series from the bucket in batches
