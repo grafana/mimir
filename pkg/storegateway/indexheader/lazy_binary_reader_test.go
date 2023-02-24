@@ -289,25 +289,12 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 }
 
 func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
-	t.Run("BinaryReader", func(t *testing.T) {
-		ctx := context.Background()
-		logger := log.NewNopLogger()
-		factory := func() (Reader, error) {
-			return NewBinaryReader(ctx, logger, bkt, dir, id, 3, Config{})
-		}
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	factory := func() (Reader, error) {
+		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	}
 
-		reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
-		test(t, reader, err)
-	})
-
-	t.Run("StreamBinaryReader", func(t *testing.T) {
-		ctx := context.Background()
-		logger := log.NewNopLogger()
-		factory := func() (Reader, error) {
-			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-		}
-
-		reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
-		test(t, reader, err)
-	})
+	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+	test(t, reader, err)
 }

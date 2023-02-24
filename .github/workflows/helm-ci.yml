@@ -18,10 +18,13 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:pr3976-e7cae18e3
+      image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
 
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt

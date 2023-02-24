@@ -28,6 +28,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 4.2.0
+
+* [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0.
+
 ## 4.1.0
 
 * [CHANGE] Configured `max_total_query_length: 12000h` limit to match Mimir jsonnet-based deployment. #3879
@@ -36,8 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
 * [ENHANCEMENT] Update memcached image to `memcached:1.6.17-alpine`. #3914
 * [ENHANCEMENT] Update minio subchart to `5.0.4`. #3942
-* [ENHANCEMENT] Allow NGINX error log level to be overidden and access log to be disabled. #4230
-* [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
+* [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary. #3686
 * [BUGFIX] Fixed gateway's checksum/config when using nginx #3780
 * [BUGFIX] Disable gateway's serviceMonitor when using nginx #3781
 * [BUGFIX] Expose OTLP ingestion in the `gateway` NGINX configuration. #3851

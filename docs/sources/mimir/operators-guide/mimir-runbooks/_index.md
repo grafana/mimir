@@ -741,9 +741,9 @@ How to **investigate**:
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 
-### MimirMemcachedRequestErrors
+### MimirCacheRequestErrors
 
-This alert fires if Mimir memcached client is experiencing an high error rate for a specific cache and operation.
+This alert fires if the Mimir cache client is experiencing a high error rate for a specific cache and operation.
 
 How to **investigate**:
 
@@ -754,13 +754,13 @@ How to **investigate**:
 - Check which specific error is occurring
   - Run the following query to find out the reason (replace `<namespace>` with the actual Mimir cluster namespace)
     ```
-    sum by(name, operation, reason) (rate(thanos_memcached_operation_failures_total{namespace="<namespace>"}[1m])) > 0
+    sum by(name, operation, reason) (rate(thanos_cache_operation_failures_total{namespace="<namespace>"}[1m])) > 0
     ```
 - Based on the **`reason`**:
   - `timeout`
-    - Scale up the memcached replicas
+    - Scale up the cache replicas
   - `server-error`
-    - Check both Mimir and memcached logs to find more details
+    - Check both Mimir and cache logs to find more details
   - `network-error`
     - Check Mimir logs to find more details
   - `malformed-key`
@@ -768,7 +768,7 @@ How to **investigate**:
     - Check Mimir logs to find the offending key
     - Fixing this will require changes to the application code
   - `other`
-    - Check both Mimir and memcached logs to find more details
+    - Check both Mimir and cache logs to find more details
 
 ### MimirProvisioningTooManyActiveSeries
 

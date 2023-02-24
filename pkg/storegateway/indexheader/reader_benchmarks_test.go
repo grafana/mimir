@@ -125,7 +125,7 @@ func BenchmarkLabelNames(b *testing.B) {
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-				benchmarkReaders(b, bucketDir, idIndexV2, func(b *testing.B, br Reader) {
+				benchmarkReader(b, bucketDir, idIndexV2, func(b *testing.B, br Reader) {
 					slices.Sort(nameSymbols)
 					b.ResetTimer()
 
@@ -166,7 +166,7 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 	indexName := filepath.Join(bucketDir, metaIndexV1.ULID.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, metaIndexV1.ULID, indexName))
 
-	benchmarkReaders(b, bucketDir, metaIndexV1.ULID, func(b *testing.B, br Reader) {
+	benchmarkReader(b, bucketDir, metaIndexV1.ULID, func(b *testing.B, br Reader) {
 		names, err := br.LabelNames()
 		require.NoError(b, err)
 
@@ -279,26 +279,14 @@ func BenchmarkPostingsOffset(b *testing.B) {
 	}
 }
 
-func benchmarkReaders(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
-	b.Run("StreamBinaryReader", func(b *testing.B) {
-		br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-		require.NoError(b, err)
-		b.Cleanup(func() {
-			require.NoError(b, br.Close())
-		})
-
-		benchmark(b, br)
+func benchmarkReader(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, br.Close())
 	})
 
-	b.Run("BinaryReader", func(b *testing.B) {
-		br, err := NewBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, Config{})
-		require.NoError(b, err)
-		b.Cleanup(func() {
-			require.NoError(b, br.Close())
-		})
-
-		benchmark(b, br)
-	})
+	benchmark(b, br)
 }
 
 func BenchmarkNewStreamBinaryReader(b *testing.B) {
