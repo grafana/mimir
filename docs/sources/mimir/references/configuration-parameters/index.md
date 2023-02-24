@@ -962,11 +962,6 @@ The `querier` block configures the querier.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
-# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
-# means all queries are sent to ingester.
-# CLI flag: -querier.query-ingesters-within
-[query_ingesters_within: <duration> | default = 13h]
-
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be
@@ -2735,6 +2730,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # to disable it.
 # CLI flag: -query-frontend.split-instant-queries-by-interval
 [split_instant_queries_by_interval: <duration> | default = 0s]
+
+# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
+# means all queries are sent to ingester.
+# CLI flag: -querier.query-ingesters-within
+[query_ingesters_within: <duration> | default = 13h]
 
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received query.
