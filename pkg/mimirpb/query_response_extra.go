@@ -4,7 +4,9 @@ package mimirpb
 
 import "fmt"
 
-const QueryResponseMimeType = "application/vnd.mimir.queryresponse+protobuf"
+const QueryResponseMimeType = QueryResponseMimeTypeType + "/" + QueryResponseMimeTypeSubType
+const QueryResponseMimeTypeType = "application"
+const QueryResponseMimeTypeSubType = "vnd.mimir.queryresponse+protobuf"
 
 func (s QueryResponse_Status) ToPrometheusString() (string, error) {
 	switch s {
@@ -46,6 +48,8 @@ func (t QueryResponse_ErrorType) ToPrometheusString() (string, error) {
 		return "unavailable", nil
 	case QueryResponse_NOT_FOUND:
 		return "not_found", nil
+	case QueryResponse_NOT_ACCEPTABLE:
+		return "not_acceptable", nil
 	default:
 		return "", fmt.Errorf("unknown QueryResponse_ErrorType value: %v (%v)", int32(t), t.String())
 	}
@@ -69,6 +73,8 @@ func ErrorTypeFromPrometheusString(s string) (QueryResponse_ErrorType, error) {
 		return QueryResponse_UNAVAILABLE, nil
 	case "not_found":
 		return QueryResponse_NOT_FOUND, nil
+	case "not_acceptable":
+		return QueryResponse_NOT_ACCEPTABLE, nil
 	default:
 		return QueryResponse_NONE, fmt.Errorf("unknown Prometheus error type value: '%v'", s)
 	}

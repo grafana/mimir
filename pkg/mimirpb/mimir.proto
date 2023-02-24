@@ -222,6 +222,7 @@ message QueryResponse {
     INTERNAL = 5;
     UNAVAILABLE = 6;
     NOT_FOUND = 7;
+    NOT_ACCEPTABLE = 8;
   }
 
   Status status = 1;
