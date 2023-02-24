@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -31,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) {
@@ -440,19 +440,21 @@ func verifySeries[S mimirpb.GenericSamplePair](t *testing.T, series storage.Seri
 			require.Equal(t, s.GetBaseVal(), v)
 			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValHistogram:
+			eh, ok := interface{}(s).(mimirpb.Histogram)
+			if !ok {
+				panic("verifySeries - can't convert histogram")
+			}
 			ts, h := it.AtHistogram()
-			if h.CounterResetHint != histogram.GaugeType {
-				// Ignore counter resets injected by tsdb
-				h.CounterResetHint = histogram.UnknownCounterReset
-			}
-			require.Equal(t, s, mimirpb.FromHistogramToHistogramProto(ts, h))
+			test.RequireHistogramEqual(t, mimirpb.FromHistogramProtoToHistogram(&eh), h)
+			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValFloatHistogram:
-			ts, fh := it.AtFloatHistogram()
-			if fh.CounterResetHint != histogram.GaugeType {
-				// Ignore counter resets injected by tsdb
-				fh.CounterResetHint = histogram.UnknownCounterReset
+			efh, ok := interface{}(s).(mimirpb.Histogram)
+			if !ok {
+				panic("verifySeries - can't convert float histogram")
 			}
-			require.Equal(t, s, mimirpb.FromFloatHistogramToHistogramProto(ts, fh))
+			ts, fh := it.AtFloatHistogram()
+			test.RequireFloatHistogramEqual(t, mimirpb.FromHistogramProtoToFloatHistogram(&efh), fh)
+			require.Equal(t, s.GetTimestampVal(), ts)
 		default:
 			panic(fmt.Sprintf("verifyHistogramSeries - unhandled value type: %v", valType))
 		}
