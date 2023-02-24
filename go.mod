@@ -28,9 +28,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.25.1-0.20230119163903-f59460bfd4bf
-	github.com/prometheus/client_golang v1.14.0
+	github.com/prometheus/client_golang v1.14.1-0.20230223215032-db69c7d2891b
 	github.com/prometheus/client_model v0.3.0
-	github.com/prometheus/common v0.39.1-0.20230202092144-f9c1994be032
+	github.com/prometheus/common v0.40.1-0.20230223214701-20d4829c5f73
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sirupsen/logrus v1.9.0
@@ -184,7 +184,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
 	github.com/prometheus/exporter-toolkit v0.8.2 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
 	github.com/rs/cors v1.8.3 // indirect
 	github.com/rs/xid v1.4.0 // indirect
