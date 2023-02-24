@@ -136,24 +136,23 @@ message Histogram {
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
+// The fields below must be the same types and in the same order as Prometheus' histogram.FloatHistogram type so we can cast between
+// them safely.
 message FloatHistogram {
   // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
   reserved 1, 6, 9, 12;
   reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
 
-  double count = 2;
-  double sum = 3;
+  Histogram.ResetHint counter_reset_hint = 14;
   sint32 schema = 4;
   double zero_threshold = 5;
   double zero_count = 7;
-
-  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
-  repeated double negative_buckets = 10;
-
+  double count = 2;
+  double sum = 3;
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   repeated double positive_buckets = 13;
-
-  Histogram.ResetHint counter_reset_hint = 14;
+  repeated double negative_buckets = 10;
 
   int64 timestamp = 15;
 }
@@ -163,6 +162,10 @@ message FloatHistogram {
 // bucket counts in the Span. However, the protobuf representation is
 // more compact in the way the data is structured here (with all the
 // buckets in a single array separate from the Spans).
+//
+// BucketSpan is based on Prometheus' histogram.Span type defined in https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+// The fields below must be the same types and in the same order Prometheus' histogram.Span type so we can cast between
+// them safely.
 message BucketSpan {
   sint32 offset = 1;
   uint32 length = 2;
