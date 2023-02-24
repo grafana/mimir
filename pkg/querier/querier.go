@@ -102,7 +102,7 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -157,7 +157,7 @@ type QueryableWithFilter interface {
 
 	// UseQueryable returns true if this queryable should be used to satisfy the query for given time range.
 	// Query min and max time are in milliseconds since epoch.
-	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
+	UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool
 }
 
 // NewQueryable creates a new Queryable for mimir.
@@ -189,7 +189,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			logger:             logger,
 		}
 
-		if distributor.UseQueryable(now, mint, maxt) {
+		if distributor.UseQueryable(now, mint, maxt, userID) {
 			dqr, err := distributor.Querier(ctx, mint, maxt)
 			if err != nil {
 				return nil, err
@@ -198,7 +198,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 		}
 
 		for _, s := range stores {
-			if !s.UseQueryable(now, mint, maxt) {
+			if !s.UseQueryable(now, mint, maxt, userID) {
 				continue
 			}
 
@@ -460,19 +460,19 @@ type storeQueryable struct {
 	QueryStoreAfter time.Duration
 }
 
-func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool {
+func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool {
 	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
 	if s.QueryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.QueryStoreAfter)) {
 		return false
 	}
-	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT)
+	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT, userID)
 }
 
 type alwaysTrueFilterQueryable struct {
 	storage.Queryable
 }
 
-func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
+func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64, _ string) bool {
 	return true
 }
 
@@ -486,7 +486,7 @@ type useBeforeTimestampQueryable struct {
 	ts int64 // Timestamp in milliseconds
 }
 
-func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int64) bool {
+func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int64, _ string) bool {
 	if u.ts == 0 {
 		return true
 	}

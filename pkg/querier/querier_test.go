@@ -283,7 +283,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		},
 		nil)
 
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -501,11 +503,14 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	})
 	cfg := Config{}
 	for _, c := range testCases {
+		//TODO: Remove all the cfg.QueryIngestersWithin references in this file
 		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
 			// We don't have to actually query the storage in this test, so we initialize the querier
@@ -781,6 +786,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -933,11 +939,11 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -1140,7 +1146,10 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
+
 			require.NoError(t, err)
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
@@ -1179,11 +1188,13 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 }
 
+// TODO: test userID passed in
+
 func TestUseAlwaysQueryable(t *testing.T) {
 	m := &mockQueryableWithFilter{}
 	qwf := UseAlwaysQueryable(m)
 
-	require.True(t, qwf.UseQueryable(time.Now(), 0, 0))
+	require.True(t, qwf.UseQueryable(time.Now(), 0, 0, ""))
 	require.False(t, m.useQueryableCalled)
 }
 
@@ -1192,13 +1203,13 @@ func TestUseBeforeTimestamp(t *testing.T) {
 	now := time.Now()
 	qwf := UseBeforeTimestampQueryable(m, now.Add(-1*time.Hour))
 
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
+	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now), ""))
 	require.False(t, m.useQueryableCalled)
 
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
+	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now), ""))
 	require.False(t, m.useQueryableCalled)
 
-	require.True(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), util.TimeToMillis(now)))
+	require.True(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), util.TimeToMillis(now), ""))
 	require.False(t, m.useQueryableCalled) // UseBeforeTimestampQueryable wraps Queryable, and not QueryableWithFilter.
 }
 
@@ -1207,13 +1218,13 @@ func TestStoreQueryable(t *testing.T) {
 	now := time.Now()
 	sq := storeQueryable{m, time.Hour}
 
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
+	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now), ""))
 	require.False(t, m.useQueryableCalled)
 
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now)))
+	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now), ""))
 	require.False(t, m.useQueryableCalled)
 
-	require.True(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
+	require.True(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now), ""))
 	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 
@@ -1263,7 +1274,7 @@ func (m *mockQueryableWithFilter) Querier(_ context.Context, _, _ int64) (storag
 	return nil, nil
 }
 
-func (m *mockQueryableWithFilter) UseQueryable(_ time.Time, _, _ int64) bool {
+func (m *mockQueryableWithFilter) UseQueryable(_ time.Time, _, _ int64, _ string) bool {
 	m.useQueryableCalled = true
 	return true
 }

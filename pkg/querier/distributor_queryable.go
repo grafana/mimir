@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -38,46 +39,56 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:               logger,
-		distributor:          distributor,
-		iteratorFn:           iteratorFn,
-		queryIngestersWithin: queryIngestersWithin,
+		logger:      logger,
+		distributor: distributor,
+		iteratorFn:  iteratorFn,
+		cfgProvider: cfgProvider,
 	}
 }
 
+type distributorQueryableConfigProvider interface {
+	QueryIngestersWithin(userID string) time.Duration
+}
+
 type distributorQueryable struct {
-	logger               log.Logger
-	distributor          Distributor
-	iteratorFn           chunkIteratorFunc
-	queryIngestersWithin time.Duration
+	logger      log.Logger
+	distributor Distributor
+	iteratorFn  chunkIteratorFunc
+	cfgProvider distributorQueryableConfigProvider
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &distributorQuerier{
-		logger:               d.logger,
-		distributor:          d.distributor,
-		ctx:                  ctx,
-		mint:                 mint,
-		maxt:                 maxt,
-		chunkIterFn:          d.iteratorFn,
-		queryIngestersWithin: d.queryIngestersWithin,
+		logger:      d.logger,
+		distributor: d.distributor,
+		ctx:         ctx,
+		mint:        mint,
+		maxt:        maxt,
+		chunkIterFn: d.iteratorFn,
+		userID:      userID,
+		cfgProvider: d.cfgProvider,
 	}, nil
 }
 
-func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bool {
+func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64, userID string) bool {
 	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.queryIngestersWithin))
+	return d.cfgProvider.QueryIngestersWithin(userID) == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.cfgProvider.QueryIngestersWithin(userID)))
 }
 
 type distributorQuerier struct {
-	logger               log.Logger
-	distributor          Distributor
-	ctx                  context.Context
-	mint, maxt           int64
-	chunkIterFn          chunkIteratorFunc
-	queryIngestersWithin time.Duration
+	logger      log.Logger
+	distributor Distributor
+	ctx         context.Context
+	mint, maxt  int64
+	chunkIterFn chunkIteratorFunc
+	userID      string
+	cfgProvider distributorQueryableConfigProvider
 }
 
 // Select implements storage.Querier interface.
@@ -95,7 +106,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
 	// optimization is particularly important for the blocks storage where the blocks retention in the
 	// ingesters could be way higher than queryIngestersWithin.
-	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", spanlog))
+	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", spanlog))
 
 	if minT > maxT {
 		level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
@@ -162,7 +173,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", q.logger)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", q.logger)
 
 	if minT > model.Time(q.maxt) {
 		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
@@ -178,7 +189,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", log)
 
 	if minT > model.Time(q.maxt) {
 		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
@@ -247,4 +258,8 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 
 	level.Debug(spanlog).Log("numSeries", len(ret), "numExemplars", numExemplars)
 	return ret, nil
+}
+
+func (q *distributorQuerier) queryIngestersWithin() time.Duration {
+	return q.cfgProvider.QueryIngestersWithin(q.userID)
 }
