@@ -45,6 +45,28 @@ func TestParseMetricsInBoard(t *testing.T) {
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 }
 
+func BenchmarkParseMetricsInBoard(b *testing.B) {
+	var board minisdk.Board
+	output := &analyze.MetricsInGrafana{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	buf, err := loadFile("testdata/apiserver.json")
+	if err != nil {
+		b.FailNow()
+	}
+
+	err = json.Unmarshal(buf, &board)
+	if err != nil {
+		b.FailNow()
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		analyze.ParseMetricsInBoard(output, board)
+	}
+}
+
 func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {
 	var board minisdk.Board
 	output := &analyze.MetricsInGrafana{}
