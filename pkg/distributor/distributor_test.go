@@ -3092,6 +3092,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		if cfg.limits == nil {
 			cfg.limits = &validation.Limits{}
 			flagext.DefaultValues(cfg.limits)
+			cfg.limits.QueryIngestersWithin = model.Duration(time.Hour)
 		}
 
 		var distributorCfg Config
@@ -3107,7 +3108,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DefaultLimits.MaxInflightPushRequests = cfg.maxInflightRequests
 		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
 		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
-		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
+		distributorCfg.ShuffleShardingIngestersEnabled = true
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
@@ -4714,6 +4715,8 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	assert.Equal(t, series, totalSeries)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
 }
+
+// TODO: test per-tenant query lookback
 
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
 	tokens := []uint32{}
