@@ -210,16 +210,16 @@ func protobufHistogramFromPoint(p promql.Point) (mimirpb.FloatHistogram, error) 
 	return mimirpb.FloatHistogram{
 		Timestamp: p.T,
 
-		ResetHint:      resetHint,
-		Schema:         p.H.Schema,
-		ZeroThreshold:  p.H.ZeroThreshold,
-		ZeroCountFloat: p.H.ZeroCount,
-		CountFloat:     p.H.Count,
-		Sum:            p.H.Sum,
-		PositiveSpans:  protobufSpansFromSpans(p.H.PositiveSpans),
-		NegativeSpans:  protobufSpansFromSpans(p.H.NegativeSpans),
-		PositiveCounts: p.H.PositiveBuckets,
-		NegativeCounts: p.H.NegativeBuckets,
+		CounterResetHint: resetHint,
+		Schema:           p.H.Schema,
+		ZeroThreshold:    p.H.ZeroThreshold,
+		ZeroCount:        p.H.ZeroCount,
+		Count:            p.H.Count,
+		Sum:              p.H.Sum,
+		PositiveSpans:    protobufSpansFromSpans(p.H.PositiveSpans),
+		NegativeSpans:    protobufSpansFromSpans(p.H.NegativeSpans),
+		PositiveBuckets:  p.H.PositiveBuckets,
+		NegativeBuckets:  p.H.NegativeBuckets,
 	}, nil
 }
 

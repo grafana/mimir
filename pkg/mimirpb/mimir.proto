@@ -85,6 +85,9 @@ message Exemplar {
 // This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
 message Histogram {
   enum ResetHint {
+    // These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+    // The values must remain in sync with the constants defined there.
+
     option (gogoproto.goproto_enum_prefix) = true;
     UNKNOWN = 0; // Need to test for a counter reset explicitly.
     YES     = 1; // This is the 1st histogram after a counter reset.
@@ -132,41 +135,26 @@ message Histogram {
   int64 timestamp = 15;
 }
 
+// FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
 message FloatHistogram {
   // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
   reserved 1, 6, 9, 12;
   reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
 
-  double count_float = 2;
+  double count = 2;
+  double sum = 3;
+  sint32 schema = 4;
+  double zero_threshold = 5;
+  double zero_count = 7;
 
-  double sum = 3; // Sum of observations in the histogram.
-  // The schema defines the bucket schema. Currently, valid numbers
-  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
-  // is a bucket boundary in each case, and then each power of two is
-  // divided into 2^n logarithmic buckets. Or in other words, each
-  // bucket boundary is the previous boundary times 2^(2^-n). In the
-  // future, more bucket schemas may be added using numbers < -4 or >
-  // 8.
-  sint32 schema             = 4;
-  double zero_threshold     = 5; // Breadth of the zero bucket.
-  double zero_count_float   = 7;
+  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
+  repeated double negative_buckets = 10;
 
-  // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
-  // Use either "negative_deltas" or "negative_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
-  repeated double negative_counts    = 10; // Absolute count of each bucket.
-
-  // Positive Buckets.
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
-  // Use either "positive_deltas" or "positive_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
-  repeated double positive_counts    = 13; // Absolute count of each bucket.
+  repeated double positive_buckets = 13;
 
-  Histogram.ResetHint reset_hint     = 14;
-  // timestamp is in ms format
+  Histogram.ResetHint counter_reset_hint = 14;
+
   int64 timestamp = 15;
 }
 

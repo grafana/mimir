@@ -141,7 +141,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 }
 
 func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) (*mimirpb.SampleHistogram, error) {
-	counterResetHint, err := protobuf.ResetHint.ToPrometheusModelType()
+	counterResetHint, err := protobuf.CounterResetHint.ToPrometheusModelType()
 	if err != nil {
 		return nil, err
 	}
@@ -150,13 +150,13 @@ func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) (*mimir
 		CounterResetHint: counterResetHint,
 		Schema:           protobuf.Schema,
 		ZeroThreshold:    protobuf.ZeroThreshold,
-		ZeroCount:        protobuf.ZeroCountFloat,
-		Count:            protobuf.CountFloat,
+		ZeroCount:        protobuf.ZeroCount,
+		Count:            protobuf.Count,
 		Sum:              protobuf.Sum,
 		PositiveSpans:    f.decodeHistogramSpans(protobuf.PositiveSpans),
-		PositiveBuckets:  protobuf.PositiveCounts,
+		PositiveBuckets:  protobuf.PositiveBuckets,
 		NegativeSpans:    f.decodeHistogramSpans(protobuf.NegativeSpans),
-		NegativeBuckets:  protobuf.NegativeCounts,
+		NegativeBuckets:  protobuf.NegativeBuckets,
 	}
 
 	return mimirpb.FromFloatHistogramToSampleHistogram(&h), nil

@@ -29,12 +29,12 @@ var expectedProtobufResponseHeaders = []*PrometheusResponseHeader{
 var protobufResponseHistogram = mimirpb.FloatHistogram{
 	Timestamp: 1234,
 
-	ResetHint:      mimirpb.Histogram_GAUGE,
-	Schema:         3,
-	ZeroThreshold:  1.23,
-	ZeroCountFloat: 456,
-	CountFloat:     9001,
-	Sum:            789.1,
+	CounterResetHint: mimirpb.Histogram_GAUGE,
+	Schema:           3,
+	ZeroThreshold:    1.23,
+	ZeroCount:        456,
+	Count:            9001,
+	Sum:              789.1,
 	PositiveSpans: []mimirpb.BucketSpan{
 		{Offset: 4, Length: 1},
 		{Offset: 3, Length: 2},
@@ -43,8 +43,8 @@ var protobufResponseHistogram = mimirpb.FloatHistogram{
 		{Offset: 7, Length: 3},
 		{Offset: 9, Length: 1},
 	},
-	PositiveCounts: []float64{100, 200, 300},
-	NegativeCounts: []float64{400, 500, 600, 700},
+	PositiveBuckets: []float64{100, 200, 300},
+	NegativeBuckets: []float64{400, 500, 600, 700},
 }
 
 var expectedHistogram = mimirpb.SampleHistogram{
