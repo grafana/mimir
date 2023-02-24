@@ -29,6 +29,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) {
@@ -619,7 +620,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
 						app := db.Appender(context.Background())
-						_, err := app.AppendHistogram(0, lbls, ts, tsdb.GenerateTestHistogram(seriesID), nil)
+						_, err := app.AppendHistogram(0, lbls, ts, util_test.GenerateTestHistogram(seriesID), nil)
 						require.NoError(t, err)
 
 						err = app.Commit()

@@ -9,7 +9,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -32,9 +31,9 @@ func TestTSDBChunks(t *testing.T) {
 				sample{30, 13, nil, nil},
 			}),
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-				sample{40, 0, tsdb.GenerateTestHistogram(1), nil},
-				sample{50, 0, tsdb.GenerateTestHistogram(2), nil},
-				sample{60, 0, tsdb.GenerateTestHistogram(3), nil},
+				sample{40, 0, test.GenerateTestHistogram(1), nil},
+				sample{50, 0, test.GenerateTestHistogram(2), nil},
+				sample{60, 0, test.GenerateTestHistogram(3), nil},
 			}),
 		},
 	}

@@ -65,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -179,17 +180,17 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
 				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(1))}, nil),
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
 				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, tsdb.GenerateTestGaugeHistogram(2))}, nil),
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
-					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(tsdb.GenerateTestHistogram(1))},
-					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(tsdb.GenerateTestGaugeHistogram(2))},
+					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1))},
+					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(2))},
 				}},
 			},
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{
@@ -490,7 +491,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -544,7 +545,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -6514,18 +6515,18 @@ func TestNewIngestErrMsgs(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
-	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdb.GenerateTestFloatHistogram(0)))
+	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(0)))
 
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}

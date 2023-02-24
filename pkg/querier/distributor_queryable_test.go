@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -264,11 +263,11 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 }
 
 func genTestHistogram(timestamp int64, value int) mimirpb.Histogram {
-	return mimirpb.FromHistogramToHistogramProto(timestamp, tsdb.GenerateTestHistogram(value))
+	return mimirpb.FromHistogramToHistogramProto(timestamp, test.GenerateTestHistogram(value))
 }
 
 func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
-	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, tsdb.GenerateTestFloatHistogram(value))
+	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
 }
 
 func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {

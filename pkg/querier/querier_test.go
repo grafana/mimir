@@ -13,26 +13,25 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/stretchr/testify/mock"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
-
 	"github.com/grafana/dskit/flagext"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -376,7 +375,8 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 			_, err := app.Append(0, l, int64(ts), float64(ts))
 			require.NoError(t, err)
 		case chunkenc.ValHistogram:
-			_, err := app.AppendHistogram(0, l, int64(ts), tsdb.GenerateTestHistogram(int(ts)), nil)
+			// TODO(histograms): what about ValFloatHistogram?
+			_, err := app.AppendHistogram(0, l, int64(ts), test.GenerateTestHistogram(int(ts)), nil)
 			require.NoError(t, err)
 		default:
 			panic("Unknown chunk type")

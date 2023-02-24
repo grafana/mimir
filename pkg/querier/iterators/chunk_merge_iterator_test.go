@@ -13,7 +13,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,8 +22,8 @@ import (
 )
 
 var (
-	generateTestHistogram      = tsdb.GenerateTestHistogram
-	generateTestFloatHistogram = tsdb.GenerateTestFloatHistogram
+	generateTestHistogram      = test.GenerateTestHistogram
+	generateTestFloatHistogram = test.GenerateTestFloatHistogram
 )
 
 func TestChunkMergeIterator(t *testing.T) {
