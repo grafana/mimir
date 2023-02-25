@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Allow override of Kubernetes version for nginx HPA.
+* [BUGFIX] Allow override of Kubernetes version for nginx HPA. #4299
 
 ## 4.2.0
 

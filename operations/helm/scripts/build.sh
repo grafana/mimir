@@ -6,6 +6,9 @@ set -euo pipefail
 # use a normal sed on macOS if available
 SED=$(which gsed || which sed)
 
+# DEFAULT_KUBE_VERSION is used if the input values do not contain "kubeVersionOverride"
+DEFAULT_KUBE_VERSION="1.20"
+
 CHART_PATH="operations/helm/charts/mimir-distributed"
 INTERMEDIATE_PATH=""
 OUTPUT_PATH=""
@@ -58,10 +61,18 @@ for FILEPATH in $TESTS; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
   OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
+  EXTRA_ARGS=""
 
+  echo ""
   echo "Templating $TEST_NAME"
+  echo -n "Checking for kubeVersionOverride..."
+  if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then
+    echo "Warning: injecting Kubernetes version override: kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
+    EXTRA_ARGS+=" --set-string kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
+  fi
+
   set -x
-  helm template "${TEST_NAME}" "${CHART_PATH}" -f "${FILEPATH}" --output-dir "${INTERMEDIATE_OUTPUT_DIR}" --namespace citestns
+  helm template "${TEST_NAME}" "${CHART_PATH}" -f "${FILEPATH}" --output-dir "${INTERMEDIATE_OUTPUT_DIR}" --namespace citestns${EXTRA_ARGS}
   set +x
 
   echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
