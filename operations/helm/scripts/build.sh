@@ -61,18 +61,19 @@ for FILEPATH in $TESTS; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
   OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
-  EXTRA_ARGS=""
 
   echo ""
   echo "Templating $TEST_NAME"
+  ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns")
+
   echo -n "Checking for kubeVersionOverride..."
   if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then
     echo "Warning: injecting Kubernetes version override: kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
-    EXTRA_ARGS+=" --set-string kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
+    ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
 
   set -x
-  helm template "${TEST_NAME}" "${CHART_PATH}" -f "${FILEPATH}" --output-dir "${INTERMEDIATE_OUTPUT_DIR}" --namespace citestns${EXTRA_ARGS}
+  helm template "${ARGS[@]}"
   set +x
 
   echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
