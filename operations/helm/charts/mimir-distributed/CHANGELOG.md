@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [BUGFIX] Allow override of Kubernetes version for nginx HPA. #4299
+* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23. #4285
 
 ## 4.2.0
 
