@@ -4482,6 +4482,16 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "fieldValue": null,
+              "fieldDefaultValue": "STANDARD",
+              "fieldFlag": "blocks-storage.s3.storage-class",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -8505,6 +8515,16 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "fieldValue": null,
+              "fieldDefaultValue": "STANDARD",
+              "fieldFlag": "ruler-storage.s3.storage-class",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -9865,6 +9885,16 @@
               "fieldFlag": "alertmanager-storage.s3.signature-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "fieldValue": null,
+              "fieldDefaultValue": "STANDARD",
+              "fieldFlag": "alertmanager-storage.s3.storage-class",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -12004,6 +12034,16 @@
                   "fieldFlag": "common.storage.s3.signature-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "storage_class",
+                  "required": false,
+                  "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "STANDARD",
+                  "fieldFlag": "common.storage.s3.storage-class",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "block",
