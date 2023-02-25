@@ -4,8 +4,17 @@ package test
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 )
+
+func GenerateTestHistogram(i int) *histogram.Histogram {
+	return tsdb.GenerateTestHistogram(i)
+}
+
+func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
+	return tsdb.GenerateTestFloatHistogram(i)
+}
 
 // RequireHistogramEqual ignores counter resets of non gauge histograms
 func RequireHistogramEqual(t require.TestingT, expected, actual *histogram.Histogram, msgAndArgs ...interface{}) {

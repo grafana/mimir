@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -55,11 +54,11 @@ func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Enc
 		}
 	case chunk.PrometheusHistogramChunk:
 		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
-			return pc.AddHistogram(int64(ts), tsdb.GenerateTestHistogram(int(ts)))
+			return pc.AddHistogram(int64(ts), test.GenerateTestHistogram(int(ts)))
 		}
 	case chunk.PrometheusFloatHistogramChunk:
 		addPair = func(pc chunk.EncodedChunk, ts model.Time) (chunk.EncodedChunk, error) {
-			return pc.AddFloatHistogram(int64(ts), tsdb.GenerateTestFloatHistogram(int(ts)))
+			return pc.AddFloatHistogram(int64(ts), test.GenerateTestFloatHistogram(int(ts)))
 		}
 	default:
 		panic(fmt.Sprintf("mkChunk - unhandled encoding: %v", encoding))
@@ -100,7 +99,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
 			ts, h := iter.AtHistogram()
 			require.EqualValues(t, int64(ets), ts, strconv.Itoa(i))
-			test.RequireHistogramEqual(t, tsdb.GenerateTestHistogram(int(ets)), h, strconv.Itoa(i))
+			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(ets)), h, strconv.Itoa(i))
 			ets = ets.Add(step)
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -108,7 +107,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
 			ts, fh := iter.AtFloatHistogram()
 			require.EqualValues(t, int64(ets), ts, strconv.Itoa(i))
-			test.RequireFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(ets)), fh, strconv.Itoa(i))
+			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ets)), fh, strconv.Itoa(i))
 			ets = ets.Add(step)
 		}
 	default:
@@ -136,7 +135,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, valType)
 			ts, h := iter.AtHistogram()
 			require.EqualValues(t, ets, ts)
-			test.RequireHistogramEqual(t, tsdb.GenerateTestHistogram(int(ets)), h)
+			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(ets)), h)
 			require.NoError(t, iter.Err())
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -144,7 +143,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
 			ts, fh := iter.AtFloatHistogram()
 			require.EqualValues(t, ets, ts)
-			test.RequireFloatHistogramEqual(t, tsdb.GenerateTestFloatHistogram(int(ets)), fh)
+			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ets)), fh)
 			require.NoError(t, iter.Err())
 		}
 	default:
