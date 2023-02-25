@@ -9,7 +9,7 @@ nginx auth secret name
 Returns the HorizontalPodAutoscaler API version for this verison of kubernetes.
 */}}
 {{- define "mimir.hpa.version" -}}
-{{- if semverCompare ">= 1.25-0" .Capabilities.KubeVersion.Version -}}
+{{- if semverCompare ">= 1.23-0" .Capabilities.KubeVersion.Version -}}
 autoscaling/v2
 {{- else -}}
 autoscaling/v2beta1

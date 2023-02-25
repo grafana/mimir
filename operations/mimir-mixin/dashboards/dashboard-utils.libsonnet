@@ -816,13 +816,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum by(operation) (
-            rate(
-              thanos_memcached_operations_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_memcached_operations_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or ignoring(backend)
+            rate(thanos_cache_operations_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
         ||| % config,
         '{{operation}}'
@@ -832,8 +837,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.panel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.backwardsCompatibleLatencyPanel(
         'thanos_memcached_operation_duration_seconds',
+        'thanos_cache_operation_duration_seconds',
         |||
           {
             %(jobMatcher)s,
@@ -849,29 +855,111 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum(
-            rate(
-              thanos_cache_memcached_hits_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_cache_memcached_hits_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or
+            rate(thanos_cache_hits_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
           /
           sum(
-            rate(
-              thanos_cache_memcached_requests_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_cache_memcached_requests_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or
+            rate(thanos_cache_requests_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
         ||| % config,
         'items'
       ) +
       { yaxes: $.yaxes('percentunit') }
     ),
+
+  // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
+  // names for the same metric. When enough time has passed and we no longer care about the old
+  // metric name, this method can be removed and replaced with $.latencyPanel
+  backwardsCompatibleLatencyPanel(oldMetricName, newMetricName, selector, multiplier='1e3'):: {
+    nullPointMode: 'null as zero',
+    targets: [
+      {
+        expr: |||
+          histogram_quantile(0.99, sum(
+            # Backwards compatibility
+            rate(%s_bucket%s[$__rate_interval])
+            or
+            rate(%s_bucket%s[$__rate_interval])
+          ) by (le)) * %s
+        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: '99th Percentile',
+        refId: 'A',
+        step: 10,
+      },
+      {
+        expr: |||
+          histogram_quantile(0.50, sum(
+            # Backwards compatibility
+            rate(%s_bucket%s[$__rate_interval])
+            or
+            rate(%s_bucket%s[$__rate_interval])
+          ) by (le)) * %s
+        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: '50th Percentile',
+        refId: 'B',
+        step: 10,
+      },
+      {
+        expr: |||
+          sum(
+            # Backwards compatibility
+            rate(%s_sum%s[$__rate_interval])
+            or
+            rate(%s_sum%s[$__rate_interval])
+          ) * %s
+          /
+          sum(
+            # Backwards compatibility
+            rate(%s_count%s[$__rate_interval])
+            or
+            rate(%s_count%s[$__rate_interval])
+          )
+        ||| % [
+          oldMetricName,
+          selector,
+          newMetricName,
+          selector,
+          multiplier,
+          oldMetricName,
+          selector,
+          newMetricName,
+          selector,
+        ],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: 'Average',
+        refId: 'C',
+        step: 10,
+      },
+    ],
+    yaxes: $.yaxes('ms'),
+  },
 
   filterNodeDiskContainer(containerName)::
     |||

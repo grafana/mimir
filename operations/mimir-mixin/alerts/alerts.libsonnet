@@ -158,11 +158,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('MemcachedRequestErrors'),
+          alert: $.alertName('CacheRequestErrors'),
           expr: |||
             (
-              sum by(%s, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
-              sum by(%s, name, operation) (rate(thanos_memcached_operations_total[1m]))
+              sum by(%s, name, operation) (
+                rate(thanos_memcached_operation_failures_total[1m])
+                or
+                rate(thanos_cache_operation_failures_total[1m])
+              )
+              /
+              sum by(%s, name, operation) (
+                rate(thanos_memcached_operations_total[1m])
+                or
+                rate(thanos_cache_operations_total[1m])
+              )
             ) * 100 > 5
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -171,7 +180,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Memcached {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
+              The cache {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
             ||| % $._config,
           },
         },

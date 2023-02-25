@@ -513,12 +513,12 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	// Check if partial blocks are older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
 		for _, blockID := range partialBlocksWithoutDeletionMarker {
-			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket)
+			lastModified, err := stalePartialBlockLastModifiedTime(ctx, blockID, userBucket, partialDeletionCutoffTime)
 			if err != nil {
-				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID, "err", err)
+				level.Warn(userLogger).Log("msg", "failed while determining if partial block should be marked for deletion", "block", blockID, "err", err)
 				continue
 			}
-			if !lastModified.IsZero() && lastModified.Before(partialDeletionCutoffTime) {
+			if !lastModified.IsZero() {
 				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
 				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, "stale partial block", c.partialBlocksMarkedForDeletion); err != nil {
 					level.Warn(userLogger).Log("msg", "failed to mark partial block for deletion", "block", blockID, "err", err)
@@ -571,11 +571,14 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 	return
 }
 
-// findMostRecentModifiedTimeForBlock finds the most recent modification time for all files in a block.
-func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.Bucket) (time.Time, error) {
-	var result time.Time
+var errStopIter = errors.New("stop iteration")
 
-	err := userBucket.Iter(ctx, blockID.String(), func(name string) error {
+// stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
+func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
+	var lastModified time.Time
+	err := userBucket.WithExpectedErrs(func(err error) bool {
+		return errors.Is(err, errStopIter) // sentinel error
+	}).Iter(ctx, blockID.String(), func(name string) error {
 		if strings.HasSuffix(name, objstore.DirDelim) {
 			return nil
 		}
@@ -583,10 +586,17 @@ func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, 
 		if err != nil {
 			return errors.Wrapf(err, "failed to get attributes for %s", name)
 		}
-		if attrib.LastModified.After(result) {
-			result = attrib.LastModified
+		if attrib.LastModified.After(partialDeletionCutoffTime) {
+			return errStopIter
+		}
+		if attrib.LastModified.After(lastModified) {
+			lastModified = attrib.LastModified
 		}
 		return nil
 	}, objstore.WithRecursiveIter)
-	return result, err
+
+	if errors.Is(err, errStopIter) {
+		return time.Time{}, nil
+	}
+	return lastModified, err
 }

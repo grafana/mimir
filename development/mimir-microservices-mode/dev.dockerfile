@@ -1,8 +1,8 @@
-FROM golang:1.19.3
+FROM golang:1.20.1
 ENV CGO_ENABLED=0
 RUN go install github.com/go-delve/delve/cmd/dlv@v1.9.1
 
-FROM alpine:3.17.1
+FROM alpine:3.17.2
 
 RUN     mkdir /mimir
 WORKDIR /mimir
