@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestStream(t *testing.T) {
@@ -119,18 +120,7 @@ func mkGenericHistogramBatch(from int64, size int) chunk.Batch {
 	batch := chunk.Batch{ValueType: chunkenc.ValHistogram}
 	for i := 0; i < size; i++ {
 		batch.Timestamps[i] = from + int64(i)
-		batch.PointerValues[i] = unsafe.Pointer(&histogram.Histogram{ // yes, this doesn't make much sense with the calculated Count
-			Schema:        3,
-			Count:         uint64(from + int64(i)),
-			Sum:           2.7,
-			ZeroThreshold: 0.1,
-			ZeroCount:     42,
-			PositiveSpans: []histogram.Span{
-				{Offset: 0, Length: 4},
-				{Offset: 10, Length: 3},
-			},
-			PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		})
+		batch.PointerValues[i] = unsafe.Pointer(test.GenerateTestHistogram(int(from) + i))
 	}
 	batch.Length = size
 	return batch
