@@ -1,6 +1,7 @@
 # Changelog
 
 ## main / unreleased
+* [FEATURE] Add capability to configure the used S3 Storage Class [#3438] (https://github.com/grafana/mimir/pull/4300) (@inbarpatashnik)
 
 ### Grafana Mimir
 
