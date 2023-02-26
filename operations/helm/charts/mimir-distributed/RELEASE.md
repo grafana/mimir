@@ -19,15 +19,13 @@ Either:
 
    **Note**: the weekly and RC number must be separated with dot (.) for correct version ordering.
 
-1. For stable versions, create and merge a PR targeting `main` with the following changes ([sample PR](https://github.com/grafana/mimir/pull/4268)):
-
-   1. Finalize the technical documentation and release notes in the [documentation](https://github.com/grafana/mimir/tree/main/docs/sources/helm-charts/mimir-distributed)
-   1. Update the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md)
-      - If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
-
 1. For stable versions, create and push or reuse a branch based on `main` named `mimir-distributed-release-x.y` (eg. `mimir-distributed-release-4.2` for all `4.2.x` releases).
 
    This branch will be used as the target branch for the PR you'll create in the next step.
+
+1. For stable versions, create and merge a PR targeting `main` updating the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md) and moving `## main / unreleased` items under the section for this release.
+
+      - If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
 
 1. Update Helm chart and documentation:
 
@@ -47,8 +45,9 @@ Either:
       For all other versions, your PR should target `main`.
 
    1. Merge the PR after review
-   1. For stable versions, once the release tag in Git is created, merge the branch back to `main`, follow the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
    The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>` (e.g. `mimir-distributed-3.1.0-weekly.196`) on the merge commit created when the PR is merged. The release process fails if the tag already exists to prevent releasing the same version with different content. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
 
    When a `mimir-distributed-x.y.z` stable version tag is pushed, the documentation is [published](https://github.com/grafana/mimir/blob/main/.github/workflows/publish-technical-documentation-release-helm-charts.yml) on the website.
+
+1. For stable versions, once the release tag in Git is created, merge the branch back to `main`, follow the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
