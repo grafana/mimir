@@ -47,6 +47,7 @@ Either:
       For all other versions, your PR should target `main`.
 
    1. Merge the PR after review
+   1. For stable versions, once the release tag in Git is created, merge the branch back to `main`, follow the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
    The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>` (e.g. `mimir-distributed-3.1.0-weekly.196`) on the merge commit created when the PR is merged. The release process fails if the tag already exists to prevent releasing the same version with different content. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
 
