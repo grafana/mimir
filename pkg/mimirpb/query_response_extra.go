@@ -2,7 +2,12 @@
 
 package mimirpb
 
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+
+	"github.com/prometheus/prometheus/model/histogram"
+)
 
 const QueryResponseMimeType = "application/vnd.mimir.queryresponse+protobuf"
 
@@ -72,4 +77,12 @@ func ErrorTypeFromPrometheusString(s string) (QueryResponse_ErrorType, error) {
 	default:
 		return QueryResponse_NONE, fmt.Errorf("unknown Prometheus error type value: '%v'", s)
 	}
+}
+
+func (h *FloatHistogram) ToPrometheusModel() *histogram.FloatHistogram {
+	return (*histogram.FloatHistogram)(unsafe.Pointer(h))
+}
+
+func FloatHistogramFromPrometheusModel(h *histogram.FloatHistogram) *FloatHistogram {
+	return (*FloatHistogram)(unsafe.Pointer(h))
 }

@@ -121,15 +121,13 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 			return nil, err
 		}
 
-		decodedHistogram, err := f.decodeHistogram(sample.Histogram)
-		if err != nil {
-			return nil, err
-		}
-
 		streams[i+len(data.Samples)] = SampleStream{
 			Labels: l,
 			Histograms: []mimirpb.SampleHistogramPair{
-				{Timestamp: sample.Histogram.Timestamp, Histogram: decodedHistogram},
+				{
+					Timestamp: sample.TimestampMilliseconds,
+					Histogram: f.decodeHistogram(sample.Histogram),
+				},
 			},
 		}
 	}
@@ -140,26 +138,8 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 	}, nil
 }
 
-func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) (*mimirpb.SampleHistogram, error) {
-	counterResetHint, err := protobuf.CounterResetHint.ToPrometheusModelType()
-	if err != nil {
-		return nil, err
-	}
-
-	h := histogram.FloatHistogram{
-		CounterResetHint: counterResetHint,
-		Schema:           protobuf.Schema,
-		ZeroThreshold:    protobuf.ZeroThreshold,
-		ZeroCount:        protobuf.ZeroCount,
-		Count:            protobuf.Count,
-		Sum:              protobuf.Sum,
-		PositiveSpans:    f.decodeHistogramSpans(protobuf.PositiveSpans),
-		PositiveBuckets:  protobuf.PositiveBuckets,
-		NegativeSpans:    f.decodeHistogramSpans(protobuf.NegativeSpans),
-		NegativeBuckets:  protobuf.NegativeBuckets,
-	}
-
-	return mimirpb.FromFloatHistogramToSampleHistogram(&h), nil
+func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) *mimirpb.SampleHistogram {
+	return mimirpb.FromFloatHistogramToSampleHistogram(protobuf.ToPrometheusModel())
 }
 
 func (f protobufFormat) decodeHistogramSpans(spans []mimirpb.BucketSpan) []histogram.Span {
@@ -196,14 +176,9 @@ func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusD
 		histograms := make([]mimirpb.SampleHistogramPair, len(series.Histograms))
 
 		for histogramIdx, sample := range series.Histograms {
-			decodedHistogram, err := f.decodeHistogram(sample)
-			if err != nil {
-				return nil, err
-			}
-
 			histograms[histogramIdx] = mimirpb.SampleHistogramPair{
-				Timestamp: sample.Timestamp,
-				Histogram: decodedHistogram,
+				Timestamp: sample.TimestampMilliseconds,
+				Histogram: f.decodeHistogram(sample.Histogram),
 			}
 		}
 

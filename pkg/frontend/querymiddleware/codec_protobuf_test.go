@@ -27,8 +27,6 @@ var expectedProtobufResponseHeaders = []*PrometheusResponseHeader{
 }
 
 var protobufResponseHistogram = mimirpb.FloatHistogram{
-	Timestamp: 1234,
-
 	CounterResetHint: mimirpb.Histogram_GAUGE,
 	Schema:           3,
 	ZeroThreshold:    1.23,
@@ -274,8 +272,9 @@ var protobufCodecScenarios = []struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:    []string{"name-1", "value-1"},
-							Histogram: protobufResponseHistogram,
+							Metric:                []string{"name-1", "value-1"},
+							TimestampMilliseconds: 1234,
+							Histogram:             protobufResponseHistogram,
 						},
 					},
 				},
@@ -306,8 +305,9 @@ var protobufCodecScenarios = []struct {
 					},
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:    []string{"baz", "blah"},
-							Histogram: protobufResponseHistogram,
+							Metric:                []string{"baz", "blah"},
+							TimestampMilliseconds: 1234,
+							Histogram:             protobufResponseHistogram,
 						},
 					},
 				},
@@ -556,7 +556,7 @@ var protobufCodecScenarios = []struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
-							Histograms: []mimirpb.FloatHistogram{protobufResponseHistogram},
+							Histograms: []mimirpb.MatrixHistogram{{TimestampMilliseconds: 1234, Histogram: protobufResponseHistogram}},
 						},
 					},
 				},
@@ -587,7 +587,7 @@ var protobufCodecScenarios = []struct {
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
 							Samples:    []mimirpb.MatrixSample{{TimestampMilliseconds: 1000, Value: 200}},
-							Histograms: []mimirpb.FloatHistogram{protobufResponseHistogram},
+							Histograms: []mimirpb.MatrixHistogram{{TimestampMilliseconds: 1234, Histogram: protobufResponseHistogram}},
 						},
 					},
 				},

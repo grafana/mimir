@@ -140,8 +140,8 @@ message Histogram {
 // them safely.
 message FloatHistogram {
   // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
-  reserved 1, 6, 9, 12;
-  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
+  reserved 1, 6, 9, 12, 15;
+  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas", "timestamp";
 
   Histogram.ResetHint counter_reset_hint = 14;
   sint32 schema = 4;
@@ -153,8 +153,6 @@ message FloatHistogram {
   repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   repeated double positive_buckets = 13;
   repeated double negative_buckets = 10;
-
-  int64 timestamp = 15;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -250,6 +248,7 @@ message VectorHistogram {
   repeated string metric = 1;
 
   FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
+  int64 timestamp_milliseconds = 3;
 }
 
 message ScalarData {
@@ -266,10 +265,15 @@ message MatrixSeries {
   repeated string metric = 1;
 
   repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
-  repeated FloatHistogram histograms = 3 [(gogoproto.nullable) = false];
+  repeated MatrixHistogram histograms = 3 [(gogoproto.nullable) = false];
 }
 
 message MatrixSample {
   double value = 1;
+  int64 timestamp_milliseconds = 2;
+}
+
+message MatrixHistogram {
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = false];
   int64 timestamp_milliseconds = 2;
 }
