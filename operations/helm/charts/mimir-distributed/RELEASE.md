@@ -25,7 +25,7 @@ Either:
    1. Update the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md)
       - If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
 
-1. For stable versions, create and push a branch based on `main` named `mimir-distributed-release-x.y` (eg. `mimir-distributed-release-4.2` for all `4.2.x` releases).
+1. For stable versions, create and push or reuse a branch based on `main` named `mimir-distributed-release-x.y` (eg. `mimir-distributed-release-4.2` for all `4.2.x` releases).
 
    This branch will be used as the target branch for the PR you'll create in the next step.
 
