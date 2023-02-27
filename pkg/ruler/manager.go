@@ -118,7 +118,7 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		return nil
 	})
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to sync rules to disk", "err", err)
+		// The only error we could get here is a context canceled.
 		return
 	}
 

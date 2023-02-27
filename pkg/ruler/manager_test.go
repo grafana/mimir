@@ -32,8 +32,8 @@ func TestSyncRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	const (
-		user  = "testUser"
-		user1 = "testUser1"
+		user1  = "testUser1"
+		user2 = "testUser2"
 	)
 
 	userRules := map[string]rulespb.RuleGroupList{
@@ -47,7 +47,7 @@ func TestSyncRuleGroups(t *testing.T) {
 		},
 		user1: {
 			&rulespb.RuleGroupDesc{
-				Name:      "group1",
+				Name:      "group2",
 				Namespace: "ns",
 				Interval:  1 * time.Minute,
 				User:      user1,
@@ -56,13 +56,13 @@ func TestSyncRuleGroups(t *testing.T) {
 	}
 	m.SyncRuleGroups(context.Background(), userRules)
 
-	mgr := getManager(m, user)
+	mgr1 := getManager(m, user)
 	require.NotNil(t, mgr)
 	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return mgr.(*mockRulesManager).running.Load()
 	})
 
-	mgr1 := getManager(m, user1)
+	mgr2 := getManager(m, user2)
 	require.NotNil(t, mgr1)
 	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return mgr1.(*mockRulesManager).running.Load()
