@@ -20,7 +20,7 @@ jobs:
     container:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
 
       - name: Run Git Config
