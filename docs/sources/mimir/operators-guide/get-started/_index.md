@@ -11,10 +11,10 @@ weight: 10
 
 There are two different ways that you can get started with Grafana Mimir:
 
-- The written instructions that follow help you start a single Mimir process _imperatively_.<p>
+- The written instructions that follow contain commands to help you start a single Mimir process.<p>
   The instructions also help you deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
   For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
-- The video tutorial that follows uses `docker-compose` to deploy multiple Mimir processes _declaratively_.
+- The video tutorial that follows uses `docker-compose` to deploy multiple Mimir processes.
 
   {{< vimeo 691947043 >}}
 
