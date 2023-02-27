@@ -9,21 +9,20 @@ weight: 10
 
 # Get started with Grafana Mimir
 
-There are two different ways that you can get started with Grafana Mimir:
+You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
-- The written instructions that follow contain commands to help you start a single Mimir process.<p>
-  The instructions also help you deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
-  For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
-- The video tutorial that follows uses `docker-compose` to deploy multiple Mimir processes.
+- **Imperatively**: The written instructions that follow contain commands to help you start a single Mimir process. You would need to perform the commands again to start another Mimir process.<p>
+- **Declaratively**: The following video tutorial uses `docker-compose` to deploy multiple Mimir processes. Therefore, if you want to deploy multiple Mimir processes later, the majority of the configuration work will have already been done.
 
   {{< vimeo 691947043 >}}
-
-<br/>
 
 ## Before you begin
 
 - Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/data-configuration/agent/install_agent/).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
+
+> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
+> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
 
 ## Download Grafana Mimir
 
