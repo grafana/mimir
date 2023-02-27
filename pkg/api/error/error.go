@@ -28,6 +28,7 @@ const (
 	TypeNotFound        Type = "not_found"
 	TypeTooManyRequests Type = "too_many_requests"
 	TypeTooLargeEntry   Type = "too_large_entry"
+	TypeNotAcceptable   Type = "not_acceptable"
 )
 
 type apiError struct {
@@ -58,6 +59,8 @@ func (e *apiError) statusCode() int {
 		return http.StatusTooManyRequests
 	case TypeTooLargeEntry:
 		return http.StatusRequestEntityTooLarge
+	case TypeNotAcceptable:
+		return http.StatusNotAcceptable
 	}
 	return http.StatusInternalServerError
 }
