@@ -21,7 +21,7 @@ jobs:
       image: grafana/mimir-build-image:goupdate-751733fe1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
