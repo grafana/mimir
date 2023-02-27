@@ -13,7 +13,7 @@ Either:
 
    Helm [mandates semantic versioning](https://helm.sh/docs/topics/charts/#the-chartyaml-file).
 
-   - Weekly releases should have the version: `x.y.z-weekly.w` (e.g. `3.1.0-weekly.196`)
+   - Weekly releases should have the version: `x.y.z-weekly.w` (e.g. `3.1.0-weekly.196`). These are created automatically, but need to be approved and merged manually ([sample PR](https://github.com/grafana/mimir/pull/4309)).
    - Release candidate: `x.y.z-rc.w` (e.g. `3.1.0.rc.1`)
    - Final version: `x.y.z` (e.g. `3.1.0`)
 
