@@ -28,12 +28,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Do not set `securityContext` on Mimir components when `rbad.type` equals `scc` because doing so conflicts with OpenShift. #4272
+* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23.
+* [BUGFIX] Do not set `securityContext` on Mimir components when `rbac.type` equals `scc` because doing so conflicts with OpenShift. #4272
 
 ## 4.2.0
 
 * [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
-* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0.
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0. #4279
 
 ## 4.1.0
 

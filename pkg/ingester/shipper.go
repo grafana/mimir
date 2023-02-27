@@ -204,7 +204,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	meta.Thanos.Source = s.source
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 
-	if s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
+	if meta.Compaction.FromOutOfOrder() && s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
 		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
 		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
 	}

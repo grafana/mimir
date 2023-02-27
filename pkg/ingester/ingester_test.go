@@ -6390,21 +6390,24 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			userTSDB := i.getTSDB(tenant)
 			require.Equal(t, 2, len(userTSDB.shippedBlocks), "there should be two uploaded blocks")
 
-			var foundMeta []metadata.Meta
+			var oooMeta []metadata.Meta
+			var inOrderMeta []metadata.Meta
 			for ulid := range userTSDB.shippedBlocks {
 				meta, err := block.DownloadMeta(ctx, log.NewNopLogger(), bucket, ulid)
 				require.NoError(t, err)
 				if meta.Compaction.FromOutOfOrder() {
-					foundMeta = append(foundMeta, meta)
+					oooMeta = append(oooMeta, meta)
+				} else {
+					inOrderMeta = append(inOrderMeta, meta)
 				}
 			}
 
-			require.Len(t, foundMeta, 1, "only one of the blocks should have an ooo compactor hint")
-
+			require.Len(t, oooMeta, 1, "only one of the blocks should have an ooo compactor hint")
+			require.Empty(t, inOrderMeta[0].Thanos.Labels, "in-order block should not have the ooo label")
 			if addOOOLabel {
-				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue}, foundMeta[0].Thanos.Labels)
+				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue}, oooMeta[0].Thanos.Labels)
 			} else {
-				require.Empty(t, foundMeta[0].Thanos.Labels)
+				require.Empty(t, oooMeta[0].Thanos.Labels)
 			}
 		})
 	}
