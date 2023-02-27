@@ -104,7 +104,7 @@ func New(typ Type, msg string) error {
 	}
 }
 
-// Newf creates a new apiError with a static string message
+// Newf creates a new apiError with a formatted message
 func Newf(typ Type, tmpl string, args ...interface{}) error {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
