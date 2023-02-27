@@ -9,7 +9,7 @@ weight: 10
 
 # Get started with Grafana Mimir
 
-There are two different ways that you to get started with Grafana Mimir:
+There are two different ways that you can get started with Grafana Mimir:
 
 - The written instructions that follow help you start a single Mimir process by using [_imperative_ Kubernetes commands](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/imperative-command/).<p>
   The instructions also help you deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
