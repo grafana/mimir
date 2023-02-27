@@ -22,7 +22,7 @@ There are two different ways that you to get started with Grafana Mimir:
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or the [Grafana Agent](docs/grafana-cloud/data-configuration/agent/install_agent/).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/data-configuration/agent/install_agent/).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 ## Download Grafana Mimir
