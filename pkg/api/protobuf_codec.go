@@ -5,7 +5,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -113,7 +112,7 @@ func (c protobufCodec) encodeVector(v promql.Vector) mimirpb.VectorData {
 			histograms = append(histograms, mimirpb.VectorHistogram{
 				Metric:                metric,
 				TimestampMilliseconds: s.T,
-				Histogram:             protobufHistogramFromPoint(s.Point),
+				Histogram:             *mimirpb.FloatHistogramFromPrometheusModel(s.Point.H),
 			})
 		}
 	}
@@ -157,7 +156,7 @@ func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries 
 		} else {
 			histograms = append(histograms, mimirpb.MatrixHistogram{
 				TimestampMilliseconds: p.T,
-				Histogram:             protobufHistogramFromPoint(p),
+				Histogram:             *mimirpb.FloatHistogramFromPrometheusModel(p.H),
 			})
 		}
 	}
@@ -180,21 +179,4 @@ func labelsToStringArray(l labels.Labels) []string {
 	})
 
 	return strings
-}
-
-func protobufHistogramFromPoint(p promql.Point) mimirpb.FloatHistogram {
-	return *mimirpb.FloatHistogramFromPrometheusModel(p.H)
-}
-
-func protobufSpansFromSpans(spans []histogram.Span) []mimirpb.BucketSpan {
-	protobufSpans := make([]mimirpb.BucketSpan, len(spans))
-
-	for i, s := range spans {
-		protobufSpans[i] = mimirpb.BucketSpan{
-			Offset: s.Offset,
-			Length: s.Length,
-		}
-	}
-
-	return protobufSpans
 }

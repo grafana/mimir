@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -140,19 +139,6 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 
 func (f protobufFormat) decodeHistogram(protobuf mimirpb.FloatHistogram) *mimirpb.SampleHistogram {
 	return mimirpb.FromFloatHistogramToSampleHistogram(protobuf.ToPrometheusModel())
-}
-
-func (f protobufFormat) decodeHistogramSpans(spans []mimirpb.BucketSpan) []histogram.Span {
-	converted := make([]histogram.Span, len(spans))
-
-	for i, s := range spans {
-		converted[i] = histogram.Span{
-			Offset: s.Offset,
-			Length: s.Length,
-		}
-	}
-
-	return converted
 }
 
 func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
