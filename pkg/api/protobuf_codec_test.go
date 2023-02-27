@@ -304,7 +304,7 @@ var protobufCodecScenarios = map[string]struct {
 							Metric:                []string{"name-1", "value-1"},
 							TimestampMilliseconds: 1234,
 							Histogram: mimirpb.FloatHistogram{
-								CounterResetHint: mimirpb.Histogram_GAUGE,
+								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
 								ZeroThreshold:    1.23,
 								ZeroCount:        456,
@@ -407,7 +407,7 @@ var protobufCodecScenarios = map[string]struct {
 							Metric:                []string{"name-1", "value-1"},
 							TimestampMilliseconds: 1234,
 							Histogram: mimirpb.FloatHistogram{
-								CounterResetHint: mimirpb.Histogram_GAUGE,
+								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
 								ZeroThreshold:    1.23,
 								ZeroCount:        456,
@@ -429,7 +429,7 @@ var protobufCodecScenarios = map[string]struct {
 							Metric:                []string{"name-3", "value-3"},
 							TimestampMilliseconds: 12340,
 							Histogram: mimirpb.FloatHistogram{
-								CounterResetHint: mimirpb.Histogram_GAUGE,
+								CounterResetHint: histogram.GaugeType,
 								Schema:           4,
 								ZeroThreshold:    1.203,
 								ZeroCount:        4560,
@@ -741,7 +741,7 @@ var protobufCodecScenarios = map[string]struct {
 								{
 									TimestampMilliseconds: 1234,
 									Histogram: mimirpb.FloatHistogram{
-										CounterResetHint: mimirpb.Histogram_GAUGE,
+										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
 										ZeroThreshold:    1.23,
 										ZeroCount:        456,
@@ -851,7 +851,7 @@ var protobufCodecScenarios = map[string]struct {
 								{
 									TimestampMilliseconds: 1234,
 									Histogram: mimirpb.FloatHistogram{
-										CounterResetHint: mimirpb.Histogram_GAUGE,
+										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
 										ZeroThreshold:    1.23,
 										ZeroCount:        456,
@@ -872,7 +872,7 @@ var protobufCodecScenarios = map[string]struct {
 								{
 									TimestampMilliseconds: 12340,
 									Histogram: mimirpb.FloatHistogram{
-										CounterResetHint: mimirpb.Histogram_GAUGE,
+										CounterResetHint: histogram.GaugeType,
 										Schema:           4,
 										ZeroThreshold:    1.203,
 										ZeroCount:        4560,

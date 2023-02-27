@@ -13,6 +13,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -27,7 +28,7 @@ var expectedProtobufResponseHeaders = []*PrometheusResponseHeader{
 }
 
 var protobufResponseHistogram = mimirpb.FloatHistogram{
-	CounterResetHint: mimirpb.Histogram_GAUGE,
+	CounterResetHint: histogram.GaugeType,
 	Schema:           3,
 	ZeroThreshold:    1.23,
 	ZeroCount:        456,
