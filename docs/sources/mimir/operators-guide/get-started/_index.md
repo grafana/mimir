@@ -11,9 +11,8 @@ weight: 10
 
 There are two different ways that you to get started with Grafana Mimir:
 
-- The written instructions that follow help you start a single Mimir process by using [_imperative_ Kubernetes commands](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/imperative-command/).
+- The written instructions that follow help you start a single Mimir process by using [_imperative_ Kubernetes commands](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/imperative-command/).<p>
   The instructions also help you deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
-   
   For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
 - The video tutorial that follows uses `docker-compose` to deploy multiple Mimir processes [_declaratively_](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/declarative-config/).
 
