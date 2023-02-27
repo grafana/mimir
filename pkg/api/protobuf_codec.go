@@ -59,19 +59,11 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 			p.Data = &mimirpb.QueryResponse_Scalar{Scalar: &s}
 
 		case parser.ValueTypeVector:
-			v, err := c.encodeVector(data.Result.(promql.Vector))
-			if err != nil {
-				return nil, err
-			}
-
+			v := c.encodeVector(data.Result.(promql.Vector))
 			p.Data = &mimirpb.QueryResponse_Vector{Vector: &v}
 
 		case parser.ValueTypeMatrix:
-			m, err := c.encodeMatrix(data.Result.(promql.Matrix))
-			if err != nil {
-				return nil, err
-			}
-
+			m := c.encodeMatrix(data.Result.(promql.Matrix))
 			p.Data = &mimirpb.QueryResponse_Matrix{Matrix: &m}
 
 		default:
@@ -96,7 +88,7 @@ func (c protobufCodec) encodeScalar(s promql.Scalar) mimirpb.ScalarData {
 	}
 }
 
-func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error) {
+func (c protobufCodec) encodeVector(v promql.Vector) mimirpb.VectorData {
 	histogramCount := 0
 
 	for _, s := range v {
@@ -118,15 +110,10 @@ func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error)
 				Value:                 s.V,
 			})
 		} else {
-			h, err := protobufHistogramFromPoint(s.Point)
-			if err != nil {
-				return mimirpb.VectorData{}, err
-			}
-
 			histograms = append(histograms, mimirpb.VectorHistogram{
 				Metric:                metric,
 				TimestampMilliseconds: s.T,
-				Histogram:             h,
+				Histogram:             protobufHistogramFromPoint(s.Point),
 			})
 		}
 	}
@@ -134,27 +121,22 @@ func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error)
 	return mimirpb.VectorData{
 		Samples:    samples,
 		Histograms: histograms,
-	}, nil
+	}
 }
 
-func (c protobufCodec) encodeMatrix(m promql.Matrix) (mimirpb.MatrixData, error) {
+func (c protobufCodec) encodeMatrix(m promql.Matrix) mimirpb.MatrixData {
 	protobufSeries := make([]mimirpb.MatrixSeries, len(m))
 
 	for i, s := range m {
-		series, err := c.encodeMatrixSeries(s)
-		if err != nil {
-			return mimirpb.MatrixData{}, err
-		}
-
-		protobufSeries[i] = series
+		protobufSeries[i] = c.encodeMatrixSeries(s)
 	}
 
 	return mimirpb.MatrixData{
 		Series: protobufSeries,
-	}, nil
+	}
 }
 
-func (c protobufCodec) encodeMatrixSeries(s promql.Series) (mimirpb.MatrixSeries, error) {
+func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries {
 	histogramCount := 0
 
 	for _, p := range s.Points {
@@ -173,14 +155,9 @@ func (c protobufCodec) encodeMatrixSeries(s promql.Series) (mimirpb.MatrixSeries
 				Value:                 p.V,
 			})
 		} else {
-			h, err := protobufHistogramFromPoint(p)
-			if err != nil {
-				return mimirpb.MatrixSeries{}, nil
-			}
-
 			histograms = append(histograms, mimirpb.MatrixHistogram{
 				TimestampMilliseconds: p.T,
-				Histogram:             h,
+				Histogram:             protobufHistogramFromPoint(p),
 			})
 		}
 	}
@@ -189,7 +166,7 @@ func (c protobufCodec) encodeMatrixSeries(s promql.Series) (mimirpb.MatrixSeries
 		Metric:     labelsToStringArray(s.Metric),
 		Samples:    samples,
 		Histograms: histograms,
-	}, nil
+	}
 }
 
 func labelsToStringArray(l labels.Labels) []string {
@@ -205,8 +182,8 @@ func labelsToStringArray(l labels.Labels) []string {
 	return strings
 }
 
-func protobufHistogramFromPoint(p promql.Point) (mimirpb.FloatHistogram, error) {
-	return *mimirpb.FloatHistogramFromPrometheusModel(p.H), nil
+func protobufHistogramFromPoint(p promql.Point) mimirpb.FloatHistogram {
+	return *mimirpb.FloatHistogramFromPrometheusModel(p.H)
 }
 
 func protobufSpansFromSpans(spans []histogram.Span) []mimirpb.BucketSpan {
