@@ -70,6 +70,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Add query-frontend and ruler-query-frontend auto-scaling panels to Reads and Ruler dashboards. #4199
 * [BUGFIX] Alerts: Fixed `MimirAutoscalerNotActive` to not fire if scaling metric does not exist, to avoid false positives on scaled objects with 0 min replicas. #4045
 * [BUGFIX] Alerts: `MimirCompactorHasNotSuccessfullyRunCompaction` is no longer triggered by frequent compactor restarts. #4012
+* [BUGFIX] Tenants dashboard: Correctly show the ruler-query-scheduler queue size. #4152
 
 ### Jsonnet
 
