@@ -176,6 +176,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/ncw/swift v1.0.53 // indirect
 	github.com/oklog/run v1.1.0 // indirect
@@ -230,7 +231,7 @@ require (
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230203043840-d2d23d984970
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230226224315-819f9ae85694
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
