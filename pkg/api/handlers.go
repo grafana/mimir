@@ -261,6 +261,8 @@ func NewQuerierHandler(
 		nil,
 	)
 
+	api.ClearCodecs()
+	api.InstallCodec(mimirJSONCodec{})
 	api.InstallCodec(protobufCodec{})
 
 	router := mux.NewRouter()
