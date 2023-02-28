@@ -1176,7 +1176,7 @@ How it **works**:
 
 How to **investigate**:
 
-- Check the [hash ring web page]({{< relref "../reference-http-api/index.md#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
+- Check the [hash ring web page]({{< relref "../../references/http-api/index.md#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
 - Consider manually forgetting unexpected instances in an `Unhealthy` state.
 - Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
 
