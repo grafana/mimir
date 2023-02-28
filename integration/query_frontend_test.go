@@ -216,9 +216,6 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 					flags = mergeFlags(
 						BlocksStorageFlags(),
 						BlocksStorageS3Flags(),
-						map[string]string{
-							"-query-frontend.query-result-response-format": format,
-						},
 					)
 
 					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -226,7 +223,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 
 					return "", flags
 				},
-				withHistograms: true,
+				withHistograms: format == "protobuf",
 			})
 		})
 	}
@@ -252,6 +249,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
+
+	if cfg.withHistograms {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.query-result-response-format": "protobuf",
+		})
+	}
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
