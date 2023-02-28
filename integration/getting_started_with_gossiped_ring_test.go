@@ -55,6 +55,9 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genS
 		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
 		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-blocks-storage.s3.insecure":                       "true",
+		
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.

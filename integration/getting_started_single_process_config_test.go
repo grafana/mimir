@@ -37,6 +37,9 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 		"-blocks-storage.s3.bucket-name":       blocksBucketName,
 		"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-blocks-storage.s3.insecure":          "true",
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	}
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
