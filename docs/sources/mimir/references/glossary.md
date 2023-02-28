@@ -1,4 +1,6 @@
 ---
+aliases:
+  - /operators-guide/reference-glossary/
 title: "Reference: Grafana Mimir glossary"
 menuTitle: "Reference: Glossary"
 description: "Grafana Mimir glossary terms."
@@ -6,6 +8,8 @@ weight: 130
 ---
 
 # Reference: Grafana Mimir glossary
+
+The terms and definitions that follow relate to Grafana Mimir and GEM.
 
 ## Blocks storage
 
@@ -21,8 +25,8 @@ A chunk is an object containing encoded timestamp-value pairs for one series.
 
 Churn is the frequency at which series become idle.
 
-A series becomes idle once it's no longer exported by the monitored targets.
-Typically, series become idle when a monitored target process or node gets terminated.
+A series becomes idle after it’s no longer exported by the monitored targets.
+Typically, series become idle after a monitored target process or node gets terminated.
 
 ## Component
 
