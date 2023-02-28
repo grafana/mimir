@@ -1,5 +1,4 @@
 ---
-aliases:
 title: "Grafana Mimir references"
 menuTitle: "References"
 description: "Learn about Grafana Mimir via reference material."
