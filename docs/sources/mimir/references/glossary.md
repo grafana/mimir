@@ -1,13 +1,13 @@
 ---
 aliases:
   - /operators-guide/reference-glossary/
-title: "Reference: Grafana Mimir glossary"
-menuTitle: "Reference: Glossary"
+title: "Grafana Mimir glossary"
+menuTitle: "Glossary"
 description: "Grafana Mimir glossary terms."
 weight: 130
 ---
 
-# Reference: Grafana Mimir glossary
+# Grafana Mimir glossary
 
 The terms and definitions that follow relate to Grafana Mimir and GEM.
 
