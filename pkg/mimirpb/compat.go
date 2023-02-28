@@ -325,18 +325,17 @@ func FromPointsToSamples(points []promql.Point) []Sample {
 	return samples
 }
 
-// FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
-func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
-	samples := make([]SampleHistogramPair, 0, len(points))
+// FromPointsToHistograms converts []promql.Point to []FloatHistogramPair.
+func FromPointsToHistograms(points []promql.Point) []FloatHistogramPair {
+	samples := make([]FloatHistogramPair, 0, len(points))
 	for _, point := range points {
 		h := point.H
 		if h == nil {
 			continue
 		}
-		histogram := FromFloatHistogramToSampleHistogram(h)
-		samples = append(samples, SampleHistogramPair{
+		samples = append(samples, FloatHistogramPair{
 			Timestamp: point.T,
-			Histogram: histogram,
+			Histogram: *FloatHistogramFromPrometheusModel(point.H),
 		})
 	}
 	return samples
@@ -666,9 +665,8 @@ loop:
 	return numLabels, true
 }
 
-// Generics
 type GenericSamplePair interface {
-	Sample | SampleHistogramPair | Histogram
+	Sample | Histogram | FloatHistogramPair
 	GetTimestampVal() int64
 	GetBaseVal() float64
 }
@@ -677,25 +675,22 @@ func (s Sample) GetTimestampVal() int64 {
 	return s.TimestampMs
 }
 
-func (vs SampleHistogramPair) GetTimestampVal() int64 {
-	return vs.Timestamp
-}
-
 func (m Histogram) GetTimestampVal() int64 {
 	return m.Timestamp
+}
+
+func (p FloatHistogramPair) GetTimestampVal() int64 {
+	return p.Timestamp
 }
 
 func (s Sample) GetBaseVal() float64 {
 	return s.Value
 }
 
-func (vs SampleHistogramPair) GetBaseVal() float64 {
-	if vs.Histogram == nil {
-		return 0
-	}
-	return vs.Histogram.Sum
-}
-
 func (m Histogram) GetBaseVal() float64 {
 	return m.Sum
+}
+
+func (p FloatHistogramPair) GetBaseVal() float64 {
+	return p.Histogram.Sum
 }

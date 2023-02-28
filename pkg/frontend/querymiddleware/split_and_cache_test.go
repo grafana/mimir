@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
@@ -48,70 +49,80 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		seriesLabels      = []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
 
 		// Mock the downstream responses.
-		firstDayDownstreamResponse = encodePrometheusResponse(t,
+		firstDayDownstreamResponse = jsonEncodePrometheusResponse(t,
 			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10}))
 
-		secondDayDownstreamResponse = encodePrometheusResponse(t,
+		secondDayDownstreamResponse = jsonEncodePrometheusResponse(t,
 			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20}))
 
-		thirdDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.SampleHistogramPair{
+		thirdDayHistogram = mimirpb.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           3,
+			ZeroThreshold:    1.23,
+			ZeroCount:        456,
+			Count:            9001,
+			Sum:              789.1,
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 4, Length: 1},
+				{Offset: 3, Length: 2},
+			},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 7, Length: 3},
+				{Offset: 9, Length: 1},
+			},
+			PositiveBuckets: []float64{100, 200, 300},
+			NegativeBuckets: []float64{400, 500, 600, 700},
+		}
+
+		thirdDayDownstreamResponse = protobufEncodePrometheusResponse(t,
+			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.MatrixHistogram{
 				{
-					Timestamp: dayThreeStartTime.Unix() * 1000,
-					Histogram: &mimirpb.SampleHistogram{
-						Count: 10,
-						Sum:   20,
-						Buckets: []*mimirpb.HistogramBucket{
-							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-						},
-					},
+					TimestampMilliseconds: dayThreeStartTime.Unix() * 1000,
+					Histogram:             thirdDayHistogram,
 				},
 			}))
 
-		fourthDayDownstreamResponse = encodePrometheusResponse(t,
-			mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.SampleHistogramPair{
+		fourthDayHistogram = mimirpb.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           3,
+			ZeroThreshold:    1.23,
+			ZeroCount:        456,
+			Count:            9001,
+			Sum:              100789.1,
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 4, Length: 1},
+				{Offset: 3, Length: 2},
+			},
+			NegativeSpans: []mimirpb.BucketSpan{
+				{Offset: 7, Length: 3},
+				{Offset: 9, Length: 1},
+			},
+			PositiveBuckets: []float64{100, 200, 300},
+			NegativeBuckets: []float64{400, 500, 600, 700},
+		}
+
+		fourthDayDownstreamResponse = protobufEncodePrometheusResponse(t,
+			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.MatrixHistogram{
 				{
-					Timestamp: dayFourEndTime.Unix() * 1000,
-					Histogram: &mimirpb.SampleHistogram{
-						Count: 10,
-						Sum:   15,
-						Buckets: []*mimirpb.HistogramBucket{
-							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-						},
-					},
+					TimestampMilliseconds: dayFourEndTime.Unix() * 1000,
+					Histogram:             fourthDayHistogram,
 				},
 			}))
 
 		// Build the expected response (which is the merge of the two downstream responses).
-		expectedResponse = encodePrometheusResponse(t, mockPrometheusResponseWithSamplesAndHistograms(seriesLabels,
+		expectedResponse = jsonEncodePrometheusResponse(t, mockPrometheusResponseWithSamplesAndHistograms(seriesLabels,
 			[]mimirpb.Sample{
 				{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10},
 				{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20},
 			},
-			[]mimirpb.SampleHistogramPair{
+			[]mimirpb.FloatHistogramPair{
 				{
 					Timestamp: dayThreeStartTime.Unix() * 1000,
-					Histogram: &mimirpb.SampleHistogram{
-						Count: 10,
-						Sum:   20,
-						Buckets: []*mimirpb.HistogramBucket{
-							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-						},
-					},
+					Histogram: thirdDayHistogram,
 				},
 				{
 					Timestamp: dayFourEndTime.Unix() * 1000,
-					Histogram: &mimirpb.SampleHistogram{
-						Count: 10,
-						Sum:   15,
-						Buckets: []*mimirpb.HistogramBucket{
-							{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-							{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-						},
-					},
+					Histogram: fourthDayHistogram,
 				},
 			},
 		))
@@ -135,11 +146,11 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 					w.Header().Set("Content-Type", jsonMimeType)
 					_, _ = w.Write([]byte(secondDayDownstreamResponse))
 				} else if req.GetStart() == dayThreeStartTime.Unix()*1000 {
-					w.Header().Set("Content-Type", jsonMimeType)
-					_, _ = w.Write([]byte(thirdDayDownstreamResponse))
+					w.Header().Set("Content-Type", mimirpb.QueryResponseMimeType)
+					_, _ = w.Write(thirdDayDownstreamResponse)
 				} else if req.GetStart() == dayThreeStartTime.Add(24*time.Hour).Unix()*1000 {
-					w.Header().Set("Content-Type", jsonMimeType)
-					_, _ = w.Write([]byte(fourthDayDownstreamResponse))
+					w.Header().Set("Content-Type", mimirpb.QueryResponseMimeType)
+					_, _ = w.Write(fourthDayDownstreamResponse)
 				} else {
 					_, _ = w.Write([]byte("unexpected request"))
 				}
@@ -245,27 +256,26 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
-					Histograms: []mimirpb.SampleHistogramPair{
+					Histograms: []mimirpb.FloatHistogramPair{
 						{
 							Timestamp: 1634292000000,
-							Histogram: &mimirpb.SampleHistogram{
-								Count: 10,
-								Sum:   20,
-								Buckets: []*mimirpb.HistogramBucket{
-									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+							Histogram: mimirpb.FloatHistogram{
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
+								PositiveSpans: []mimirpb.BucketSpan{
+									{Offset: 4, Length: 1},
+									{Offset: 3, Length: 2},
 								},
-							},
-						},
-						{
-							Timestamp: 1634292120000,
-							Histogram: &mimirpb.SampleHistogram{
-								Count: 10,
-								Sum:   20,
-								Buckets: []*mimirpb.HistogramBucket{
-									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								NegativeSpans: []mimirpb.BucketSpan{
+									{Offset: 7, Length: 3},
+									{Offset: 9, Length: 1},
 								},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
 							},
 						},
 					},
@@ -354,27 +364,26 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
-					Histograms: []mimirpb.SampleHistogramPair{
+					Histograms: []mimirpb.FloatHistogramPair{
 						{
 							Timestamp: 1634292000000,
-							Histogram: &mimirpb.SampleHistogram{
-								Count: 10,
-								Sum:   20,
-								Buckets: []*mimirpb.HistogramBucket{
-									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+							Histogram: mimirpb.FloatHistogram{
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
+								PositiveSpans: []mimirpb.BucketSpan{
+									{Offset: 4, Length: 1},
+									{Offset: 3, Length: 2},
 								},
-							},
-						},
-						{
-							Timestamp: 1634292120000,
-							Histogram: &mimirpb.SampleHistogram{
-								Count: 10,
-								Sum:   20,
-								Buckets: []*mimirpb.HistogramBucket{
-									{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-									{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
+								NegativeSpans: []mimirpb.BucketSpan{
+									{Offset: 7, Length: 3},
+									{Offset: 9, Length: 1},
 								},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
 							},
 						},
 					},
@@ -1335,10 +1344,43 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 	return generated.String()
 }
 
-func encodePrometheusResponse(t *testing.T, res *PrometheusResponse) string {
+func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.MatrixSample, histograms []mimirpb.MatrixHistogram) *mimirpb.QueryResponse {
+	return &mimirpb.QueryResponse{
+		Status: mimirpb.QueryResponse_SUCCESS,
+		Data: &mimirpb.QueryResponse_Matrix{
+			Matrix: &mimirpb.MatrixData{
+				Series: []mimirpb.MatrixSeries{
+					{
+						Metric:     stringArrayFromLabels(labels),
+						Samples:    samples,
+						Histograms: histograms,
+					},
+				},
+			},
+		},
+	}
+}
+
+func stringArrayFromLabels(labels []mimirpb.LabelAdapter) []string {
+	s := make([]string, len(labels)*2)
+
+	for i, l := range labels {
+		s[2*i] = l.Name
+		s[2*i+1] = l.Value
+	}
+
+	return s
+}
+
+func protobufEncodePrometheusResponse(t *testing.T, res *mimirpb.QueryResponse) []byte {
+	encoded, err := res.Marshal()
+	require.NoError(t, err)
+	return encoded
+}
+
+func jsonEncodePrometheusResponse(t *testing.T, res *PrometheusResponse) string {
 	encoded, err := json.Marshal(res)
 	require.NoError(t, err)
-
 	return string(encoded)
 }
 

@@ -70,7 +70,7 @@ message PrometheusData {
 message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
-  repeated cortexpb.SampleHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
 }
 
 message CachedResponse  {

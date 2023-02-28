@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -324,16 +325,12 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	if s.Histogram != nil {
-		h := mimirpb.FromPromToMimirSampleHistogram(s.Histogram)
-		*vs = vectorSampleStream{
-			Labels:     mimirpb.FromMetricsToLabelAdapters(s.Metric),
-			Histograms: []mimirpb.SampleHistogramPair{{Timestamp: int64(s.Timestamp), Histogram: h}},
-		}
-	} else {
-		*vs = vectorSampleStream{
-			Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
-			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
-		}
+		return errors.New("cannot unmarshal native histogram from JSON")
+	}
+
+	*vs = vectorSampleStream{
+		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
+		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
 	}
 	return nil
 }
@@ -350,11 +347,10 @@ func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
 			Value:     model.SampleValue(vs.Samples[0].Value),
 		}
 	} else {
-		h := mimirpb.FromMimirSampleToPromHistogram(vs.Histograms[0].Histogram)
 		sample = model.Sample{
 			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
 			Timestamp: model.Time(vs.Histograms[0].Timestamp),
-			Histogram: h,
+			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
 		}
 	}
 	return json.Marshal(sample)
@@ -375,7 +371,7 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 		s.Samples = stream.Values
 	}
 	if len(stream.Histograms) > 0 {
-		s.Histograms = stream.Histograms
+		return fmt.Errorf("cannot unmarshal native histograms from JSON, but stream contains %d histograms", len(stream.Histograms))
 	}
 	return nil
 }
@@ -383,12 +379,21 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	if len(s.Histograms) > 0 {
+		histograms := make([]mimirpb.SampleHistogramPair, len(s.Histograms))
+
+		for i, h := range s.Histograms {
+			histograms[i] = mimirpb.SampleHistogramPair{
+				Timestamp: h.Timestamp,
+				Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+			}
+		}
+
 		stream := struct {
 			Metric     model.Metric                  `json:"metric"`
 			Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 		}{
 			Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
-			Histograms: s.Histograms,
+			Histograms: histograms,
 		}
 		return json.Marshal(stream)
 	}

@@ -169,6 +169,11 @@ message BucketSpan {
   uint32 length = 2;
 }
 
+message FloatHistogramPair {
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = false];;
+  int64 timestamp = 2;
+}
+
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
 // for compatibility with PromQL API results
 // Must keep the same order and type of fields for casting

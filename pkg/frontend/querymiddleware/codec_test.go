@@ -23,6 +23,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
@@ -221,6 +222,44 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 
 func TestMergeAPIResponses(t *testing.T) {
 	codec := newTestPrometheusCodec()
+
+	histogram1 := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
+
+	histogram2 := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              100789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
 
 	for _, tc := range []struct {
 		name     string
@@ -440,7 +479,20 @@ func TestMergeAPIResponses(t *testing.T) {
 		{
 			name: "Handling single histogram result",
 			input: []Response{
-				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{Timestamp: 1000, Histogram: histogram1},
+								},
+							},
+						},
+					},
+				},
 			},
 			expected: &PrometheusResponse{
 				Status: statusSuccess,
@@ -449,17 +501,10 @@ func TestMergeAPIResponses(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-							Histograms: []mimirpb.SampleHistogramPair{
+							Histograms: []mimirpb.FloatHistogramPair{
 								{
 									Timestamp: 1000,
-									Histogram: &mimirpb.SampleHistogram{
-										Count: 10,
-										Sum:   20,
-										Buckets: []*mimirpb.HistogramBucket{
-											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-										},
-									},
+									Histogram: histogram1,
 								},
 							},
 						},
@@ -471,8 +516,34 @@ func TestMergeAPIResponses(t *testing.T) {
 		{
 			name: "Handling non overlapping histogram result",
 			input: []Response{
-				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
-				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"histograms":[[2,{"count":"10","sum":"15","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"]]}]]}]}}`),
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{Timestamp: 1000, Histogram: histogram1},
+								},
+							},
+						},
+					},
+				},
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{Timestamp: 2000, Histogram: histogram2},
+								},
+							},
+						},
+					},
+				},
 			},
 			expected: &PrometheusResponse{
 				Status: statusSuccess,
@@ -481,29 +552,9 @@ func TestMergeAPIResponses(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-							Histograms: []mimirpb.SampleHistogramPair{
-								{
-									Timestamp: 1000,
-									Histogram: &mimirpb.SampleHistogram{
-										Count: 10,
-										Sum:   20,
-										Buckets: []*mimirpb.HistogramBucket{
-											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-										},
-									},
-								},
-								{
-									Timestamp: 2000,
-									Histogram: &mimirpb.SampleHistogram{
-										Count: 10,
-										Sum:   15,
-										Buckets: []*mimirpb.HistogramBucket{
-											{Boundaries: 1, Lower: -1.6817928305074288, Upper: -1.414213562373095, Count: 1},
-											{Boundaries: 1, Lower: -1.414213562373095, Upper: -1.189207115002721, Count: 2},
-										},
-									},
-								},
+							Histograms: []mimirpb.FloatHistogramPair{
+								{Timestamp: 1000, Histogram: histogram1},
+								{Timestamp: 2000, Histogram: histogram2},
 							},
 						},
 					},
@@ -665,7 +716,7 @@ func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples .
 	}
 }
 
-func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.SampleHistogramPair) *PrometheusResponse {
+func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
