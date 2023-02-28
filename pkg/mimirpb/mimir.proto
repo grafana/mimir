@@ -233,7 +233,7 @@ message QueryResponse {
 
 message StringData {
   string value = 1;
-  int64 timestamp_milliseconds = 2;
+  int64 timestamp_ms = 2;
 }
 
 message VectorData {
@@ -246,7 +246,7 @@ message VectorSample {
   repeated string metric = 1;
 
   double value = 2;
-  int64 timestamp_milliseconds = 3;
+  int64 timestamp_ms = 3;
 }
 
 message VectorHistogram {
@@ -254,12 +254,12 @@ message VectorHistogram {
   repeated string metric = 1;
 
   FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
-  int64 timestamp_milliseconds = 3;
+  int64 timestamp_ms = 3;
 }
 
 message ScalarData {
   double value = 1;
-  int64 timestamp_milliseconds = 2;
+  int64 timestamp_ms = 2;
 }
 
 message MatrixData {

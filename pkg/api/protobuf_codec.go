@@ -75,15 +75,15 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 
 func (c protobufCodec) encodeString(s promql.String) mimirpb.StringData {
 	return mimirpb.StringData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
 func (c protobufCodec) encodeScalar(s promql.Scalar) mimirpb.ScalarData {
 	return mimirpb.ScalarData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
@@ -104,15 +104,15 @@ func (c protobufCodec) encodeVector(v promql.Vector) mimirpb.VectorData {
 
 		if s.H == nil {
 			samples = append(samples, mimirpb.VectorSample{
-				Metric:                metric,
-				TimestampMilliseconds: s.T,
-				Value:                 s.V,
+				Metric:      metric,
+				TimestampMs: s.T,
+				Value:       s.V,
 			})
 		} else {
 			histograms = append(histograms, mimirpb.VectorHistogram{
-				Metric:                metric,
-				TimestampMilliseconds: s.T,
-				Histogram:             *mimirpb.FloatHistogramFromPrometheusModel(s.Point.H),
+				Metric:      metric,
+				TimestampMs: s.T,
+				Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(s.Point.H),
 			})
 		}
 	}

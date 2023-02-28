@@ -57,7 +57,7 @@ var protobufCodecScenarios = []struct {
 		resp: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_String_{
-				String_: &mimirpb.StringData{Value: "foo", TimestampMilliseconds: 1500},
+				String_: &mimirpb.StringData{Value: "foo", TimestampMs: 1500},
 			},
 		},
 		expected: &PrometheusResponse{
@@ -80,8 +80,8 @@ var protobufCodecScenarios = []struct {
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
 				Scalar: &mimirpb.ScalarData{
-					Value:                 200,
-					TimestampMilliseconds: 1000,
+					Value:       200,
+					TimestampMs: 1000,
 				},
 			},
 		},
@@ -120,7 +120,7 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{}, TimestampMilliseconds: 1_000, Value: 200},
+						{Metric: []string{}, TimestampMs: 1_000, Value: 200},
 					},
 				},
 			},
@@ -143,7 +143,7 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
+						{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
 					},
 				},
 			},
@@ -166,7 +166,7 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{"foo", "bar", "baz", "blah"}, TimestampMilliseconds: 1_000, Value: 200},
+						{Metric: []string{"foo", "bar", "baz", "blah"}, TimestampMs: 1_000, Value: 200},
 					},
 				},
 			},
@@ -195,8 +195,8 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
-						{Metric: []string{"bar", "baz"}, TimestampMilliseconds: 1_000, Value: 201},
+						{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
+						{Metric: []string{"bar", "baz"}, TimestampMs: 1_000, Value: 201},
 					},
 				},
 			},
@@ -221,9 +221,9 @@ var protobufCodecScenarios = []struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:                []string{"name-1", "value-1"},
-							TimestampMilliseconds: 1234,
-							Histogram:             protobufResponseHistogram,
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
+							Histogram:   protobufResponseHistogram,
 						},
 					},
 				},
@@ -250,13 +250,13 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1000, Value: 200},
+						{Metric: []string{"foo", "bar"}, TimestampMs: 1000, Value: 200},
 					},
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:                []string{"baz", "blah"},
-							TimestampMilliseconds: 1234,
-							Histogram:             protobufResponseHistogram,
+							Metric:      []string{"baz", "blah"},
+							TimestampMs: 1234,
+							Histogram:   protobufResponseHistogram,
 						},
 					},
 				},
@@ -287,7 +287,7 @@ var protobufCodecScenarios = []struct {
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{"foo"}, TimestampMilliseconds: 1_000, Value: 200},
+						{Metric: []string{"foo"}, TimestampMs: 1_000, Value: 200},
 					},
 				},
 			},

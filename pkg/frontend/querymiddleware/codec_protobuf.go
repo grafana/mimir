@@ -80,7 +80,7 @@ func (f protobufFormat) decodeStringData(data *mimirpb.StringData) *PrometheusDa
 		Result: []SampleStream{
 			{
 				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: data.Value}},
-				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMilliseconds}},
+				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMs}},
 			},
 		},
 	}
@@ -91,7 +91,7 @@ func (f protobufFormat) decodeScalarData(data *mimirpb.ScalarData) *PrometheusDa
 		ResultType: model.ValScalar.String(),
 		Result: []SampleStream{
 			{
-				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMilliseconds, Value: data.Value}},
+				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMs, Value: data.Value}},
 			},
 		},
 	}
@@ -109,7 +109,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 		streams[i] = SampleStream{
 			Labels: l,
 			Samples: []mimirpb.Sample{
-				{TimestampMs: sample.TimestampMilliseconds, Value: sample.Value},
+				{TimestampMs: sample.TimestampMs, Value: sample.Value},
 			},
 		}
 	}
@@ -124,7 +124,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 			Labels: l,
 			Histograms: []mimirpb.FloatHistogramPair{
 				{
-					TimestampMs: sample.TimestampMilliseconds,
+					TimestampMs: sample.TimestampMs,
 					Histogram:   sample.Histogram,
 				},
 			},

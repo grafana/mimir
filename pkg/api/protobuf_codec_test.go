@@ -84,8 +84,8 @@ var protobufCodecScenarios = map[string]struct {
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_String_{
 				String_: &mimirpb.StringData{
-					TimestampMilliseconds: 1234,
-					Value:                 "the-string",
+					TimestampMs: 1234,
+					Value:       "the-string",
 				},
 			},
 		},
@@ -105,8 +105,8 @@ var protobufCodecScenarios = map[string]struct {
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
 				Scalar: &mimirpb.ScalarData{
-					TimestampMilliseconds: 1234,
-					Value:                 5.67,
+					TimestampMs: 1234,
+					Value:       5.67,
 				},
 			},
 		},
@@ -148,9 +148,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                nil,
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      nil,
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -179,9 +179,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -210,9 +210,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1", "name-2", "value-2"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -248,14 +248,14 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1", "name-2", "value-2"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 						{
-							Metric:                []string{"name-3", "value-3", "name-4", "value-4"},
-							TimestampMilliseconds: 2345,
-							Value:                 6.78,
+							Metric:      []string{"name-3", "value-3", "name-4", "value-4"},
+							TimestampMs: 2345,
+							Value:       6.78,
 						},
 					},
 				},
@@ -301,8 +301,8 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:                []string{"name-1", "value-1"},
-							TimestampMilliseconds: 1234,
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
 							Histogram: mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
@@ -404,8 +404,8 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric:                []string{"name-1", "value-1"},
-							TimestampMilliseconds: 1234,
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
 							Histogram: mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
@@ -426,8 +426,8 @@ var protobufCodecScenarios = map[string]struct {
 							},
 						},
 						{
-							Metric:                []string{"name-3", "value-3"},
-							TimestampMilliseconds: 12340,
+							Metric:      []string{"name-3", "value-3"},
+							TimestampMs: 12340,
 							Histogram: mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           4,
@@ -450,14 +450,14 @@ var protobufCodecScenarios = map[string]struct {
 					},
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-2", "value-2"},
-							TimestampMilliseconds: 5678,
-							Value:                 9.01,
+							Metric:      []string{"name-2", "value-2"},
+							TimestampMs: 5678,
+							Value:       9.01,
 						},
 						{
-							Metric:                []string{"name-4", "value-4"},
-							TimestampMilliseconds: 56780,
-							Value:                 90.01,
+							Metric:      []string{"name-4", "value-4"},
+							TimestampMs: 56780,
+							Value:       90.01,
 						},
 					},
 				},
