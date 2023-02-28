@@ -32,7 +32,7 @@ func (m mimirJSONCodec) CanEncode(resp *v1.Response) bool {
 	}
 }
 
-func (_ mimirJSONCodec) canEncodeVector(v promql.Vector) bool {
+func (mimirJSONCodec) canEncodeVector(v promql.Vector) bool {
 	for _, s := range v {
 		if s.H != nil {
 			return false
@@ -42,7 +42,7 @@ func (_ mimirJSONCodec) canEncodeVector(v promql.Vector) bool {
 	return true
 }
 
-func (_ mimirJSONCodec) canEncodeMatrix(m promql.Matrix) bool {
+func (mimirJSONCodec) canEncodeMatrix(m promql.Matrix) bool {
 	for _, series := range m {
 		for _, point := range series.Points {
 			if point.H != nil {
