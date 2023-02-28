@@ -57,7 +57,6 @@ func TestIngesterSharding(t *testing.T) {
 			// query would be sent to all ingesters and our test wouldn't really be testing anything.
 			flags["-querier.query-ingesters-within"] = fmt.Sprintf("%ds", queryIngestersWithinSecs)
 			flags["-ingester.ring.heartbeat-period"] = "1s"
-			flags["-ruler.evaluation_delay_duration"] = "0s"
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
