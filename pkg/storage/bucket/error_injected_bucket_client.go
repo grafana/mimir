@@ -20,6 +20,7 @@ const (
 	OpAttributes
 )
 
+// InjectErrorOn injects the provided error if the operation matches the provided mask and target
 func InjectErrorOn(mask Operation, target string, err error) func(Operation, string) error {
 	return func(op Operation, tar string) error {
 		if (op&mask) == op && tar == target {

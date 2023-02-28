@@ -1245,7 +1245,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 	}
 }
 
-func TestValidateAndComplete(t *testing.T) {
+func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
@@ -1254,44 +1254,60 @@ func TestValidateAndComplete(t *testing.T) {
 	validationPath := path.Join(tenantID, blockID, validationFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 
+	validationSucceeds := func(_ context.Context) error { return nil }
+
 	testCases := []struct {
-		name                    string
-		errorInjector           func(op bucket.Operation, name string) error
-		validation              func(context.Context) error
-		expectValidationFile    bool
-		expectErrorInValidation bool
+		name                        string
+		errorInjector               func(op bucket.Operation, name string) error
+		validation                  func(context.Context) error
+		expectNoValidationFile      bool
+		expectErrorInValidationFile bool
+		expectMeta                  bool
 	}{
 		{
-			name:                    "validation fails",
-			validation:              func(_ context.Context) error { return injectedError },
-			expectValidationFile:    true,
-			expectErrorInValidation: true,
+			name:                        "validation fails",
+			validation:                  func(_ context.Context) error { return injectedError },
+			expectErrorInValidationFile: true,
 		},
 		{
 			name:          "validation fails, uploading error fails",
+			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
 			validation:    func(_ context.Context) error { return injectedError },
-			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
 		},
 		{
-			name:          "removing in-flight meta file fails",
-			errorInjector: bucket.InjectErrorOn(bucket.OpDelete, uploadingMetaPath, injectedError),
-			validation:    func(_ context.Context) error { return nil },
+			name:                        "uploading meta file fails",
+			errorInjector:               bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
+			validation:                  validationSucceeds,
+			expectErrorInValidationFile: true,
 		},
 		{
-			name:                    "uploading meta file fails",
-			errorInjector:           bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
-			validation:              func(_ context.Context) error { return nil },
-			expectValidationFile:    true,
-			expectErrorInValidation: true,
+			name: "uploading meta file fails, uploading error fails",
+			errorInjector: func(op bucket.Operation, target string) error {
+				if op == bucket.OpUpload && (target == metaPath || target == validationPath) {
+					return injectedError
+				}
+				return nil
+			},
+			validation: validationSucceeds,
 		},
 		{
-			name:          "uploading validation file fails",
-			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
-			validation:    func(_ context.Context) error { return nil },
+			name:                   "removing in-flight meta file fails",
+			errorInjector:          bucket.InjectErrorOn(bucket.OpDelete, uploadingMetaPath, injectedError),
+			validation:             validationSucceeds,
+			expectMeta:             true,
+			expectNoValidationFile: true,
 		},
 		{
-			name:       "valid request",
-			validation: func(_ context.Context) error { return nil },
+			name:          "removing validation file fails",
+			errorInjector: bucket.InjectErrorOn(bucket.OpDelete, validationPath, injectedError),
+			validation:    validationSucceeds,
+			expectMeta:    true,
+		},
+		{
+			name:                   "valid request",
+			validation:             validationSucceeds,
+			expectMeta:             true,
+			expectNoValidationFile: true,
 		},
 	}
 
@@ -1313,26 +1329,34 @@ func TestValidateAndComplete(t *testing.T) {
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
+			v := validationFile{}
+			marshalAndUploadJSON(t, bkt, validationPath, v) // upload an initial validation file as a precondition
 			c.validateAndCompleteBlockUpload(log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &metadata.Meta{}, tc.validation)
 
-			r, err := bkt.Get(context.Background(), validationPath)
-			if !tc.expectValidationFile {
-				require.True(t, bkt.IsObjNotFoundErr(err))
+			metaExists, err := bkt.Exists(context.Background(), metaPath)
+			require.NoError(t, err)
+			require.Equal(t, metaExists, tc.expectMeta)
+
+			if tc.expectNoValidationFile {
+				exists, err := bkt.Exists(context.Background(), validationPath)
+				require.NoError(t, err)
+				require.False(t, exists)
 				return
 			}
+
+			r, err := bkt.Get(context.Background(), validationPath)
 			require.NoError(t, err)
 			decoder := json.NewDecoder(r)
-			v := validationFile{}
 			err = decoder.Decode(&v)
 			require.NoError(t, err)
-			if tc.expectErrorInValidation {
+
+			if tc.expectErrorInValidationFile {
 				require.NotEmpty(t, v.Error)
 			} else {
 				require.Empty(t, v.Error)
 			}
 		})
 	}
-
 }
 
 // marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
