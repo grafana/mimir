@@ -113,6 +113,12 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 	})
 
+	if cfg.sendHistogramsInstead {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.query-result-response-format": "protobuf",
+		})
+	}
+
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
 

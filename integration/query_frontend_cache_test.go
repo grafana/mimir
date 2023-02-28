@@ -41,6 +41,9 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		"-query-frontend.max-cache-freshness":               "0", // Cache everything.
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start the query-frontend.

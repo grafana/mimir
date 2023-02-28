@@ -83,6 +83,9 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 		"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
 		"-blocks-storage.tsdb.ship-interval":       "1s",
 		"-blocks-storage.tsdb.retention-period":    "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start dependencies in common with all test cases.
@@ -384,6 +387,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
+
+				// Enable protobuf format so that we can use native histograms.
+				"-query-frontend.query-result-response-format": "protobuf",
 			})
 
 			// Start Mimir replicas.
