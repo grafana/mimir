@@ -238,6 +238,8 @@ replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immut
 
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
+replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20221207184640-f3cff1453715
+
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
 // - https://github.com/hashicorp/memberlist/pull/260

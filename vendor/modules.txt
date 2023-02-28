@@ -1327,7 +1327,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/kube-openapi v0.0.0-20221207184640-f3cff1453715
+# k8s.io/kube-openapi v0.0.0-20221207184640-f3cff1453715 => k8s.io/kube-openapi v0.0.0-20221207184640-f3cff1453715
 ## explicit; go 1.18
 k8s.io/kube-openapi/pkg/internal
 k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json
@@ -1381,6 +1381,7 @@ sigs.k8s.io/yaml
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230226224315-819f9ae85694
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
+# k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20221207184640-f3cff1453715
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 # google.golang.org/grpc => google.golang.org/grpc v1.47.0
