@@ -9,23 +9,24 @@ weight: 10
 
 # Get started with Grafana Mimir
 
-There are two different options for getting started with Grafana Mimir:
+You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
-- The written tutorial provides a series of imperative commands to start a single Mimir process.
-- The visual tutorial (in the form of a video) uses `docker-compose` to declaratively deploy multiple Mimir processes.
+- **Imperatively**: The written instructions that follow contain commands to help you start a single Mimir process. You would need to perform the commands again to start another Mimir process.<p>
+- **Declaratively**: The following video tutorial uses `docker-compose` to deploy multiple Mimir processes. Therefore, if you want to deploy multiple Mimir processes later, the majority of the configuration work will have already been done.
 
-{{< vimeo 691947043 >}}
-
-<br/>
-
-The written instructions focus on deploying Grafana Mimir as a [monolith]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}), which is designed for users getting started with the project. For more information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
+  {{< vimeo 691947043 >}}
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or the [Grafana Agent](/docs/grafana-cloud/agent/#installing-the-grafana-agent).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/data-configuration/agent/install_agent/).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
+> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
+> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
+
 ## Download Grafana Mimir
+
+In a terminal, run one of the following commands:
 
 - Using Docker:
 
@@ -35,7 +36,7 @@ The written instructions focus on deploying Grafana Mimir as a [monolith]({{< re
 
 - Using a local binary:
 
-  Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+  Download the appropriate [release asset](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
 
   For Linux with the AMD64 architecture:
 
@@ -46,7 +47,7 @@ The written instructions focus on deploying Grafana Mimir as a [monolith]({{< re
 
 ## Start Grafana Mimir
 
-To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file called `demo.yaml`:
+To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file named `demo.yaml`:
 
 <!-- prettier-ignore-start -->
 [embedmd]:# (../../../../configurations/demo.yaml)
@@ -98,7 +99,9 @@ store_gateway:
 ```
 <!-- prettier-ignore-end -->
 
-> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server. If possible, we kindly ask that you to keep the usage reporting feature enabled, to help us understand more about how the open source community runs Mimir. To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
+> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
+> If possible and to help us understand more about how the open source community runs Mimir, we kindly ask you to keep the usage reporting feature enabled.
+> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
 
 ## Run Grafana Mimir
 
@@ -107,7 +110,12 @@ In a terminal, run one of the following commands:
 - Using Docker:
 
   ```bash
-  docker run --rm --name mimir --publish 9009:9009 --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:latest --config.file=/etc/mimir/demo.yaml
+  docker run \
+    --rm \
+    --name mimir \
+    --publish 9009:9009 \
+    --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:latest \
+    --config.file=/etc/mimir/demo.yaml
   ```
 
 - Using a local binary:
@@ -140,9 +148,9 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure the Grafana Agent to write to Grafana Mimir
+## Configure Grafana Agent to write to Grafana Mimir
 
-Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart the Grafana Agent:
+Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file, and restart Grafana Agent:
 
 ```yaml
 remote_write:
@@ -184,9 +192,9 @@ docker run --rm --name=grafana --network=host grafana/grafana
    | Name  | Mimir                                                                |
    | URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
 
-To add a data source, refer to [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
+To add a data source, refer to [Add a data source](/docs/grafana/latest/administration/data-source-management/#add-a-data-source).
 
 ## Verify success
 
-When you have completed the tasks in this getting started guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/)
-as well as create dashboard panels using the newly configured Grafana Mimir data source.
+After you have completed the tasks in this _Get started_ guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/)
+as well as create dashboard panels using your newly configured Grafana Mimir data source.
