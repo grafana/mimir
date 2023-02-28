@@ -78,4 +78,8 @@ This circuit breaker ensures queriers and rulers do not return any partial query
 
 The [store-gateway]({{< relref "../components/store-gateway.md" >}}), at startup and periodically, fetches the bucket index for each tenant that belongs to its shard, and uses it as the source of truth for the blocks and deletion marks in the storage. This removes the need to periodically scan the bucket to discover blocks belonging to its shard.
 
-[^1]: Ingesters regularly add new blocks to the bucket as they offload data to long-term storage, and compactors subsequently compact these blocks and mark the original blocks for deletion. Actual deletion happens after a delay (`compactor.deletion-delay`). Trying to fetch a block that has already been deleted will lead to query failures. Therefore, in this context, an _almost up-to-date_ view is a view that's outdated by less than `compactor.deletion-delay`.
+[^1]: Ingesters regularly add new blocks to the bucket as they offload data to long-term storage,
+and compactors subsequently compact these blocks and mark the original blocks for deletion.
+Actual deletion happens after the delay value that is associated with the parameter `compactor.deletion-delay`.
+If a deleted block is fetched, query failures occur.
+Therefore, in this context, an _almost up-to-date_ view is a view that’s outdated by less than the value of `compactor.deletion-delay`.
