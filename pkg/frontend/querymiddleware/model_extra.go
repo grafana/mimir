@@ -349,7 +349,7 @@ func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
 	} else {
 		sample = model.Sample{
 			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-			Timestamp: model.Time(vs.Histograms[0].Timestamp),
+			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
 			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
 		}
 	}
@@ -383,7 +383,7 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 
 		for i, h := range s.Histograms {
 			histograms[i] = mimirpb.SampleHistogramPair{
-				Timestamp: h.Timestamp,
+				Timestamp: h.TimestampMs,
 				Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
 			}
 		}

@@ -334,8 +334,8 @@ func FromPointsToHistograms(points []promql.Point) []FloatHistogramPair {
 			continue
 		}
 		samples = append(samples, FloatHistogramPair{
-			Timestamp: point.T,
-			Histogram: *FloatHistogramFromPrometheusModel(point.H),
+			TimestampMs: point.T,
+			Histogram:   *FloatHistogramFromPrometheusModel(point.H),
 		})
 	}
 	return samples
@@ -680,7 +680,7 @@ func (m Histogram) GetTimestampVal() int64 {
 }
 
 func (p FloatHistogramPair) GetTimestampVal() int64 {
-	return p.Timestamp
+	return p.TimestampMs
 }
 
 func (s Sample) GetBaseVal() float64 {

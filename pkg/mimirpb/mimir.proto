@@ -170,8 +170,8 @@ message BucketSpan {
 }
 
 message FloatHistogramPair {
-  FloatHistogram histogram = 1 [(gogoproto.nullable) = false];;
-  int64 timestamp = 2;
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = false];
+  int64 timestamp_ms = 2;
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
@@ -270,16 +270,6 @@ message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated string metric = 1;
 
-  repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
-  repeated MatrixHistogram histograms = 3 [(gogoproto.nullable) = false];
-}
-
-message MatrixSample {
-  double value = 1;
-  int64 timestamp_milliseconds = 2;
-}
-
-message MatrixHistogram {
-  FloatHistogram histogram = 1 [(gogoproto.nullable) = false];
-  int64 timestamp_milliseconds = 2;
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }

@@ -585,10 +585,10 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 							},
 						},
@@ -620,14 +620,14 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 							},
 						},
@@ -666,27 +666,27 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 							},
 						},
 						{
 							Metric: []string{"name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 12340,
-									Value:                 50.67,
+									TimestampMs: 12340,
+									Value:       50.67,
 								},
 								{
-									TimestampMilliseconds: 56780,
-									Value:                 90.01,
+									TimestampMs: 56780,
+									Value:       90.01,
 								},
 							},
 						},
@@ -737,9 +737,9 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Histograms: []mimirpb.MatrixHistogram{
+							Histograms: []mimirpb.FloatHistogramPair{
 								{
-									TimestampMilliseconds: 1234,
+									TimestampMs: 1234,
 									Histogram: mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
@@ -837,19 +837,19 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 								{
-									TimestampMilliseconds: 56780,
-									Value:                 90.01,
+									TimestampMs: 56780,
+									Value:       90.01,
 								},
 							},
-							Histograms: []mimirpb.MatrixHistogram{
+							Histograms: []mimirpb.FloatHistogramPair{
 								{
-									TimestampMilliseconds: 1234,
+									TimestampMs: 1234,
 									Histogram: mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
@@ -870,7 +870,7 @@ var protobufCodecScenarios = map[string]struct {
 									},
 								},
 								{
-									TimestampMilliseconds: 12340,
+									TimestampMs: 12340,
 									Histogram: mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           4,

@@ -487,7 +487,7 @@ func TestMergeAPIResponses(t *testing.T) {
 							{
 								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
-									{Timestamp: 1000, Histogram: histogram1},
+									{TimestampMs: 1000, Histogram: histogram1},
 								},
 							},
 						},
@@ -503,8 +503,8 @@ func TestMergeAPIResponses(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
 							Histograms: []mimirpb.FloatHistogramPair{
 								{
-									Timestamp: 1000,
-									Histogram: histogram1,
+									TimestampMs: 1000,
+									Histogram:   histogram1,
 								},
 							},
 						},
@@ -524,7 +524,7 @@ func TestMergeAPIResponses(t *testing.T) {
 							{
 								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
-									{Timestamp: 1000, Histogram: histogram1},
+									{TimestampMs: 1000, Histogram: histogram1},
 								},
 							},
 						},
@@ -538,7 +538,7 @@ func TestMergeAPIResponses(t *testing.T) {
 							{
 								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
-									{Timestamp: 2000, Histogram: histogram2},
+									{TimestampMs: 2000, Histogram: histogram2},
 								},
 							},
 						},
@@ -553,8 +553,8 @@ func TestMergeAPIResponses(t *testing.T) {
 						{
 							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
 							Histograms: []mimirpb.FloatHistogramPair{
-								{Timestamp: 1000, Histogram: histogram1},
-								{Timestamp: 2000, Histogram: histogram2},
+								{TimestampMs: 1000, Histogram: histogram1},
+								{TimestampMs: 2000, Histogram: histogram2},
 							},
 						},
 					},

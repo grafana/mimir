@@ -75,10 +75,10 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		}
 
 		thirdDayDownstreamResponse = protobufEncodePrometheusResponse(t,
-			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.MatrixHistogram{
+			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
 				{
-					TimestampMilliseconds: dayThreeStartTime.Unix() * 1000,
-					Histogram:             thirdDayHistogram,
+					TimestampMs: dayThreeStartTime.Unix() * 1000,
+					Histogram:   thirdDayHistogram,
 				},
 			}))
 
@@ -102,10 +102,10 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		}
 
 		fourthDayDownstreamResponse = protobufEncodePrometheusResponse(t,
-			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.MatrixHistogram{
+			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
 				{
-					TimestampMilliseconds: dayFourEndTime.Unix() * 1000,
-					Histogram:             fourthDayHistogram,
+					TimestampMs: dayFourEndTime.Unix() * 1000,
+					Histogram:   fourthDayHistogram,
 				},
 			}))
 
@@ -117,12 +117,12 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			},
 			[]mimirpb.FloatHistogramPair{
 				{
-					Timestamp: dayThreeStartTime.Unix() * 1000,
-					Histogram: thirdDayHistogram,
+					TimestampMs: dayThreeStartTime.Unix() * 1000,
+					Histogram:   thirdDayHistogram,
 				},
 				{
-					Timestamp: dayFourEndTime.Unix() * 1000,
-					Histogram: fourthDayHistogram,
+					TimestampMs: dayFourEndTime.Unix() * 1000,
+					Histogram:   fourthDayHistogram,
 				},
 			},
 		))
@@ -258,7 +258,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 					},
 					Histograms: []mimirpb.FloatHistogramPair{
 						{
-							Timestamp: 1634292000000,
+							TimestampMs: 1634292000000,
 							Histogram: mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
@@ -366,7 +366,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 					},
 					Histograms: []mimirpb.FloatHistogramPair{
 						{
-							Timestamp: 1634292000000,
+							TimestampMs: 1634292000000,
 							Histogram: mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
@@ -1344,7 +1344,7 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 	return generated.String()
 }
 
-func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.MatrixSample, histograms []mimirpb.MatrixHistogram) *mimirpb.QueryResponse {
+func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
 	return &mimirpb.QueryResponse{
 		Status: mimirpb.QueryResponse_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{

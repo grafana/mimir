@@ -124,8 +124,8 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 			Labels: l,
 			Histograms: []mimirpb.FloatHistogramPair{
 				{
-					Timestamp: sample.TimestampMilliseconds,
-					Histogram: sample.Histogram,
+					TimestampMs: sample.TimestampMilliseconds,
+					Histogram:   sample.Histogram,
 				},
 			},
 		}
@@ -146,28 +146,10 @@ func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusD
 			return nil, err
 		}
 
-		samples := make([]mimirpb.Sample, len(series.Samples))
-
-		for sampleIdx, sample := range series.Samples {
-			samples[sampleIdx] = mimirpb.Sample{
-				TimestampMs: sample.TimestampMilliseconds,
-				Value:       sample.Value,
-			}
-		}
-
-		histograms := make([]mimirpb.FloatHistogramPair, len(series.Histograms))
-
-		for histogramIdx, sample := range series.Histograms {
-			histograms[histogramIdx] = mimirpb.FloatHistogramPair{
-				Timestamp: sample.TimestampMilliseconds,
-				Histogram: sample.Histogram,
-			}
-		}
-
 		streams[seriesIdx] = SampleStream{
 			Labels:     l,
-			Samples:    samples,
-			Histograms: histograms,
+			Samples:    series.Samples,
+			Histograms: series.Histograms,
 		}
 	}
 
