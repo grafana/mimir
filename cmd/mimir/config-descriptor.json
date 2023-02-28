@@ -6712,12 +6712,12 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "skip_validation",
+              "name": "block_validation_enabled",
               "required": false,
-              "desc": "Skip validation of blocks when completing a block upload",
+              "desc": "Validate blocks before finalizing a block upload",
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "compactor.block-upload.validation-heartbeat-interval",
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.block-upload.block-validation-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

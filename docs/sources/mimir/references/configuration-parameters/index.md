@@ -3466,9 +3466,9 @@ sharding_ring:
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
 block_upload:
-  # (experimental) Skip validation of blocks when completing a block upload
-  # CLI flag: -compactor.block-upload.validation-heartbeat-interval
-  [skip_validation: <boolean> | default = false]
+  # (experimental) Validate blocks before finalizing a block upload
+  # CLI flag: -compactor.block-upload.block-validation-enabled
+  [block_validation_enabled: <boolean> | default = true]
 ```
 
 ### store_gateway
