@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/reference-learning-resources/
 title: "Learning resources for Grafana Mimir"
 menuTitle: "Learning resources"
 description: "Learn more about Grafana Mimir via blog posts, podcasts, and videos."
