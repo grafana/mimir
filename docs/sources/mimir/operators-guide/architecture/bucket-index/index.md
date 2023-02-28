@@ -14,7 +14,7 @@ Disabling the bucket index is not recommended.
 
 ## Benefits
 
-The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) must have an almost[^1] up-to-date view of the storage bucket, in order to find the right blocks to lookup at query time (querier) and load block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
+The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) must have an almost[^1] up-to-date view of the storage bucket, in order to find the right blocks to look up at query time (querier) and to load a block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
 Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
 
 When the bucket index is enabled, the querier, store-gateway, and ruler periodically look up the per-tenant bucket index instead of scanning the bucket via `list objects` operations.
@@ -80,6 +80,6 @@ The [store-gateway]({{< relref "../components/store-gateway.md" >}}), at startup
 
 [^1]: Ingesters regularly add new blocks to the bucket as they offload data to long-term storage,
 and compactors subsequently compact these blocks and mark the original blocks for deletion.
-Actual deletion happens after the delay value that is associated with the parameter `compactor.deletion-delay`.
-If a deleted block is fetched, query failures occur.
-Therefore, in this context, an _almost up-to-date_ view is a view that’s outdated by less than the value of `compactor.deletion-delay`.
+Actual deletion happens after the delay value that is associated with the parameter `-compactor.deletion-delay`.
+An attempt to fetch a deleted block will lead to failure of the query.
+Therefore, in this context, an _almost up-to-date_ view is a view that’s outdated by less than the value of `-compactor.deletion-delay`.
