@@ -235,6 +235,9 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 	batch.ValueType = valueType
 	var populate func(j int)
 	switch valueType {
+	case chunkenc.ValNone:
+		// Here in case we will introduce a linter that checks that all possible types are covered
+		return batch
 	case chunkenc.ValFloat:
 		populate = func(j int) {
 			t, v := p.it.At()
