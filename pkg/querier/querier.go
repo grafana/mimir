@@ -38,8 +38,9 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators      bool `yaml:"iterators" category:"advanced"`
-	BatchIterators bool `yaml:"batch_iterators" category:"advanced"`
+	Iterators            bool          `yaml:"iterators" category:"advanced"`
+	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.7.0, remove in Mimir 2.9.0
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -55,6 +56,9 @@ type Config struct {
 
 const (
 	queryStoreAfterFlag = "querier.query-store-after"
+
+	// DefaultQuerierCfgQueryIngestersWithin is the default value for the deprecated querier config QueryIngestersWithin (it has been moved to a per-tenant limit instead)
+	DefaultQuerierCfgQueryIngestersWithin = 13 * time.Hour
 )
 
 var (
@@ -70,6 +74,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
+
+	// The querier.query-ingesters-within flag has been moved to the limits.go file
+	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.9.0
+	// TODO: Remove in Mimir 2.9.0
+	cfg.QueryIngestersWithin = DefaultQuerierCfgQueryIngestersWithin
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

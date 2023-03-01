@@ -25,6 +25,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
@@ -271,6 +272,14 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
+
+	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
+	// We need to preserve the option in the querier yaml for two releases
+	// If the querier config is configured by the user, the default limit is overwritten
+	// TODO: Remove in Mimir 2.9.0
+	if t.Cfg.Querier.QueryIngestersWithin != querier.DefaultQuerierCfgQueryIngestersWithin {
+		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
+	}
 
 	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
