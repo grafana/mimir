@@ -188,14 +188,10 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
 	defer logger.Span.Finish()
 
-	valTyp, res, err := q.query(ctx, qs, t, logger)
-	if err != nil {
-		return nil, err
-	}
-	return decodeQueryResponse(valTyp, res)
+	return q.query(ctx, qs, t, logger)
 }
 
-func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (model.ValueType, json.RawMessage, error) {
+func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
 	args := make(url.Values)
 	args.Set("query", query)
 	if !ts.IsZero() {
@@ -216,7 +212,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 
 	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, &req); err != nil {
-			return model.ValNone, nil, err
+			return promql.Vector{}, err
 		}
 	}
 
@@ -226,10 +222,10 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	resp, err := q.sendRequest(ctx, &req)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
-		return model.ValNone, nil, err
+		return promql.Vector{}, err
 	}
 	if resp.Code/100 != 2 {
-		return model.ValNone, nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
+		return promql.Vector{}, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
@@ -240,10 +236,10 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 		Error     string          `json:"error"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&apiResp); err != nil {
-		return model.ValNone, nil, err
+		return promql.Vector{}, err
 	}
 	if apiResp.Status == statusError {
-		return model.ValNone, nil, fmt.Errorf("query response error: %s", apiResp.Error)
+		return promql.Vector{}, fmt.Errorf("query response error: %s", apiResp.Error)
 	}
 	v := struct {
 		Type   model.ValueType `json:"resultType"`
@@ -251,9 +247,9 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	}{}
 
 	if err := json.Unmarshal(apiResp.Data, &v); err != nil {
-		return model.ValNone, nil, err
+		return promql.Vector{}, err
 	}
-	return v.Type, v.Result, nil
+	return decodeQueryResponse(v.Type, v.Result)
 }
 
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
