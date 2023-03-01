@@ -2515,13 +2515,13 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	}
 }
 
-func BenchmarkBlockSeries(b *testing.B) {
+func BenchmarkBlockSeriesSkippingChunks(b *testing.B) {
 	blk, blockMeta := prepareBucket(b)
 
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
 		for _, queryShardingEnabled := range []bool{false, true} {
 			b.Run(fmt.Sprintf("concurrency: %d, query sharding enabled: %v", concurrency, queryShardingEnabled), func(b *testing.B) {
-				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, queryShardingEnabled)
+				benchmarkBlockSeriesSkippingChunksWithConcurrency(b, concurrency, blockMeta, blk, queryShardingEnabled)
 			})
 		}
 	}
@@ -2583,14 +2583,11 @@ func prepareBucket(b *testing.B) (*bucketBlock, *metadata.Meta) {
 	return blk, blockMeta
 }
 
-func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, queryShardingEnabled bool) {
-	ctx := context.Background()
-
+func benchmarkBlockSeriesSkippingChunksWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, queryShardingEnabled bool) {
 	// Run the same number of queries per goroutine.
 	queriesPerWorker := b.N / concurrency
 
 	// No limits.
-	chunksLimiter := newStaticChunksLimiterFactory(0)(nil)
 	seriesLimiter := newStaticSeriesLimiterFactory(0)(nil)
 
 	// Create the series hash cached used when query sharding is enabled.
@@ -2631,7 +2628,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 					MinTime:    blockMeta.MinTime,
 					MaxTime:    blockMeta.MaxTime,
 					Matchers:   reqMatchers,
-					SkipChunks: false,
+					SkipChunks: true,
 				}
 
 				matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
@@ -2640,17 +2637,14 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				require.NoError(b, err)
 
 				indexReader := blk.indexReader()
-				chunkReader := blk.chunkReader(ctx)
-				chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
-				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, cachedSeriesHasher{seriesHashCache}, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
+				seriesSet, _, err := blockSeriesSkippingChunks(context.Background(), indexReader, matchers, shardSelector, cachedSeriesHasher{seriesHashCache}, seriesLimiter, log.NewNopLogger())
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
 				require.Equal(b, true, seriesSet.Next())
 
 				require.NoError(b, indexReader.Close())
-				require.NoError(b, chunkReader.Close())
 			}
 		}()
 	}
@@ -2658,22 +2652,19 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 	wg.Wait()
 }
 
-func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
+func TestBlockSeriesSkippingChunks(t *testing.T) {
 	const series = 100
 	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
 	b := newTestBucketBlock()
 
-	mint, maxt := int64(0), int64(0)
-	skipChunks := true
-
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-	ss, _, err := blockSeries(context.Background(), b.indexReader(), nil, nil, matchers, nil, nil, nil, sl, skipChunks, mint, maxt, log.NewNopLogger())
+	ss, _, err := blockSeriesSkippingChunks(context.Background(), b.indexReader(), matchers, nil, nil, sl, log.NewNopLogger())
 	require.NoError(t, err)
 	require.True(t, ss.Next(), "Result set should have series because when skipChunks=true, mint/maxt should be ignored")
 }
 
-func TestBlockSeries_Cache(t *testing.T) {
+func TestBlockSeriesSkippingChunks_Cache(t *testing.T) {
 	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(100))
 
 	t.Run("does not update cache on error", func(t *testing.T) {
@@ -2689,7 +2680,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, _, err := blockSeries(context.Background(), b.indexReader(), nil, nil, matchers, nil, nil, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+		_, _, err := blockSeriesSkippingChunks(context.Background(), b.indexReader(), matchers, nil, nil, sl, log.NewNopLogger())
 		require.Error(t, err)
 	})
 
@@ -2743,7 +2734,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 
 		indexr := b.indexReader()
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, cachedSeriesHasher{shc}, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeriesSkippingChunks(context.Background(), indexr, tc.matchers, tc.shard, cachedSeriesHasher{shc}, sl, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
@@ -2753,7 +2744,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		// We break the index cache to not allow looking up series, so we know we don't look up series.
 		indexr.block.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, cachedSeriesHasher{shc}, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeriesSkippingChunks(context.Background(), indexr, tc.matchers, tc.shard, cachedSeriesHasher{shc}, sl, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
