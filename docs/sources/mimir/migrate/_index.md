@@ -1,4 +1,6 @@
 ---
+aliases:
+  - migration-guide/
 title: "Grafana Mimir migration guides"
 menuTitle: "Migration guides"
 description: "Refer to these guides when migrating to Grafana Mimir."
