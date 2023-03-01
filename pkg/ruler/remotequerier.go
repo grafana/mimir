@@ -3,9 +3,7 @@
 package ruler
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -23,9 +21,6 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
-	prommodel "github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/weaveworks/common/httpgrpc"
@@ -210,27 +205,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
-	var apiResp struct {
-		Status    string          `json:"status"`
-		Data      json.RawMessage `json:"data"`
-		ErrorType string          `json:"errorType"`
-		Error     string          `json:"error"`
-	}
-	if err := json.NewDecoder(bytes.NewReader(resp.Body)).Decode(&apiResp); err != nil {
-		return promql.Vector{}, err
-	}
-	if apiResp.Status == statusError {
-		return promql.Vector{}, fmt.Errorf("query response error: %s", apiResp.Error)
-	}
-	v := struct {
-		Type   model.ValueType `json:"resultType"`
-		Result json.RawMessage `json:"result"`
-	}{}
-
-	if err := json.Unmarshal(apiResp.Data, &v); err != nil {
-		return promql.Vector{}, err
-	}
-	return decodeQueryResponse(v.Type, v.Result)
+	return jsonDecoder{}.Decode(resp.Body)
 }
 
 func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time.Time) (httpgrpc.HTTPRequest, error) {
@@ -287,60 +262,6 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 			return nil, fmt.Errorf("%s while retrying request, last err was: %w", ctx.Err(), err)
 		}
 	}
-}
-
-func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql.Vector, error) {
-	switch valTyp {
-	case model.ValScalar:
-		var sv model.Scalar
-		if err := json.Unmarshal(result, &sv); err != nil {
-			return nil, err
-		}
-		return scalarToPromQLVector(&sv), nil
-
-	case model.ValVector:
-		var vv model.Vector
-		if err := json.Unmarshal(result, &vv); err != nil {
-			return nil, err
-		}
-		return vectorToPromQLVector(vv), nil
-
-	default:
-		return nil, fmt.Errorf("rule result is not a vector or scalar: %q", valTyp)
-	}
-}
-
-func vectorToPromQLVector(vec prommodel.Vector) promql.Vector {
-	retVal := make(promql.Vector, 0, len(vec))
-	for _, p := range vec {
-
-		lbl := make(labels.Labels, 0, len(p.Metric))
-		for ln, lv := range p.Metric {
-			lbl = append(lbl, labels.Label{
-				Name:  string(ln),
-				Value: string(lv),
-			})
-		}
-
-		retVal = append(retVal, promql.Sample{
-			Metric: lbl,
-			Point: promql.Point{
-				V: float64(p.Value),
-				T: int64(p.Timestamp),
-			},
-		})
-	}
-	return retVal
-}
-
-func scalarToPromQLVector(sc *prommodel.Scalar) promql.Vector {
-	return promql.Vector{promql.Sample{
-		Point: promql.Point{
-			V: float64(sc.Value),
-			T: int64(sc.Timestamp),
-		},
-		Metric: labels.Labels{},
-	}}
 }
 
 // WithOrgIDMiddleware attaches 'X-Scope-OrgID' header value to the outgoing request by inspecting the passed context.
