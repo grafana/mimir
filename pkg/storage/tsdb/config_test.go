@@ -121,6 +121,12 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidWALSegmentSizeBytes,
 		},
+		"should fail on invalid store-gateway streaming batch size": {
+			setup: func(cfg *BlocksStorageConfig) {
+				cfg.BucketStore.StreamingBatchSize = 0
+			},
+			expectedErr: errInvalidStreamingBatchSize,
+		},
 	}
 
 	for testName, testData := range tests {

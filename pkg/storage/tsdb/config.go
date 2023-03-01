@@ -90,6 +90,7 @@ var (
 	errInvalidCompactionConcurrency = errors.New("invalid TSDB compaction concurrency")
 	errInvalidWALSegmentSizeBytes   = errors.New("invalid TSDB WAL segment size bytes")
 	errInvalidStripeSize            = errors.New("invalid TSDB stripe size")
+	errInvalidStreamingBatchSize    = errors.New("invalid store-gateway streaming batch size")
 	errEmptyBlockranges             = errors.New("empty block ranges for TSDB")
 )
 
@@ -354,21 +355,21 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
-	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.")
+	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 }
 
 // Validate the config.
 func (cfg *BucketStoreConfig) Validate() error {
-	err := cfg.IndexCache.Validate()
-	if err != nil {
+	if cfg.StreamingBatchSize <= 0 {
+		return errInvalidStreamingBatchSize
+	}
+	if err := cfg.IndexCache.Validate(); err != nil {
 		return errors.Wrap(err, "index-cache configuration")
 	}
-	err = cfg.ChunksCache.Validate()
-	if err != nil {
+	if err := cfg.ChunksCache.Validate(); err != nil {
 		return errors.Wrap(err, "chunks-cache configuration")
 	}
-	err = cfg.MetadataCache.Validate()
-	if err != nil {
+	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
 	return nil

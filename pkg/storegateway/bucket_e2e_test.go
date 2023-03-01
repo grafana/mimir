@@ -111,6 +111,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 type prepareStoreConfig struct {
 	tempDir              string
 	manyParts            bool
+	maxSeriesPerBatch    int
 	chunksLimiterFactory ChunksLimiterFactory
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
@@ -129,9 +130,13 @@ func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareSto
 
 func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 	return &prepareStoreConfig{
-		metricsRegistry:      prometheus.NewRegistry(),
-		tempDir:              t.TempDir(),
-		manyParts:            false,
+		metricsRegistry: prometheus.NewRegistry(),
+		tempDir:         t.TempDir(),
+		manyParts:       false,
+		// We want to force each Series() call to use more than one batch to catch some edge cases.
+		// This should make the implementation slightly slower, although most tests time
+		// is dominated by the setup.
+		maxSeriesPerBatch:    10,
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
@@ -187,6 +192,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		cfg.tempDir,
+		cfg.maxSeriesPerBatch,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -886,21 +892,6 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		b, err := filesystem.NewBucket(t.TempDir())
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
-			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
-		}
-		runTest(t, factory)
-	})
-
-	t.Run("streaming", func(t *testing.T) {
-		t.Parallel()
-
-		b, err := filesystem.NewBucket(t.TempDir())
-		assert.NoError(t, err)
-		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
-			// We want to force each Series() call to use more than one batch to catch some edge cases.
-			// This should make the implementation slightly slower, although test time
-			// should be dominated by the setup.
-			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(10)))
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)

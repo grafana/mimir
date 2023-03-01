@@ -108,10 +108,10 @@ type BucketStore struct {
 	// Number of goroutines to use when syncing blocks from object storage.
 	blockSyncConcurrency int
 
-	// maxSeriesPerBatch controls whether to load all series and chunks in memory for each Series() call
-	// or to load and unload them in batches and stream them to the querier. The bucketStore uses streaming when
-	// maxSeriesPerBatch is larger than zero.
+	// maxSeriesPerBatch controls the batch size to use when processing a Series() request.
+	// This value must be greater than zero.
 	maxSeriesPerBatch int
+
 	// fineGrainedChunksCachingEnabled controls whether to use the per series chunks caching
 	// or rely on the transparent caching bucket.
 	fineGrainedChunksCachingEnabled bool
@@ -214,12 +214,6 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 	}
 }
 
-func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.maxSeriesPerBatch = seriesPerBatch
-	}
-}
-
 func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.fineGrainedChunksCachingEnabled = enabled
@@ -233,6 +227,7 @@ func NewBucketStore(
 	bkt objstore.InstrumentedBucketReader,
 	fetcher block.MetadataFetcher,
 	dir string,
+	maxSeriesPerBatch int,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioners blockPartitioners,
@@ -265,6 +260,7 @@ func NewBucketStore(
 		seriesHashCache:             seriesHashCache,
 		metrics:                     metrics,
 		userID:                      userID,
+		maxSeriesPerBatch:           maxSeriesPerBatch,
 	}
 
 	for _, option := range options {
