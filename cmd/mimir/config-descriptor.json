@@ -9515,6 +9515,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "query_result_response_format",
+              "required": false,
+              "desc": "Format to use when retrieving query results from query-frontends. Supported values: json, protobuf",
+              "fieldValue": null,
+              "fieldDefaultValue": "json",
+              "fieldFlag": "ruler.query-frontend.query-result-response-format",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

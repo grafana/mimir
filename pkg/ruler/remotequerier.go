@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,6 +27,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -43,9 +45,13 @@ const (
 	statusError = "error"
 
 	maxRequestRetries = 3
+
+	formatJSON     = "json"
+	formatProtobuf = "protobuf"
 )
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
+var allFormats = []string{formatJSON, formatProtobuf}
 
 // QueryFrontendConfig defines query-frontend transport configuration.
 type QueryFrontendConfig struct {
@@ -54,6 +60,8 @@ type QueryFrontendConfig struct {
 
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
+
+	QueryResultResponseFormat string `yaml:"query_result_response_format" category:"experimental"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -64,6 +72,16 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 			"to enable client side load balancing.")
 
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
+
+	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
+}
+
+func (c *QueryFrontendConfig) Validate() error {
+	if !slices.Contains(allFormats, c.QueryResultResponseFormat) {
+		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", c.QueryResultResponseFormat, strings.Join(allFormats, ", "))
+	}
+
+	return nil
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
