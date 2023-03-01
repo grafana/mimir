@@ -129,8 +129,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	}
 
 	if len(c.batches) > 0 {
-		// TODO for native histograms: return the type of batch assembled
-		return chunkenc.ValFloat
+		return c.batches[0].ValueType
 	}
 	return chunkenc.ValNone
 }
