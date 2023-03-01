@@ -88,13 +88,13 @@ const BatchSize = 12
 
 // Batches are sorted sets of (timestamp, value) pairs, where all values are of the same type (i.e. floats/histograms).
 //
-//	They are intended to be small, and passed by value!
+// Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
 	Values     [BatchSize]float64
 	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
 	// Since Batch is expected to be passed by value, the array needs to be constant sized,
-	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointers
+	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
 	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
 	PointerValues [BatchSize]unsafe.Pointer
 	ValueType     chunkenc.ValueType

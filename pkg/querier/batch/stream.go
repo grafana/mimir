@@ -94,9 +94,8 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
 		} else if b.Index == size || b.ValueType != valueType {
-			// The batch reached its intended size or is the wrong value type
-			// Add another batch the the result
-			// and use it for further appending.
+			// The batch reached its intended size or is of a different value type
+			// Add another batch to the result and use it for further appending.
 			nextBatch(valueType)
 		}
 
@@ -123,7 +122,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			right.next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-				// Prefer historgrams over floats. Take left side if both has histograms.
+				// Prefer histograms over floats. Take left side if both have histograms.
 				populate(right, rt)
 			} else {
 				populate(left, lt)
@@ -136,14 +135,10 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	// This function adds all the samples from the provided
 	// batchStream into the result in the same order.
 	addToResult := func(bs batchStream) {
-		for {
-			if t := bs.hasNext(); t != chunkenc.ValNone {
-				populate(bs, t)
-				b.Length++
-				bs.next()
-			} else {
-				break
-			}
+		for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
+			populate(bs, t)
+			b.Length++
+			bs.next()
 		}
 	}
 
