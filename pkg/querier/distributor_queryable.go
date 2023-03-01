@@ -64,31 +64,43 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 	if err != nil {
 		return nil, err
 	}
+
+	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
+	now := time.Now()
+
+	// queryIngestersWithin might have changed since d.UseQueryable() was called, so we check it again when creating a querier
+	if !d.useQueryable(now, mint, maxt, queryIngestersWithin) {
+		return storage.NoopQuerier(), nil
+	}
+
 	return &distributorQuerier{
-		logger:      d.logger,
-		distributor: d.distributor,
-		ctx:         ctx,
-		mint:        mint,
-		maxt:        maxt,
-		chunkIterFn: d.iteratorFn,
-		userID:      userID,
-		cfgProvider: d.cfgProvider,
+		logger:               d.logger,
+		distributor:          d.distributor,
+		ctx:                  ctx,
+		mint:                 mint,
+		maxt:                 maxt,
+		chunkIterFn:          d.iteratorFn,
+		queryIngestersWithin: queryIngestersWithin,
 	}, nil
 }
 
-func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64, userID string) bool {
+func (d distributorQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool {
+	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
+	return d.useQueryable(now, queryMinT, queryMaxT, queryIngestersWithin)
+}
+
+func (d distributorQueryable) useQueryable(now time.Time, _, queryMaxT int64, queryIngestersWithin time.Duration) bool {
 	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.cfgProvider.QueryIngestersWithin(userID) == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.cfgProvider.QueryIngestersWithin(userID)))
+	return queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-queryIngestersWithin))
 }
 
 type distributorQuerier struct {
-	logger      log.Logger
-	distributor Distributor
-	ctx         context.Context
-	mint, maxt  int64
-	chunkIterFn chunkIteratorFunc
-	userID      string
-	cfgProvider distributorQueryableConfigProvider
+	logger               log.Logger
+	distributor          Distributor
+	ctx                  context.Context
+	mint, maxt           int64
+	chunkIterFn          chunkIteratorFunc
+	queryIngestersWithin time.Duration
 }
 
 // Select implements storage.Querier interface.
@@ -106,7 +118,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
 	// optimization is particularly important for the blocks storage where the blocks retention in the
 	// ingesters could be way higher than queryIngestersWithin.
-	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", spanlog))
+	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", spanlog))
 
 	if minT > maxT {
 		level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
@@ -173,7 +185,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", q.logger)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", q.logger)
 
 	if minT > model.Time(q.maxt) {
 		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
@@ -189,7 +201,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin(), model.Now().Add(-q.queryIngestersWithin()), true, "min", "query ingesters within", log)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
 
 	if minT > model.Time(q.maxt) {
 		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
@@ -258,8 +270,4 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 
 	level.Debug(spanlog).Log("numSeries", len(ret), "numExemplars", numExemplars)
 	return ret, nil
-}
-
-func (q *distributorQuerier) queryIngestersWithin() time.Duration {
-	return q.cfgProvider.QueryIngestersWithin(q.userID)
 }
