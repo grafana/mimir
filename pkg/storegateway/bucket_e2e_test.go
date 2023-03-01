@@ -178,7 +178,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)})
+	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}
 
 	store, err := NewBucketStore(
 		"tenant",
