@@ -782,7 +782,7 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
+	indexCache.StoreSeries(context.Background(), userID, blockID, entry.MatchersKey, shard, data)
 }
 
 // Series implements the storepb.StoreServer interface.
@@ -1431,7 +1431,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label names for caching", "err", err)
 		return
 	}
-	indexCache.StoreLabelNames(ctx, userID, blockID, entry.MatchersKey, data)
+	indexCache.StoreLabelNames(context.Background(), userID, blockID, entry.MatchersKey, data)
 }
 
 // LabelValues implements the storepb.StoreServer interface.
@@ -1615,7 +1615,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
 		return
 	}
-	indexCache.StoreLabelValues(ctx, userID, blockID, labelName, entry.MatchersKey, data)
+	indexCache.StoreLabelValues(context.Background(), userID, blockID, labelName, entry.MatchersKey, data)
 }
 
 // bucketBlockSet holds all blocks.

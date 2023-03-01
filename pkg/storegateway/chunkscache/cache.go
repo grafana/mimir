@@ -137,10 +137,10 @@ const (
 	defaultTTL = 7 * 24 * time.Hour
 )
 
-func (c *ChunksCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
+func (c *ChunksCache) StoreChunks(_ context.Context, userID string, ranges map[Range][]byte) {
 	rangesWithTenant := make(map[string][]byte, len(ranges))
 	for r, v := range ranges {
 		rangesWithTenant[chunksKey(userID, r)] = v
 	}
-	c.cache.Store(ctx, rangesWithTenant, defaultTTL)
+	c.cache.Store(context.Background(), rangesWithTenant, defaultTTL)
 }
