@@ -15,12 +15,12 @@ To see the most common CLI flags that you need to get started with Grafana Mimir
 
 A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
 
-To see the current configuration state of any component, use the [`/config`]({{< relref "../reference-http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../reference-http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`]({{< relref "../../references/http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../../references/http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
 
 ## Common configurations
 
 Some configurations, such as object storage backend, are repeated for multiple components.
-To avoid repetition in the configuration file, use the [`common`]({{< relref "../../reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
+To avoid repetition in the configuration file, use the [`common`]({{< relref "../../references/configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
 Common configurations are first applied to all of the specific configurations, which allows the common configurations to be overridden later by specific values.
 
 For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both the ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:

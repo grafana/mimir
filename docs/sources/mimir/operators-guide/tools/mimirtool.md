@@ -675,7 +675,7 @@ mimirtool bucket-validation
 #### Convert
 
 The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
-It supports converting both CLI flags and [YAML configuration files]({{< relref "../../reference-configuration-parameters/index.md" >}}).
+It supports converting both CLI flags and [YAML configuration files]({{< relref "../../references/configuration-parameters/index.md" >}}).
 
 ##### Configuration
 
@@ -909,7 +909,7 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ### Backfill
 
-The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component]({{< relref "../reference-http-api/index.md#compactor" >}}).
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component]({{< relref "../../references/http-api/index.md#compactor" >}}).
 
 If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 

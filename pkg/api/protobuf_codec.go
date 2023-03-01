@@ -16,8 +16,8 @@ import (
 
 type protobufCodec struct{}
 
-func (c protobufCodec) ContentType() string {
-	return mimirpb.QueryResponseMimeType
+func (c protobufCodec) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
 func (c protobufCodec) CanEncode(resp *v1.Response) bool {

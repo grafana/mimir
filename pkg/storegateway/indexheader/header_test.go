@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -35,40 +34,22 @@ var implementations = []struct {
 	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
 }{
 	{
-		name: "binary reader",
-		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{})
-			require.NoError(t, err)
-			requireCleanup(t, br.Close)
-			return br
-		},
-	},
-	{
-		name: "binary reader with map populate",
-		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{MapPopulateEnabled: true})
-			require.NoError(t, err)
-			requireCleanup(t, br.Close)
-			return br
-		},
-	},
-	{
-		name: "lazy binary reader",
-		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			readerFactory := func() (Reader, error) {
-				return NewBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, Config{})
-			}
-
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
-			require.NoError(t, err)
-			requireCleanup(t, br.Close)
-			return br
-		},
-	},
-	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "lazy stream binary reader",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			readerFactory := func() (Reader, error) {
+				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			}
+
+			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -419,120 +400,6 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
 		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
-	}
-}
-
-func BenchmarkBinaryReader_ThanosbenchBlock(t *testing.B) {
-	ctx := context.Background()
-
-	tmpDir := t.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-
-	m := prepareIndexV2Block(t, tmpDir, bkt)
-	fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
-
-	t.ResetTimer()
-	for i := 0; i < t.N; i++ {
-		br, err := newFileBinaryReader(fn, 32, Config{})
-		require.NoError(t, err)
-		require.NoError(t, br.Close())
-	}
-}
-
-func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
-	const (
-		// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
-		labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
-		series          = 1e6
-	)
-
-	ctx := context.Background()
-
-	tmpDir := b.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(b, err)
-
-	seriesLabels := make([]labels.Labels, 0, series)
-	for n := 0; n < 10; n++ {
-		for i := 0; i < series/10/5; i++ {
-			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo"))
-			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo"))
-			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
-			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
-			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
-		}
-	}
-
-	blockID, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
-
-	filename := filepath.Join(tmpDir, "bkt", blockID.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, blockID, filename))
-
-	b.ResetTimer()
-	b.Run("benchmark", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			br, err := newFileBinaryReader(filename, 32, Config{})
-			require.NoError(b, err)
-			require.NoError(b, br.Close())
-		}
-	})
-}
-
-func BenchmarkBinaryReader_LookupSymbol(b *testing.B) {
-	for _, numSeries := range []int{valueSymbolsCacheSize, valueSymbolsCacheSize * 10} {
-		b.Run(fmt.Sprintf("num series = %d", numSeries), func(b *testing.B) {
-			benchmarkBinaryReaderLookupSymbol(b, numSeries)
-		})
-	}
-}
-
-func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
-	const postingOffsetsInMemSampling = 32
-
-	ctx := context.Background()
-	logger := log.NewNopLogger()
-
-	tmpDir := b.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(b, err)
-	defer func() { require.NoError(b, bkt.Close()) }()
-
-	// Generate series labels.
-	seriesLabels := make([]labels.Labels, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
-		seriesLabels = append(seriesLabels, labels.FromStrings("a", strconv.Itoa(i)))
-	}
-
-	// Create a block.
-	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), nil))
-
-	// Create an index reader.
-	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, Config{})
-	require.NoError(b, err)
-
-	// Get the offset of each label value symbol.
-	symbolsOffsets := make([]uint32, numSeries)
-	for i := 0; i < numSeries; i++ {
-		o, err := reader.symbols.ReverseLookup(strconv.Itoa(i))
-		require.NoError(b, err)
-
-		symbolsOffsets[i] = o
-	}
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		for i := 0; i < len(symbolsOffsets); i++ {
-			if _, err := reader.LookupSymbol(symbolsOffsets[i]); err != nil {
-				b.Fail()
-			}
-		}
 	}
 }
 

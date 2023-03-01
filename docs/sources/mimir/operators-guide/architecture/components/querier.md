@@ -100,4 +100,4 @@ Additional flags for configuring the metadata cache begin with the prefix `-bloc
 
 ## Querier configuration
 
-For details about querier configuration, refer to [querier]({{< relref "../../../reference-configuration-parameters/index.md#querier" >}}).
+For details about querier configuration, refer to [querier]({{< relref "../../../references/configuration-parameters/index.md#querier" >}}).

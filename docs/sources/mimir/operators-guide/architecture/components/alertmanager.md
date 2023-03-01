@@ -66,7 +66,7 @@ You can overwrite the default fallback configuration via the `-alertmanager.conf
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../reference-configuration-parameters/index.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../references/configuration-parameters/index.md#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
@@ -76,7 +76,7 @@ The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at
 When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request include the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
 
-For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../reference-http-api/index.md" >}}).
+For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../../references/http-api/index.md" >}}).
 
 You can configure the HTTP path prefix for the UI and the HTTP API:
 

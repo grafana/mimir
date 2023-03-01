@@ -21,8 +21,8 @@ To evaluate rules, the ruler connects directly to ingesters and store-gateways, 
 
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../../../reference-configuration-parameters/index.md#querier" >}})
-- [Distributor]({{< relref "../../../../reference-configuration-parameters/index.md#distributor" >}})
+- [Querier]({{< relref "../../../../references/configuration-parameters/index.md#querier" >}})
+- [Distributor]({{< relref "../../../../references/configuration-parameters/index.md#distributor" >}})
 
 > **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
 
@@ -122,7 +122,7 @@ For more information, refer to the [documentation of the action](https://github.
 ### Via the HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
-For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../reference-http-api/index.md#ruler" >}}).
+For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../../references/http-api/index.md#ruler" >}}).
 
 ## State
 
