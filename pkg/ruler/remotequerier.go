@@ -30,6 +30,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -107,18 +108,20 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
-	client         httpgrpc.HTTPClient
-	timeout        time.Duration
-	middlewares    []Middleware
-	promHTTPPrefix string
-	logger         log.Logger
-	decoders       map[string]decoder
+	client                             httpgrpc.HTTPClient
+	timeout                            time.Duration
+	middlewares                        []Middleware
+	promHTTPPrefix                     string
+	logger                             log.Logger
+	preferredQueryResultResponseFormat string
+	decoders                           map[string]decoder
 }
 
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
 	timeout time.Duration,
+	preferredQueryResultResponseFormat string,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
@@ -126,11 +129,12 @@ func NewRemoteQuerier(
 	json := jsonDecoder{}
 
 	return &RemoteQuerier{
-		client:         client,
-		timeout:        timeout,
-		middlewares:    middlewares,
-		promHTTPPrefix: prometheusHTTPPrefix,
-		logger:         logger,
+		client:                             client,
+		timeout:                            timeout,
+		middlewares:                        middlewares,
+		promHTTPPrefix:                     prometheusHTTPPrefix,
+		logger:                             logger,
+		preferredQueryResultResponseFormat: preferredQueryResultResponseFormat,
 		decoders: map[string]decoder{
 			json.ContentType(): json,
 		},
@@ -229,7 +233,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
-	contentTypeHeader := getHeader(resp, "Content-Type")
+	contentTypeHeader := getHeader(resp.Headers, "Content-Type")
 	decoder, ok := q.decoders[contentTypeHeader]
 	if !ok {
 		return promql.Vector{}, fmt.Errorf("unknown response content type '%s'", contentTypeHeader)
@@ -245,6 +249,16 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		args.Set("time", ts.Format(time.RFC3339Nano))
 	}
 	body := []byte(args.Encode())
+	acceptHeader := ""
+
+	switch q.preferredQueryResultResponseFormat {
+	case formatJSON:
+		acceptHeader = "application/json"
+	case formatProtobuf:
+		acceptHeader = mimirpb.QueryResponseMimeType + ",application/json"
+	default:
+		return httpgrpc.HTTPRequest{}, fmt.Errorf("unknown response format '%s'", q.preferredQueryResultResponseFormat)
+	}
 
 	req := httpgrpc.HTTPRequest{
 		Method: http.MethodPost,
@@ -254,6 +268,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
+			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},
 		},
 	}
 
@@ -309,8 +324,8 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 	return nil
 }
 
-func getHeader(resp *httpgrpc.HTTPResponse, name string) string {
-	for _, h := range resp.Headers {
+func getHeader(headers []*httpgrpc.Header, name string) string {
+	for _, h := range headers {
 		if h.Key == name && len(h.Values) > 0 {
 			return h.Values[0]
 		}
