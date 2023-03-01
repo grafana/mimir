@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -21,6 +23,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -115,8 +119,9 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 
 func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 	scenarios := map[string]struct {
-		body     string
-		expected promql.Vector
+		body          string
+		expected      promql.Vector
+		expectedError error
 	}{
 		"vector response with no series": {
 			body: `{
@@ -185,6 +190,21 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 				},
 			},
 		},
+		"matrix response": {
+			body: `{
+					"status": "success",
+					"data": {"resultType":"matrix","result":[]}
+				}`,
+			expectedError: errors.New("rule result is not a vector or scalar: \"matrix\""),
+		},
+		"execution error": {
+			body: `{
+					"status": "error",
+					"errorType": "errorExec",
+					"error": "something went wrong"
+				}`,
+			expectedError: errors.New("query execution failed with error: something went wrong"),
+		},
 	}
 
 	for name, scenario := range scenarios {
@@ -202,8 +222,276 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
-			require.NoError(t, err)
-			require.Equal(t, scenario.expected, actual)
+			require.Equal(t, scenario.expectedError, err)
+
+			if scenario.expectedError == nil {
+				require.Equal(t, scenario.expected, actual)
+			}
+		})
+	}
+}
+
+func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
+	protobufHistogram := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
+
+	promqlHistogram := histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              789.1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []histogram.Span{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
+
+	scenarios := map[string]struct {
+		body          mimirpb.QueryResponse
+		expected      promql.Vector
+		expectedError error
+	}{
+		"vector response with no series": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{},
+				},
+			},
+			expected: promql.Vector{},
+		},
+		"vector response with one series": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{
+								Metric:      []string{"foo", "bar"},
+								TimestampMs: 1649092025515,
+								Value:       1.23,
+							},
+						},
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.FromStrings("foo", "bar"),
+					Point:  promql.Point{T: 1649092025515, V: 1.23},
+				},
+			},
+		},
+		"vector response with many series": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{
+								Metric:      []string{"foo", "bar"},
+								TimestampMs: 1649092025515,
+								Value:       1.23,
+							},
+							{
+								Metric:      []string{"bar", "baz"},
+								TimestampMs: 1649092025515,
+								Value:       4.56,
+							},
+						},
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.FromStrings("foo", "bar"),
+					Point:  promql.Point{T: 1649092025515, V: 1.23},
+				},
+				{
+					Metric: labels.FromStrings("bar", "baz"),
+					Point:  promql.Point{T: 1649092025515, V: 4.56},
+				},
+			},
+		},
+		"vector response with many labels": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{
+								Metric:      []string{"bar", "baz", "foo", "blah"},
+								TimestampMs: 1649092025515,
+								Value:       1.23,
+							},
+						},
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.FromStrings("bar", "baz", "foo", "blah"),
+					Point:  promql.Point{T: 1649092025515, V: 1.23},
+				},
+			},
+		},
+		"vector response with histogram value": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Histograms: []mimirpb.VectorHistogram{
+							{
+								Metric:      []string{"foo", "baz"},
+								TimestampMs: 1649092025515,
+								Histogram:   protobufHistogram,
+							},
+						},
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.FromStrings("foo", "baz"),
+					Point:  promql.Point{T: 1649092025515, H: &promqlHistogram},
+				},
+			},
+		},
+		"vector response with float and histogram values": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{
+								Metric:      []string{"foo", "baz"},
+								TimestampMs: 1649092025515,
+								Value:       1.23,
+							},
+						},
+						Histograms: []mimirpb.VectorHistogram{
+							{
+								Metric:      []string{"foo", "bar"},
+								TimestampMs: 1649092025515,
+								Histogram:   protobufHistogram,
+							},
+						},
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.FromStrings("foo", "baz"),
+					Point:  promql.Point{T: 1649092025515, V: 1.23},
+				},
+				{
+					Metric: labels.FromStrings("foo", "bar"),
+					Point:  promql.Point{T: 1649092025515, H: &promqlHistogram},
+				},
+			},
+		},
+		"vector response with malformed metric": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Vector{
+					Vector: &mimirpb.VectorData{
+						Samples: []mimirpb.VectorSample{
+							{
+								Metric:      []string{"foo", "bar", "baz"},
+								TimestampMs: 1649092025515,
+								Value:       1.23,
+							},
+						},
+					},
+				},
+			},
+			expectedError: errors.New("metric is malformed, it contains an odd number of symbols: 3"),
+		},
+		"scalar response": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Scalar{
+					Scalar: &mimirpb.ScalarData{
+						TimestampMs: 1649092025515,
+						Value:       1.23,
+					},
+				},
+			},
+			expected: promql.Vector{
+				{
+					Metric: labels.EmptyLabels(),
+					Point:  promql.Point{T: 1649092025515, V: 1.23},
+				},
+			},
+		},
+		"matrix response": {
+			body: mimirpb.QueryResponse{
+				Status: mimirpb.QueryResponse_SUCCESS,
+				Data: &mimirpb.QueryResponse_Matrix{
+					Matrix: &mimirpb.MatrixData{},
+				},
+			},
+			expectedError: errors.New("rule result is not a vector or scalar: \"matrix\""),
+		},
+		"execution error": {
+			body: mimirpb.QueryResponse{
+				Status:    mimirpb.QueryResponse_ERROR,
+				ErrorType: mimirpb.QueryResponse_EXECUTION,
+				Error:     "something went wrong",
+			},
+			expectedError: errors.New("query execution failed with error: something went wrong"),
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				b, err := scenario.body.Marshal()
+				if err != nil {
+					return nil, err
+				}
+
+				return &httpgrpc.HTTPResponse{
+					Code: http.StatusOK,
+					Headers: []*httpgrpc.Header{
+						{Key: "Content-Type", Values: []string{mimirpb.QueryResponseMimeType}},
+					},
+					Body: b,
+				}, nil
+			}
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatProtobuf, "/prometheus", log.NewNopLogger())
+
+			tm := time.Unix(1649092025, 515834)
+			actual, err := q.Query(context.Background(), "qs", tm)
+			require.Equal(t, scenario.expectedError, err)
+
+			if scenario.expectedError == nil {
+				require.Equal(t, scenario.expected, actual)
+			}
 		})
 	}
 }

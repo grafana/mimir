@@ -127,6 +127,7 @@ func NewRemoteQuerier(
 	middlewares ...Middleware,
 ) *RemoteQuerier {
 	json := jsonDecoder{}
+	protobuf := protobufDecoder{}
 
 	return &RemoteQuerier{
 		client:                             client,
@@ -136,7 +137,8 @@ func NewRemoteQuerier(
 		logger:                             logger,
 		preferredQueryResultResponseFormat: preferredQueryResultResponseFormat,
 		decoders: map[string]decoder{
-			json.ContentType(): json,
+			json.ContentType():     json,
+			protobuf.ContentType(): protobuf,
 		},
 	}
 }
