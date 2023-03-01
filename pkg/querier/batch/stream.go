@@ -137,7 +137,6 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	addToResult := func(bs batchStream) {
 		for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
 			populate(bs, t)
-			b.Length++
 			bs.next()
 		}
 	}
