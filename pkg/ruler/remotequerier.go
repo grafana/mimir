@@ -192,28 +192,9 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 }
 
 func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
-	args := make(url.Values)
-	args.Set("query", query)
-	if !ts.IsZero() {
-		args.Set("time", ts.Format(time.RFC3339Nano))
-	}
-	body := []byte(args.Encode())
-
-	req := httpgrpc.HTTPRequest{
-		Method: http.MethodPost,
-		Url:    q.promHTTPPrefix + queryEndpointPath,
-		Body:   body,
-		Headers: []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
-			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
-		},
-	}
-
-	for _, mdw := range q.middlewares {
-		if err := mdw(ctx, &req); err != nil {
-			return promql.Vector{}, err
-		}
+	req, err := q.createRequest(ctx, query, ts)
+	if err != nil {
+		return promql.Vector{}, nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
@@ -250,6 +231,34 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 		return promql.Vector{}, err
 	}
 	return decodeQueryResponse(v.Type, v.Result)
+}
+
+func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time.Time) (httpgrpc.HTTPRequest, error) {
+	args := make(url.Values)
+	args.Set("query", query)
+	if !ts.IsZero() {
+		args.Set("time", ts.Format(time.RFC3339Nano))
+	}
+	body := []byte(args.Encode())
+
+	req := httpgrpc.HTTPRequest{
+		Method: http.MethodPost,
+		Url:    q.promHTTPPrefix + queryEndpointPath,
+		Body:   body,
+		Headers: []*httpgrpc.Header{
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
+			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
+		},
+	}
+
+	for _, mdw := range q.middlewares {
+		if err := mdw(ctx, &req); err != nil {
+			return httpgrpc.HTTPRequest{}, err
+		}
+	}
+
+	return req, nil
 }
 
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
