@@ -864,28 +864,14 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	var (
 		seriesSet storepb.SeriesSet
 		resHints  = &hintspb.SeriesResponseHints{}
+		readers   *bucketChunkReaders
 	)
 
-	if s.maxSeriesPerBatch <= 0 {
-		var chunksPool *pool.SafeSlabPool[byte]
-
-		// All the memory allocated from the pool for the chunks will be released at the end.
-		// Required only if we'll fetch the chunks.
-		if !req.SkipChunks {
-			chunksPool = pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
-			defer chunksPool.Release()
-		}
-
-		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkReaders, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
-	} else {
-		var readers *bucketChunkReaders
-		if !req.SkipChunks {
-			readers = newChunkReaders(chunkReaders)
-		}
-
-		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	if !req.SkipChunks {
+		readers = newChunkReaders(chunkReaders)
 	}
 
+	seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
 	}
@@ -905,20 +891,14 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			stats.mergedSeriesCount += seriesCount
 			stats.mergedChunksCount += chunksCount
 
-			if s.maxSeriesPerBatch <= 0 {
-				// When streaming is disabled, the time spent iterating over the series set is the
-				// actual time spent merging series and sending response to the client.
-				stats.synchronousSeriesMergeDuration += time.Since(iterationBegin)
-			} else {
-				// When streaming is enabled, the time spent iterating over the series set is the
-				// actual time spent fetching series and chunks, encoding and sending them to the client.
-				// We split the timings to have a better view over how time is spent.
-				stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
-				stats.streamingSeriesEncodeResponseDuration += encodeDuration
-				stats.streamingSeriesSendResponseDuration += sendDuration
-				stats.streamingSeriesOtherDuration += time.Duration(util_math.Max64(0, int64(time.Since(iterationBegin)-
-					stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
-			}
+			// The time spent iterating over the series set is the
+			// actual time spent fetching series and chunks, encoding and sending them to the client.
+			// We split the timings to have a better view over how time is spent.
+			stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
+			stats.streamingSeriesEncodeResponseDuration += encodeDuration
+			stats.streamingSeriesSendResponseDuration += sendDuration
+			stats.streamingSeriesOtherDuration += time.Duration(util_math.Max64(0, int64(time.Since(iterationBegin)-
+				stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
 		})
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
@@ -996,88 +976,6 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 		size += chk.Size() // This gets the encoded proto size.
 	}
 	return size
-}
-
-// synchronousSeriesSet returns seriesSet that contains the requested series. It returns a cleanup func. The cleanup func
-// should be invoked always when non-nil; even when the returned error is non-nil.
-func (s *BucketStore) synchronousSeriesSet(
-	ctx context.Context,
-	req *storepb.SeriesRequest,
-	stats *safeQueryStats,
-	blocks []*bucketBlock,
-	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders map[ulid.ULID]chunkReader,
-	chunksPool *pool.SafeSlabPool[byte],
-	resHints *hintspb.SeriesResponseHints,
-	shardSelector *sharding.ShardSelector,
-	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter,
-	seriesLimiter SeriesLimiter,
-) (storepb.SeriesSet, error) {
-	var (
-		resMtx sync.Mutex
-		res    []storepb.SeriesSet
-		begin  = time.Now()
-	)
-	g, ctx := errgroup.WithContext(ctx)
-
-	for _, b := range blocks {
-		b := b
-
-		// Keep track of queried blocks.
-		resHints.AddQueriedBlock(b.meta.ULID)
-
-		indexr := indexReaders[b.meta.ULID]
-		chunkr := chunkReaders[b.meta.ULID]
-
-		// If query sharding is enabled we have to get the block-specific series hash cache
-		// which is used by blockSeries().
-		var blockSeriesHashCache *hashcache.BlockSeriesHashCache
-		if shardSelector != nil {
-			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
-		}
-
-		g.Go(func() error {
-			part, pstats, err := blockSeries(
-				ctx,
-				indexr,
-				chunkr,
-				chunksPool,
-				matchers,
-				shardSelector,
-				cachedSeriesHasher{blockSeriesHashCache},
-				chunksLimiter,
-				seriesLimiter,
-				req.SkipChunks,
-				req.MinTime, req.MaxTime,
-				s.logger,
-			)
-			if err != nil {
-				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
-			}
-
-			stats.merge(pstats.export())
-			resMtx.Lock()
-			res = append(res, part)
-			resMtx.Unlock()
-
-			return nil
-		})
-	}
-
-	// Wait until data is fetched from all blocks
-	err := g.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	stats.update(func(stats *queryStats) {
-		stats.blocksQueried = len(res)
-		stats.synchronousSeriesGetAllDuration += time.Since(begin)
-	})
-	s.metrics.seriesBlocksQueried.Observe(float64(len(res)))
-
-	return storepb.MergeSeriesSets(res...), err
 }
 
 func (s *BucketStore) streamingSeriesSetForBlocks(
@@ -1196,7 +1094,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouchedSizeSum))
 
-	if s.fineGrainedChunksCachingEnabled && s.maxSeriesPerBatch > 0 {
+	if s.fineGrainedChunksCachingEnabled {
 		// With fine-grained caching we may have touched more chunks than we need because we had to fetch a
 		// whole range of chunks, which includes chunks outside the request's minT/maxT.
 		s.metrics.seriesDataTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksReturned))
@@ -1226,19 +1124,13 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 		s.metrics.streamingSeriesBatchPreloadingWaitDuration.Observe(stats.streamingSeriesWaitBatchLoadedDuration.Seconds())
 	}
 
-	// Track the streaming store-gateway specific metrics only if it's enabled.
-	if s.maxSeriesPerBatch > 0 {
-		s.metrics.streamingSeriesRefsFetchDuration.Observe(stats.streamingSeriesFetchRefsDuration.Seconds())
+	s.metrics.streamingSeriesRefsFetchDuration.Observe(stats.streamingSeriesFetchRefsDuration.Seconds())
 
-		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
-		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
-		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
-		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
-		s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
-	} else {
-		s.metrics.synchronousSeriesGetAllDuration.Observe(stats.synchronousSeriesGetAllDuration.Seconds())
-		s.metrics.synchronousSeriesMergeDuration.Observe(stats.synchronousSeriesMergeDuration.Seconds())
-	}
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {

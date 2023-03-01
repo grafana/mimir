@@ -432,14 +432,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.store.maxSeriesPerBatch > 0, s.metricsRegistry)
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
-func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, streamingEnabled bool, registry *prometheus.Registry) {
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
 	t.Helper()
 
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
@@ -482,13 +482,8 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
 
-		if streamingEnabled {
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
-		} else {
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
-		}
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))

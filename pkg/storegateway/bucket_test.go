@@ -1150,11 +1150,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		if !t.IsBenchmark() {
 			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
 
-			// Reset the memory pool tracker (only if streaming store-gateway is enabled).
-			if st.maxSeriesPerBatch > 0 {
-				seriesEntrySlicePool.(*pool.TrackedPool).Reset()
-				seriesChunksSlicePool.(*pool.TrackedPool).Reset()
-			}
+			// Reset the memory pools.
+			seriesEntrySlicePool.(*pool.TrackedPool).Reset()
+			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
 		}
 
 		assert.NoError(t, st.SyncBlocks(context.Background()))
@@ -1196,14 +1194,11 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				assert.Zero(t, st.chunkPool.(*trackedBytesPool).balance.Load())
 				st.chunkPool.(*trackedBytesPool).gets.Store(0)
 
-				// Only if streaming store-gateway is enabled.
-				if st.maxSeriesPerBatch > 0 {
-					assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
-					assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
+				assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
+				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
-					assert.Greater(t, int(seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-					assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-				}
+				assert.Greater(t, int(seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+				assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 			}
 
 			for _, b := range st.blocks {
@@ -1211,13 +1206,12 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
 			}
 
-			// Check exposed metrics. Ensure that streaming store-gateway metrics are tracked only when
-			// streaming store-gateway is enabled.
+			// Check exposed metrics.
 			assertHistograms := map[string]bool{
-				"cortex_bucket_store_series_request_stage_duration_seconds":         st.maxSeriesPerBatch > 0,
-				"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch > 0 && st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch > 0 && st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_refs_fetch_duration_seconds":            st.maxSeriesPerBatch > 0,
+				"cortex_bucket_store_series_request_stage_duration_seconds":         true,
+				"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+				"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+				"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
 			}
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
