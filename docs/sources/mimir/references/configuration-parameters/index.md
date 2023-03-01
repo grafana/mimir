@@ -3148,12 +3148,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
 
-  # (experimental) If larger than 0, this option enables store-gateway series
+  # (advanced) If larger than 0, this option enables store-gateway series
   # streaming. The store-gateway will load series from the bucket in batches
   # instead of buffering them all in memory before returning to the querier.
   # This option controls how many series to fetch per batch.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
-  [streaming_series_batch_size: <int> | default = 0]
+  [streaming_series_batch_size: <int> | default = 5000]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
