@@ -527,12 +527,10 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}},
 		},
 		"query samples from 2nd (out of order) chunk only": {
-			minT: 10,
-			maxT: 11, // Not included.
-			// The BucketStore assumes chunks are ordered and has an optimization to stop looking up chunks when
-			// the current chunk minTime > query maxTime.
-			expectedSamplesForOutOfOrderChunks:  nil,
-			expectedSamplesForOverlappingChunks: nil,
+			minT:                                10,
+			maxT:                                11, // Not included.
+			expectedSamplesForOutOfOrderChunks:  []sample{{t: 10, v: 10}, {t: 11, v: 11}},
+			expectedSamplesForOverlappingChunks: []sample{{t: 10, v: 10}, {t: 20, v: 20}},
 		},
 	}
 
