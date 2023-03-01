@@ -13,12 +13,15 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1355,6 +1358,103 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			} else {
 				require.Empty(t, v.Error)
 			}
+		})
+	}
+}
+
+func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
+	const tenantID = "test"
+	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
+	injectedError := fmt.Errorf("injected error")
+	validationPath := path.Join(tenantID, blockID, validationFilename)
+
+	heartbeatInterval := 50 * time.Millisecond
+
+	validationExists := func(t *testing.T, bkt objstore.Bucket) bool {
+		exists, err := bkt.Exists(context.Background(), validationPath)
+		require.NoError(t, err)
+		return exists
+	}
+
+	testCases := []struct {
+		name          string
+		errorInjector func(op bucket.Operation, name string) error
+		cancelContext bool
+		assertions    func(t *testing.T, ctx context.Context, bkt objstore.Bucket)
+	}{
+		{
+			name:          "updating validation file fails",
+			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
+			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+				<-ctx.Done()
+				require.True(t, errors.Is(context.Canceled, ctx.Err()))
+				require.False(t, validationExists(t, bkt))
+			},
+		},
+		{
+			name: "updating validation file succeeds",
+			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+				time.Sleep(heartbeatInterval)
+				test.Poll(t, heartbeatInterval*2, true, func() interface{} {
+					return validationExists(t, bkt)
+				})
+
+				v := validationFile{}
+				r, err := bkt.Get(context.Background(), validationPath)
+				require.NoError(t, err)
+				decoder := json.NewDecoder(r)
+				err = decoder.Decode(&v)
+				require.NoError(t, err)
+				require.NotEqual(t, 0, v.LastUpdate)
+				require.Empty(t, v.Error)
+			},
+		},
+		{
+			name: "context cancelled before update",
+			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
+				require.False(t, validationExists(t, bkt))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			bkt := objstore.NewInMemBucket()
+			var injectedBkt objstore.Bucket = bkt
+			if tc.errorInjector != nil {
+				injectedBkt = &bucket.ErrorInjectedBucketClient{
+					Bucket:   bkt,
+					Injector: tc.errorInjector,
+				}
+			}
+
+			cfgProvider := newMockConfigProvider()
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: injectedBkt,
+				cfgProvider:  cfgProvider,
+			}
+			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
+			ctx, cancel := context.WithCancel(context.Background())
+
+			heartbeatInterval := heartbeatInterval
+			if tc.cancelContext {
+				cancel()
+				heartbeatInterval = 1 * time.Hour // to avoid racing a heartbeat
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c.periodicValidationUpdater(ctx, log.NewNopLogger(), ulid.MustParse(blockID), userBkt, cancel, heartbeatInterval)
+			}()
+
+			tc.assertions(t, ctx, bkt)
+
+			cancel()
+			wg.Wait()
 		})
 	}
 }
