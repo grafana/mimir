@@ -816,17 +816,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span.Finish()
 
-	var (
-		seriesSet storepb.SeriesSet
-		resHints  = &hintspb.SeriesResponseHints{}
-		readers   *bucketChunkReaders
-	)
-
+	var readers *bucketChunkReaders
 	if !req.SkipChunks {
 		readers = newChunkReaders(chunkReaders)
 	}
 
-	seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
 	}

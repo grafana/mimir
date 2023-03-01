@@ -117,7 +117,6 @@ type prepareStoreConfig struct {
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
 	chunksCache          chunkscache.Cache
-	bucketStoreOpts      []BucketStoreOption
 	metricsRegistry      *prometheus.Registry
 }
 
@@ -162,12 +161,6 @@ func withManyParts() prepareStoreConfigOption {
 	}
 }
 
-func withBucketStoreOptions(opts ...BucketStoreOption) prepareStoreConfigOption {
-	return func(config *prepareStoreConfig) {
-		config.bucketStoreOpts = opts
-	}
-}
-
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
@@ -185,7 +178,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}, cfg.bucketStoreOpts...)
+	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)})
 
 	store, err := NewBucketStore(
 		"tenant",
