@@ -80,7 +80,7 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    ```
 
 1. Wait until the query-scheduler instances have completed rolling out.
-1. Ensure the changes have been successfully applied; open the [query-scheduler ring status]({{< relref "../../../reference-http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
+1. Ensure the changes have been successfully applied; open the [query-scheduler ring status]({{< relref "../../../../references/http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
    At this point, queriers and query-frontend are still discovering query-schedulers via DNS.
 1. Configure **query-frontend** and **querier** instances to discover query-schedulers via the ring:
 

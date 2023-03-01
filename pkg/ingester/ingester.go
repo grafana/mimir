@@ -304,16 +304,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
-	// Replace specific metrics which we can't directly track but we need to read
-	// them from the underlying system (ie. TSDB).
 	if registerer != nil {
-		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_memory_series",
-			Help: "The current number of series in memory.",
-		}, func() float64 {
-			return float64(i.seriesCount.Load())
-		})
-
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
@@ -2433,9 +2424,13 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	ingestedMetadata := 0
 	failedMetadata := 0
 
+	userMetadata := i.getOrCreateUserMetadata(userID)
 	var firstMetadataErr error
-	for _, metadata := range metadata {
-		err := i.appendMetadata(userID, metadata)
+	for _, m := range metadata {
+		if m == nil {
+			continue
+		}
+		err := userMetadata.add(m.MetricFamilyName, m)
 		if err == nil {
 			ingestedMetadata++
 			continue
@@ -2458,11 +2453,6 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	}
 
 	return ingestedMetadata
-}
-func (i *Ingester) appendMetadata(userID string, m *mimirpb.MetricMetadata) error {
-	userMetadata := i.getOrCreateUserMetadata(userID)
-
-	return userMetadata.add(m.GetMetricFamilyName(), m)
 }
 
 func (i *Ingester) getOrCreateUserMetadata(userID string) *userMetricsMetadata {

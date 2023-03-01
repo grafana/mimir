@@ -574,7 +574,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
-            % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+            % { job: $.jobMatcher($._config.job_names.ruler_query_scheduler) },
           ],
           [
             'Queue Length',

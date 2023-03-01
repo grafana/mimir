@@ -61,7 +61,7 @@ You might experience the following challenges when you scale down ingesters:
 
 - By default, when an ingester shuts down, the samples stored in the ingester are not uploaded to the long-term storage, which causes data loss.
 
-  Ingesters expose an API endpoint [`/ingester/shutdown`]({{< relref "../reference-http-api/index.md#shutdown" >}}) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
+  Ingesters expose an API endpoint [`/ingester/shutdown`]({{< relref "../../references/http-api/index.md#shutdown" >}}) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
 
   After the `/ingester/shutdown` API endpoint successfully returns, the ingester does not receive write or read requests, but the process will not exit.
 

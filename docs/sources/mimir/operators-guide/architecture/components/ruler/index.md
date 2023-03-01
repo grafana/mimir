@@ -122,7 +122,7 @@ For more information, refer to the [documentation of the action](https://github.
 ### Via the HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
-For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../reference-http-api/index.md#ruler" >}}).
+For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../../references/http-api/index.md#ruler" >}}).
 
 ## State
 

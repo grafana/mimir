@@ -63,7 +63,7 @@ jobs:
         host: "github.com"
         # PUBLISH_TO_WEBSITE_MIMIR is a fine-grained GitHub Personal Access Token that expires.
         # It must be updated in the grafanabot GitHub account.
-        github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_MIMIR }}"
+        github_pat: "grafanabot:${{ secrets.PUBLISH_TO_WEBSITE_TOKEN }}"
         source_folder: "docs/sources/helm-charts/mimir-distributed"
         target_folder: "content/docs/helm-charts/mimir-distributed/next"
         allow_no_changes: true

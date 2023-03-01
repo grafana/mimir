@@ -393,6 +393,7 @@ type tsdbMetrics struct {
 	checkpointCreationFail  *prometheus.Desc
 	checkpointCreationTotal *prometheus.Desc
 
+	memSeries             *prometheus.Desc
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
 
@@ -575,6 +576,10 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"Total number of out-of-order samples appended.",
 			[]string{"user"}, nil),
 
+		memSeries: prometheus.NewDesc(
+			"cortex_ingester_memory_series",
+			"The current number of series in memory.",
+			nil, nil),
 		memSeriesCreatedTotal: prometheus.NewDesc(
 			"cortex_ingester_memory_series_created_total",
 			"The total number of series that were created per user.",
@@ -637,6 +642,7 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.tsdbOOOAppendedSamples
 
+	out <- sm.memSeries
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
 }
@@ -689,6 +695,7 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCountersPerTenant(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
 
+	data.SendSumOfGauges(out, sm.memSeries, "prometheus_tsdb_head_series")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
 }

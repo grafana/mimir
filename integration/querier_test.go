@@ -856,7 +856,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	_, err = c.Query(series1Name, series1Timestamp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
-	assert.Contains(t, err.(*promv1.Error).Detail, "consistency check failed because some blocks were not queried")
+	assert.Contains(t, err.(*promv1.Error).Detail, "failed to fetch some blocks")
 
 	// We expect this to still be queryable as it was not in the cleared storage
 	_, err = c.Query(series2Name, series2Timestamp)
