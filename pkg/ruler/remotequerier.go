@@ -94,6 +94,7 @@ type RemoteQuerier struct {
 	middlewares    []Middleware
 	promHTTPPrefix string
 	logger         log.Logger
+	decoders       map[string]decoder
 }
 
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
@@ -104,12 +105,17 @@ func NewRemoteQuerier(
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
+	json := jsonDecoder{}
+
 	return &RemoteQuerier{
 		client:         client,
 		timeout:        timeout,
 		middlewares:    middlewares,
 		promHTTPPrefix: prometheusHTTPPrefix,
 		logger:         logger,
+		decoders: map[string]decoder{
+			json.ContentType(): json,
+		},
 	}
 }
 
@@ -205,7 +211,13 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
-	return jsonDecoder{}.Decode(resp.Body)
+	contentTypeHeader := getHeader(resp, "Content-Type")
+	decoder, ok := q.decoders[contentTypeHeader]
+	if !ok {
+		return promql.Vector{}, fmt.Errorf("unknown response content type '%s'", contentTypeHeader)
+	}
+
+	return decoder.Decode(resp.Body)
 }
 
 func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time.Time) (httpgrpc.HTTPRequest, error) {
@@ -277,4 +289,14 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 		Values: []string{orgID},
 	})
 	return nil
+}
+
+func getHeader(resp *httpgrpc.HTTPResponse, name string) string {
+	for _, h := range resp.Headers {
+		if h.Key == name && len(h.Values) > 0 {
+			return h.Values[0]
+		}
+	}
+
+	return ""
 }

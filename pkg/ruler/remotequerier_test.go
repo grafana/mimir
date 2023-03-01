@@ -75,9 +75,15 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 	var inReq *httpgrpc.HTTPRequest
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		inReq = req
-		return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(`{
-							"status": "success","data": {"resultType":"vector","result":[]}
-						}`)}, nil
+		return &httpgrpc.HTTPResponse{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte(`{
+				"status": "success","data": {"resultType":"vector","result":[]}
+			}`),
+		}, nil
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
 
@@ -168,7 +174,13 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-				return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(scenario.body)}, nil
+				return &httpgrpc.HTTPResponse{
+					Code: http.StatusOK,
+					Headers: []*httpgrpc.Header{
+						{Key: "Content-Type", Values: []string{"application/json"}},
+					},
+					Body: []byte(scenario.body),
+				}, nil
 			}
 			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
 
@@ -178,6 +190,23 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 			require.Equal(t, scenario.expected, actual)
 		})
 	}
+}
+
+func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
+	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		return &httpgrpc.HTTPResponse{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"something/unknown"}},
+			},
+			Body: []byte("some body content"),
+		}, nil
+	}
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
+
+	tm := time.Unix(1649092025, 515834)
+	_, err := q.Query(context.Background(), "qs", tm)
+	require.EqualError(t, err, "unknown response content type 'something/unknown'")
 }
 
 func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
@@ -219,9 +248,15 @@ func TestRemoteQuerier_BackoffRetry(t *testing.T) {
 				if retries <= tc.failedRequests {
 					return nil, fmt.Errorf("failed request: %d", retries)
 				}
-				return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(`{
-							"status": "success","data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.5916666666"]}]}
-						}`)}, nil
+				return &httpgrpc.HTTPResponse{
+					Code: http.StatusOK,
+					Headers: []*httpgrpc.Header{
+						{Key: "Content-Type", Values: []string{"application/json"}},
+					},
+					Body: []byte(`{
+						"status": "success","data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.5916666666"]}]}
+					}`),
+				}, nil
 			}
 			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
 
@@ -245,9 +280,15 @@ func TestRemoteQuerier_BackoffRetry(t *testing.T) {
 
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-		return &httpgrpc.HTTPResponse{Code: http.StatusUnprocessableEntity, Body: []byte(`{
-							"status": "error","errorType": "execution"
-						}`)}, nil
+		return &httpgrpc.HTTPResponse{
+			Code: http.StatusUnprocessableEntity,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte(`{
+				"status": "error","errorType": "execution"
+			}`),
+		}, nil
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
 
