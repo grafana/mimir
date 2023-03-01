@@ -371,7 +371,7 @@ Cluster name that shows up in dashboard metrics
   {{- if semverCompare ">= 1.21-0" (include "mimir.kubeVersion" .) -}}
     {{- print "policy/v1" -}}
   {{- else -}}
-    {{- print "policy/v1beta1" -}}
+    {{- print "policy/v1" -}}
   {{- end -}}
 {{- end -}}
 

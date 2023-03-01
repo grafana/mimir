@@ -73,7 +73,7 @@ fi
 
 cat <<EOF
 {{- if .Values.${snake_cased}.podDisruptionBudget -}}
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "${component}") }}
