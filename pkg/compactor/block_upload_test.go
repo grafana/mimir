@@ -1421,7 +1421,6 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 		{
 			name: "updating validation file succeeds",
 			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
-				time.Sleep(heartbeatInterval)
 				test.Poll(t, heartbeatInterval*2, true, func() interface{} {
 					return validationExists(t, bkt)
 				})
@@ -1478,6 +1477,10 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 				defer wg.Done()
 				c.periodicValidationUpdater(ctx, log.NewNopLogger(), ulid.MustParse(blockID), userBkt, cancel, heartbeatInterval)
 			}()
+
+			if !tc.cancelContext {
+				time.Sleep(heartbeatInterval)
+			}
 
 			tc.assertions(t, ctx, bkt)
 
