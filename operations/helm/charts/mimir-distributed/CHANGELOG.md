@@ -16,7 +16,7 @@ remove a deprecated item from the third major release after it has been deprecat
 ## Format of changelog
 
 This changelog is continued from `enterprise-metrics` after Grafana Enterprise Metrics was added to `mimir-distributed` in PR #1203.
-All notable changes to this chart will be documented in this file. 
+All notable changes to this chart will be documented in this file.
 
 Entries should be ordered as follows:
 - [CHANGE]
