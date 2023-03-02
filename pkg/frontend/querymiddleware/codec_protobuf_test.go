@@ -707,3 +707,28 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatProtobuf)
+
+	req := &http.Request{
+		Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
+	}
+
+	for _, tc := range protobufCodecScenarios {
+		if tc.response == nil {
+			continue
+		}
+
+		b.Run(tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := codec.EncodeResponse(context.Background(), req, tc.response)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
