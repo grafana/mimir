@@ -1364,7 +1364,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	))
 }
 
-func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) ulid.ULID {
+func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, externalLabels map[string]string, appendFunc func(*tsdb.DB)) ulid.ULID {
 	// Create a temporary dir for TSDB.
 	tempDir := t.TempDir()
 
@@ -1381,30 +1381,7 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 
 	db.DisableCompactions()
 
-	appendSample := func(seriesID int, ts int64, value float64) {
-		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
-
-		app := db.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts, value)
-		require.NoError(t, err)
-
-		err = app.Commit()
-		require.NoError(t, err)
-	}
-
-	seriesID := 0
-
-	// Append a sample for each series, spreading it between minT and maxT-1 (both included).
-	// Since we append one more series below, here we create N-1 series.
-	if numSeries > 1 {
-		for ts := minT; ts < maxT; ts += (maxT - minT) / int64(numSeries-1) {
-			appendSample(seriesID, ts, float64(seriesID))
-			seriesID++
-		}
-	}
-
-	// Guarantee a series with a sample at time maxT-1
-	appendSample(seriesID, maxT-1, float64(seriesID))
+	appendFunc(db)
 
 	require.NoError(t, db.Compact())
 	require.NoError(t, db.Snapshot(snapshotDir, true))
@@ -1452,6 +1429,35 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 	}))
 
 	return blockID
+}
+
+func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) ulid.ULID {
+	return createCustomTSDBBlock(t, bkt, userID, externalLabels, func(db *tsdb.DB) {
+		appendSample := func(seriesID int, ts int64, value float64) {
+			lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
+
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, lbls, ts, value)
+			require.NoError(t, err)
+
+			err = app.Commit()
+			require.NoError(t, err)
+		}
+
+		seriesID := 0
+
+		// Append a sample for each series, spreading it between minT and maxT-1 (both included).
+		// Since we append one more series below, here we create N-1 series.
+		if numSeries > 1 {
+			for ts := minT; ts < maxT; ts += (maxT - minT) / int64(numSeries-1) {
+				appendSample(seriesID, ts, float64(seriesID))
+				seriesID++
+			}
+		}
+
+		// Guarantee a series with a sample at time maxT-1
+		appendSample(seriesID, maxT-1, float64(seriesID))
+	})
 }
 
 func createDeletionMark(t *testing.T, bkt objstore.Bucket, userID string, blockID ulid.ULID, deletionTime time.Time) {

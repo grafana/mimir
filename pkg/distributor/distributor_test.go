@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -57,13 +56,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
-	errFail               = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
-	emptyResponse         = &mimirpb.WriteResponse{}
-	generateTestHistogram = tsdb.GenerateTestHistogram
+	errFail                    = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
+	emptyResponse              = &mimirpb.WriteResponse{}
+	generateTestHistogram      = util_test.GenerateTestHistogram
+	generateTestFloatHistogram = util_test.GenerateTestFloatHistogram
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -352,7 +353,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	request := makeWriteRequest(123456789000, 1, 1, false, false)
+	request := makeWriteRequest(123456789000, 1, 1, false, true)
 	_, err := ds[0].Push(ctx, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -529,7 +530,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, 1, 1, false, false)
+				request := makeWriteRequest(0, 1, 1, false, true)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -962,7 +963,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, barMatcher},
-					expectedResponse:  expectedResponse(0, 10),
+					expectedResponse:  expectedResponse(0, 10, true),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -974,7 +975,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-					expectedResponse:  expectedResponse(0, 0),
+					expectedResponse:  expectedResponse(0, 0, true),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -987,7 +988,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 						happyIngesters:    happyIngesters,
 						samples:           10,
 						matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-						expectedResponse:  expectedResponse(i, i+1),
+						expectedResponse:  expectedResponse(i, i+1, true),
 						expectedIngesters: expectedIngesters,
 						shuffleShardSize:  shuffleShardSize,
 					})
@@ -1012,7 +1013,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			ds, ingesters, _ := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false, false)
+			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
@@ -1122,7 +1123,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 	// Push a number of series below the max series limit.
 	initialSeries := maxSeriesLimit
-	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, true)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1507,6 +1508,14 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 		"too new histogram": {
 			req:    makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, math.MaxInt64, generateTestHistogram(0)),
+			errMsg: "received a sample whose timestamp is too far in the future",
+			errID:  globalerror.SampleTooFarInFuture,
+		},
+		"valid float histogram": {
+			req: makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestFloatHistogram(0)),
+		},
+		"too new float histogram": {
+			req:    makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, math.MaxInt64, generateTestFloatHistogram(0)),
 			errMsg: "received a sample whose timestamp is too far in the future",
 			errID:  globalerror.SampleTooFarInFuture,
 		},
@@ -2160,7 +2169,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Push metadata
 			ctx := user.InjectOrgID(context.Background(), "test")
 
-			req := makeWriteRequest(0, 0, 10, false, false)
+			req := makeWriteRequest(0, 0, 10, false, true)
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
@@ -2529,6 +2538,68 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
+		}, {
+			name:                  "do ingest with histograms",
+			request:               makeWriteRequest(123456789000, 5, 0, false, true, metric),
+			ingestSample:          true,
+			expectIngestedMetrics: []string{metric},
+			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
+			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+			# TYPE cortex_distributor_received_samples_total counter
+			cortex_distributor_received_samples_total{user="user"} 10
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
+			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+			# TYPE cortex_distributor_samples_in_total counter
+			cortex_distributor_samples_in_total{user="user"} 10
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
+			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+			# TYPE cortex_distributor_metadata_in_total counter
+			cortex_distributor_metadata_in_total{user="user"} 0
+`,
+		}, {
+			name:                  "don't ingest with histograms",
+			request:               makeWriteRequest(123456789000, 5, 0, false, true, metric),
+			ingestSample:          false,
+			expectIngestedMetrics: []string{},
+			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
+			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+			# TYPE cortex_distributor_received_samples_total counter
+			cortex_distributor_received_samples_total{user="user"} 0
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+			# TYPE cortex_distributor_received_exemplars_total counter
+			cortex_distributor_received_exemplars_total{user="user"} 0
+			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+			# TYPE cortex_distributor_received_metadata_total counter
+			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
+			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+			# TYPE cortex_distributor_samples_in_total counter
+			cortex_distributor_samples_in_total{user="user"} 10
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+			# TYPE cortex_distributor_exemplars_in_total counter
+			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 			# TYPE cortex_distributor_metadata_in_total counter
 			cortex_distributor_metadata_in_total{user="user"} 0
@@ -3343,7 +3414,7 @@ func TestValidationBeforeForwarding(t *testing.T) {
 	expectedWriteReq.Timeseries[1].Samples[0].Value += 2
 	expectedWriteReq.Timeseries[1].Samples[0].TimestampMs += 2
 	// We need to do something similar to samples for histograms, but because the data type has more fields to update it's neater to regenerate it
-	expectedWriteReq.Timeseries[1].Histograms = makeWriteRequestHistograms(103, generateTestHistogram(3))
+	expectedWriteReq.Timeseries[1].Histograms = makeWriteRequestFloatHistograms(103, generateTestFloatHistogram(3))
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -3644,7 +3715,11 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 			}
 
 			if histograms {
-				req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
+				if i%2 == 0 {
+					req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
+				} else {
+					req.Histograms = makeWriteRequestFloatHistograms(startTimestampMs+int64(i), generateTestFloatHistogram(i))
+				}
 			}
 
 			request.Timeseries = append(request.Timeseries, req)
@@ -3687,6 +3762,10 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 
 func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
 	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
+}
+
+func makeWriteRequestFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
+	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
@@ -3772,7 +3851,11 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 				TimestampMs: int64(100 + i),
 			}}
 		}
-		ts.Histograms = makeWriteRequestHistograms(int64(100+i), generateTestHistogram(i))
+		if i%2 == 0 {
+			ts.Histograms = makeWriteRequestHistograms(int64(100+i), generateTestHistogram(i))
+		} else {
+			ts.Histograms = makeWriteRequestFloatHistograms(int64(100+i), generateTestFloatHistogram(i))
+		}
 		request.Timeseries = append(request.Timeseries, ts)
 
 	}
@@ -3804,6 +3887,14 @@ func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram
 	}
 }
 
+func makeWriteRequestFloatHistogram(seriesLabels []string, timestamp int64, histogram *histogram.FloatHistogram) *mimirpb.WriteRequest {
+	return &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram),
+		},
+	}
+}
+
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -3827,10 +3918,20 @@ func makeHistogramTimeseries(seriesLabels []string, timestamp int64, histogram *
 	}
 }
 
-func expectedResponse(start, end int) model.Matrix {
+func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histogram *histogram.FloatHistogram) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Histograms: makeWriteRequestFloatHistograms(timestamp, histogram),
+		},
+	}
+}
+
+func expectedResponse(start, end int, histograms bool) model.Matrix {
+	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
 	for i := start; i < end; i++ {
-		result = append(result, &model.SampleStream{
+		ss := &model.SampleStream{
 			Metric: model.Metric{
 				model.MetricNameLabel: "foo",
 				"bar":                 "baz",
@@ -3842,7 +3943,16 @@ func expectedResponse(start, end int) model.Matrix {
 					Timestamp: model.Time(i),
 				},
 			},
-		})
+		}
+		if histograms {
+			ss.Histograms = []model.SampleHistogramPair{
+				{
+					Histogram: util_test.GenerateTestSampleHistogram(i),
+					Timestamp: model.Time(i),
+				},
+			}
+		}
+		result = append(result, ss)
 	}
 	return result
 }
@@ -3932,16 +4042,19 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 		if !ok {
 			// Make a copy because the request Timeseries are reused
 			item := mimirpb.TimeSeries{
-				Labels:  make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
-				Samples: make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
+				Labels:     make([]mimirpb.LabelAdapter, len(series.TimeSeries.Labels)),
+				Samples:    make([]mimirpb.Sample, len(series.TimeSeries.Samples)),
+				Histograms: make([]mimirpb.Histogram, len(series.TimeSeries.Histograms)),
 			}
 
 			copy(item.Labels, series.TimeSeries.Labels)
 			copy(item.Samples, series.TimeSeries.Samples)
+			copy(item.Histograms, series.TimeSeries.Histograms)
 
 			i.timeseries[hash] = &mimirpb.PreallocTimeseries{TimeSeries: &item}
 		} else {
 			existing.Samples = append(existing.Samples, series.Samples...)
+			existing.Histograms = append(existing.Histograms, series.Histograms...)
 		}
 	}
 
@@ -3956,6 +4069,18 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 	}
 
 	return &mimirpb.WriteResponse{}, nil
+}
+
+func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
+	var buf bytes.Buffer
+	chunk := client.Chunk{
+		Encoding: int32(c.Encoding()),
+	}
+	if err := c.Marshal(&buf); err != nil {
+		panic(err)
+	}
+	chunk.Data = buf.Bytes()
+	return chunk
 }
 
 func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, opts ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
@@ -3986,6 +4111,16 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			return nil, err
 		}
 
+		hc, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
+		if err != nil {
+			return nil, err
+		}
+
+		fhc, err := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk)
+		if err != nil {
+			return nil, err
+		}
+
 		chunks := []chunk.EncodedChunk{c}
 		for _, sample := range ts.Samples {
 			newChunk, err := c.Add(model.SamplePair{
@@ -4001,17 +4136,49 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
+		hexists := false
+		fhexists := false
+		hchunks := []chunk.EncodedChunk{hc}
+		fhchunks := []chunk.EncodedChunk{fhc}
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				fhexists = true
+				newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h))
+				if err != nil {
+					panic(err)
+				}
+				if newChunk != nil {
+					fhc = newChunk
+					fhchunks = append(fhchunks, newChunk)
+				}
+			} else {
+				hexists = true
+				newChunk, err := hc.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
+				if err != nil {
+					panic(err)
+				}
+				if newChunk != nil {
+					hc = newChunk
+					hchunks = append(hchunks, newChunk)
+				}
+			}
+		}
+
 		wireChunks := []client.Chunk{}
 		for _, c := range chunks {
-			var buf bytes.Buffer
-			chunk := client.Chunk{
-				Encoding: int32(c.Encoding()),
+			wireChunks = append(wireChunks, makeWireChunk(c))
+		}
+		if hexists {
+			for _, c := range hchunks {
+				// panic("got hist")
+				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
-			if err := c.Marshal(&buf); err != nil {
-				panic(err)
+		}
+		if fhexists {
+			for _, c := range fhchunks {
+				// panic("got fhist")
+				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
-			chunk.Data = buf.Bytes()
-			wireChunks = append(wireChunks, chunk)
 		}
 
 		results = append(results, &client.QueryStreamResponse{
