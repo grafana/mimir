@@ -160,11 +160,11 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
-var defaultFormatter = jsonFormat{}
+var defaultFormatter = jsonFormatter{}
 
 var knownFormats = []formatter{
 	defaultFormatter,
-	protobufFormat{},
+	protobufFormatter{},
 }
 
 func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {

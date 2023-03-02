@@ -12,17 +12,17 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type protobufFormat struct{}
+type protobufFormatter struct{}
 
-func (f protobufFormat) Name() string {
+func (f protobufFormatter) Name() string {
 	return formatProtobuf
 }
 
-func (f protobufFormat) ContentType() v1.MIMEType {
+func (f protobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-func (f protobufFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
+func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
 	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (f protobufFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error)
 	return payload.Marshal()
 }
 
-func (protobufFormat) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
+func (protobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
 	if len(data) != 1 {
 		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but is has %d", len(data))
 	}
@@ -106,7 +106,7 @@ func (protobufFormat) encodeStringData(data []SampleStream) (mimirpb.StringData,
 	}, nil
 }
 
-func (protobufFormat) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
+func (protobufFormatter) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
 	if len(data) != 1 {
 		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response to contain exactly one stream, but is has %d", len(data))
 	}
@@ -125,7 +125,7 @@ func (protobufFormat) encodeScalarData(data []SampleStream) (mimirpb.ScalarData,
 	}, nil
 }
 
-func (protobufFormat) encodeVectorData(data []SampleStream) (mimirpb.VectorData, error) {
+func (protobufFormatter) encodeVectorData(data []SampleStream) (mimirpb.VectorData, error) {
 	floatCount := 0
 	histogramCount := 0
 
@@ -170,7 +170,7 @@ func (protobufFormat) encodeVectorData(data []SampleStream) (mimirpb.VectorData,
 	}, nil
 }
 
-func (protobufFormat) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
+func (protobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
 	series := make([]mimirpb.MatrixSeries, len(data))
 
 	for i, stream := range data {
@@ -184,7 +184,7 @@ func (protobufFormat) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
 	return mimirpb.MatrixData{Series: series}
 }
 
-func (f protobufFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
+func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp mimirpb.QueryResponse
 
 	if err := resp.Unmarshal(buf); err != nil {
@@ -214,7 +214,7 @@ func (f protobufFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) 
 	}, nil
 }
 
-func (f protobufFormat) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
+func (f protobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
 	if resp.Data == nil {
 		if resp.Status != mimirpb.QueryResponse_SUCCESS {
 			return nil, nil
@@ -237,7 +237,7 @@ func (f protobufFormat) decodeData(resp mimirpb.QueryResponse) (*PrometheusData,
 	}
 }
 
-func (f protobufFormat) decodeStringData(data *mimirpb.StringData) *PrometheusData {
+func (f protobufFormatter) decodeStringData(data *mimirpb.StringData) *PrometheusData {
 	return &PrometheusData{
 		ResultType: model.ValString.String(),
 		Result: []SampleStream{
@@ -249,7 +249,7 @@ func (f protobufFormat) decodeStringData(data *mimirpb.StringData) *PrometheusDa
 	}
 }
 
-func (f protobufFormat) decodeScalarData(data *mimirpb.ScalarData) *PrometheusData {
+func (f protobufFormatter) decodeScalarData(data *mimirpb.ScalarData) *PrometheusData {
 	return &PrometheusData{
 		ResultType: model.ValScalar.String(),
 		Result: []SampleStream{
@@ -260,7 +260,7 @@ func (f protobufFormat) decodeScalarData(data *mimirpb.ScalarData) *PrometheusDa
 	}
 }
 
-func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusData, error) {
+func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*PrometheusData, error) {
 	streams := make([]SampleStream, len(data.Samples)+len(data.Histograms))
 
 	for i, sample := range data.Samples {
@@ -300,7 +300,7 @@ func (f protobufFormat) decodeVectorData(data *mimirpb.VectorData) (*PrometheusD
 	}, nil
 }
 
-func (f protobufFormat) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
+func (f protobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
 	streams := make([]SampleStream, len(data.Series))
 
 	for seriesIdx, series := range data.Series {

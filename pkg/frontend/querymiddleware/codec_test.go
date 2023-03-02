@@ -135,10 +135,10 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBody, err := jsonFormat{}.EncodeResponse(testResponse)
+	jsonBody, err := jsonFormatter{}.EncodeResponse(testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := protobufFormat{}.EncodeResponse(testResponse)
+	protobufBody, err := protobufFormatter{}.EncodeResponse(testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {
