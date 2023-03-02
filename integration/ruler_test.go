@@ -829,11 +829,12 @@ func TestRulerFederatedRules(t *testing.T) {
 
 func TestRulerRemoteEvaluation(t *testing.T) {
 	tcs := map[string]struct {
-		tenantsWithMetrics []string
-		groupSourceTenants []string
-		ruleGroupOwner     string
-		ruleExpression     string
-		assertEvalResult   func(model.Vector)
+		tenantsWithMetrics       []string
+		groupSourceTenants       []string
+		ruleGroupOwner           string
+		ruleExpression           string
+		queryResultPayloadFormat string
+		assertEvalResult         func(model.Vector)
 	}{
 		"non federated rule group": {
 			tenantsWithMetrics: []string{"tenant-1"},
@@ -852,6 +853,16 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
+			},
+		},
+		"protobuf query result payload format": {
+			tenantsWithMetrics:       []string{"tenant-4"},
+			ruleGroupOwner:           "tenant-4",
+			ruleExpression:           "count(sum_over_time(metric[1h]))",
+			queryResultPayloadFormat: "protobuf",
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
 			},
 		},
 	}
@@ -898,10 +909,16 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 
 	for tName, tc := range tcs {
 		t.Run(tName, func(t *testing.T) {
+			if tc.queryResultPayloadFormat == "" {
+				delete(flags, "-ruler.query-frontend.query-result-response-format")
+			} else {
+				flags["-ruler.query-frontend.query-result-response-format"] = tc.queryResultPayloadFormat
+			}
+
 			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.StartAndWaitReady(ruler))
 			t.Cleanup(func() {
-				s.Stop(ruler)
+				_ = s.Stop(ruler)
 			})
 
 			// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
