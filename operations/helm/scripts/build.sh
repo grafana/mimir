@@ -66,7 +66,7 @@ for FILEPATH in $TESTS; do
   echo "Templating $TEST_NAME"
   ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns")
 
-  echo -n "Checking for kubeVersionOverride..."
+  echo "Checking for kubeVersionOverride inside tests' values.yaml ..."
   if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then
     echo "Warning: injecting Kubernetes version override: kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
