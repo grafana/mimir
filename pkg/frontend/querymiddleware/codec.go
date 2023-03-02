@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/exp/slices"
 
@@ -156,11 +157,14 @@ type formatter interface {
 	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
 	DecodeResponse([]byte) (*PrometheusResponse, error)
 	Name() string
+	ContentType() v1.MIMEType
 }
 
-var knownFormats = map[string]formatter{
-	jsonMimeType:                  jsonFormat{},
-	mimirpb.QueryResponseMimeType: protobufFormat{},
+var defaultFormatter = jsonFormat{}
+
+var knownFormats = []formatter{
+	defaultFormatter,
+	protobufFormat{},
 }
 
 func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
@@ -367,20 +371,19 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
 	contentType := r.Header.Get("Content-Type")
-	f, ok := knownFormats[contentType]
-
-	if !ok {
+	formatter := c.findFormatter(contentType)
+	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
 	}
 
 	start := time.Now()
-	resp, err := f.DecodeResponse(buf)
+	resp, err := formatter.DecodeResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationDecode, f.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationDecode, f.Name()).Observe(float64(len(buf)))
+	c.metrics.duration.WithLabelValues(operationDecode, formatter.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, formatter.Name()).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -390,6 +393,16 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		resp.Headers = append(resp.Headers, &PrometheusResponseHeader{Name: h, Values: hv})
 	}
 	return resp, nil
+}
+
+func (c prometheusCodec) findFormatter(contentType string) formatter {
+	for _, f := range knownFormats {
+		if f.ContentType().String() == contentType {
+			return f
+		}
+	}
+
+	return nil
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
@@ -432,13 +445,14 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 
 func (prometheusCodec) negotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
-		return jsonMimeType, knownFormats[jsonMimeType]
+		return jsonMimeType, defaultFormatter
 	}
 
 	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
-		contentType := clause.Type + "/" + clause.SubType
-		if f, ok := knownFormats[contentType]; ok {
-			return contentType, f
+		for _, formatter := range knownFormats {
+			if formatter.ContentType().Satisfies(clause) {
+				return formatter.ContentType().String(), formatter
+			}
 		}
 	}
 

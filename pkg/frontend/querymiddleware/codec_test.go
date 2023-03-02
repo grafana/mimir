@@ -165,6 +165,16 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 			expectedResponseContentType: jsonMimeType,
 			expectedResponseBody:        jsonBody,
 		},
+		"wildcard subtype in Accept header": {
+			acceptHeader:                "application/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"wildcard in Accept header": {
+			acceptHeader:                "*/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
 		"multiple supported content types in Accept header": {
 			acceptHeader:                "application/vnd.mimir.queryresponse+protobuf,application/json",
 			expectedResponseContentType: mimirpb.QueryResponseMimeType,

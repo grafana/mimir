@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -15,6 +16,10 @@ type protobufFormat struct{}
 
 func (f protobufFormat) Name() string {
 	return formatProtobuf
+}
+
+func (f protobufFormat) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
 func (f protobufFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {

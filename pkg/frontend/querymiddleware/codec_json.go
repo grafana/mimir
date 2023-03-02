@@ -5,6 +5,8 @@
 
 package querymiddleware
 
+import v1 "github.com/prometheus/prometheus/web/api/v1"
+
 const jsonMimeType = "application/json"
 
 type jsonFormat struct{}
@@ -25,4 +27,8 @@ func (j jsonFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 
 func (j jsonFormat) Name() string {
 	return formatJSON
+}
+
+func (j jsonFormat) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: "application", SubType: "json"}
 }
