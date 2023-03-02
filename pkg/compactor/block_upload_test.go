@@ -1437,7 +1437,8 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 			},
 		},
 		{
-			name: "context cancelled before update",
+			name:          "context cancelled before update",
+			cancelContext: true,
 			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
 				require.False(t, validationExists(t, bkt))
 			},
