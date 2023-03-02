@@ -79,7 +79,7 @@ func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, err
 
 func (protobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
 	if len(data) != 1 {
-		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but is has %d", len(data))
+		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but it has %d", len(data))
 	}
 
 	stream := data[0]
@@ -108,7 +108,7 @@ func (protobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringDa
 
 func (protobufFormatter) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
 	if len(data) != 1 {
-		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response to contain exactly one stream, but is has %d", len(data))
+		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response to contain exactly one stream, but it has %d", len(data))
 	}
 
 	stream := data[0]
