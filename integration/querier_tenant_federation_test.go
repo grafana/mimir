@@ -8,7 +8,6 @@ package integration
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -155,9 +154,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	result, err := c.Query("series_1", now)
 	require.NoError(t, err)
 
-	// We don't guarantee series will be sorted in any particular order, so we ensure they're sorted consistently here
-	// to avoid assertion failures.
-	assert.Equal(t, sortVector(mergeResults(tenantIDs, expectedVectors)), sortVector(result.(model.Vector)))
+	assert.ElementsMatch(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
 
 	// query exemplars for all tenants
 	exemplars, err := c.QueryExemplars("series_1", now.Add(-1*time.Hour), now.Add(1*time.Hour))
@@ -205,10 +202,4 @@ func mergeResults(tenantIDs []string, resultsPerTenant []model.Vector) model.Vec
 		}
 	}
 	return v
-}
-
-func sortVector(vector model.Vector) model.Vector {
-	sort.Sort(vector)
-
-	return vector
 }
