@@ -16,10 +16,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // This test verifies that jsoninter uses our custom method for marshalling.
@@ -211,6 +213,13 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	}
 }
 
+func TestFromPointsToSamples(t *testing.T) {
+	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}}
+	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+
+	assert.Equal(t, expected, FromPointsToSamples(input))
+}
+
 func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
 		metric := Metric{
@@ -307,7 +316,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 		Timeseries: []prompb.TimeSeries{
 			{
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(0)),
 				},
 			},
 		},
@@ -330,11 +339,11 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestGaugeHistogram(0),
 			expectGauge:   true,
 		},
 	}
@@ -365,11 +374,11 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestFloatHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestFloatHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeFloatHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestGaugeFloatHistogram(0),
 			expectGauge:   true,
 		},
 	}
@@ -401,7 +410,7 @@ func TestCounterResetHint(t *testing.T) {
 
 func TestFromHistogramToHistogramProto(t *testing.T) {
 	var ts int64 = 1
-	h := tsdb.GenerateTestHistogram(int(ts))
+	h := test.GenerateTestHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
 	p := FromHistogramToHistogramProto(ts, h)
@@ -432,7 +441,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 
 func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	var ts int64 = 1
-	h := tsdb.GenerateTestFloatHistogram(int(ts))
+	h := test.GenerateTestFloatHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
 	p := FromFloatHistogramToHistogramProto(ts, h)

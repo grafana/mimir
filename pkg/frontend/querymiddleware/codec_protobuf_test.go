@@ -39,7 +39,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 			resp: mimirpb.QueryResponse{
 				Status: mimirpb.QueryResponse_SUCCESS,
 				Data: &mimirpb.QueryResponse_String_{
-					String_: &mimirpb.StringData{Value: "foo", TimestampMilliseconds: 1500},
+					String_: &mimirpb.StringData{Value: "foo", TimestampMs: 1500},
 				},
 			},
 			expected: &PrometheusResponse{
@@ -62,8 +62,8 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Status: mimirpb.QueryResponse_SUCCESS,
 				Data: &mimirpb.QueryResponse_Scalar{
 					Scalar: &mimirpb.ScalarData{
-						Value:                 200,
-						TimestampMilliseconds: 1000,
+						Value:       200,
+						TimestampMs: 1000,
 					},
 				},
 			},
@@ -102,7 +102,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{}, TimestampMilliseconds: 1_000, Value: 200},
+							{Metric: []string{}, TimestampMs: 1_000, Value: 200},
 						},
 					},
 				},
@@ -125,7 +125,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
+							{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
 						},
 					},
 				},
@@ -148,7 +148,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{"foo", "bar", "baz", "blah"}, TimestampMilliseconds: 1_000, Value: 200},
+							{Metric: []string{"foo", "bar", "baz", "blah"}, TimestampMs: 1_000, Value: 200},
 						},
 					},
 				},
@@ -177,8 +177,8 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{"foo", "bar"}, TimestampMilliseconds: 1_000, Value: 200},
-							{Metric: []string{"bar", "baz"}, TimestampMilliseconds: 1_000, Value: 201},
+							{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
+							{Metric: []string{"bar", "baz"}, TimestampMs: 1_000, Value: 201},
 						},
 					},
 				},
@@ -202,7 +202,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Vector{
 					Vector: &mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
-							{Metric: []string{"foo"}, TimestampMilliseconds: 1_000, Value: 200},
+							{Metric: []string{"foo"}, TimestampMs: 1_000, Value: 200},
 						},
 					},
 				},
@@ -233,7 +233,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{
 						Series: []mimirpb.MatrixSeries{
-							{Metric: []string{}, Samples: []mimirpb.MatrixSample{}},
+							{Metric: []string{}, Samples: []mimirpb.Sample{}},
 						},
 					},
 				},
@@ -256,7 +256,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{
 						Series: []mimirpb.MatrixSeries{
-							{Metric: []string{"foo", "bar"}, Samples: []mimirpb.MatrixSample{}},
+							{Metric: []string{"foo", "bar"}, Samples: []mimirpb.Sample{}},
 						},
 					},
 				},
@@ -279,7 +279,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{
 						Series: []mimirpb.MatrixSeries{
-							{Metric: []string{"foo", "bar", "baz", "blah"}, Samples: []mimirpb.MatrixSample{}},
+							{Metric: []string{"foo", "bar", "baz", "blah"}, Samples: []mimirpb.Sample{}},
 						},
 					},
 				},
@@ -310,8 +310,8 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 						Series: []mimirpb.MatrixSeries{
 							{
 								Metric: []string{"foo", "bar", "baz", "blah"},
-								Samples: []mimirpb.MatrixSample{
-									{TimestampMilliseconds: 1_000, Value: 100},
+								Samples: []mimirpb.Sample{
+									{TimestampMs: 1_000, Value: 100},
 								},
 							},
 						},
@@ -346,9 +346,9 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 						Series: []mimirpb.MatrixSeries{
 							{
 								Metric: []string{"foo", "bar", "baz", "blah"},
-								Samples: []mimirpb.MatrixSample{
-									{TimestampMilliseconds: 1_000, Value: 100},
-									{TimestampMilliseconds: 1_001, Value: 101},
+								Samples: []mimirpb.Sample{
+									{TimestampMs: 1_000, Value: 100},
+									{TimestampMs: 1_001, Value: 101},
 								},
 							},
 						},
@@ -382,8 +382,8 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{
 						Series: []mimirpb.MatrixSeries{
-							{Metric: []string{"foo", "bar"}, Samples: []mimirpb.MatrixSample{{TimestampMilliseconds: 1_000, Value: 100}, {TimestampMilliseconds: 2_000, Value: 200}}},
-							{Metric: []string{"bar", "baz"}, Samples: []mimirpb.MatrixSample{{TimestampMilliseconds: 1_000, Value: 101}, {TimestampMilliseconds: 2_000, Value: 201}}},
+							{Metric: []string{"foo", "bar"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
+							{Metric: []string{"bar", "baz"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
 						},
 					},
 				},
@@ -407,7 +407,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Data: &mimirpb.QueryResponse_Matrix{
 					Matrix: &mimirpb.MatrixData{
 						Series: []mimirpb.MatrixSeries{
-							{Metric: []string{"foo"}, Samples: []mimirpb.MatrixSample{{TimestampMilliseconds: 1_000, Value: 100}, {TimestampMilliseconds: 2_000, Value: 200}}},
+							{Metric: []string{"foo"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
 						},
 					},
 				},
