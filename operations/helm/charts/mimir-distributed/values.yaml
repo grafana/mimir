@@ -159,28 +159,43 @@ mimir:
         max_chunk_pool_bytes: 12884901888 # 12GiB
         {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
-          backend: memcached
+          backend: {{ index .Values "chunks-cache" "backend" }}
+          {{- if eq (index .Values "chunks-cache" "backend") "redis" }}
+          redis:
+            endpoint: {{ include "mimir.chunksCacheAddress" . }}
+          {{ else }}
           memcached:
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 450ms
             max_idle_connections: 150
+          {{- end }}
         {{- end }}
         {{- if index .Values "index-cache" "enabled" }}
         index_cache:
-          backend: memcached
+          backend: {{ index .Values "index-cache" "backend" }}
+          {{- if eq (index .Values "index-cache" "backend") "redis" }}
+          redis:
+            endpoint: {{ include "mimir.indexCacheAddress" . }}
+          {{ else }}
           memcached:
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
             max_idle_connections: 150
+          {{- end }}
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
         metadata_cache:
-          backend: memcached
+          backend: {{ index .Values "metadata-cache" "backend" }}
+          {{- if eq (index .Values "metadata-cache" "backend") "redis" }}
+          redis:
+            endpoint: {{ include "mimir.metadataCacheAddress" . }}
+          {{ else }}
           memcached:
             addresses: {{ include "mimir.metadataCacheAddress" . }}
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
             max_idle_connections: 150
+          {{- end }}
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
@@ -1567,9 +1582,60 @@ memcachedExporter:
       drop: [ALL]
     allowPrivilegeEscalation: false
 
+redis:
+  image:
+    # -- Memcached Docker image repository
+    repository: redis
+    # -- Memcached Docker image tag
+    tag: 7.0.9-alpine
+    # -- Memcached Docker image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- The SecurityContext for redis pods
+  podSecurityContext:
+    fsGroup: 6379
+    runAsGroup: 6379
+    runAsNonRoot: true
+    runAsUser: 6379
+    seccompProfile:
+      type: RuntimeDefault
+
+  # -- The name of the PriorityClass for redis pods
+  priorityClassName: null
+
+  # -- The SecurityContext for redis containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    allowPrivilegeEscalation: false
+
+redisExporter:
+  # -- Whether redis metrics should be exported
+  enabled: true
+
+  image:
+    repository: oliver006/redis_exporter
+    tag: v1.47.0
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests: {}
+    limits: {}
+
+  # -- The SecurityContext for redis exporter containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    allowPrivilegeEscalation: false
+
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
+
+  # -- Backend of the chunks-cache either memcached or redis
+  backend: memcached
 
   # -- Total number of chunks-cache replicas
   replicas: 1
@@ -1638,6 +1704,9 @@ index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
 
+  # -- Backend of the index-cache either memcached or redis
+  backend: memcached
+
   # -- Total number of index-cache replicas
   replicas: 1
 
@@ -1704,6 +1773,9 @@ index-cache:
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
+
+  # -- Backend of the metadata-cache either memcached or redis
+  backend: memcached
 
   # -- Total number of metadata-cache replicas
   replicas: 1
