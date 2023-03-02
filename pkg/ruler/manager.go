@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/concurrency"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -105,8 +106,24 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
 
-	for userID, ruleGroup := range ruleGroups {
-		r.syncRulesToManager(ctx, userID, ruleGroup)
+	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
+	// Since users are different, we can sync rules in parallel.
+	users := make([]string, 0, len(ruleGroups))
+	for userID := range ruleGroups {
+		users = append(users, userID)
+	}
+
+	// concurrenty.ForEachJob is a helper function that runs a function for each job in parallel.
+	// It cancel context of jobFunc once iteration is done.
+	// That is why the context passed to syncRulesToManager should be the global context not the context of jobFunc.
+	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
+		userID := users[idx]
+		r.syncRulesToManager(ctx, userID, ruleGroups[userID])
+		return nil
+	})
+	if err != nil {
+		// The only error we could get here is a context canceled.
+		return
 	}
 
 	r.userManagerMtx.Lock()
