@@ -18,7 +18,165 @@ func (f protobufFormat) Name() string {
 }
 
 func (f protobufFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
-	panic("not yet implemented")
+	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := mimirpb.QueryResponse{
+		Status:    status,
+		ErrorType: errorType,
+		Error:     resp.Error,
+	}
+
+	if resp.Data != nil {
+		switch resp.Data.ResultType {
+		case model.ValString.String():
+			data, err := f.encodeStringData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
+
+		case model.ValScalar.String():
+			data, err := f.encodeScalarData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
+
+		case model.ValVector.String():
+			data, err := f.encodeVectorData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
+
+		case model.ValMatrix.String():
+			data := f.encodeMatrixData(resp.Data.Result)
+			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
+
+		default:
+			return nil, fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
+		}
+	}
+
+	return payload.Marshal()
+}
+
+func (protobufFormat) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
+	if len(data) != 1 {
+		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but is has %d", len(data))
+	}
+
+	stream := data[0]
+
+	if len(stream.Samples) != 1 {
+		return mimirpb.StringData{}, fmt.Errorf("expected string response stream to contain exactly one sample, but it has %d", len(stream.Samples))
+	}
+
+	sample := stream.Samples[0]
+
+	if len(stream.Labels) != 1 {
+		return mimirpb.StringData{}, fmt.Errorf("expected string response stream to contain exactly one label, but it has %d", len(stream.Labels))
+	}
+
+	label := stream.Labels[0]
+
+	if label.Name != "value" {
+		return mimirpb.StringData{}, fmt.Errorf("expected string response stream label to have name 'value', but it has name '%s'", label.Name)
+	}
+
+	return mimirpb.StringData{
+		TimestampMs: sample.TimestampMs,
+		Value:       label.Value,
+	}, nil
+}
+
+func (protobufFormat) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
+	if len(data) != 1 {
+		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response to contain exactly one stream, but is has %d", len(data))
+	}
+
+	stream := data[0]
+
+	if len(stream.Samples) != 1 {
+		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response stream to contain exactly one sample, but it has %d", len(stream.Samples))
+	}
+
+	sample := stream.Samples[0]
+
+	return mimirpb.ScalarData{
+		TimestampMs: sample.TimestampMs,
+		Value:       sample.Value,
+	}, nil
+}
+
+func (protobufFormat) encodeVectorData(data []SampleStream) (mimirpb.VectorData, error) {
+	floatCount := 0
+	histogramCount := 0
+
+	for _, stream := range data {
+		if len(stream.Samples) == 1 {
+			floatCount++
+		} else if len(stream.Histograms) == 1 {
+			histogramCount++
+		} else {
+			return mimirpb.VectorData{}, fmt.Errorf("expected vector response series to contain exactly one float sample or one histogram, but it contains %d float sample(s) and %d histogram(s)", len(stream.Samples), len(stream.Histograms))
+		}
+	}
+
+	samples := make([]mimirpb.VectorSample, 0, floatCount)
+	histograms := make([]mimirpb.VectorHistogram, 0, histogramCount)
+
+	for _, stream := range data {
+		metric := stringArrayFromLabels(stream.Labels)
+
+		if len(stream.Samples) == 1 {
+			sample := stream.Samples[0]
+
+			samples = append(samples, mimirpb.VectorSample{
+				Metric:      metric,
+				Value:       sample.Value,
+				TimestampMs: sample.TimestampMs,
+			})
+		} else {
+			sample := stream.Histograms[0]
+
+			histograms = append(histograms, mimirpb.VectorHistogram{
+				Metric:      metric,
+				Histogram:   sample.Histogram,
+				TimestampMs: sample.TimestampMs,
+			})
+		}
+	}
+
+	return mimirpb.VectorData{
+		Samples:    samples,
+		Histograms: histograms,
+	}, nil
+}
+
+func (protobufFormat) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
+	series := make([]mimirpb.MatrixSeries, len(data))
+
+	for i, stream := range data {
+		series[i] = mimirpb.MatrixSeries{
+			Metric:     stringArrayFromLabels(stream.Labels),
+			Samples:    stream.Samples,
+			Histograms: stream.Histograms,
+		}
+	}
+
+	return mimirpb.MatrixData{Series: series}
 }
 
 func (f protobufFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
@@ -175,4 +333,15 @@ func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
 	}
 
 	return l, nil
+}
+
+func stringArrayFromLabels(labels []mimirpb.LabelAdapter) []string {
+	s := make([]string, len(labels)*2)
+
+	for i, l := range labels {
+		s[2*i] = l.Name
+		s[2*i+1] = l.Value
+	}
+
+	return s
 }

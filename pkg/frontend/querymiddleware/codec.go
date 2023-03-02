@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
+	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,7 +73,7 @@ type Codec interface {
 	// EncodeRequest encodes a Request into an http request.
 	EncodeRequest(context.Context, Request) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
-	EncodeResponse(context.Context, Response) (*http.Response, error)
+	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
 
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
@@ -391,7 +392,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	return resp, nil
 }
 
-func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
+func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
@@ -403,28 +404,45 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
-	// TODO: select format based on Accept header
-	f := knownFormats[jsonMimeType]
+	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	if formatter == nil {
+		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
+	}
 
 	start := time.Now()
-	b, err := f.EncodeResponse(a)
+	b, err := formatter.EncodeResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, f.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, f.Name()).Observe(float64(len(b)))
+	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{
 		Header: http.Header{
-			"Content-Type": []string{"application/json"},
+			"Content-Type": []string{selectedContentType},
 		},
 		Body:          io.NopCloser(bytes.NewBuffer(b)),
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
+}
+
+func (prometheusCodec) negotiateContentType(acceptHeader string) (string, formatter) {
+	if acceptHeader == "" {
+		return jsonMimeType, knownFormats[jsonMimeType]
+	}
+
+	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
+		contentType := clause.Type + "/" + clause.SubType
+		if f, ok := knownFormats[contentType]; ok {
+			return contentType, f
+		}
+	}
+
+	return "", nil
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
