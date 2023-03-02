@@ -73,11 +73,11 @@ spec:
           image: quay.io/thanos/thanos:v0.26.0
           args:
             - sidecar
-            - '--prometheus.url=http://localhost:8080/prometheus'
-            - '--grpc-address=:10901'
-            - '--http-address=:10902'
-            - '--log.level=info'
-            - '--log.format=logfmt'
+            - "--prometheus.url=http://localhost:8080/prometheus"
+            - "--grpc-address=:10901"
+            - "--http-address=:10902"
+            - "--log.level=info"
+            - "--log.format=logfmt"
           ports:
             - name: http
               containerPort: 10902
@@ -183,7 +183,7 @@ location /prometheus/api/v1/status/buildinfo {
 
 You need to modify the first one to set your external labels. The second one just allows Thanos to detect the version of Prometheus running.
 
-To modify the external labels alter this string: `"{\"status\":\"success\",\"data\":{\"yaml\": \"global:\\n  external_labels:\\n    source: mimir\"}}"`. You will notice it is escaped JSON. Simply add elements to the `data.external_labels` field to add more external labels as required or alter the existing key to modify them.
+To modify the external labels alter this string: `"{\"status\":\"success\",\"data\":{\"yaml\": \"global:\\n external_labels:\\n source: mimir\"}}"`. You will notice it is escaped JSON. Simply add elements to the `data.external_labels` field to add more external labels as required or alter the existing key to modify them.
 
 ### Full Mimir Distributed NGINX configuration
 
@@ -272,7 +272,7 @@ http {
     return 200 "{\"status\":\"success\",\"data\":{\"version\":\"2.35.0\",\"revision\":\"6656cd29fe6ac92bab91ecec0fe162ef0f187654\",\"branch\":\"HEAD\",\"buildUser\":\"root@cf6852b14d68\",\"buildDate\":\"20220421-09:53:42\",\"goVersion\":\"go1.18.1\"}}";
     }
 
-    
+
 
     # Rest of /prometheus goes to the query frontend
     location /prometheus {
