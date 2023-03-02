@@ -179,7 +179,7 @@ jobs:
         run: |
           tar cvf images.tar /tmp/images
       - name: Upload Archive with Docker Images
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: Docker Images
           path: ./images.tar
