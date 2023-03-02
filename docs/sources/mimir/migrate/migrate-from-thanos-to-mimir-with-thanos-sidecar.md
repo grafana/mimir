@@ -1,8 +1,8 @@
 ---
 title: "Migrate from Thanos to Mimir using Thanos sidecar"
-menuTitle: "Migrate from Thanos to Mimir using Thanos sidecar"
+menuTitle: "Migrate from Thanos using Thanos sidecar"
 description: "Learn how to migrate from Thanos to Mimir using Thanos sidecar."
-weight: 10
+weight: 15
 ---
 
 # Migrate from Thanos to Mimir using Thanos sidecar
@@ -19,7 +19,7 @@ This is not so much of a guide as it is a collection of configurations that have
 
 **Warning:** This setup is unsupported, experimental and has not been battle tested. Your mileage may vary, ensure you have tested this for your use case and have made appropriate backups (and tested your procedures for recovery)
 
-## Technical Details
+## Technical details
 
 There are very few obstacles to get this working properly. Thanos Sidecar is designed to work with the Prometheus API which Mimir (almost) implements. There are only 2 endpoints that are not implemented that we need to "spoof" to get Thanos sidecar to believe it is connecting to a Prometheus server: `/api/v1/status/buildinfo` and `/api/v1/status/config`. We spoof these endpoints using NGINX (more details later).
 
@@ -27,7 +27,7 @@ The only other roadblock is the requirement for requests to Mimir to contain the
 
 In our case, everything was being deployed in Kubernetes. Mimir was deployed using the `mimir-distributed` helm chart. Therefore configurations shown will be Kubernetes manifests that will need to be modified for your environment. If you are not using Kubernetes then you will need to set up the appropriate configuration for NGINX to implement the technical setup described above. You may use the configurations below for inspiration but they will not work out of the box.
 
-## Deploy Thanos Sidecar
+## Deploy Thanos sidecar
 
 We deployed the sidecar using Kubernetes using the below manifest:
 
@@ -119,7 +119,7 @@ spec:
   type: ClusterIP
 ```
 
-## NGINX Configuration (Sidecar)
+## NGINX configuration for Thanos sidecar
 
 Notice that there is an NGINX container within the sidecar deployment definition. This NGINX instance sits between the sidecar and Mimir (ie. `sidecar --> nginx --> mimir`) it is responsible for injecting the tenant ID into the requests from the sidecar to Mimir. The configuration that this NGINX instance uses is as follows:
 
@@ -163,7 +163,7 @@ http {
 
 ```
 
-## NGINX Configuration (Mimir)
+## NGINX configuration for Mimir
 
 Now we modified the Mimir Distributed NGINX configuration to allow the sidecar to fetch the "external labels" and the "version" of our "Prometheus" server. You should be careful with the external labels to make sure that you don't override any existing labels (in our case we used "source='mimir'"). You should also consider existing dashboards and make sure that they will continue to work as expected. Make sure to test your setup first.
 
@@ -185,7 +185,7 @@ You need to modify the first one to set your external labels. The second one jus
 
 To modify the external labels alter this string: `"{\"status\":\"success\",\"data\":{\"yaml\": \"global:\\n external_labels:\\n source: mimir\"}}"`. You will notice it is escaped JSON. Simply add elements to the `data.external_labels` field to add more external labels as required or alter the existing key to modify them.
 
-### Full Mimir Distributed NGINX configuration
+### Full Mimir distributed NGINX configuration
 
 ```conf
 worker_processes  5;  ## Default: 1
