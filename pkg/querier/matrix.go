@@ -9,22 +9,29 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/series"
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/modelutil"
 )
 
 func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 	samples := make([][]model.SamplePair, 0, len(chunks))
+	histograms := make([][]mimirpb.Histogram, 0, len(chunks))
 	for _, c := range chunks {
-		ss, err := c.Samples(from, through)
+		sf, sh, err := c.Samples(from, through)
 		if err != nil {
 			return series.NewErrIterator(err)
 		}
-
-		samples = append(samples, ss)
+		if len(sf) > 0 {
+			samples = append(samples, sf)
+		}
+		if len(sh) > 0 {
+			histograms = append(histograms, sh)
+		}
 	}
+	mergedSamples := modelutil.MergeNSampleSets(samples...)
+	mergedHistograms := modelutil.MergeNHistogramSets(histograms...)
 
-	merged := util.MergeNSampleSets(samples...)
-	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, merged))
+	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, mergedSamples, mergedHistograms))
 }
