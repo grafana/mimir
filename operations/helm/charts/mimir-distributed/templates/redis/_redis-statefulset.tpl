@@ -84,13 +84,7 @@ spec:
             - containerPort: {{ .port }}
               name: client
           args:
-            - -m {{ .allocatedMemory }}
-            - -o
-            - modern
-            - -I {{ .maxItemMemory }}m
-            - -c 16384
-            - -v
-            - -u {{ .port }}
+            - --port {{ .port }}
             {{- range $key, $value := .extraArgs }}
             - "-{{ $key }} {{ $value }}"
             {{- end }}
@@ -112,11 +106,11 @@ spec:
           imagePullPolicy: {{ .pullPolicy }}
           {{- end }}
           ports:
-            - containerPort: 9150
+            - containerPort: 9121
               name: http-metrics
           args:
-            - "--redis.address=localhost:{{ .port }}"
-            - "--web.listen-address=0.0.0.0:9150"
+            - "--redis.addr=localhost:{{ .port }}"
+            - "--web.listen-address=0.0.0.0:9121"
           resources:
             {{- toYaml $.ctx.Values.redisExporter.resources | nindent 12 }}
           securityContext:

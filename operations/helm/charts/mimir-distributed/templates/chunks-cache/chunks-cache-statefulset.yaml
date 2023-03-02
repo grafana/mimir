@@ -1,1 +1,5 @@
+{{- if eq (index .Values "chunks-cache" "backend") "redis" }}
+{{- include "mimir.redis.statefulSet" (dict "ctx" $ "component" "chunks-cache" ) }}
+{{ else }}
 {{- include "mimir.memcached.statefulSet" (dict "ctx" $ "component" "chunks-cache" ) }}
+{{- end }}

@@ -1,1 +1,5 @@
+{{- if eq (index .Values "results-cache" "backend") "redis" }}
+{{- include "mimir.redis.service" (dict "ctx" $ "component" "results-cache" ) }}
+{{ else }}
 {{- include "mimir.memcached.service" (dict "ctx" $ "component" "results-cache" ) }}
+{{- end }}
