@@ -26,8 +26,12 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	defer s.Close()
 
 	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/demo.yaml", "demo.yaml"))
+	flags := map[string]string{
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
+	}
 
-	mimir := e2emimir.NewSingleBinary("mimir", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
+	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	runTestPushSeriesAndQueryBack(t, mimir, "series_1", generateFloatSeries)
@@ -55,6 +59,9 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
 		"-memberlist.join": networkName + "-mimir-1",
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	}
 
 	// Start Mimir (3 replicas).

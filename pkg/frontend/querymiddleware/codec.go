@@ -457,12 +457,12 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 			existing.Samples = append(existing.Samples, stream.Samples...)
 
 			if len(existing.Histograms) > 0 && len(stream.Histograms) > 0 {
-				existingEndTs := existing.Histograms[len(existing.Histograms)-1].Timestamp
-				if existingEndTs == stream.Histograms[0].Timestamp {
+				existingEndTs := existing.Histograms[len(existing.Histograms)-1].TimestampMs
+				if existingEndTs == stream.Histograms[0].TimestampMs {
 					// Typically this the cases where only 1 sample point overlap,
 					// so optimize with simple code.
 					stream.Histograms = stream.Histograms[1:]
-				} else if existingEndTs > stream.Histograms[0].Timestamp {
+				} else if existingEndTs > stream.Histograms[0].TimestampMs {
 					// Overlap might be big, use heavier algorithm to remove overlap.
 					stream.Histograms = sliceSamples(stream.Histograms, existingEndTs)
 				} // else there is no overlap, yay!

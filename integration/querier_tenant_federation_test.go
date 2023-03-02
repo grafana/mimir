@@ -69,6 +69,9 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-tenant-federation.enabled":                        "true",
 		"-ingester.max-global-exemplars-per-user":           "10000",
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -151,7 +154,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	result, err := c.Query("series_1", now)
 	require.NoError(t, err)
 
-	assert.Equal(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
+	assert.ElementsMatch(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))
 
 	// query exemplars for all tenants
 	exemplars, err := c.QueryExemplars("series_1", now.Add(-1*time.Hour), now.Add(1*time.Hour))
@@ -192,7 +195,7 @@ func mergeResults(tenantIDs []string, resultsPerTenant []model.Vector) model.Vec
 	var v model.Vector
 	for pos, tenantID := range tenantIDs {
 		for _, r := range resultsPerTenant[pos] {
-			var s model.Sample = *r
+			s := *r
 			s.Metric = r.Metric.Clone()
 			s.Metric[model.LabelName("__tenant_id__")] = model.LabelValue(tenantID)
 			v = append(v, &s)

@@ -857,10 +857,10 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			},
 		},
 		"federated rule group": {
-			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
-			ruleGroupOwner:     "tenant-2",
+			tenantsWithMetrics: []string{"tenant-2", "tenant-3"},
+			ruleGroupOwner:     "tenant-3",
 			ruleExpression:     "count(group by (__tenant_id__) (metric))",
-			groupSourceTenants: []string{"tenant-1", "tenant-2"},
+			groupSourceTenants: []string{"tenant-2", "tenant-3"},
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(2))

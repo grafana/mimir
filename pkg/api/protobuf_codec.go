@@ -75,15 +75,15 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 
 func (c protobufCodec) encodeString(s promql.String) mimirpb.StringData {
 	return mimirpb.StringData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
 func (c protobufCodec) encodeScalar(s promql.Scalar) mimirpb.ScalarData {
 	return mimirpb.ScalarData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
@@ -104,15 +104,15 @@ func (c protobufCodec) encodeVector(v promql.Vector) mimirpb.VectorData {
 
 		if s.H == nil {
 			samples = append(samples, mimirpb.VectorSample{
-				Metric:                metric,
-				TimestampMilliseconds: s.T,
-				Value:                 s.V,
+				Metric:      metric,
+				TimestampMs: s.T,
+				Value:       s.V,
 			})
 		} else {
 			histograms = append(histograms, mimirpb.VectorHistogram{
-				Metric:                metric,
-				TimestampMilliseconds: s.T,
-				Histogram:             *mimirpb.FloatHistogramFromPrometheusModel(s.Point.H),
+				Metric:      metric,
+				TimestampMs: s.T,
+				Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(s.Point.H),
 			})
 		}
 	}
@@ -144,19 +144,19 @@ func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries 
 		}
 	}
 
-	samples := make([]mimirpb.MatrixSample, 0, len(s.Points)-histogramCount)
-	histograms := make([]mimirpb.MatrixHistogram, 0, histogramCount)
+	samples := make([]mimirpb.Sample, 0, len(s.Points)-histogramCount)
+	histograms := make([]mimirpb.FloatHistogramPair, 0, histogramCount)
 
 	for _, p := range s.Points {
 		if p.H == nil {
-			samples = append(samples, mimirpb.MatrixSample{
-				TimestampMilliseconds: p.T,
-				Value:                 p.V,
+			samples = append(samples, mimirpb.Sample{
+				TimestampMs: p.T,
+				Value:       p.V,
 			})
 		} else {
-			histograms = append(histograms, mimirpb.MatrixHistogram{
-				TimestampMilliseconds: p.T,
-				Histogram:             *mimirpb.FloatHistogramFromPrometheusModel(p.H),
+			histograms = append(histograms, mimirpb.FloatHistogramPair{
+				TimestampMs: p.T,
+				Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(p.H),
 			})
 		}
 	}
