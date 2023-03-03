@@ -37,58 +37,58 @@
 
       // Target 300K active series.
       medium_small_user+:: {
-        ingestion_tenant_shard_size: 6,
-        store_gateway_tenant_shard_size: 3,
-        ruler_tenant_shard_size: 2,
+        ingestion_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(3, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 1M active series.
       small_user+:: {
-        ingestion_tenant_shard_size: 15,
-        store_gateway_tenant_shard_size: 6,
-        ruler_tenant_shard_size: 2,
+        ingestion_tenant_shard_size: std.max(15, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(6, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 3M active series.
       medium_user+:: {
-        ingestion_tenant_shard_size: 45,
-        store_gateway_tenant_shard_size: 9,
-        ruler_tenant_shard_size: 2,
+        ingestion_tenant_shard_size: std.max(45, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(9, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 6M active series.
       big_user+:: {
-        ingestion_tenant_shard_size: 90,
-        store_gateway_tenant_shard_size: 12,
-        ruler_tenant_shard_size: 3,
+        ingestion_tenant_shard_size: std.max(90, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(12, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(3, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 12M active series.
       super_user+:: {
-        ingestion_tenant_shard_size: 180,
-        store_gateway_tenant_shard_size: 18,
-        ruler_tenant_shard_size: 6,
+        ingestion_tenant_shard_size: std.max(180, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(18, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 16M active series.
       mega_user+:: {
-        ingestion_tenant_shard_size: 240,
-        store_gateway_tenant_shard_size: 24,
-        ruler_tenant_shard_size: 8,
+        ingestion_tenant_shard_size: std.max(240, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(24, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 24M active series.
       user_24M+:: {
-        ingestion_tenant_shard_size: 360,
-        store_gateway_tenant_shard_size: 30,
-        ruler_tenant_shard_size: 8,
+        ingestion_tenant_shard_size: std.max(360, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(30, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 32M active series.
       user_32M+:: {
-        ingestion_tenant_shard_size: 480,
-        store_gateway_tenant_shard_size: 42,
-        ruler_tenant_shard_size: 12,
+        ingestion_tenant_shard_size: std.max(480, $._config.shuffle_sharding.ingester_shard_size),
+        store_gateway_tenant_shard_size: std.max(42, $._config.shuffle_sharding.store_gateway_shard_size),
+        ruler_tenant_shard_size: std.max(12, $._config.shuffle_sharding.ruler_shard_size),
       },
     },
   },
