@@ -3181,9 +3181,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.ship-concurrency
   [ship_concurrency: <int> | default = 10]
 
-  # (advanced) How frequently ingesters try to compact TSDB head. Block is only
-  # created if data covers smallest block range. Must be greater than 0 and max
-  # 5 minutes.
+  # (advanced) How frequently the ingester checks whether the TSDB head should
+  # be compacted and, if so, triggers the compaction. Mimir applies a jitter to
+  # the first check, while subsequent checks will happen at the configured
+  # interval. Block is only created if data covers smallest block range. The
+  # configured interval must be between 0 and 15 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
 
