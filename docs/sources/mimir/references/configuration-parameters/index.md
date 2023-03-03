@@ -2710,7 +2710,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
-[ruler_evaluation_delay_duration: <duration> | default = 0s]
+[ruler_evaluation_delay_duration: <duration> | default = 1m]
 
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
 # shuffle sharding for the tenant, and tenant rules will be sharded across all

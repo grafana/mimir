@@ -1756,7 +1756,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration duration
-    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.
+    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
   -ruler.evaluation-interval duration
     	How frequently to evaluate rules (default 1m0s)
   -ruler.external.url string

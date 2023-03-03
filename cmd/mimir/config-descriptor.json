@@ -3275,7 +3275,7 @@
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.evaluation-delay-duration",
           "fieldType": "duration"
         },
