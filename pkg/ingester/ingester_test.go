@@ -4515,7 +4515,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0            // Disabled shipping
-	cfg.BlocksStorageConfig.TSDB.Retention = 1 * time.Second // With shipping disabled this means will only expire 1 hour after the block creation time.
+	cfg.BlocksStorageConfig.TSDB.Retention = 5 * time.Second // With shipping disabled this means will only expire 1 hour after the block creation time.
 
 	// Create ingester
 	reg := prometheus.NewPedanticRegistry()
@@ -4551,10 +4551,10 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	require.Nil(t, db.Compact())
 
 	oldBlocks := db.Blocks()
-	require.Equal(t, 3, len(oldBlocks))
+	require.Len(t, oldBlocks, 3)
 
 	// Yes, we're sleeping in this test to let the retention of the newly compacted blocks expire
-	time.Sleep(1 * time.Second)
+	time.Sleep(cfg.BlocksStorageConfig.TSDB.Retention)
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
@@ -4572,7 +4572,6 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	newBlocks := db.Blocks()
 	require.Equal(t, 1, len(newBlocks))
 	require.NotContains(t, []ulid.ULID{oldBlocks[0].Meta().ULID, oldBlocks[1].Meta().ULID, oldBlocks[2].Meta().ULID}, newBlocks[0].Meta().ULID)
-
 }
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
