@@ -3464,6 +3464,11 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+block_upload:
+  # (experimental) Validate blocks before finalizing a block upload
+  # CLI flag: -compactor.block-upload.block-validation-enabled
+  [block_validation_enabled: <boolean> | default = true]
 ```
 
 ### store_gateway

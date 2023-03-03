@@ -6703,6 +6703,27 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "block_upload",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "block_validation_enabled",
+              "required": false,
+              "desc": "Validate blocks before finalizing a block upload",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.block-upload.block-validation-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

@@ -53,6 +53,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Compactor: improve the partial block check related to `compactor.partial-block-deletion-delay` to potentially issue less requests to object storage. #4246
 * [ENHANCEMENT] Memcached: added `-*.memcached.min-idle-connections-headroom-percentage` support to configure the minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. This feature is disabled when set to a negative value (default), which means idle connections are kept open indefinitely. #4249
 * [ENHANCEMENT] Querier and store-gateway: optimized regular expression label matchers with case insensitive alternate operator. #4340 #4357
+* [ENHANCEMENT] Compactor: added the experimental flag `-compactor.block-upload.block-validation-enabled` with the default `true` to configure whether block validation occurs on backfilled blocks. #3411
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
@@ -86,6 +87,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Mimirtool
 
+* [CHANGE] Blocks uploaded with the `mimirtool backfill` command are now by default verified by a compactor before the upload is finalized. #3411
 * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 * [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
