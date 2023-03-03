@@ -90,7 +90,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Mimirtool
 
-* [CHANGE] Blocks uploaded with the `mimirtool backfill` command are now by default verified by a compactor before the upload is finalized. #3411
 * [FEATURE] Added `keep_firing_for` support to rules configuration. #4099
 * [ENHANCEMENT] Add `-tls-insecure-skip-verify` to rules, alertmanager and backfill commands. #4162
 
