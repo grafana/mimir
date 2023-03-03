@@ -2044,15 +2044,20 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	nextPeriodicCompaction := util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1)
+	ticker := time.NewTicker(util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1))
+	defer ticker.Stop()
+	tickerRunOnce := false
 
 	for ctx.Err() == nil {
 		select {
-		case <-time.After(nextPeriodicCompaction):
+		case <-ticker.C:
 			i.compactBlocks(ctx, false, nil)
 
 			// Run it at a regular (configured) interval after the fist compaction.
-			nextPeriodicCompaction = i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+			if !tickerRunOnce {
+				ticker.Reset(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+				tickerRunOnce = true
+			}
 
 		case req := <-i.forceCompactTrigger:
 			i.compactBlocks(ctx, true, req.users)
