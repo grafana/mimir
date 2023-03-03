@@ -160,10 +160,10 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
-var defaultFormatter = jsonFormatter{}
+var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
-	defaultFormatter,
+	jsonFormatterInstance,
 	protobufFormatter{},
 }
 
@@ -445,7 +445,7 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 
 func (prometheusCodec) negotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
-		return jsonMimeType, defaultFormatter
+		return jsonMimeType, jsonFormatterInstance
 	}
 
 	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
