@@ -851,8 +851,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
 		})
 
-		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
-		// blockSeriesSkippingChunks method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
 		for seriesSet.Next() {
 			var lset labels.Labels
 			var series storepb.Series

@@ -2661,7 +2661,7 @@ func TestBlockSeriesSkippingChunks(t *testing.T) {
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
 	ss, _, err := blockSeriesSkippingChunks(context.Background(), b.indexReader(), matchers, nil, nil, sl, log.NewNopLogger())
 	require.NoError(t, err)
-	require.True(t, ss.Next(), "Result set should have series because when skipChunks=true, mint/maxt should be ignored")
+	require.True(t, ss.Next(), "Result set should have series because blockSeriesSkippingChunks() ignores thr request mint/maxt")
 }
 
 func TestBlockSeriesSkippingChunks_Cache(t *testing.T) {
