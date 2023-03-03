@@ -83,7 +83,7 @@ type Config struct {
 	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
 	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	ConsistencyDelay      time.Duration           `yaml:"consistency_delay" category:"advanced"`
+	ConsistencyDelay      time.Duration           `yaml:"consistency_delay" category:"advanced" doc:"hidden"` // Deprecated. Remove in Mimir 2.9.
 	DataDir               string                  `yaml:"data_dir"`
 	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
 	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
@@ -130,7 +130,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
-	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, "Minimum age of fresh (non-compacted) blocks before they are being processed.")
+	flagext.DeprecatedFlag(f, "compactor.consistency-delay", "Deprecated: this setting is ignored. Previously, it was used to configure the minimum age of fresh (non-compacted) blocks before they are being processed.", logger)
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
@@ -696,7 +696,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 			mimir_tsdb.DeprecatedTenantIDExternalLabel,
 			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
 		}),
-		block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
 		excludeMarkedForDeletionFilter,
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.

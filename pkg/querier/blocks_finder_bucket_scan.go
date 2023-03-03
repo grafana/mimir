@@ -45,7 +45,6 @@ type BucketScanBlocksFinderConfig struct {
 	TenantsConcurrency       int
 	MetasConcurrency         int
 	CacheDir                 string
-	ConsistencyDelay         time.Duration
 	IgnoreDeletionMarksDelay time.Duration
 }
 
