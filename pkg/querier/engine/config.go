@@ -10,6 +10,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
+	thanosengine "github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 )
@@ -60,5 +62,13 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
+	}
+}
+
+func NewThanosPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) thanosengine.Opts {
+	return thanosengine.Opts{
+		EngineOpts:        NewPromQLEngineOptions(cfg, activityTracker, logger, reg),
+		LogicalOptimizers: logicalplan.DefaultOptimizers, // TODO: try AllOptimizers
+		DisableFallback:   false,                         // TODO: try with true to understand what features don't work
 	}
 }
