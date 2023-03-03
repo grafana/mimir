@@ -30,7 +30,6 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -117,6 +116,9 @@ type RemoteQuerier struct {
 	decoders                           map[string]decoder
 }
 
+var jsonDecoderInstance = jsonDecoder{}
+var protobufDecoderInstance = protobufDecoder{}
+
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
@@ -126,9 +128,6 @@ func NewRemoteQuerier(
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
-	json := jsonDecoder{}
-	protobuf := protobufDecoder{}
-
 	return &RemoteQuerier{
 		client:                             client,
 		timeout:                            timeout,
@@ -137,8 +136,8 @@ func NewRemoteQuerier(
 		logger:                             logger,
 		preferredQueryResultResponseFormat: preferredQueryResultResponseFormat,
 		decoders: map[string]decoder{
-			json.ContentType():     json,
-			protobuf.ContentType(): protobuf,
+			jsonDecoderInstance.ContentType():     jsonDecoderInstance,
+			protobufDecoderInstance.ContentType(): protobufDecoderInstance,
 		},
 	}
 }
@@ -255,9 +254,9 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 
 	switch q.preferredQueryResultResponseFormat {
 	case formatJSON:
-		acceptHeader = "application/json"
+		acceptHeader = jsonDecoderInstance.ContentType()
 	case formatProtobuf:
-		acceptHeader = mimirpb.QueryResponseMimeType + ",application/json"
+		acceptHeader = protobufDecoderInstance.ContentType() + "," + jsonDecoderInstance.ContentType()
 	default:
 		return httpgrpc.HTTPRequest{}, fmt.Errorf("unknown response format '%s'", q.preferredQueryResultResponseFormat)
 	}
