@@ -129,12 +129,12 @@ func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, 
 func newRedisIndexCache(cfg cache.RedisClientConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
 	client, err := cache.NewRedisClient(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
 	if err != nil {
-		return nil, errors.Wrap(err, "create index cache memcached client")
+		return nil, errors.Wrap(err, "create index cache redis client")
 	}
 
 	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
-		return nil, errors.Wrap(err, "create memcached-based index cache")
+		return nil, errors.Wrap(err, "create redis-based index cache")
 	}
 
 	return indexcache.NewTracingIndexCache(c, logger), nil
