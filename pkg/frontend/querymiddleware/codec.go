@@ -371,7 +371,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
 	contentType := r.Header.Get("Content-Type")
-	formatter := c.findFormatter(contentType)
+	formatter := findFormatter(contentType)
 	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
 	}
@@ -395,7 +395,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	return resp, nil
 }
 
-func (c prometheusCodec) findFormatter(contentType string) formatter {
+func findFormatter(contentType string) formatter {
 	for _, f := range knownFormats {
 		if f.ContentType().String() == contentType {
 			return f
