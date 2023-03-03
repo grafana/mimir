@@ -21,7 +21,7 @@
       // Limit query concurrency to prevent multi large queries causing an OOM.
       'querier.max-concurrent': $._config.querier.concurrency,
 
-      'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else 
+      'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
         'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
