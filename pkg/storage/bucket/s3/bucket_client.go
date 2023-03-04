@@ -44,7 +44,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 	}
 
 	return s3.Config{
-		Bucket:    				cfg.BucketName,
+		Bucket:    			cfg.BucketName,
 		Endpoint:  			cfg.Endpoint,
 		Region:    			cfg.Region,
 		AccessKey: 			cfg.AccessKeyID,
