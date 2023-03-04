@@ -84,8 +84,8 @@ var protobufCodecScenarios = map[string]struct {
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_String_{
 				String_: &mimirpb.StringData{
-					TimestampMilliseconds: 1234,
-					Value:                 "the-string",
+					TimestampMs: 1234,
+					Value:       "the-string",
 				},
 			},
 		},
@@ -105,8 +105,8 @@ var protobufCodecScenarios = map[string]struct {
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
 				Scalar: &mimirpb.ScalarData{
-					TimestampMilliseconds: 1234,
-					Value:                 5.67,
+					TimestampMs: 1234,
+					Value:       5.67,
 				},
 			},
 		},
@@ -148,9 +148,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                nil,
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      nil,
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -179,9 +179,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -210,9 +210,9 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1", "name-2", "value-2"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 					},
 				},
@@ -248,14 +248,14 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-1", "value-1", "name-2", "value-2"},
-							TimestampMilliseconds: 1234,
-							Value:                 5.67,
+							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
+							TimestampMs: 1234,
+							Value:       5.67,
 						},
 						{
-							Metric:                []string{"name-3", "value-3", "name-4", "value-4"},
-							TimestampMilliseconds: 2345,
-							Value:                 6.78,
+							Metric:      []string{"name-3", "value-3", "name-4", "value-4"},
+							TimestampMs: 2345,
+							Value:       6.78,
 						},
 					},
 				},
@@ -301,16 +301,15 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric: []string{"name-1", "value-1"},
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
 							Histogram: mimirpb.FloatHistogram{
-								Timestamp: 1234,
-
-								ResetHint:      mimirpb.Histogram_GAUGE,
-								Schema:         3,
-								ZeroThreshold:  1.23,
-								ZeroCountFloat: 456,
-								CountFloat:     9001,
-								Sum:            789.1,
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
 								PositiveSpans: []mimirpb.BucketSpan{
 									{Offset: 4, Length: 1},
 									{Offset: 3, Length: 2},
@@ -319,8 +318,8 @@ var protobufCodecScenarios = map[string]struct {
 									{Offset: 7, Length: 3},
 									{Offset: 9, Length: 1},
 								},
-								PositiveCounts: []float64{100, 200, 300},
-								NegativeCounts: []float64{400, 500, 600, 700},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
 							},
 						},
 					},
@@ -405,16 +404,15 @@ var protobufCodecScenarios = map[string]struct {
 				Vector: &mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
-							Metric: []string{"name-1", "value-1"},
+							Metric:      []string{"name-1", "value-1"},
+							TimestampMs: 1234,
 							Histogram: mimirpb.FloatHistogram{
-								Timestamp: 1234,
-
-								ResetHint:      mimirpb.Histogram_GAUGE,
-								Schema:         3,
-								ZeroThreshold:  1.23,
-								ZeroCountFloat: 456,
-								CountFloat:     9001,
-								Sum:            789.1,
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
 								PositiveSpans: []mimirpb.BucketSpan{
 									{Offset: 4, Length: 1},
 									{Offset: 3, Length: 2},
@@ -423,21 +421,20 @@ var protobufCodecScenarios = map[string]struct {
 									{Offset: 7, Length: 3},
 									{Offset: 9, Length: 1},
 								},
-								PositiveCounts: []float64{100, 200, 300},
-								NegativeCounts: []float64{400, 500, 600, 700},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
 							},
 						},
 						{
-							Metric: []string{"name-3", "value-3"},
+							Metric:      []string{"name-3", "value-3"},
+							TimestampMs: 12340,
 							Histogram: mimirpb.FloatHistogram{
-								Timestamp: 12340,
-
-								ResetHint:      mimirpb.Histogram_GAUGE,
-								Schema:         4,
-								ZeroThreshold:  1.203,
-								ZeroCountFloat: 4560,
-								CountFloat:     90010,
-								Sum:            7890.1,
+								CounterResetHint: histogram.GaugeType,
+								Schema:           4,
+								ZeroThreshold:    1.203,
+								ZeroCount:        4560,
+								Count:            90010,
+								Sum:              7890.1,
 								PositiveSpans: []mimirpb.BucketSpan{
 									{Offset: 40, Length: 1},
 									{Offset: 30, Length: 2},
@@ -446,21 +443,21 @@ var protobufCodecScenarios = map[string]struct {
 									{Offset: 70, Length: 3},
 									{Offset: 90, Length: 1},
 								},
-								PositiveCounts: []float64{1000, 2000, 3000},
-								NegativeCounts: []float64{4000, 5000, 6000, 7000},
+								PositiveBuckets: []float64{1000, 2000, 3000},
+								NegativeBuckets: []float64{4000, 5000, 6000, 7000},
 							},
 						},
 					},
 					Samples: []mimirpb.VectorSample{
 						{
-							Metric:                []string{"name-2", "value-2"},
-							TimestampMilliseconds: 5678,
-							Value:                 9.01,
+							Metric:      []string{"name-2", "value-2"},
+							TimestampMs: 5678,
+							Value:       9.01,
 						},
 						{
-							Metric:                []string{"name-4", "value-4"},
-							TimestampMilliseconds: 56780,
-							Value:                 90.01,
+							Metric:      []string{"name-4", "value-4"},
+							TimestampMs: 56780,
+							Value:       90.01,
 						},
 					},
 				},
@@ -588,10 +585,10 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 							},
 						},
@@ -623,14 +620,14 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 							},
 						},
@@ -669,27 +666,27 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 1234,
-									Value:                 5.67,
+									TimestampMs: 1234,
+									Value:       5.67,
 								},
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 							},
 						},
 						{
 							Metric: []string{"name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 12340,
-									Value:                 50.67,
+									TimestampMs: 12340,
+									Value:       50.67,
 								},
 								{
-									TimestampMilliseconds: 56780,
-									Value:                 90.01,
+									TimestampMs: 56780,
+									Value:       90.01,
 								},
 							},
 						},
@@ -740,26 +737,27 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Histograms: []mimirpb.FloatHistogram{
+							Histograms: []mimirpb.FloatHistogramPair{
 								{
-									Timestamp: 1234,
-
-									ResetHint:      mimirpb.Histogram_GAUGE,
-									Schema:         3,
-									ZeroThreshold:  1.23,
-									ZeroCountFloat: 456,
-									CountFloat:     9001,
-									Sum:            789.1,
-									PositiveSpans: []mimirpb.BucketSpan{
-										{Offset: 4, Length: 1},
-										{Offset: 3, Length: 2},
+									TimestampMs: 1234,
+									Histogram: mimirpb.FloatHistogram{
+										CounterResetHint: histogram.GaugeType,
+										Schema:           3,
+										ZeroThreshold:    1.23,
+										ZeroCount:        456,
+										Count:            9001,
+										Sum:              789.1,
+										PositiveSpans: []mimirpb.BucketSpan{
+											{Offset: 4, Length: 1},
+											{Offset: 3, Length: 2},
+										},
+										NegativeSpans: []mimirpb.BucketSpan{
+											{Offset: 7, Length: 3},
+											{Offset: 9, Length: 1},
+										},
+										PositiveBuckets: []float64{100, 200, 300},
+										NegativeBuckets: []float64{400, 500, 600, 700},
 									},
-									NegativeSpans: []mimirpb.BucketSpan{
-										{Offset: 7, Length: 3},
-										{Offset: 9, Length: 1},
-									},
-									PositiveCounts: []float64{100, 200, 300},
-									NegativeCounts: []float64{400, 500, 600, 700},
 								},
 							},
 						},
@@ -839,56 +837,58 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.MatrixSample{
+							Samples: []mimirpb.Sample{
 								{
-									TimestampMilliseconds: 5678,
-									Value:                 9.01,
+									TimestampMs: 5678,
+									Value:       9.01,
 								},
 								{
-									TimestampMilliseconds: 56780,
-									Value:                 90.01,
+									TimestampMs: 56780,
+									Value:       90.01,
 								},
 							},
-							Histograms: []mimirpb.FloatHistogram{
+							Histograms: []mimirpb.FloatHistogramPair{
 								{
-									Timestamp: 1234,
-
-									ResetHint:      mimirpb.Histogram_GAUGE,
-									Schema:         3,
-									ZeroThreshold:  1.23,
-									ZeroCountFloat: 456,
-									CountFloat:     9001,
-									Sum:            789.1,
-									PositiveSpans: []mimirpb.BucketSpan{
-										{Offset: 4, Length: 1},
-										{Offset: 3, Length: 2},
+									TimestampMs: 1234,
+									Histogram: mimirpb.FloatHistogram{
+										CounterResetHint: histogram.GaugeType,
+										Schema:           3,
+										ZeroThreshold:    1.23,
+										ZeroCount:        456,
+										Count:            9001,
+										Sum:              789.1,
+										PositiveSpans: []mimirpb.BucketSpan{
+											{Offset: 4, Length: 1},
+											{Offset: 3, Length: 2},
+										},
+										NegativeSpans: []mimirpb.BucketSpan{
+											{Offset: 7, Length: 3},
+											{Offset: 9, Length: 1},
+										},
+										PositiveBuckets: []float64{100, 200, 300},
+										NegativeBuckets: []float64{400, 500, 600, 700},
 									},
-									NegativeSpans: []mimirpb.BucketSpan{
-										{Offset: 7, Length: 3},
-										{Offset: 9, Length: 1},
-									},
-									PositiveCounts: []float64{100, 200, 300},
-									NegativeCounts: []float64{400, 500, 600, 700},
 								},
 								{
-									Timestamp: 12340,
-
-									ResetHint:      mimirpb.Histogram_GAUGE,
-									Schema:         4,
-									ZeroThreshold:  1.203,
-									ZeroCountFloat: 4560,
-									CountFloat:     90010,
-									Sum:            7890.1,
-									PositiveSpans: []mimirpb.BucketSpan{
-										{Offset: 40, Length: 1},
-										{Offset: 30, Length: 2},
+									TimestampMs: 12340,
+									Histogram: mimirpb.FloatHistogram{
+										CounterResetHint: histogram.GaugeType,
+										Schema:           4,
+										ZeroThreshold:    1.203,
+										ZeroCount:        4560,
+										Count:            90010,
+										Sum:              7890.1,
+										PositiveSpans: []mimirpb.BucketSpan{
+											{Offset: 40, Length: 1},
+											{Offset: 30, Length: 2},
+										},
+										NegativeSpans: []mimirpb.BucketSpan{
+											{Offset: 70, Length: 3},
+											{Offset: 90, Length: 1},
+										},
+										PositiveBuckets: []float64{1000, 2000, 3000},
+										NegativeBuckets: []float64{4000, 5000, 6000, 7000},
 									},
-									NegativeSpans: []mimirpb.BucketSpan{
-										{Offset: 70, Length: 3},
-										{Offset: 90, Length: 1},
-									},
-									PositiveCounts: []float64{1000, 2000, 3000},
-									NegativeCounts: []float64{4000, 5000, 6000, 7000},
 								},
 							},
 						},

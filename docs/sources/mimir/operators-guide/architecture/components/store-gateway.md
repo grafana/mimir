@@ -175,7 +175,7 @@ For example, if you're running Memcached in Kubernetes, you might:
 
 ### Chunks cache
 
-The store-gateway can also use a cache to store [chunks]({{< relref "../../reference-glossary.md#chunk" >}}) that are fetched from long-term storage.
+The store-gateway can also use a cache to store [chunks]({{< relref "../../../references/glossary.md#chunk" >}}) that are fetched from long-term storage.
 Chunks contain actual samples, and can be reused if a query hits the same series for the same time range.
 Chunks can only be cached in Memcached.
 

@@ -127,6 +127,10 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489
 
+			# HELP cortex_ingester_memory_series The current number of series in memory.
+			# TYPE cortex_ingester_memory_series gauge
+			cortex_ingester_memory_series 396524
+
 			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 			# TYPE cortex_ingester_memory_series_created_total counter
 			# 5 * (12345, 85787 and 999 respectively)
@@ -367,6 +371,10 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_checkpoint_creations_total counter
 			cortex_ingester_tsdb_checkpoint_creations_total 1883489
 
+			# HELP cortex_ingester_memory_series The current number of series in memory.
+			# TYPE cortex_ingester_memory_series gauge
+			cortex_ingester_memory_series 392528
+
 			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 			# TYPE cortex_ingester_memory_series_created_total counter
 			# 5 * (12345, 85787 and 999 respectively)
@@ -514,6 +522,11 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 	uploadFailures.Add(4 * base)
 
 	// TSDB Head
+	headSeries := promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_series",
+	})
+	headSeries.Add(4 * base)
+
 	seriesCreated := promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_created_total",
 	})

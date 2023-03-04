@@ -8,18 +8,22 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
+	"strconv"
 	"testing"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // This test verifies that jsoninter uses our custom method for marshalling.
@@ -211,6 +215,23 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	}
 }
 
+func TestFromPointsToSamples(t *testing.T) {
+	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}, {T: 5, H: test.GenerateTestFloatHistogram(0)}}
+	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+
+	assert.Equal(t, expected, FromPointsToSamples(input))
+}
+
+func TestFromPointsToHistograms(t *testing.T) {
+	input := []promql.Point{{T: 1, V: 2}, {T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
+	expected := []FloatHistogramPair{
+		{TimestampMs: 3, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
+		{TimestampMs: 5, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
+	}
+
+	assert.Equal(t, expected, FromPointsToHistograms(input))
+}
+
 func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
 		metric := Metric{
@@ -307,7 +328,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 		Timeseries: []prompb.TimeSeries{
 			{
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(0)),
 				},
 			},
 		},
@@ -330,11 +351,11 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestGaugeHistogram(0),
 			expectGauge:   true,
 		},
 	}
@@ -365,11 +386,11 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 		expectGauge   bool
 	}{
 		"counter": {
-			tsdbHistogram: tsdb.GenerateTestFloatHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestFloatHistogram(0),
 			expectGauge:   false,
 		},
 		"gauge": {
-			tsdbHistogram: tsdb.GenerateTestGaugeFloatHistograms(1)[0],
+			tsdbHistogram: test.GenerateTestGaugeFloatHistogram(0),
 			expectGauge:   true,
 		},
 	}
@@ -401,7 +422,7 @@ func TestCounterResetHint(t *testing.T) {
 
 func TestFromHistogramToHistogramProto(t *testing.T) {
 	var ts int64 = 1
-	h := tsdb.GenerateTestHistogram(int(ts))
+	h := test.GenerateTestHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
 	p := FromHistogramToHistogramProto(ts, h)
@@ -432,7 +453,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 
 func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	var ts int64 = 1
-	h := tsdb.GenerateTestFloatHistogram(int(ts))
+	h := test.GenerateTestFloatHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
 	p := FromFloatHistogramToHistogramProto(ts, h)
@@ -459,4 +480,79 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
 	assert.Equal(t, expected, p2)
+}
+
+func TestFromFloatHistogramToPromHistogram(t *testing.T) {
+	cases := []struct {
+		h   histogram.FloatHistogram
+		exp model.SampleHistogram
+	}{
+		{
+			h: histogram.FloatHistogram{
+				Count:         18,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []float64{1, 2, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 1},
+				},
+				NegativeBuckets: []float64{1, 2, 1},
+			},
+			exp: model.SampleHistogram{
+				Count: 18,
+				Sum:   18.4,
+				Buckets: model.HistogramBuckets{
+					{Boundaries: 1, Lower: -8, Upper: -4, Count: 1},
+					{Boundaries: 1, Lower: -2, Upper: -1, Count: 2},
+					{Boundaries: 1, Lower: -1, Upper: -0.5, Count: 1},
+					{Boundaries: 3, Lower: -0.001, Upper: 0.001, Count: 2},
+					{Boundaries: 0, Lower: 0.5, Upper: 1, Count: 1},
+					{Boundaries: 0, Lower: 1, Upper: 2, Count: 2},
+					{Boundaries: 0, Lower: 4, Upper: 8, Count: 1},
+				},
+			},
+		},
+		{ // Empty buckets don't show up.
+			h: histogram.FloatHistogram{
+				Count:         18,
+				ZeroCount:     0,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []float64{1, 0, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 1},
+				},
+				NegativeBuckets: []float64{1, 2, 0},
+			},
+			exp: model.SampleHistogram{
+				Count: 18,
+				Sum:   18.4,
+				Buckets: model.HistogramBuckets{
+					{Boundaries: 1, Lower: -2, Upper: -1, Count: 2},
+					{Boundaries: 1, Lower: -1, Upper: -0.5, Count: 1},
+					{Boundaries: 0, Lower: 0.5, Upper: 1, Count: 1},
+					{Boundaries: 0, Lower: 4, Upper: 8, Count: 1},
+				},
+			},
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			require.Equal(t, c.exp, *FromFloatHistogramToPromHistogram(&c.h))
+		})
+	}
 }

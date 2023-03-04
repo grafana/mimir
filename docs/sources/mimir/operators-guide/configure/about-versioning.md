@@ -91,7 +91,6 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
-  - `-blocks-storage.bucket-store.batch-series-size`
   - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`

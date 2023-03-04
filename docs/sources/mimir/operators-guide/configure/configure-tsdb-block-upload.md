@@ -43,7 +43,7 @@ overrides:
 Because Thanos blocks contain unsupported labels among their metadata, they cannot be uploaded.
 
 For information about limitations that relate to importing blocks from Thanos as well as existing workarounds, see
-[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../../migration-guide/migrating-from-thanos-or-prometheus.md" >}}).
+[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../../migrate/migrating-from-thanos-or-prometheus.md" >}}).
 
 ### No validation on imported blocks
 

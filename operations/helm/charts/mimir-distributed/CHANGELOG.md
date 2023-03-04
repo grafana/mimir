@@ -28,12 +28,14 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23.
+* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23. #4285
+* [BUGFIX] Allow override of Kubernetes version for nginx HPA. #4299
+* [BUGFIX] Do not generate query-frontend-headless service if query scheduler is enabled. Fixes parity with jsonnet. #4353
 
 ## 4.2.0
 
 * [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
-* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0.
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0. #4279
 
 ## 4.1.0
 

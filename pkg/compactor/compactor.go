@@ -116,11 +116,14 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
+
+	BlockUpload BlockUploadConfig `yaml:"block_upload"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.BlockUpload.RegisterFlagsWithPrefix("compactor.block-upload", f, logger)
 
 	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second

@@ -304,16 +304,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
-	// Replace specific metrics which we can't directly track but we need to read
-	// them from the underlying system (ie. TSDB).
 	if registerer != nil {
-		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_memory_series",
-			Help: "The current number of series in memory.",
-		}, func() float64 {
-			return float64(i.seriesCount.Load())
-		})
-
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
@@ -2049,13 +2040,24 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 }
 
 func (i *Ingester) compactionLoop(ctx context.Context) error {
-	ticker := time.NewTicker(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+	// At ingester startup, spread the first compaction over the configured compaction
+	// interval. Then, the next compactions will happen at a regular interval. This logic
+	// helps to have different ingesters running the compaction at a different time,
+	// effectively spreading the compactions over the configured interval.
+	ticker := time.NewTicker(util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1))
 	defer ticker.Stop()
+	tickerRunOnce := false
 
 	for ctx.Err() == nil {
 		select {
 		case <-ticker.C:
 			i.compactBlocks(ctx, false, nil)
+
+			// Run it at a regular (configured) interval after the fist compaction.
+			if !tickerRunOnce {
+				ticker.Reset(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+				tickerRunOnce = true
+			}
 
 		case req := <-i.forceCompactTrigger:
 			i.compactBlocks(ctx, true, req.users)

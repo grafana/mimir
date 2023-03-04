@@ -16,7 +16,7 @@ Grafana Mimir is an open source software project that provides a scalable long-t
 If you're migrating to Grafana Mimir, refer to the following documents:
 
 - [Migrating from Thanos or Prometheus to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-thanos-or-prometheus/).
-- [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-cortex/)
+- [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrate-from-cortex/)
 
 ## Deploying Grafana Mimir
 

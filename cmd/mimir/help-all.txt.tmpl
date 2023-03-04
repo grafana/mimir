@@ -268,7 +268,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.batch-series-size int
-    	[experimental] If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.
+    	If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch. (default 5000)
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
@@ -508,7 +508,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
-    	How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes. (default 1m0s)
+    	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, while subsequent checks will happen at the configured interval. Block is only created if data covers smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
@@ -635,6 +635,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload.block-validation-enabled
+    	[experimental] Validate blocks before finalizing a block upload (default true)
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.cleanup-concurrency int
@@ -1762,7 +1764,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration duration
-    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.
+    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
   -ruler.evaluation-interval duration
     	How frequently to evaluate rules (default 1m0s)
   -ruler.external.url string

@@ -3275,7 +3275,7 @@
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.evaluation-delay-duration",
           "fieldType": "duration"
         },
@@ -5808,10 +5808,10 @@
               "required": false,
               "desc": "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000,
               "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -5869,7 +5869,7 @@
               "kind": "field",
               "name": "head_compaction_interval",
               "required": false,
-              "desc": "How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes.",
+              "desc": "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, while subsequent checks will happen at the configured interval. Block is only created if data covers smallest block range. The configured interval must be between 0 and 15 minutes.",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
               "fieldFlag": "blocks-storage.tsdb.head-compaction-interval",
@@ -6713,6 +6713,27 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "block_upload",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "block_validation_enabled",
+              "required": false,
+              "desc": "Validate blocks before finalizing a block upload",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.block-upload.block-validation-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -233,6 +234,16 @@ func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram
 	}
 }
 
+func FromHistogramProtoToPromHistogram(hp *Histogram) *model.SampleHistogram {
+	if hp == nil {
+		return nil
+	}
+	if hp.IsFloatHistogram() {
+		return FromFloatHistogramToPromHistogram(FromHistogramProtoToFloatHistogram(hp))
+	}
+	return FromHistogramToPromHistogram(FromHistogramProtoToHistogram(hp))
+}
+
 func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	if len(s) == 0 {
 		return nil
@@ -297,6 +308,67 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	}
 
 	return spans
+}
+
+// FromPointsToSamples converts []promql.Point to []Sample.
+func FromPointsToSamples(points []promql.Point) []Sample {
+	samples := make([]Sample, 0, len(points))
+	for _, point := range points {
+		if point.H != nil {
+			continue
+		}
+		samples = append(samples, Sample{
+			TimestampMs: point.T,
+			Value:       point.V,
+		})
+	}
+	return samples
+}
+
+// FromPointsToHistograms converts []promql.Point to []FloatHistogramPair.
+func FromPointsToHistograms(points []promql.Point) []FloatHistogramPair {
+	samples := make([]FloatHistogramPair, 0, len(points))
+	for _, point := range points {
+		h := point.H
+		if h == nil {
+			continue
+		}
+		samples = append(samples, FloatHistogramPair{
+			TimestampMs: point.T,
+			Histogram:   *FloatHistogramFromPrometheusModel(point.H),
+		})
+	}
+	return samples
+}
+
+// FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.
+func FromFloatHistogramToPromHistogram(h *histogram.FloatHistogram) *model.SampleHistogram {
+	if h == nil {
+		return nil
+	}
+	buckets := make([]*model.HistogramBucket, 0)
+	it := h.AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
+		buckets = append(buckets, &model.HistogramBucket{
+			Boundaries: getBucketBoundaries(bucket),
+			Lower:      model.FloatString(bucket.Lower),
+			Upper:      model.FloatString(bucket.Upper),
+			Count:      model.FloatString(bucket.Count),
+		})
+	}
+	return &model.SampleHistogram{
+		Count:   model.FloatString(h.Count),
+		Sum:     model.FloatString(h.Sum),
+		Buckets: buckets,
+	}
+}
+
+func FromHistogramToPromHistogram(h *histogram.Histogram) *model.SampleHistogram {
+	return FromFloatHistogramToPromHistogram(h.ToFloat())
 }
 
 type byLabel []LabelAdapter
@@ -593,20 +665,32 @@ loop:
 	return numLabels, true
 }
 
-// Generics
 type GenericSamplePair interface {
-	Sample | SampleHistogramPair | Histogram
+	Sample | Histogram | FloatHistogramPair
 	GetTimestampVal() int64
+	GetBaseVal() float64
 }
 
 func (s Sample) GetTimestampVal() int64 {
 	return s.TimestampMs
 }
 
-func (vs SampleHistogramPair) GetTimestampVal() int64 {
-	return vs.Timestamp
-}
-
 func (m Histogram) GetTimestampVal() int64 {
 	return m.Timestamp
+}
+
+func (p FloatHistogramPair) GetTimestampVal() int64 {
+	return p.TimestampMs
+}
+
+func (s Sample) GetBaseVal() float64 {
+	return s.Value
+}
+
+func (m Histogram) GetBaseVal() float64 {
+	return m.Sum
+}
+
+func (p FloatHistogramPair) GetBaseVal() float64 {
+	return p.Histogram.Sum
 }

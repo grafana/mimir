@@ -28,6 +28,7 @@ const (
 	TypeNotFound        Type = "not_found"
 	TypeTooManyRequests Type = "too_many_requests"
 	TypeTooLargeEntry   Type = "too_large_entry"
+	TypeNotAcceptable   Type = "not_acceptable"
 )
 
 type apiError struct {
@@ -58,6 +59,8 @@ func (e *apiError) statusCode() int {
 		return http.StatusTooManyRequests
 	case TypeTooLargeEntry:
 		return http.StatusRequestEntityTooLarge
+	case TypeNotAcceptable:
+		return http.StatusNotAcceptable
 	}
 	return http.StatusInternalServerError
 }
@@ -101,7 +104,7 @@ func New(typ Type, msg string) error {
 	}
 }
 
-// Newf creates a new apiError with a static string message
+// Newf creates a new apiError with a formatted message
 func Newf(typ Type, tmpl string, args ...interface{}) error {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }

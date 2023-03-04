@@ -7,6 +7,7 @@ package chunk
 
 import (
 	"io"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -27,11 +28,17 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
 	Add(sample model.SamplePair) (EncodedChunk, error)
-	// Add adds a histogram to the chunks, performs any necessary
+	// AddHistogram adds a histogram to the chunks, performs any necessary
 	// re-encoding, and creates any necessary overflow chunk.
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
 	AddHistogram(timestamp int64, histogram *histogram.Histogram) (EncodedChunk, error)
+
+	// AddFloatHistogram adds a float histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddFloatHistogram(timestamp int64, histogram *histogram.FloatHistogram) (EncodedChunk, error)
 
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
@@ -64,6 +71,9 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
+	AtHistogram() (int64, *histogram.Histogram)
+	AtFloatHistogram() (int64, *histogram.FloatHistogram)
+	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
 	Batch(size int, valueType chunkenc.ValueType) Batch
@@ -76,13 +86,20 @@ type Iterator interface {
 // 1 to 128.
 const BatchSize = 12
 
-// Batch is a sorted set of (timestamp, value) pairs.  They are intended to be
-// small, and passed by value.
+// Batches are sorted sets of (timestamp, value) pairs, where all values are of the same type (i.e. floats/histograms).
+//
+// Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
 	Values     [BatchSize]float64
-	Index      int
-	Length     int
+	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
+	// Since Batch is expected to be passed by value, the array needs to be constant sized,
+	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
+	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
+	PointerValues [BatchSize]unsafe.Pointer
+	ValueType     chunkenc.ValueType
+	Index         int
+	Length        int
 }
 
 // Chunk contains encoded timeseries data
