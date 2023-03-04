@@ -723,7 +723,7 @@ func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, al
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
-func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
+func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleType) ([]*GroupStateDesc, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("no user id found in context")
@@ -761,7 +761,7 @@ func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 			return errors.Wrapf(err, "unable to get client for ruler %s", addr)
 		}
 
-		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{})
+		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{Filter: rulesTypeFilter})
 		if err != nil {
 			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", addr)
 		}
@@ -783,7 +783,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID)
+	groupDescs, err := r.getLocalRules(userID, in.GetFilter())
 	if err != nil {
 		return nil, err
 	}
@@ -791,11 +791,25 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 	return &RulesResponse{Groups: groupDescs}, nil
 }
 
-func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
+func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleType) ([]*GroupStateDesc, error) {
 	groups := r.manager.GetRules(userID)
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
 	prefix := filepath.Join(r.cfg.RulePath, userID) + "/"
+
+	getRecordingRules := true
+	getAlertingRules := true
+
+	switch ruleTypeFilter {
+	case AlertingRule:
+		getRecordingRules = false
+	case RecordingRule:
+		getAlertingRules = false
+	case AnyRule:
+
+	default:
+		return nil, fmt.Errorf("unexpected rule filter %s", ruleTypeFilter)
+	}
 
 	for _, group := range groups {
 		interval := group.Interval()
@@ -827,6 +841,9 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 			var ruleDesc *RuleStateDesc
 			switch rule := r.(type) {
 			case *promRules.AlertingRule:
+				if !getAlertingRules {
+					continue
+				}
 				rule.ActiveAlerts()
 				alerts := []*AlertStateDesc{}
 				for _, a := range rule.ActiveAlerts() {
@@ -860,6 +877,9 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 					EvaluationDuration:  rule.GetEvaluationDuration(),
 				}
 			case *promRules.RecordingRule:
+				if !getRecordingRules {
+					continue
+				}
 				ruleDesc = &RuleStateDesc{
 					Rule: &rulespb.RuleDesc{
 						Record: rule.Name(),
@@ -931,7 +951,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 
 	err = r.store.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
 	if err != nil && !errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
