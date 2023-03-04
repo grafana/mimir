@@ -76,7 +76,7 @@ func TestConfig_Validate(t *testing.T) {
 					BucketName:       "mimir-block",
 					SSE:              *sseCfg,
 					SignatureVersion: SignatureVersionV4,
-					StorageClass: StorageClassStandard,
+					StorageClass:     StorageClassStandard,
 				}
 				return cfg
 			},
@@ -85,14 +85,13 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func() *Config {
 				return &Config{
 					SignatureVersion: SignatureVersionV2,
-					StorageClass: "foo",
+					StorageClass:     "foo",
 				}
 			},
 			expected: errUnsupportedStorageClass,
 		},
-		"should pass if valid storage signature version is set":
-		{
-			setup: func () *Config {
+		"should pass if valid storage signature version is set": {
+			setup: func() *Config {
 				return &Config{
 					SignatureVersion: SignatureVersionV4, StorageClass: StorageClassStandardInfrequentAccess,
 				}
@@ -104,7 +103,7 @@ func TestConfig_Validate(t *testing.T) {
 					Endpoint:         "mimir-blocks.s3.eu-central-1.amazonaws.com",
 					BucketName:       "mimir-blocks",
 					SignatureVersion: SignatureVersionV4,
-					StorageClass: StorageClassGlacier,
+					StorageClass:     StorageClassGlacier,
 				}
 			},
 			expected: errInvalidEndpointPrefix,
