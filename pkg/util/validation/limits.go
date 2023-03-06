@@ -899,6 +899,12 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
 func RegisterExtensions[E any](name string) func(*Limits) *E {
+	for _, e := range registeredExtensions {
+		if e.name == name {
+			panic(fmt.Errorf("extension %s already registered", name))
+		}
+	}
+
 	extensionsType := reflect.TypeOf(new(E))
 	registeredExtensions = append(registeredExtensions, extension{name: name, typ: extensionsType})
 

@@ -703,4 +703,11 @@ func TestExtensions(t *testing.T) {
 		assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
 		assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
 	})
+
+	t.Run("can't register twice", func(t *testing.T) {
+		require.Panics(t, func() {
+			RegisterExtensions[testExtensions]("foo")
+			RegisterExtensions[testExtensions]("foo")
+		})
+	})
 }
