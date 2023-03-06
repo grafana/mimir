@@ -103,7 +103,7 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 				Value:     model.SampleValue(sam.Value),
 			})
 
-			// TODO(histograms): add histograms, but this only seems to be used in tests
+			// Only used in tests. Add native histogram support later: https://github.com/grafana/mimir/issues/4378
 		}
 
 		result = append(result, &model.SampleStream{
