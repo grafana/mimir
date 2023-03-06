@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -295,7 +294,7 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 
 		err := decode(extensionsOnlyConfig)
 		if err != nil {
-			return errors.Wrap(err, "decoding extensions")
+			return fmt.Errorf("can't decode extensions: %w", err)
 		}
 		extensions = getExtensions()
 	}
