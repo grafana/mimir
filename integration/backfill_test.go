@@ -71,9 +71,13 @@ func TestMimirtoolBackfill(t *testing.T) {
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
+	dataDir := filepath.Join(s.SharedDir(), "data")
+	err = os.Mkdir(dataDir, os.ModePerm)
+	require.NoError(t, err)
 
-	// Configure the compactor with runtime config (for overrides)
+	// Configure the compactor with a data directory and runtime config (for overrides)
 	flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), map[string]string{
+		"-compactor.data-dir":           filepath.Join(e2e.ContainerSharedDir, "data"),
 		"-runtime-config.reload-period": "100ms",
 		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, overridesFile),
 	})

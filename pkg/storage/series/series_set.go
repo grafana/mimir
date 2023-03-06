@@ -167,8 +167,8 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	if c.curFloat+1 >= len(c.series.samples) && c.curHisto+1 >= len(c.series.histograms) {
-		c.curFloat++
-		c.curHisto++
+		c.curFloat = len(c.series.samples)
+		c.curHisto = len(c.series.histograms)
 		return chunkenc.ValNone
 	}
 	if c.curFloat+1 >= len(c.series.samples) {
@@ -204,8 +204,10 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}
 	h := c.series.histograms[c.curHisto]
-	// Should we automatically convert to float if the histogram happens to be integer histogram?
-	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	if h.IsFloatHistogram() {
+		return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	}
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h).ToFloat()
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
@@ -276,9 +278,7 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(ls))
 	for _, l := range ls {
 		series = append(series, &ConcreteSeries{
-			labels:     l,
-			samples:    nil,
-			histograms: nil,
+			labels: l,
 		})
 	}
 	return NewConcreteSeriesSet(series)

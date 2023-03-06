@@ -2710,7 +2710,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
-[ruler_evaluation_delay_duration: <duration> | default = 0s]
+[ruler_evaluation_delay_duration: <duration> | default = 1m]
 
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
 # shuffle sharding for the tenant, and tenant rules will be sharded across all
@@ -3169,7 +3169,7 @@ tsdb:
   # large enough to give store-gateways and queriers enough time to discover
   # newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
-  [retention_period: <duration> | default = 24h]
+  [retention_period: <duration> | default = 13h]
 
   # (advanced) How frequently the TSDB blocks are scanned and new ones are
   # shipped to the storage. 0 means shipping is disabled.
@@ -3181,9 +3181,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.ship-concurrency
   [ship_concurrency: <int> | default = 10]
 
-  # (advanced) How frequently ingesters try to compact TSDB head. Block is only
-  # created if data covers smallest block range. Must be greater than 0 and max
-  # 5 minutes.
+  # (advanced) How frequently the ingester checks whether the TSDB head should
+  # be compacted and, if so, triggers the compaction. Mimir applies a jitter to
+  # the first check, while subsequent checks will happen at the configured
+  # interval. Block is only created if data covers smallest block range. The
+  # configured interval must be between 0 and 15 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
 
@@ -3464,6 +3466,11 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+block_upload:
+  # (experimental) Validate blocks before finalizing a block upload
+  # CLI flag: -compactor.block-upload.block-validation-enabled
+  [block_validation_enabled: <boolean> | default = true]
 ```
 
 ### store_gateway
