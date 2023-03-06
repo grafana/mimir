@@ -11,9 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -172,6 +174,8 @@ type Limits struct {
 	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+
+	extensions interface{}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -265,8 +269,59 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 }
 
+// extensionsType is the type of the registered extensions.
+var extensionsType reflect.Type
+
+// newExtensionsOnlyLimitsConfig returns an interface{} value of a pointer to a struct of type:
+//
+//	struct {
+//	    Extensions T `yaml:"extensions"`
+//	    Throwaway map[string]interface{} `yaml:",inline"`
+//	}
+//
+// Where T is the registered extensionsType.
+// The second return ar
+func newExtensionsOnlyLimitsConfig() (any interface{}, getter func() interface{}) {
+	typ := reflect.StructOf([]reflect.StructField{
+		{
+			Name: "Extensions",
+			Type: extensionsType,
+			Tag:  `yaml:"extensions"`,
+		},
+		{
+			Name: "Throwaway",
+			Type: reflect.TypeOf(map[string]interface{}{}),
+			Tag:  `yaml:",inline"`,
+		},
+	})
+	newExtensions := reflect.New(typ).Interface()
+	return newExtensions, func() interface{} {
+		return reflect.ValueOf(newExtensions).Elem().Field(0).Interface()
+	}
+}
+
+// RegisterExtensions registers the extensions type and returns a function to get the extensions from a *Limits instance.
+func RegisterExtensions[E any]() func(*Limits) E {
+	extensionsType = reflect.TypeOf(new(E)).Elem()
+
+	return func(l *Limits) E {
+		return l.extensions.(E)
+	}
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
+	// First, decode the extensions ignoring the rest of the config (if any registered).
+	var extensions interface{}
+	if extensionsType != nil {
+		extensionsOnlyConfig, getExtensions := newExtensionsOnlyLimitsConfig()
+		err := value.DecodeWithOptions(extensionsOnlyConfig, yaml.DecodeOptions{KnownFields: true})
+		if err != nil {
+			return errors.Wrap(err, "decoding extensions")
+		}
+		extensions = getExtensions()
+	}
+
 	// We want to set l to the defaults and then overwrite it with the input.
 	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
 	// again, we have to hide it using a type indirection.  See prometheus/config.
@@ -279,10 +334,17 @@ func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 	}
 	type plain Limits
 
-	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
+	// withExtensions ignores the extensions field (as it was previously decoded, if any was registered).
+	type withExtensions struct {
+		UnknownTypeIgnoredExtensions interface{} `yaml:"extensions"`
+		*plain                       `json:",inline"`
+	}
+
+	err := value.DecodeWithOptions(&withExtensions{plain: (*plain)(l)}, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}
+	l.extensions = extensions
 
 	return l.validate()
 }

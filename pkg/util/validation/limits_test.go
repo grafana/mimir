@@ -667,3 +667,21 @@ func TestEnabledByAnyTenant(t *testing.T) {
 
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 }
+
+func TestExtensions(t *testing.T) {
+	// Downstream declares a new extension type and registers it.
+	type testExtensions struct {
+		Foo int `yaml:"foo"`
+	}
+	// By registering, we get a functtion that provides the extensions for a Limist instance.
+	getExtensions := RegisterExtensions[testExtensions]()
+
+	// Unmarshal a config with extensions.
+	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
+	cfg := `{"user": {"extensions": {"foo": 1}}}`
+	overrides := map[string]*Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+	// Check that getExtensions(*Limits) actually returns the proper type with filled extensions.
+	assert.Equal(t, testExtensions{Foo: 1}, getExtensions(overrides["user"]))
+}
