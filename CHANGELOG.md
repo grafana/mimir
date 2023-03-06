@@ -84,6 +84,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Jsonnet
 
+* [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration option
 * [CHANGE] Create the `query-frontend-discovery` service only when Mimir is deployed in microservice mode without query-scheduler. #4353
 * [CHANGE] Add results cache backend config to `ruler-query-frontend` configuration to allow cache reuse for cardinality-estimation based sharding. #4257
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381

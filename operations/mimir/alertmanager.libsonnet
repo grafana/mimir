@@ -40,9 +40,10 @@
   alertmanager_pvc::
     if $._config.alertmanager_enabled then
       pvc.new() +
+      pvc.mixin.spec.withStorageClassName($._config.alertmanager_data_disk_class) +
       pvc.mixin.metadata.withName('alertmanager-data') +
       pvc.mixin.spec.withAccessModes('ReadWriteOnce') +
-      pvc.mixin.spec.resources.withRequests({ storage: '100Gi' })
+      pvc.mixin.spec.resources.withRequests({ storage: $._config.alertmanager_data_disk_size })
     else {},
 
   alertmanager_ports:: $.util.defaultPorts,
