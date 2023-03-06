@@ -378,7 +378,11 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	histograms := make([]mimirpb.SampleHistogramPair, len(s.Histograms))
+	var histograms []mimirpb.SampleHistogramPair
+	if len(s.Histograms) > 0 {
+		histograms := make([]mimirpb.SampleHistogramPair, len(s.Histograms))
+	}
+	
 
 	for i, h := range s.Histograms {
 		histograms[i] = mimirpb.SampleHistogramPair{
