@@ -2596,9 +2596,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # samples that are within the time window in relation to the TSDB's maximum
 # time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will
 # need more memory as a factor of rate of out-of-order samples being ingested
-# and the number of series that are getting out-of-order samples. A lower TTL of
-# 10 minutes will be set for the query cache entries that overlap with this
-# window.
+# and the number of series that are getting out-of-order samples. If query falls
+# into this window, cached results will use value from
+# -query-frontend.results-cache-ttl-for-out-of-order-time-window option to
+# specify TTL for resulting cache entry.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
@@ -2873,6 +2874,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
+
+# (experimental) Time to live duration for cached query results. If query falls
+# into out-of-order time window,
+# -query-frontend.results-cache-ttl-for-out-of-order-time-window is used
+# instead.
+# CLI flag: -query-frontend.results-cache-ttl
+[results_cache_ttl: <duration> | default = 1w]
+
+# (experimental) Time to live duration for cached query results if query falls
+# into out-of-order time window.
+# CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
+[results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 ```
 
 ### blocks_storage

@@ -291,6 +291,8 @@ type mockLimits struct {
 	outOfOrderTimeWindow             time.Duration
 	creationGracePeriod              time.Duration
 	nativeHistogramsIngestionEnabled bool
+	resultsCacheTTL                  time.Duration
+	resultsCacheOutOfOrderWindowTTL  time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -341,6 +343,14 @@ func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 
 func (m mockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
 	return m.outOfOrderTimeWindow
+}
+
+func (m mockLimits) ResultsCacheTTL(userID string) time.Duration {
+	return m.resultsCacheTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration {
+	return m.resultsCacheOutOfOrderWindowTTL
 }
 
 func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
