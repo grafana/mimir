@@ -194,7 +194,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.retention-period duration
-    	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
+    	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 13h0m0s)
   -common.storage.azure.account-key string
     	Azure storage account key
   -common.storage.azure.account-name string
@@ -528,7 +528,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.evaluation-delay-duration duration
-    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.
+    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
   -ruler.external.url string
     	URL of alerts return path.
   -ruler.max-rule-groups-per-tenant int

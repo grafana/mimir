@@ -100,6 +100,11 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	ts, h = it.AtHistogram()
 	require.Equal(t, int64(11), ts)
 	require.Equal(t, generateTestHistogram(12), h)
+	// You can also call AtFloatHistogram() on ValHistogram.
+	ts, fh = it.AtFloatHistogram()
+	require.Equal(t, int64(11), ts)
+	require.Equal(t, generateTestHistogram(12).ToFloat(), fh)
+
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
 	// test seek to same and next

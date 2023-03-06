@@ -83,6 +83,20 @@ func TestDurationWithPositiveJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(0), 0.5))
 }
 
+func TestDurationWithNegativeJitter(t *testing.T) {
+	const numRuns = 1000
+
+	for i := 0; i < numRuns; i++ {
+		actual := DurationWithNegativeJitter(time.Minute, 0.5)
+		assert.GreaterOrEqual(t, int64(actual), int64(30*time.Second))
+		assert.LessOrEqual(t, int64(actual), int64(60*time.Second))
+	}
+}
+
+func TestDurationWithNegativeJitter_ZeroInputDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(0), 0.5))
+}
+
 func TestParseTime(t *testing.T) {
 	var tests = []struct {
 		input  string

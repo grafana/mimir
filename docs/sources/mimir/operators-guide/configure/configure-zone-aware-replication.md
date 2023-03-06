@@ -55,10 +55,6 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
-> **Note:** The requests that the distributors receive are usually compressed, and the requests that the distributors send to the ingesters are uncompressed by default.
-> This can result in increased cross-zone bandwidth costs (because at least two ingesters will be in different availability zones).
-> If this cost is a concern, you can compress those requests by setting the `-ingester.client.grpc-compression` CLI flag, or its respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
-
 ## Configuring store-gateway blocks replication
 
 To enable zone-aware replication for the store-gateways, refer to [Zone awareness]({{< relref "../architecture/components/store-gateway.md#zone-awareness" >}}).
@@ -70,7 +66,7 @@ With a replication factor of 3, which is the default, deploy the Grafana Mimir c
 Deploying Grafana Mimir clusters to more zones than the configured replication factor does not have a negative impact.
 Deploying Grafana Mimir clusters to fewer zones than the configured replication factor can cause writes to the replica to be missed, or can cause writes to fail completely.
 
-If there are no more than `floor(replication factor / 2)` zones with failing replicas, reads and writes can withstand zone failures.
+If there are fewer than `floor(replication factor / 2)` zones with failing replicas, reads and writes can withstand zone failures.
 
 ## Unbalanced zones
 
@@ -81,6 +77,10 @@ When replica counts are unbalanced, zones with fewer replicas have higher resour
 
 Most cloud providers charge for inter-availability zone networking.
 Deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones likely results in additional networking costs.
+
+> **Note:** The requests that the distributors receive are usually compressed, and the requests that the distributors send to the ingesters are uncompressed by default.
+> This can result in increased cross-zone bandwidth costs (because at least two ingesters will be in different availability zones).
+> If this cost is a concern, you can compress those requests by setting the `-ingester.client.grpc-compression` CLI flag, or its respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
 
 ## Kubernetes operator for simplifying rollouts of zone-aware components
 

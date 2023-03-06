@@ -11,6 +11,9 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMergeSampleSets(t *testing.T) {
@@ -81,6 +84,78 @@ func TestMergeNSampleSets(t *testing.T) {
 		},
 	} {
 		samples := MergeNSampleSets(c.sampleSets...)
+		require.Equal(t, c.expected, samples)
+	}
+}
+
+func TestMergeHistogramSets(t *testing.T) {
+	now := model.Now()
+	sample1 := mimirpb.FromFloatHistogramToHistogramProto(int64(now), test.GenerateTestFloatHistogram(1))
+	sample2 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(1*time.Second)), test.GenerateTestHistogram(2))
+	sample3 := mimirpb.FromFloatHistogramToHistogramProto(int64(now.Add(4*time.Second)), test.GenerateTestFloatHistogram(3))
+	sample4 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(8*time.Second)), test.GenerateTestHistogram(7))
+
+	for _, c := range []struct {
+		samplesA []mimirpb.Histogram
+		samplesB []mimirpb.Histogram
+		expected []mimirpb.Histogram
+	}{
+		{
+			samplesA: []mimirpb.Histogram{},
+			samplesB: []mimirpb.Histogram{},
+			expected: []mimirpb.Histogram{},
+		},
+		{
+			samplesA: []mimirpb.Histogram{sample1},
+			samplesB: []mimirpb.Histogram{},
+			expected: []mimirpb.Histogram{sample1},
+		},
+		{
+			samplesA: []mimirpb.Histogram{},
+			samplesB: []mimirpb.Histogram{sample1},
+			expected: []mimirpb.Histogram{sample1},
+		},
+		{
+			samplesA: []mimirpb.Histogram{sample1},
+			samplesB: []mimirpb.Histogram{sample1},
+			expected: []mimirpb.Histogram{sample1},
+		},
+		{
+			samplesA: []mimirpb.Histogram{sample1, sample2, sample3},
+			samplesB: []mimirpb.Histogram{sample1, sample3, sample4},
+			expected: []mimirpb.Histogram{sample1, sample2, sample3, sample4},
+		},
+	} {
+		samples := MergeHistogramSets(c.samplesA, c.samplesB)
+		require.Equal(t, c.expected, samples)
+	}
+}
+
+func TestMergeNHistogramSets(t *testing.T) {
+	now := model.Now()
+	sample1 := mimirpb.FromFloatHistogramToHistogramProto(int64(now), test.GenerateTestFloatHistogram(1))
+	sample2 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(1*time.Second)), test.GenerateTestHistogram(2))
+	sample3 := mimirpb.FromFloatHistogramToHistogramProto(int64(now.Add(4*time.Second)), test.GenerateTestFloatHistogram(3))
+	sample4 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(8*time.Second)), test.GenerateTestHistogram(7))
+
+	for _, c := range []struct {
+		sampleSets [][]mimirpb.Histogram
+		expected   []mimirpb.Histogram
+	}{
+		{
+			sampleSets: [][]mimirpb.Histogram{{}, {}, {}},
+			expected:   []mimirpb.Histogram{},
+		},
+		{
+			sampleSets: [][]mimirpb.Histogram{
+				{sample1, sample2},
+				{sample2},
+				{sample1, sample3, sample4},
+			},
+			expected: []mimirpb.Histogram{sample1, sample2, sample3, sample4},
+		},
+	} {
+		samples := MergeNHistogramSets(c.sampleSets...)
 		require.Equal(t, c.expected, samples)
 	}
 }

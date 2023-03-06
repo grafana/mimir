@@ -11,7 +11,7 @@ weight: 10
 
 You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
-- **Imperatively**: The written instructions that follow contain commands to help you start a single Mimir process. You would need to perform the commands again to start another Mimir process.<p>
+- **Imperatively**: The written instructions that follow contain commands to help you start a single Mimir process. You would need to perform the commands again to start another Mimir process.
 - **Declaratively**: The following video tutorial uses `docker-compose` to deploy multiple Mimir processes. Therefore, if you want to deploy multiple Mimir processes later, the majority of the configuration work will have already been done.
 
   {{< vimeo 691947043 >}}
@@ -178,7 +178,7 @@ metrics:
 In a new terminal, run a local Grafana server using Docker:
 
 ```bash
-docker run --rm --name=grafana --network=host grafana/grafana
+docker run --rm --name=grafana -p 3000:3000 grafana/grafana
 ```
 
 ### Add Grafana Mimir as a Prometheus data source

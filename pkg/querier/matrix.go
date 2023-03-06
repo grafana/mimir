@@ -16,8 +16,12 @@ import (
 )
 
 func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
-	samples := make([][]model.SamplePair, 0, len(chunks))
-	histograms := make([][]mimirpb.Histogram, 0, len(chunks))
+	var (
+		samples          = make([][]model.SamplePair, 0, len(chunks))
+		histograms       [][]mimirpb.Histogram
+		mergedSamples    []model.SamplePair
+		mergedHistograms []mimirpb.Histogram
+	)
 	for _, c := range chunks {
 		sf, sh, err := c.Samples(from, through)
 		if err != nil {
@@ -30,8 +34,12 @@ func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterat
 			histograms = append(histograms, sh)
 		}
 	}
-	mergedSamples := modelutil.MergeNSampleSets(samples...)
-	mergedHistograms := modelutil.MergeNHistogramSets(histograms...)
+	if len(histograms) > 0 {
+		mergedHistograms = modelutil.MergeNHistogramSets(histograms...)
+	}
+	if len(samples) > 0 {
+		mergedSamples = modelutil.MergeNSampleSets(samples...)
+	}
 
 	return series.NewConcreteSeriesIterator(series.NewConcreteSeries(nil, mergedSamples, mergedHistograms))
 }
