@@ -58,6 +58,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Compactor: added the experimental flag `-compactor.block-upload.block-validation-enabled` with the default `true` to configure whether block validation occurs on backfilled blocks. #3411
 * [ENHANCEMENT] Ingester: apply a jitter to the first TSDB head compaction interval configured via `-blocks-storage.tsdb.head-compaction-interval`. Subsequent checks will happen at the configured interval. This should help to spread the TSDB head compaction among different ingesters over the configured interval. #4364
 * [ENHANCEMENT] Ingester: the maximum accepted value for `-blocks-storage.tsdb.head-compaction-interval` has been increased from 5m to 15m. #4364
+* [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
 * [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
