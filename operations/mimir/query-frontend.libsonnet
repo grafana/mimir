@@ -11,10 +11,38 @@
 
       'server.http-listen-port': $._config.server_http_port,
       'query-frontend.align-queries-with-step': false,
+      'query-frontend.cache-results': true,
+
+      // So that exporters like cloudwatch can still send in data and be un-cached.
+      'query-frontend.max-cache-freshness': '10m',
 
       // Limit queries to 500 days; allow this to be overridden on a per-user basis.
       'query-frontend.max-total-query-length': '12000h',  // 500 days
-    } + $.mimirRuntimeConfigFile,
+    } +
+    // results-cache using memcached
+    (
+      if $._config.cache_results_backend == 'memcached' then {
+        'query-frontend.results-cache.backend': 'memcached',
+        'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'query-frontend.results-cache.memcached.timeout': '500ms',
+      } + if $._config.memcached_frontend_mtls_enabled then {
+        'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
+        'query-frontend.results-cache.memcached.connect-timeout': '1s',
+        'query-frontend.results-cache.memcached.tls-enabled': true,
+        'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+        'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+        'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+        'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+      } else {}
+      else {}
+    ) +
+    // results-cache using redis
+    (
+      if $._config.cache_results_backend == 'redis' then {
+        'query-frontend.results-cache.backend': 'redis',
+        'query-frontend.results-cache.redis.endpoint': 'dnssrvnoa+redis-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
+      } else {}
+    ) + $.mimirRuntimeConfigFile,
 
   query_frontend_ports:: $.util.defaultPorts,
 

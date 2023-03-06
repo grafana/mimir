@@ -50,6 +50,16 @@
       },
       "version": "fa7633803d478c461352f9a4a67ca6fd0a1a7b30",
       "sum": "8hXTN4QOMkpad75LESkdfRD4/Sl81fMqZcD0ZPx2SNc="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
+          "subdir": "redis"
+        }
+      },
+      "version": "e9f44d885c53d9ebdc849203f06ed74c7eccd362",
+      "sum": "PJ6+X6tYG7BvhSZ+DpXH1Oq9MkMD5sV3XHI5NdZzhzk="
     }
   ],
   "legacyImports": false

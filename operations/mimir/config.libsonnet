@@ -141,6 +141,8 @@
     memcached_server_key_path: '/var/secrets/memcached-server-key/',
     memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
 
+    cache_results_backend: 'memcached',
+
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).
@@ -556,32 +558,33 @@
 
   query_frontend_caching_config:: (
     if $._config.cache_frontend_enabled then
-           if $._config.cache_frontend_backend == 'memcached' then (
-             {
-               // So that exporters like cloudwatch can still send in data and be un-cached.
-               'query-frontend.max-cache-freshness': '10m',
+      if $._config.cache_frontend_backend == 'memcached' then (
+        {
+          // So that exporters like cloudwatch can still send in data and be un-cached.
+          'query-frontend.max-cache-freshness': '10m',
 
-               'query-frontend.cache-results': true,
-               'query-frontend.results-cache.backend': 'memcached',
-               'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
-               'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
-               'query-frontend.results-cache.memcached.timeout': '500ms',
-             } + if $._config.memcached_frontend_mtls_enabled then {
-               'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
-               'query-frontend.results-cache.memcached.connect-timeout': '1s',
-               'query-frontend.results-cache.memcached.tls-enabled': true,
-               'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-               'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-               'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-               'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
-             } else {}
-           ) else if $._config.cache_frontend_backend == 'redis' then {
-             'blocks-storage.bucket-store.results-cache.backend': 'redis',
-             'blocks-storage.bucket-store.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
-             'blocks-storage.bucket-store.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
-           } else {}
-         else {}
-       ),
+          'query-frontend.cache-results': true,
+          'query-frontend.results-cache.backend': 'memcached',
+          'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+          'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+          'query-frontend.results-cache.memcached.timeout': '500ms',
+        } + if $._config.memcached_frontend_mtls_enabled then {
+          'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
+          'query-frontend.results-cache.memcached.connect-timeout': '1s',
+          'query-frontend.results-cache.memcached.tls-enabled': true,
+          'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+        } else {}
+      ) else if $._config.cache_frontend_backend == 'redis' then {
+        'blocks-storage.bucket-store.results-cache.backend': 'redis',
+        'blocks-storage.bucket-store.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
+        'blocks-storage.bucket-store.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+      } else {}
+    else {}
+  ),
+
 
   blocks_chunks_caching_config::
     (
