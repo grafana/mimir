@@ -682,12 +682,25 @@ func TestExtensions(t *testing.T) {
 
 	// Unmarshal a config with extensions.
 	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
-	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
-	overrides := map[string]*Limits{}
-	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
 
-	// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
-	assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
-	assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
-	assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
+	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
+	t.Run("yaml", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
+		assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, json.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
+		assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
+	})
 }

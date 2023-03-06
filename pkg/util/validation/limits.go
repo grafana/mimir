@@ -293,13 +293,14 @@ func newExtensionsOnlyLimitsConfig() (any interface{}, getter func() map[string]
 		fields = append(fields, reflect.StructField{
 			Name: strings.ToTitle(e.name),
 			Type: e.typ,
-			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s"`, e.name)),
+			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, e.name, e.name)),
 		})
 	}
 	fields = append(fields, reflect.StructField{
-		Name: "Throwaway",
-		Type: reflect.TypeOf(map[string]interface{}{}),
-		Tag:  `yaml:",inline"`,
+		Name:      "Throwaway",
+		Type:      reflect.TypeOf(map[string]interface{}{}),
+		Tag:       `yaml:",inline"`,
+		Anonymous: true,
 	})
 	typ := reflect.StructOf(fields)
 	newExtensions := reflect.New(typ).Interface()
@@ -328,7 +329,7 @@ func newLimitsConfigThrowingAwayExtensions(plainLimits interface{}) interface{} 
 		fields = append(fields, reflect.StructField{
 			Name: "IgnoredExtension" + strings.ToTitle(e.name),
 			Type: e.typ,
-			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s"`, e.name)),
+			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, e.name, e.name)),
 		})
 	}
 	fields = append(fields, reflect.StructField{
@@ -394,6 +395,21 @@ func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (l *Limits) UnmarshalJSON(data []byte) error {
+	// First, decode the extensions ignoring the rest of the config (if any registered).
+	var extensions map[string]interface{}
+	if len(registeredExtensions) > 0 {
+		extensionsOnlyConfig, getExtensions := newExtensionsOnlyLimitsConfig()
+
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+
+		err := dec.Decode(extensionsOnlyConfig)
+		if err != nil {
+			return errors.Wrap(err, "decoding extensions")
+		}
+		extensions = getExtensions()
+	}
+
 	// Like the YAML method above, we want to set l to the defaults and then overwrite
 	// it with the input. We prevent an infinite loop of calling UnmarshalJSON by hiding
 	// behind type indirection.
@@ -407,10 +423,11 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 
-	err := dec.Decode((*plain)(l))
+	err := dec.Decode(newLimitsConfigThrowingAwayExtensions((*plain)(l)))
 	if err != nil {
 		return err
 	}
+	l.extensions = extensions
 
 	return l.validate()
 }
