@@ -3169,7 +3169,7 @@ tsdb:
   # large enough to give store-gateways and queriers enough time to discover
   # newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
-  [retention_period: <duration> | default = 24h]
+  [retention_period: <duration> | default = 13h]
 
   # (advanced) How frequently the TSDB blocks are scanned and new ones are
   # shipped to the storage. 0 means shipping is disabled.
