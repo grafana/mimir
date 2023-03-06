@@ -710,4 +710,30 @@ func TestExtensions(t *testing.T) {
 			MustRegisterExtension[testExtensions]("foo")
 		})
 	})
+
+	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
+		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
+		var def Limits
+		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
+		require.Equal(t, "default", *getExtensionString(&def))
+		SetDefaultLimitsForYAMLUnmarshalling(def)
+
+		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.Equal(t, "one", *getExtensionString(overrides["one"]))
+		require.Equal(t, "two", *getExtensionString(overrides["two"]))
+
+		cfg = `{"three": {"test_extension_string": "three"}}`
+		overrides2 := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides2), "parsing overrides")
+		require.Equal(t, "three", *getExtensionString(overrides2["three"]))
+
+		// Previous values did not change.
+		require.Equal(t, "one", *getExtensionString(overrides["one"]))
+		require.Equal(t, "two", *getExtensionString(overrides["two"]))
+
+		// Default value did not change.
+		require.Equal(t, "default", *getExtensionString(&def))
+	})
 }
