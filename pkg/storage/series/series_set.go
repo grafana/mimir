@@ -167,8 +167,8 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	if c.curFloat+1 >= len(c.series.samples) && c.curHisto+1 >= len(c.series.histograms) {
-		c.curFloat++
-		c.curHisto++
+		c.curFloat = len(c.series.samples)
+		c.curHisto = len(c.series.histograms)
 		return chunkenc.ValNone
 	}
 	if c.curFloat+1 >= len(c.series.samples) {
@@ -278,9 +278,7 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(ls))
 	for _, l := range ls {
 		series = append(series, &ConcreteSeries{
-			labels:     l,
-			samples:    nil,
-			histograms: nil,
+			labels: l,
 		})
 	}
 	return NewConcreteSeriesSet(series)
