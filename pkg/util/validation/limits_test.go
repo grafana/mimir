@@ -669,8 +669,22 @@ func TestEnabledByAnyTenant(t *testing.T) {
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 }
 
+func TestSetGlobalExtensionsValidation(t *testing.T) {
+	extensionsValidation = nil
+	SetGlobalExtensionsValidation(func(extensions map[string]interface{}) error { return nil })
+
+	recovered := false
+	defer func() {
+		if a := recover(); a != nil {
+			recovered = true
+		}
+	}()
+	SetGlobalExtensionsValidation(func(extensions map[string]interface{}) error { return nil })
+	require.True(t, recovered)
+}
+
 func TestExtensions(t *testing.T) {
-	ExtentensionsValidation = func(extensions map[string]interface{}) error {
+	extensionsValidation = func(extensions map[string]interface{}) error {
 		for k, v := range extensions {
 			switch k {
 			case "message":

@@ -321,7 +321,7 @@ func (l *Limits) validate() error {
 		}
 	}
 
-	if f := ExtentensionsValidation; f != nil {
+	if f := extensionsValidation; f != nil {
 		return f(l.Extensions)
 	}
 
@@ -349,7 +349,15 @@ func SetDefaultLimitsForYAMLUnmarshalling(defaults Limits) {
 }
 
 // Function to validate Extensions field of Limits.
-var ExtentensionsValidation func(extensions map[string]interface{}) error
+var extensionsValidation func(extensions map[string]interface{}) error
+
+func SetGlobalExtensionsValidation(fn func(extensions map[string]interface{}) error) {
+	if extensionsValidation != nil {
+		panic("extensions validation function already set")
+	}
+
+	extensionsValidation = fn
+}
 
 // TenantLimits exposes per-tenant limit overrides to various resource usage limits
 type TenantLimits interface {
