@@ -169,9 +169,12 @@ func main() {
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
 	if !testMode {
-		name := "mimir"
-		if len(cfg.Target) == 1 {
-			name += "-" + cfg.Target[0]
+		name := os.Getenv("JAEGER_SERVICE_NAME")
+		if name == "" {
+			name = "mimir"
+			if len(cfg.Target) == 1 {
+				name += "-" + cfg.Target[0]
+			}
 		}
 
 		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
