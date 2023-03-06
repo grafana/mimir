@@ -172,6 +172,10 @@ type Limits struct {
 	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+
+	// Extensions are per-tenant values that can be used by projects extending Mimir to have custom per-tenant limits.
+	// Mimir will call ExtensionsValidation function during unmarshalling, but will otherwise not use this value in any way.
+	Extensions map[string]interface{} `yaml:"extensions" json:"extensions" doc:"hidden"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -317,6 +321,10 @@ func (l *Limits) validate() error {
 		}
 	}
 
+	if f := ExtentensionsValidation; f != nil {
+		return f(l.Extensions)
+	}
+
 	return nil
 }
 
@@ -339,6 +347,9 @@ var defaultLimits *Limits
 func SetDefaultLimitsForYAMLUnmarshalling(defaults Limits) {
 	defaultLimits = &defaults
 }
+
+// Function to validate Extensions field of Limits.
+var ExtentensionsValidation func(extensions map[string]interface{}) error
 
 // TenantLimits exposes per-tenant limit overrides to various resource usage limits
 type TenantLimits interface {

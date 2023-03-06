@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -666,4 +667,90 @@ func TestEnabledByAnyTenant(t *testing.T) {
 	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
+}
+
+func TestExtensions(t *testing.T) {
+	ExtentensionsValidation = func(extensions map[string]interface{}) error {
+		for k, v := range extensions {
+			switch k {
+			case "message":
+				if _, ok := v.(string); !ok {
+					return fmt.Errorf("%s should be string", k)
+				}
+			case "enabled":
+				if _, ok := v.(bool); !ok {
+					return fmt.Errorf("%s should be bool", k)
+				}
+			default:
+				return fmt.Errorf("unknown field: %s", k)
+			}
+		}
+		return nil
+	}
+
+	type testcase struct {
+		yamlInput string
+		jsonInput string
+
+		// expected values
+		error string
+		exts  map[string]interface{}
+	}
+
+	for name, tc := range map[string]testcase{
+		"good yaml": {
+			yamlInput: `extensions:
+  message: "world"
+  enabled: true
+`,
+			exts: map[string]interface{}{"message": "world", "enabled": true},
+		},
+
+		"good json": {
+			jsonInput: `{"extensions": {"message": "world", "enabled": true}}`,
+			exts:      map[string]interface{}{"message": "world", "enabled": true},
+		},
+
+		"yaml, invalid message field": {
+			yamlInput: `extensions:
+  message: true
+`,
+			error: "message should be string",
+		},
+
+		"json, invalid message field": {
+			jsonInput: `{"extensions": {"message": true}}`,
+			error:     "message should be string",
+		},
+
+		"yaml, extra field": {
+			yamlInput: `extensions:
+  hello: world
+`,
+			error: "unknown field: hello",
+		},
+
+		"json, extra field": {
+			jsonInput: `{"extensions": {"hello": "world"}}`,
+			error:     "unknown field: hello",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limits := Limits{}
+
+			var err error
+			if tc.yamlInput != "" {
+				err = yaml.Unmarshal([]byte(tc.yamlInput), &limits)
+			} else if tc.jsonInput != "" {
+				err = json.Unmarshal([]byte(tc.jsonInput), &limits)
+			}
+
+			if tc.error != "" {
+				require.ErrorContains(t, err, tc.error)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.exts, limits.Extensions)
+			}
+		})
+	}
 }
