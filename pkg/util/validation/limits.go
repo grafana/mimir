@@ -299,16 +299,18 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		extensions = getExtensions()
 	}
 
-	// Like the YAML method above, we want to set l to the defaults and then overwrite
-	// it with the input. We prevent an infinite loop of calling UnmarshalJSON by hiding
-	// behind type indirection.
+	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
 		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 
+	// We prevent an infinite loop of calling UnmarshalJSON by hiding behind type indirection.
 	type plain Limits
+
+	// We use newLimitsConfigThrowingAwayExtensions to avoid decoder complain about known extension fields,
+	// which were already unmarshaled above. Limits will be unmarshaled as plain limits.
 	err := decode(newLimitsConfigThrowingAwayExtensions((*plain)(l)))
 	if err != nil {
 		return err
