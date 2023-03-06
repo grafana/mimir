@@ -75,6 +75,8 @@ esac
 SINGLE_LINE_OUTPUT=$(echo "${OUTPUT}" | awk 'BEGIN { RS="%0A" } { gsub(/%/, "%25"); gsub(/\r/, "%0D"); gsub(/\n/, "%0A") } { print }')
 echo "detailed=${SINGLE_LINE_OUTPUT}" >> $GITHUB_OUTPUT
 SUMMARY=$(echo "${OUTPUT}" | grep Summary)
-echo "summary=${SUMMARY}" >> $GITHUB_OUTPUT
+echo 'summary<<EOF' >> $GITHUB_OUTPUT
+echo "${SUMMARY}" >> $GITHUB_OUTPUT
+echo 'EOF' >> $GITHUB_OUTPUT
 
 exit $STATUS
