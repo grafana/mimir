@@ -271,49 +271,29 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
-	// First, decode the extensions ignoring the rest of the config (if any registered).
-	var extensions map[string]interface{}
-	if len(registeredExtensions) > 0 {
-		extensionsOnlyConfig, getExtensions := newExtensionsOnlyLimitsConfig()
-		err := value.DecodeWithOptions(extensionsOnlyConfig, yaml.DecodeOptions{KnownFields: true})
-		if err != nil {
-			return errors.Wrap(err, "decoding extensions")
-		}
-		extensions = getExtensions()
-	}
-
-	// We want to set l to the defaults and then overwrite it with the input.
-	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
-	// again, we have to hide it using a type indirection.  See prometheus/config.
-
-	// During startup we wont have a default value so we don't want to overwrite them
-	if defaultLimits != nil {
-		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
-	}
-	type plain Limits
-
-	err := value.DecodeWithOptions(newLimitsConfigThrowingAwayExtensions((*plain)(l)), yaml.DecodeOptions{KnownFields: true})
-	if err != nil {
-		return err
-	}
-	l.extensions = extensions
-
-	return l.validate()
+	return l.unmarshal(func(typ any) error {
+		return value.DecodeWithOptions(typ, yaml.DecodeOptions{KnownFields: true})
+	})
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (l *Limits) UnmarshalJSON(data []byte) error {
+	return l.unmarshal(func(typ any) error {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+
+		return dec.Decode(typ)
+	})
+}
+
+// unmarshal does both YAML and JSON.
+func (l *Limits) unmarshal(decode func(any) error) error {
 	// First, decode the extensions ignoring the rest of the config (if any registered).
 	var extensions map[string]interface{}
 	if len(registeredExtensions) > 0 {
 		extensionsOnlyConfig, getExtensions := newExtensionsOnlyLimitsConfig()
 
-		dec := json.NewDecoder(bytes.NewReader(data))
-		dec.DisallowUnknownFields()
-
-		err := dec.Decode(extensionsOnlyConfig)
+		err := decode(extensionsOnlyConfig)
 		if err != nil {
 			return errors.Wrap(err, "decoding extensions")
 		}
@@ -330,10 +310,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	}
 
 	type plain Limits
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-
-	err := dec.Decode(newLimitsConfigThrowingAwayExtensions((*plain)(l)))
+	err := decode(newLimitsConfigThrowingAwayExtensions((*plain)(l)))
 	if err != nil {
 		return err
 	}
