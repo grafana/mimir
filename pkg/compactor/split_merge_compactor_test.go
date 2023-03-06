@@ -29,6 +29,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) {
@@ -599,6 +600,71 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{},
+						},
+					},
+				}
+			},
+		},
+		"compaction on blocks containing native histograms": {
+			numShards: 2,
+			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
+				minT := blockRangeMillis
+				maxT := 2 * blockRangeMillis
+
+				seriesID := 0
+
+				appendHistograms := func(db *tsdb.DB) {
+					db.EnableNativeHistograms()
+
+					appendHistogram := func(seriesID int, ts int64) {
+						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
+
+						app := db.Appender(context.Background())
+						_, err := app.AppendHistogram(0, lbls, ts, util_test.GenerateTestHistogram(seriesID), nil)
+						require.NoError(t, err)
+
+						err = app.Commit()
+						require.NoError(t, err)
+					}
+
+					for ts := minT; ts < maxT; ts += (maxT - minT) / int64(numSeries-1) {
+						appendHistogram(seriesID, ts)
+						seriesID++
+					}
+
+					appendHistogram(seriesID, maxT-1)
+				}
+
+				block1 := createCustomTSDBBlock(t, bkt, userID, externalLabels(""), appendHistograms)
+				block2 := createCustomTSDBBlock(t, bkt, userID, externalLabels(""), appendHistograms)
+
+				return []metadata.Meta{
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 1 * blockRangeMillis,
+							MaxTime: 2 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block1, block2},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+							},
+						},
+					},
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 1 * blockRangeMillis,
+							MaxTime: 2 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block1, block2},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+							},
 						},
 					},
 				}
