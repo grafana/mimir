@@ -4181,7 +4181,7 @@
               "kind": "field",
               "name": "backend",
               "required": false,
-              "desc": "Backend for query-frontend results cache, if not empty. Supported values: [memcached redis].",
+              "desc": "Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.results-cache.backend",

@@ -1162,7 +1162,7 @@ The `frontend` block configures the query-frontend.
 
 results_cache:
   # Backend for query-frontend results cache, if not empty. Supported values:
-  # [memcached redis].
+  # memcached, redis.
   # CLI flag: -query-frontend.results-cache.backend
   [backend: <string> | default = ""]
 
