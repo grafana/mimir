@@ -27,8 +27,9 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-* [FEATURE] Add cache support for GEM's admin bucket. The cache will be enabled by default when you use
-  small.yaml, large.yaml, capped-small.yaml and capped-large.yaml helm values example. #3740
+
+* [FEATURE] Add cache support for GEM's admin bucket. The cache will be enabled by default when you use the
+  small.yaml, large.yaml, capped-small.yaml or capped-large.yaml Helm values file. #3740
   > **Note:** For more information, refer to the [Grafana Enterprise Metrics configuration](https://grafana.com/docs/enterprise-metrics/latest/config).
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
