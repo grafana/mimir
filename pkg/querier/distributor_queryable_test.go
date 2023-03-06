@@ -435,27 +435,25 @@ func verifySeries[S mimirpb.GenericSamplePair](t *testing.T, series storage.Seri
 		require.Nil(t, it.Err())
 		switch valType {
 		case chunkenc.ValFloat:
+			sm, ok := interface{}(s).(mimirpb.Sample)
+			require.True(t, ok, "verifySeries - can't convert float")
 			ts, v := it.At()
-			require.Equal(t, s.GetBaseVal(), v)
+			require.Equal(t, sm.Value, v)
 			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValHistogram:
 			eh, ok := interface{}(s).(mimirpb.Histogram)
-			if !ok {
-				panic("verifySeries - can't convert histogram")
-			}
+			require.True(t, ok, "verifySeries - can't convert histogram")
 			ts, h := it.AtHistogram()
 			test.RequireHistogramEqual(t, mimirpb.FromHistogramProtoToHistogram(&eh), h)
 			require.Equal(t, s.GetTimestampVal(), ts)
 		case chunkenc.ValFloatHistogram:
 			efh, ok := interface{}(s).(mimirpb.Histogram)
-			if !ok {
-				panic("verifySeries - can't convert float histogram")
-			}
+			require.True(t, ok, "verifySeries - can't convert float histogram")
 			ts, fh := it.AtFloatHistogram()
 			test.RequireFloatHistogramEqual(t, mimirpb.FromHistogramProtoToFloatHistogram(&efh), fh)
 			require.Equal(t, s.GetTimestampVal(), ts)
 		default:
-			panic(fmt.Sprintf("verifyHistogramSeries - unhandled value type: %v", valType))
+			t.Errorf("verifyHistogramSeries - unhandled value type: %v", valType)
 		}
 	}
 	require.Equal(t, chunkenc.ValNone, it.Next())
@@ -483,9 +481,7 @@ func convertToChunks[S mimirpb.GenericSamplePair](t *testing.T, samples []S) []c
 			hasSamples = true
 		case mimirpb.Histogram:
 			h, ok := interface{}(s).(mimirpb.Histogram)
-			if !ok {
-				panic(fmt.Sprintf("convertToChunks - can't convert type %v to Histogram", x))
-			}
+			require.True(t, ok, "convertToChunks - can't convert histogram")
 			if h.IsFloatHistogram() {
 				c, err = promChunkFH.AddFloatHistogram(s.GetTimestampVal(), mimirpb.FromHistogramProtoToFloatHistogram(&h))
 				hasFloatH = true
@@ -494,7 +490,7 @@ func convertToChunks[S mimirpb.GenericSamplePair](t *testing.T, samples []S) []c
 				hasIntH = true
 			}
 		default:
-			panic(fmt.Sprintf("convertToChunks - unhandled type: %v", x))
+			t.Errorf("convertToChunks - unhandled type: %v", x)
 		}
 		require.NoError(t, err)
 		require.Nil(t, c)
