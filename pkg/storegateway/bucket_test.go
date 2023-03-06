@@ -1863,7 +1863,7 @@ func TestBucketStore_Series_BlockWithMultipleChunks(t *testing.T) {
 }
 
 func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
-	histograms := tsdb.GenerateTestHistograms(10000)
+	histograms := test.GenerateTestHistograms(10000)
 	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
 		_, err := app.AppendHistogram(0, lset, ts, histograms[ts], nil)
 		return err
@@ -1872,7 +1872,7 @@ func TestBucketStore_Series_BlockWithMultipleHistogramChunks(t *testing.T) {
 }
 
 func TestBucketStore_Series_BlockWithMultipleFloatHistogramChunks(t *testing.T) {
-	histograms := tsdb.GenerateTestFloatHistograms(10000)
+	histograms := test.GenerateTestFloatHistograms(10000)
 	appendF := func(app storage.Appender, lset labels.Labels, ts int64) error {
 		_, err := app.AppendHistogram(0, lset, ts, nil, histograms[ts])
 		return err
