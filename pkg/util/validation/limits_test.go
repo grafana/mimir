@@ -676,9 +676,9 @@ func TestExtensions(t *testing.T) {
 		Foo int `yaml:"foo"`
 	}
 	// By registering, we get a function that provides the extensions for a Limist instance.
-	getExtensionStruct := RegisterExtensions[testExtensions]("test_extension_struct")
-	getExtensionString := RegisterExtensions[string]("test_extension_string")
-	getExtensionNil := RegisterExtensions[int]("test_extension_null")
+	getExtensionStruct := MustRegisterExtension[testExtensions]("test_extension_struct")
+	getExtensionString := MustRegisterExtension[string]("test_extension_string")
+	getExtensionNil := MustRegisterExtension[int]("test_extension_null")
 
 	// Unmarshal a config with extensions.
 	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
@@ -706,8 +706,8 @@ func TestExtensions(t *testing.T) {
 
 	t.Run("can't register twice", func(t *testing.T) {
 		require.Panics(t, func() {
-			RegisterExtensions[testExtensions]("foo")
-			RegisterExtensions[testExtensions]("foo")
+			MustRegisterExtension[testExtensions]("foo")
+			MustRegisterExtension[testExtensions]("foo")
 		})
 	})
 }

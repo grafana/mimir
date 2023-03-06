@@ -894,11 +894,11 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 	return false
 }
 
-// RegisterExtensions registers the extensions type with given name
+// MustRegisterExtension registers the extensions type with given name
 // and returns a function to get a pointer to the extensions E from a *Limits instance.
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
-func RegisterExtensions[E any](name string) func(*Limits) *E {
+func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	for _, e := range registeredExtensions {
 		if e.name == name {
 			panic(fmt.Errorf("extension %s already registered", name))
