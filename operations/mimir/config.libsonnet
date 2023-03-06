@@ -100,20 +100,24 @@
 
     store_gateway_replication_factor: 3,
 
-    memcached_frontend_enabled: true,
-    memcached_frontend_max_item_size_mb: 5,
+    cache_frontend_enabled: true,
+    cache_frontend_backend: 'memcached',
+    cache_frontend_max_item_size_mb: 5,
     memcached_frontend_mtls_enabled: false,
 
-    memcached_index_queries_enabled: true,
-    memcached_index_queries_max_item_size_mb: 5,
+    cache_index_queries_enabled: true,
+    cache_index_queries_max_item_size_mb: 5,
+    cache_index_queries_backend: 'memcached',
     memcached_index_queries_mtls_enabled: false,
 
-    memcached_chunks_enabled: true,
-    memcached_chunks_max_item_size_mb: 1,
+    cache_chunks_enabled: true,
+    cache_chunks_max_item_size_mb: 1,
+    cache_chunks_backend: 'memcached',
     memcached_chunks_mtls_enabled: false,
 
-    memcached_metadata_enabled: true,
-    memcached_metadata_max_item_size_mb: 1,
+    cache_metadata_enabled: true,
+    cache_metadata_max_item_size_mb: 1,
+    cache_metadata_backend: 'memcached',
     memcached_metadata_mtls_enabled: false,
 
     // mTLS can be used for connections to each cache cluster. If enabled for each type of
@@ -551,79 +555,112 @@
   },
 
   query_frontend_caching_config:: (
-    if $._config.memcached_frontend_enabled then {
-      // So that exporters like cloudwatch can still send in data and be un-cached.
-      'query-frontend.max-cache-freshness': '10m',
+    if $._config.cache_frontend_enabled then
+           if $._config.cache_frontend_backend == 'memcached' then (
+             {
+               // So that exporters like cloudwatch can still send in data and be un-cached.
+               'query-frontend.max-cache-freshness': '10m',
 
-      'query-frontend.cache-results': true,
-      'query-frontend.results-cache.backend': 'memcached',
-      'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'query-frontend.results-cache.memcached.max-item-size': $._config.memcached_frontend_max_item_size_mb * 1024 * 1024,
-      'query-frontend.results-cache.memcached.timeout': '500ms',
-    } + if $._config.memcached_frontend_mtls_enabled then {
-      'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
-      'query-frontend.results-cache.memcached.connect-timeout': '1s',
-      'query-frontend.results-cache.memcached.tls-enabled': true,
-      'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
-    } else {}
-    else {}
-  ),
+               'query-frontend.cache-results': true,
+               'query-frontend.results-cache.backend': 'memcached',
+               'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+               'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+               'query-frontend.results-cache.memcached.timeout': '500ms',
+             } + if $._config.memcached_frontend_mtls_enabled then {
+               'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
+               'query-frontend.results-cache.memcached.connect-timeout': '1s',
+               'query-frontend.results-cache.memcached.tls-enabled': true,
+               'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+               'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+               'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+               'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+             } else {}
+           ) else if $._config.cache_frontend_backend == 'redis' then {
+             'blocks-storage.bucket-store.results-cache.backend': 'redis',
+             'blocks-storage.bucket-store.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
+             'blocks-storage.bucket-store.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+           } else {}
+         else {}
+       ),
 
-  blocks_chunks_caching_config:: (
-    if $._config.memcached_index_queries_enabled then {
-      'blocks-storage.bucket-store.index-cache.backend': 'memcached',
-      'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-      'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
-    } + if $._config.memcached_index_queries_mtls_enabled then {
-      'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11212' % $._config,
-      'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
-      'blocks-storage.bucket-store.index-cache.memcached.tls-enabled': true,
-      'blocks-storage.bucket-store.index-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-      'blocks-storage.bucket-store.index-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-      'blocks-storage.bucket-store.index-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-      'blocks-storage.bucket-store.index-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
-    } else {}
-    else {}
-  ) + (
-    if $._config.memcached_chunks_enabled then {
-      'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
-      'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
-      'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
-    } + if $._config.memcached_chunks_mtls_enabled then {
-      'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11212' % $._config,
-      'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',
-      'blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled': true,
-      'blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-      'blocks-storage.bucket-store.chunks-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-      'blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-      'blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
-    } else {}
-    else {}
-  ),
+  blocks_chunks_caching_config::
+    (
+      if $._config.cache_index_queries_enabled then
+        if $._config.cache_index_queries_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.index-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_index_queries_mtls_enabled then {
+            'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.index-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_index_queries_backend == 'redis' then {
+          'blocks-storage.bucket-store.index-cache.backend': 'redis',
+          'blocks-storage.bucket-store.index-cache.redis.endpoint': '%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'blocks-storage.bucket-store.index-cache.redis.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.index-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ) + (
+      if $._config.cache_chunks_enabled then
+        if $._config.cache_chunks_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
+            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+          } + if $._config.memcached_chunks_mtls_enabled then {
+            'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_chunks_backend == 'redis' then {
+          'blocks-storage.bucket-store.chunks-cache.backend': 'redis',
+          'blocks-storage.bucket-store.chunks-cache.redis.endpoint': '%(cache_chunks_backend)s.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'blocks-storage.bucket-store.chunks-cache.redis.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
 
-  blocks_metadata_caching_config:: (
-    if $._config.memcached_metadata_enabled then {
-      'blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
-      'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': 50,
-    } + if $._config.memcached_metadata_mtls_enabled then {
-      'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
-      'blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout': '1s',
-      'blocks-storage.bucket-store.metadata-cache.memcached.tls-enabled': true,
-      'blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-      'blocks-storage.bucket-store.metadata-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-      'blocks-storage.bucket-store.metadata-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-      'blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
-    } else {}
-    else {}
-  ),
+  blocks_metadata_caching_config::
+    (
+      if $._config.cache_metadata_enabled then
+        if $._config.cache_metadata_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_metadata_mtls_enabled then {
+            'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_metadata_backend == 'redis' then {
+          'blocks-storage.bucket-store.metadata-cache.backend': 'redis',
+          'blocks-storage.bucket-store.metadata-cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'blocks-storage.bucket-store.metadata-cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
 
   bucket_index_config:: if $._config.bucket_index_enabled then {
     // Bucket index is updated by compactor on each cleanup cycle.
