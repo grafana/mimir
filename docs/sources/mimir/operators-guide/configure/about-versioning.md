@@ -98,6 +98,7 @@ The following features are currently experimental:
   - `-ruler-storage.storage-prefix`
 - Compactor
   - HTTP API for uploading TSDB blocks
+  - `-compactor.first-level-compaction-wait-period`
 - Anonymous usage statistics tracking
 - Read-write deployment mode
 - `/api/v1/user_limits` API endpoint

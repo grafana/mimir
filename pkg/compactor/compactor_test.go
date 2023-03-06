@@ -1364,6 +1364,129 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	))
 }
 
+func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactionBlocksAndWaitPeriodNotElapsed(t *testing.T) {
+	t.Parallel()
+
+	const waitPeriod = 10 * time.Minute
+
+	// Mock two tenants, each with the same exact overlapping blocks. However,
+	// the 2nd tenant has uploaded the blocks less than "wait period" ago.
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
+
+	for _, userID := range []string{"user-1", "user-2"} {
+		lastModified := time.Now().Add(-20 * time.Minute)
+		if userID == "user-2" {
+			lastModified = time.Now().Add(-5 * time.Minute)
+		}
+
+		bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
+		bucketClient.MockIter(userID+"/", []string{path.Join(userID, "/01DTVP434PA9VFXSW2JK000001"), path.Join(userID, "/01DTVP434PA9VFXSW2JK000002")}, nil)
+		bucketClient.MockIter(userID+"/markers/", nil, nil)
+		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000001", 1574776800000, 1574784000000), lastModified, nil)
+		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/deletion-mark.json"), "", nil)
+		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/no-compact-mark.json"), "", nil)
+		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000002", 1574776800000, 1574784000000), lastModified, nil)
+		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/deletion-mark.json"), "", nil)
+		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/no-compact-mark.json"), "", nil)
+		bucketClient.MockGet(path.Join(userID, "bucket-index.json.gz"), "", nil)
+		bucketClient.MockUpload(path.Join(userID, "bucket-index.json.gz"), nil)
+	}
+
+	cfg := prepareConfig(t)
+	cfg.CompactionWaitPeriod = waitPeriod
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
+
+	// Mock the planner as if there's no compaction to do, in order to simplify tests.
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	// Wait until a run has completed.
+	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// We expect only 1 compaction job has been expected, while the 2nd has been skipped.
+	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
+
+	assert.ElementsMatch(t, []string{
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="discovering users from bucket"`,
+		`level=info component=compactor msg="discovered users from bucket" users=2`,
+		// User-1 compaction.
+		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
+		`level=info component=compactor user=user-1 msg="start sync of metas"`,
+		`level=info component=compactor user=user-1 msg="start of GC"`,
+		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
+		`level=info component=compactor user=user-1 msg="start of compactions"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
+		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
+		// User-2 compaction (skipped).
+		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
+		`level=info component=compactor user=user-2 msg="start sync of metas"`,
+		`level=info component=compactor user=user-2 msg="start of GC"`,
+		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
+		`level=info component=compactor user=user-2 msg="skipped compaction because job contains source blocks for which the wait period has not elapsed yet" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000`,
+		`level=info component=compactor user=user-2 msg="start of compactions"`,
+		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
+		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
+	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 1
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 1
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 1
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 0
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
+
+		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+		"cortex_compactor_group_compaction_runs_completed_total",
+		"cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total",
+		"cortex_compactor_group_compactions_total",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, externalLabels map[string]string, appendFunc func(*tsdb.DB)) ulid.ULID {
 	// Create a temporary dir for TSDB.
 	tempDir := t.TempDir()

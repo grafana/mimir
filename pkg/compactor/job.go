@@ -98,6 +98,20 @@ func (job *Job) MaxTime() int64 {
 	return max
 }
 
+// MinCompactionLevel returns the minimum compaction level across all source blocks
+// in this job.
+func (job *Job) MinCompactionLevel() int {
+	min := math.MaxInt
+
+	for _, m := range job.metasByMinTime {
+		if m.Compaction.Level < min {
+			min = m.Compaction.Level
+		}
+	}
+
+	return min
+}
+
 // Metas returns the metadata for each block that is part of this job, ordered by the block's MinTime
 func (job *Job) Metas() []*metadata.Meta {
 	out := make([]*metadata.Meta, len(job.metasByMinTime))
