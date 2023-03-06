@@ -76,7 +76,7 @@
 
     // Allow to configure the alertmanager disk.
     alertmanager_data_disk_size: '100Gi',
-    alertmanager_data_disk_class: 'fast',
+    alertmanager_data_disk_class: null,
 
     // Allow to configure the ingester disk.
     ingester_data_disk_size: '100Gi',
