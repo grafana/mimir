@@ -669,19 +669,25 @@ func TestEnabledByAnyTenant(t *testing.T) {
 }
 
 func TestExtensions(t *testing.T) {
+	t.Cleanup(func() { registeredExtensions = nil })
+
 	// Downstream declares a new extension type and registers it.
 	type testExtensions struct {
 		Foo int `yaml:"foo"`
 	}
-	// By registering, we get a functtion that provides the extensions for a Limist instance.
-	getExtensions := RegisterExtensions[testExtensions]()
+	// By registering, we get a function that provides the extensions for a Limist instance.
+	getExtensionStruct := RegisterExtensions[testExtensions]("test_extension_struct")
+	getExtensionString := RegisterExtensions[string]("test_extension_string")
+	getExtensionNil := RegisterExtensions[int]("test_extension_null")
 
 	// Unmarshal a config with extensions.
 	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
-	cfg := `{"user": {"extensions": {"foo": 1}}}`
+	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
 	overrides := map[string]*Limits{}
 	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
 
-	// Check that getExtensions(*Limits) actually returns the proper type with filled extensions.
-	assert.Equal(t, testExtensions{Foo: 1}, getExtensions(overrides["user"]))
+	// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+	assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
+	assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
+	assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
 }
