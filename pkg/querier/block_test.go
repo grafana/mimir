@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -24,7 +24,15 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
 )
+
+type sample struct {
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
+}
 
 func TestBlockQuerierSeries(t *testing.T) {
 	t.Parallel()
@@ -36,7 +44,8 @@ func TestBlockQuerierSeries(t *testing.T) {
 	tests := map[string]struct {
 		series          *storepb.Series
 		expectedMetric  labels.Labels
-		expectedSamples []model.SamplePair
+		expectedSamples []sample
+		expectedType    chunkenc.ValueType
 		expectedErr     string
 	}{
 		"empty series": {
@@ -44,20 +53,65 @@ func TestBlockQuerierSeries(t *testing.T) {
 			expectedMetric: labels.Labels(nil),
 			expectedErr:    "no chunks",
 		},
-		"should return series on success": {
+		"should return float series on success": {
 			series: &storepb.Series{
 				Labels: []mimirpb.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
-					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBChunkData()}},
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     &storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBXorChunkData(t)},
+					},
 				},
 			},
 			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedSamples: []model.SamplePair{
-				{Timestamp: model.TimeFromUnixNano(time.Unix(1, 0).UnixNano()), Value: model.SampleValue(1)},
-				{Timestamp: model.TimeFromUnixNano(time.Unix(2, 0).UnixNano()), Value: model.SampleValue(2)},
+			expectedSamples: []sample{
+				{t: time.Unix(1, 0).UnixMilli(), v: 1},
+				{t: time.Unix(2, 0).UnixMilli(), v: 2},
 			},
+			expectedType: chunkenc.ValFloat,
+		},
+		"should return histogram series on success": {
+			series: &storepb.Series{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+				},
+				Chunks: []storepb.AggrChunk{
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     &storepb.Chunk{Type: storepb.Chunk_Histogram, Data: mockTSDBHistogramChunkData(t)},
+					},
+				},
+			},
+			expectedMetric: labels.FromStrings("foo", "bar"),
+			expectedSamples: []sample{
+				{t: time.Unix(1, 0).UnixMilli(), h: test.GenerateTestHistogram(1)},
+				{t: time.Unix(2, 0).UnixMilli(), h: test.GenerateTestHistogram(2)},
+			},
+			expectedType: chunkenc.ValHistogram,
+		},
+		"should return float histogram series on success": {
+			series: &storepb.Series{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+				},
+				Chunks: []storepb.AggrChunk{
+					{
+						MinTime: minTimestamp.Unix() * 1000,
+						MaxTime: maxTimestamp.Unix() * 1000,
+						Raw:     &storepb.Chunk{Type: storepb.Chunk_FloatHistogram, Data: mockTSDBFloatHistogramChunkData(t)},
+					},
+				},
+			},
+			expectedMetric: labels.FromStrings("foo", "bar"),
+			expectedSamples: []sample{
+				{t: time.Unix(1, 0).UnixMilli(), fh: test.GenerateTestFloatHistogram(1)},
+				{t: time.Unix(2, 0).UnixMilli(), fh: test.GenerateTestFloatHistogram(2)},
+			},
+			expectedType: chunkenc.ValFloatHistogram,
 		},
 		"should return error on failure while reading encoded chunk data": {
 			series: &storepb.Series{
@@ -83,11 +137,28 @@ func TestBlockQuerierSeries(t *testing.T) {
 
 			it := series.Iterator(nil)
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-				assert.Equal(t, chunkenc.ValFloat, valType)
-				ts, val := it.At()
 				require.True(t, sampleIx < len(testData.expectedSamples))
-				assert.Equal(t, int64(testData.expectedSamples[sampleIx].Timestamp), ts)
-				assert.Equal(t, float64(testData.expectedSamples[sampleIx].Value), val)
+				assert.Equal(t, testData.expectedType, valType)
+				switch testData.expectedType {
+				case chunkenc.ValFloat:
+					ts, val := it.At()
+					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
+					assert.Equal(t, testData.expectedSamples[sampleIx].v, val)
+				case chunkenc.ValHistogram:
+					ts, val := it.AtHistogram()
+					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
+					test.RequireHistogramEqual(t, testData.expectedSamples[sampleIx].h, val)
+					// Test automatic conversion
+					ts, fval := it.AtFloatHistogram()
+					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
+					test.RequireFloatHistogramEqual(t, testData.expectedSamples[sampleIx].h.ToFloat(), fval)
+				case chunkenc.ValFloatHistogram:
+					ts, val := it.AtFloatHistogram()
+					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
+					test.RequireFloatHistogramEqual(t, testData.expectedSamples[sampleIx].fh, val)
+				default:
+					t.Errorf("Test code error request unknown value type %v", testData.expectedType)
+				}
 				sampleIx++
 			}
 			// make sure we've got all expected samples
@@ -102,15 +173,35 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}
 }
 
-func mockTSDBChunkData() []byte {
+func mockTSDBXorChunkData(t *testing.T) []byte {
 	chunk := chunkenc.NewXORChunk()
 	appender, err := chunk.Appender()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	appender.Append(time.Unix(1, 0).Unix()*1000, 1)
 	appender.Append(time.Unix(2, 0).Unix()*1000, 2)
+
+	return chunk.Bytes()
+}
+
+func mockTSDBHistogramChunkData(t *testing.T) []byte {
+	chunk := chunkenc.NewHistogramChunk()
+	appender, err := chunk.Appender()
+	require.NoError(t, err)
+
+	appender.AppendHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1))
+	appender.AppendHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2))
+
+	return chunk.Bytes()
+}
+
+func mockTSDBFloatHistogramChunkData(t *testing.T) []byte {
+	chunk := chunkenc.NewFloatHistogramChunk()
+	appender, err := chunk.Appender()
+	require.NoError(t, err)
+
+	appender.AppendFloatHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1))
+	appender.AppendFloatHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2))
 
 	return chunk.Bytes()
 }
