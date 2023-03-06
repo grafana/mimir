@@ -953,8 +953,8 @@ spec:
       name: ruler
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 50%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
