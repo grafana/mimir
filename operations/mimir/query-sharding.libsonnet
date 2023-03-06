@@ -20,6 +20,16 @@
       mega_user+:: {
         query_sharding_total_shards: 8,
       },
+
+      // Target 24M active series.
+      user_24M+:: {
+        query_sharding_total_shards: 8,
+      },
+
+      // Target 32M active series.
+      user_32M+:: {
+        query_sharding_total_shards: 8,
+      },
     }
     else {},
   },
