@@ -7,7 +7,6 @@ package querier
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -189,24 +188,38 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 	for s.Next() {
 		series := s.At()
 		samples := []mimirpb.Sample{}
+		histograms := []mimirpb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
-				return nil, fmt.Errorf("unsupported value type %v", valType)
+			if valType == chunkenc.ValFloat {
+				t, v := it.At()
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: t,
+					Value:       v,
+				})
+			} else if valType == chunkenc.ValHistogram {
+				t, h := it.AtHistogram()
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+			} else if valType == chunkenc.ValFloatHistogram {
+				t, h := it.AtFloatHistogram()
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
 			}
-			t, v := it.At()
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: t,
-				Value:       v,
-			})
 		}
+
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			Samples: samples,
-		})
+		if len(histograms) > 0 {
+			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
+				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+				Histograms: histograms,
+			})
+		} else {
+			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+				Samples: samples,
+			})
+		}
 	}
 
 	return result, s.Err()
