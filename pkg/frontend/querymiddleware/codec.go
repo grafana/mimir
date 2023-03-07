@@ -451,7 +451,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 					stream.Samples = stream.Samples[1:]
 				} else if existingEndTs > stream.Samples[0].TimestampMs {
 					// Overlap might be big, use heavier algorithm to remove overlap.
-					stream.Samples = sliceSamples(stream.Samples, existingEndTs)
+					stream.Samples = sliceFloatSamples(stream.Samples, existingEndTs)
 				} // else there is no overlap, yay!
 			}
 			existing.Samples = append(existing.Samples, stream.Samples...)
@@ -464,7 +464,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 					stream.Histograms = stream.Histograms[1:]
 				} else if existingEndTs > stream.Histograms[0].TimestampMs {
 					// Overlap might be big, use heavier algorithm to remove overlap.
-					stream.Histograms = sliceSamples(stream.Histograms, existingEndTs)
+					stream.Histograms = sliceHistogramSamples(stream.Histograms, existingEndTs)
 				} // else there is no overlap, yay!
 			}
 			existing.Histograms = append(existing.Histograms, stream.Histograms...)
@@ -487,21 +487,41 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 	return result
 }
 
-// sliceSamples assumes given samples/histograms are sorted by timestamp in ascending order and
+// sliceFloatSamples assumes given samples are sorted by timestamp in ascending order and
 // return a sub slice whose first element's is the smallest timestamp that is strictly
 // bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
-// timestamps in samples/histograms.
-func sliceSamples[S mimirpb.GenericSamplePair](samples []S, minTs int64) []S {
-	if len(samples) <= 0 || minTs < samples[0].GetTimestampVal() {
+// timestamps in samples
+func sliceFloatSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
 		return samples
 	}
 
-	if len(samples) > 0 && minTs > samples[len(samples)-1].GetTimestampVal() {
+	if len(samples) > 0 && minTs > samples[len(samples)-1].TimestampMs {
 		return samples[len(samples):]
 	}
 
 	searchResult := sort.Search(len(samples), func(i int) bool {
-		return samples[i].GetTimestampVal() > minTs
+		return samples[i].TimestampMs > minTs
+	})
+
+	return samples[searchResult:]
+}
+
+// sliceHistogramSamples assumes given samples are sorted by timestamp in ascending order and
+// return a sub slice whose first element's is the smallest timestamp that is strictly
+// bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
+// timestamps in samples
+func sliceHistogramSamples(samples []mimirpb.FloatHistogramPair, minTs int64) []mimirpb.FloatHistogramPair {
+	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
+		return samples
+	}
+
+	if len(samples) > 0 && minTs > samples[len(samples)-1].TimestampMs {
+		return samples[len(samples):]
+	}
+
+	searchResult := sort.Search(len(samples), func(i int) bool {
+		return samples[i].TimestampMs > minTs
 	})
 
 	return samples[searchResult:]
