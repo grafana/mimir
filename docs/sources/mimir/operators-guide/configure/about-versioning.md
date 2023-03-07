@@ -82,6 +82,8 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+- Querier
+  - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)

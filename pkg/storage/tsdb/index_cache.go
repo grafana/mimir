@@ -66,8 +66,9 @@ func (cfg *IndexCacheConfig) Validate() error {
 		return errUnsupportedIndexCacheBackend
 	}
 
-	if cfg.Backend == IndexCacheBackendMemcached {
-		if err := cfg.Memcached.Validate(); err != nil {
+	// Validate backend config only when not using the in-memory cache.
+	if cfg.Backend == IndexCacheBackendMemcached || cfg.Backend == IndexCacheBackendRedis {
+		if err := cfg.BackendConfig.Validate(); err != nil {
 			return err
 		}
 	}

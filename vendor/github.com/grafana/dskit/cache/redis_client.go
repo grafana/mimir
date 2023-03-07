@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	errRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
-	errRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+	ErrRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
+	ErrRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
 	_ RemoteCacheClient = (*redisClient)(nil)
 )
@@ -126,11 +126,11 @@ func (c *RedisClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 
 func (c *RedisClientConfig) Validate() error {
 	if c.Endpoint.String() == "" {
-		return errRedisConfigNoEndpoint
+		return ErrRedisConfigNoEndpoint
 	}
 	// Set async only available when MaxAsyncConcurrency > 0.
 	if c.MaxAsyncConcurrency <= 0 {
-		return errRedisMaxAsyncConcurrencyNotPositive
+		return ErrRedisMaxAsyncConcurrencyNotPositive
 	}
 	return nil
 }
