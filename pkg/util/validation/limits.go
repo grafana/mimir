@@ -919,9 +919,9 @@ func init() {
 	for i := 0; i < limitsType.NumField(); i++ {
 		// yamlKey/jsonKey could be empty, but we also shouldn't allow registering a field with an empty name, so just add it to the map.
 		yamlKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("yaml"), ",")
-		josnKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("json"), ",")
+		jsonKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("json"), ",")
 		standardLimitsYAMLJSONKeys[yamlKey] = struct{}{}
-		standardLimitsYAMLJSONKeys[josnKey] = struct{}{}
+		standardLimitsYAMLJSONKeys[jsonKey] = struct{}{}
 	}
 }
 
