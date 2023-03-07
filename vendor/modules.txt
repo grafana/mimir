@@ -495,7 +495,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230221142742-fcb3d68da3ed
+# github.com/grafana/dskit v0.0.0-20230221142742-fcb3d68da3ed => github.com/grafana/dskit v0.0.0-20230306113648-ecdd82cd1396
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -1423,3 +1423,4 @@ sigs.k8s.io/yaml
 # google.golang.org/grpc => google.golang.org/grpc v1.47.0
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
+# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20230306113648-ecdd82cd1396

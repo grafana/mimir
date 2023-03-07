@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 // The various modules that make up Mimir.
@@ -87,6 +88,7 @@ const (
 	StoreGateway               string = "store-gateway"
 	MemberlistKV               string = "memberlist-kv"
 	QueryScheduler             string = "query-scheduler"
+	Vault                      string = "vault"
 	TenantFederation           string = "tenant-federation"
 	UsageStats                 string = "usage-stats"
 	All                        string = "all"
@@ -165,6 +167,20 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) initVault() (services.Service, error) {
+	if !t.Cfg.VaultEnabled {
+		return nil, nil
+	}
+
+	vault, err := vault.NewVault(t.Cfg.Vault)
+	if err != nil {
+		return nil, err
+	}
+	t.Vault = vault
+
+	return nil, nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
@@ -298,6 +314,10 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// whenever it's not running as an internal dependency (ie. querier or
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
+
+	if t.Cfg.VaultEnabled {
+		t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
+	}
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
@@ -451,11 +471,19 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	if t.Cfg.VaultEnabled {
+		t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
+	}
+
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
+
+	if t.Cfg.VaultEnabled {
+		t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
+	}
 
 	//nolint:revive // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
@@ -560,6 +588,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	if t.Cfg.VaultEnabled {
+		t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
+	}
+
 	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -622,6 +654,10 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	if t.RulerStorage == nil {
 		level.Info(util_log.Logger).Log("msg", "RulerStorage is nil.  Not starting the ruler.")
 		return nil, nil
+	}
+
+	if t.Cfg.VaultEnabled {
+		t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	}
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
@@ -731,6 +767,10 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
+	if t.Cfg.VaultEnabled {
+		t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
+	}
+
 	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
@@ -801,6 +841,10 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
+	if t.Cfg.VaultEnabled {
+		t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+	}
+
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "query-scheduler init")
@@ -867,6 +911,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)

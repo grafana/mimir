@@ -268,3 +268,6 @@ replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup-golang-1.19.2)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
+
+// REMOVE: For local testing
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20230306113648-ecdd82cd1396
