@@ -99,7 +99,7 @@ func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchRanges)
+			hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchRanges, nil)
 			assert.Equal(t, testData.expectedHits, hits)
 
 			// Assert on metrics.
