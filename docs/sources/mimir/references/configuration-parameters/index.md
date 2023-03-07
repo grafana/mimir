@@ -981,17 +981,17 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -querier.store-gateway-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -querier.store-gateway-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -querier.store-gateway-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -1376,17 +1376,17 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = true]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -ruler.alertmanager-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -ruler.alertmanager-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -ruler.alertmanager-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -1809,17 +1809,17 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -alertmanager.alertmanager-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -alertmanager.alertmanager-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -alertmanager.alertmanager-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -2008,18 +2008,18 @@ backoff_config:
 # CLI flag: -<prefix>.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -2139,18 +2139,18 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # CLI flag: -<prefix>.etcd.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.etcd.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.etcd.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.etcd.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -2396,18 +2396,18 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -memberlist.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -memberlist.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -memberlist.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -3762,18 +3762,18 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # CLI flag: -<prefix>.redis.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.redis.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.redis.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.redis.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
