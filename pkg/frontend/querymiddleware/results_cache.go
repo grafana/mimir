@@ -487,10 +487,20 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 	return result
 }
 
-func filterSampleStream[S mimirpb.GenericSamplePair](start, end int64, streamSamples []S) []S {
-	result := make([]S, 0, len(streamSamples))
+func filterFloatStream(start, end int64, streamSamples []mimirpb.Sample) []mimirpb.Sample {
+	result := make([]mimirpb.Sample, 0, len(streamSamples))
 	for _, sample := range streamSamples {
-		if start <= sample.GetTimestampVal() && sample.GetTimestampVal() <= end {
+		if start <= sample.TimestampMs && sample.TimestampMs <= end {
+			result = append(result, sample)
+		}
+	}
+	return result
+}
+
+func filterHistogramStream(start, end int64, streamSamples []mimirpb.FloatHistogramPair) []mimirpb.FloatHistogramPair {
+	result := make([]mimirpb.FloatHistogramPair, 0, len(streamSamples))
+	for _, sample := range streamSamples {
+		if start <= sample.TimestampMs && sample.TimestampMs <= end {
 			result = append(result, sample)
 		}
 	}
@@ -504,14 +514,14 @@ func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, b
 	gotSamples := false
 	gotHistograms := false
 	if len(stream.Histograms) > 0 {
-		histograms := filterSampleStream(start, end, stream.Histograms)
+		histograms := filterHistogramStream(start, end, stream.Histograms)
 		if len(histograms) > 0 {
 			result.Histograms = histograms
 			gotHistograms = true
 		}
 	}
 	if len(stream.Samples) > 0 {
-		samples := filterSampleStream(start, end, stream.Samples)
+		samples := filterFloatStream(start, end, stream.Samples)
 		if len(samples) > 0 {
 			result.Samples = samples
 			gotSamples = true
