@@ -73,7 +73,7 @@ func newMockShardedQueryable(
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))
 	for _, ls := range sets {
-		xs = append(xs, series.NewConcreteSeries(ls, samples))
+		xs = append(xs, series.NewConcreteSeries(ls, samples, nil))
 	}
 
 	return &mockShardedQueryable{
