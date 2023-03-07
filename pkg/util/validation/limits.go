@@ -885,6 +885,7 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 // and returns a function to get a pointer to the extensions E from a *Limits instance.
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
+// Registering same name twice will cause a panic.
 func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	if _, ok := registeredExtensionsIndexes[name]; ok {
 		panic(fmt.Errorf("extension %s already registered", name))
