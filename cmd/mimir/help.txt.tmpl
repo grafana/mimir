@@ -118,25 +118,49 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.bucket-index.enabled
     	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.chunks-cache.backend string
-    	Backend for chunks cache, if not empty. Supported values: memcached.
-  -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
+    	Backend for chunks cache, if not empty. Supported values: memcached, redis.
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.chunks-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.chunks-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.chunks-cache.redis.username string
+    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.backend string
-    	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
+    	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
-  -blocks-storage.bucket-store.index-cache.memcached.addresses string
+  -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.index-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.index-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.index-cache.redis.username string
+    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.metadata-cache.backend string
-    	Backend for metadata cache, if not empty. Supported values: memcached.
-  -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
+    	Backend for metadata cache, if not empty. Supported values: memcached, redis.
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.metadata-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.metadata-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.metadata-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.metadata-cache.redis.username string
+    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.filesystem.dir string
@@ -432,13 +456,21 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
+    	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
-  -query-frontend.results-cache.memcached.addresses string
+  -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -query-frontend.results-cache.redis.db int
+    	Database index.
+  -query-frontend.results-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -query-frontend.results-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -query-frontend.results-cache.redis.username string
+    	Username to use when connecting to Redis.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-scheduler.max-outstanding-requests-per-tenant int

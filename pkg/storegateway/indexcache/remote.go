@@ -63,8 +63,8 @@ func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg 
 }
 
 // set stores a value for the given key in the remote cache.
-func (c *RemoteIndexCache) set(ctx context.Context, typ string, key string, val []byte) {
-	if err := c.remote.SetAsync(ctx, key, val, remoteDefaultTTL); err != nil {
+func (c *RemoteIndexCache) set(typ string, key string, val []byte) {
+	if err := c.remote.SetAsync(key, val, remoteDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to set item in remote cache", "type", typ, "err", err)
 	}
 }
@@ -83,8 +83,8 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(ctx, cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
+func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+	c.set(cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -146,8 +146,8 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
+func (c *RemoteIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -206,8 +206,8 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *RemoteIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
+func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
+	c.set(cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
@@ -221,8 +221,8 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 }
 
 // StoreSeries stores the result of a Series() call.
-func (c *RemoteIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard), v)
+func (c *RemoteIndexCache) StoreSeries(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	c.set(cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard), v)
 }
 
 // FetchSeries fetches the result of a Series() call.
@@ -237,8 +237,8 @@ func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersK
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *RemoteIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.set(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
+func (c *RemoteIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
@@ -258,8 +258,8 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *RemoteIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
+func (c *RemoteIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
@@ -273,8 +273,8 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *RemoteIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
+func (c *RemoteIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.

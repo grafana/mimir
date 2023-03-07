@@ -80,7 +80,7 @@ func TestGroupMaxMinTime(t *testing.T) {
 	assert.Equal(t, int64(30), g.MaxTime())
 }
 
-func TestFilterOwnJobs(t *testing.T) {
+func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	jobsFn := func() []*Job {
 		return []*Job{
 			NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
@@ -121,7 +121,7 @@ func TestFilterOwnJobs(t *testing.T) {
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 4, m)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 4, m)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -157,7 +157,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 4, metrics)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 4, metrics)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})

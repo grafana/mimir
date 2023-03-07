@@ -111,12 +111,12 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 type prepareStoreConfig struct {
 	tempDir              string
 	manyParts            bool
+	maxSeriesPerBatch    int
 	chunksLimiterFactory ChunksLimiterFactory
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
 	chunksCache          chunkscache.Cache
-	bucketStoreOpts      []BucketStoreOption
 	metricsRegistry      *prometheus.Registry
 }
 
@@ -129,9 +129,13 @@ func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareSto
 
 func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 	return &prepareStoreConfig{
-		metricsRegistry:      prometheus.NewRegistry(),
-		tempDir:              t.TempDir(),
-		manyParts:            false,
+		metricsRegistry: prometheus.NewRegistry(),
+		tempDir:         t.TempDir(),
+		manyParts:       false,
+		// We want to force each Series() call to use more than one batch to catch some edge cases.
+		// This should make the implementation slightly slower, although most tests time
+		// is dominated by the setup.
+		maxSeriesPerBatch:    10,
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
@@ -157,12 +161,6 @@ func withManyParts() prepareStoreConfigOption {
 	}
 }
 
-func withBucketStoreOptions(opts ...BucketStoreOption) prepareStoreConfigOption {
-	return func(config *prepareStoreConfig) {
-		config.bucketStoreOpts = opts
-	}
-}
-
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
@@ -180,13 +178,14 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}, cfg.bucketStoreOpts...)
+	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}
 
 	store, err := NewBucketStore(
 		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		cfg.tempDir,
+		cfg.maxSeriesPerBatch,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -426,14 +425,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.store.maxSeriesPerBatch > 0, s.metricsRegistry)
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
-func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, streamingEnabled bool, registry *prometheus.Registry) {
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
 	t.Helper()
 
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
@@ -476,13 +475,8 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
 
-		if streamingEnabled {
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
-		} else {
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
-			assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
-		}
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))
@@ -886,21 +880,6 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		b, err := filesystem.NewBucket(t.TempDir())
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
-			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
-		}
-		runTest(t, factory)
-	})
-
-	t.Run("streaming", func(t *testing.T) {
-		t.Parallel()
-
-		b, err := filesystem.NewBucket(t.TempDir())
-		assert.NoError(t, err)
-		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
-			// We want to force each Series() call to use more than one batch to catch some edge cases.
-			// This should make the implementation slightly slower, although test time
-			// should be dominated by the setup.
-			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(10)))
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)

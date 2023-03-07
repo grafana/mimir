@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1364,6 +1365,116 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	))
 }
 
+func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactionBlocksAndWaitPeriodNotElapsed(t *testing.T) {
+	t.Parallel()
+
+	storageDir := t.TempDir()
+	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	// Mock two tenants, each with 2 overlapping blocks.
+	spec := []*testutil.BlockSeriesSpec{{
+		Labels: labels.FromStrings(labels.MetricName, "series_1"),
+		Chunks: []chunks.Meta{tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			newSample(1574776800000, 0, nil, nil),
+			newSample(1574783999999, 0, nil, nil),
+		})},
+	}}
+
+	user1Meta1, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	require.NoError(t, err)
+	user1Meta2, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	require.NoError(t, err)
+	user2Meta1, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	require.NoError(t, err)
+	user2Meta2, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	require.NoError(t, err)
+
+	// Mock the last modified timestamp returned for each of the block's meta.json.
+	const waitPeriod = 10 * time.Minute
+	bucketClient = &bucketWithMockedAttributes{
+		Bucket: bucketClient,
+		customAttributes: map[string]objstore.ObjectAttributes{
+			path.Join("user-1", user1Meta1.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-1", user1Meta2.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-2", user2Meta1.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-2", user2Meta2.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-5 * time.Minute)},
+		},
+	}
+
+	cfg := prepareConfig(t)
+	cfg.CompactionWaitPeriod = waitPeriod
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
+
+	// Mock the planner as if there's no compaction to do, in order to simplify tests.
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	// Wait until a run has completed.
+	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// We expect only 1 compaction job has been expected, while the 2nd has been skipped.
+	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
+
+	// Ensure the skipped compaction job is the expected one.
+	assert.Contains(t, strings.Split(strings.TrimSpace(logs.String()), "\n"),
+		fmt.Sprintf(`level=info component=compactor user=user-2 msg="skipping compaction job because blocks in this job were uploaded too recently (within wait period)" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 waitPeriodNotElapsedFor="%s (min time: 1574776800000, max time: 1574784000000)"`, user2Meta2.ULID.String()))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 1
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total{reason="error"} 0
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 1
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 1
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 0
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
+
+		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+		"cortex_compactor_group_compaction_runs_completed_total",
+		"cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total",
+		"cortex_compactor_group_compactions_total",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, externalLabels map[string]string, appendFunc func(*tsdb.DB)) ulid.ULID {
 	// Create a temporary dir for TSDB.
 	tempDir := t.TempDir()
@@ -2076,4 +2187,18 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+type bucketWithMockedAttributes struct {
+	objstore.Bucket
+
+	customAttributes map[string]objstore.ObjectAttributes
+}
+
+func (b *bucketWithMockedAttributes) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	if attrs, ok := b.customAttributes[name]; ok {
+		return attrs, nil
+	}
+
+	return b.Bucket.Attributes(ctx, name)
 }

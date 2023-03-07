@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -172,6 +173,8 @@ type Limits struct {
 	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+
+	extensions map[string]interface{}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -267,45 +270,37 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
-	// We want to set l to the defaults and then overwrite it with the input.
-	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
-	// again, we have to hide it using a type indirection.  See prometheus/config.
-
-	// During startup we wont have a default value so we don't want to overwrite them
-	if defaultLimits != nil {
-		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
-	}
-	type plain Limits
-
-	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
-	if err != nil {
-		return err
-	}
-
-	return l.validate()
+	return l.unmarshal(func(v any) error {
+		return value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true})
+	})
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (l *Limits) UnmarshalJSON(data []byte) error {
-	// Like the YAML method above, we want to set l to the defaults and then overwrite
-	// it with the input. We prevent an infinite loop of calling UnmarshalJSON by hiding
-	// behind type indirection.
+	return l.unmarshal(func(v any) error {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+
+		return dec.Decode(v)
+	})
+}
+
+// unmarshal does both YAML and JSON.
+func (l *Limits) unmarshal(decode func(any) error) error {
+	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
+		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 
-	type plain Limits
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-
-	err := dec.Decode((*plain)(l))
+	// Decode into a reflection-crafted struct that has fields for the extensions.
+	cfg, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	err := decode(cfg)
 	if err != nil {
 		return err
 	}
+	l.extensions = getExtensions()
 
 	return l.validate()
 }
@@ -884,4 +879,111 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 		}
 	}
 	return false
+}
+
+// MustRegisterExtension registers the extensions type with given name
+// and returns a function to get a pointer to the extensions E from a *Limits instance.
+// The name will be used as YAML/JSON key to decode the extensions.
+// This method is not thread safe and should be called only during package initialization.
+// Registering same name twice will cause a panic.
+func MustRegisterExtension[E any](name string) func(*Limits) *E {
+	if name == "" {
+		panic("extension name cannot be empty")
+	}
+	if _, ok := standardLimitsYAMLJSONKeys[name]; ok {
+		panic(fmt.Errorf("extension %s cannot be registered because it's a standard limits field", name))
+	}
+	if _, ok := registeredExtensionsIndexes[name]; ok {
+		panic(fmt.Errorf("extension %s already registered", name))
+	}
+	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
+
+	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
+		Name: strings.ToUpper(name),
+		Type: reflect.TypeOf(new(E)),
+		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
+	})
+
+	return func(l *Limits) *E {
+		if e, ok := l.extensions[name]; ok {
+			return e.(*E)
+		}
+		return nil
+	}
+}
+
+var standardLimitsYAMLJSONKeys = map[string]struct{}{}
+
+func init() {
+	limitsType := reflect.TypeOf(Limits{})
+	for i := 0; i < limitsType.NumField(); i++ {
+		// yamlKey/jsonKey could be empty, but we also shouldn't allow registering a field with an empty name, so just add it to the map.
+		yamlKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("yaml"), ",")
+		jsonKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("json"), ",")
+		standardLimitsYAMLJSONKeys[yamlKey] = struct{}{}
+		standardLimitsYAMLJSONKeys[jsonKey] = struct{}{}
+	}
+}
+
+// registeredExtensionsIndexes is used to keep track of the indexes of each registered extension.
+var registeredExtensionsIndexes = map[string]int{}
+
+// limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
+var limitsExtensionsFields []reflect.StructField
+
+// plainLimits is used to prevent an infinite loop of calling UnmarshalJSON/UnmarshalYAML by hiding behind type indirection.
+type plainLimits Limits
+
+// plainLimitsStructField is the last field in the struct crafted by newLimitsWithExtensions.
+var plainLimitsStructField = reflect.StructField{
+	Name:      "PlainLimits",
+	Type:      reflect.TypeOf(new(plainLimits)),
+	Tag:       `yaml:",inline"`,
+	Anonymous: true,
+}
+
+// newLimitsWithExtensions returns an interface{} value of a pointer to a struct of type:
+//
+//	struct {
+//	    EXTNAME1    T1                     `yaml:"extname1" json:"extname1"`
+//	    // ...
+//	    EXTNAMEN    TN                     `yaml:"extnameN" json:"extnameN"`
+//
+//	    PlainLimits map[string]interface{} `yaml:",inline"`
+//	}
+//
+// Where TN is the type of the registered extension N, and extnameN is the name of it.
+// This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
+// Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
+func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
+	if len(registeredExtensionsIndexes) == 0 {
+		// No extensions, so just return the plain limits and an extension getter that returns nil.
+		return limits, func() map[string]interface{} { return nil }
+	}
+
+	// We have extensions, craft our own type.
+	// It's not strictly necessary to create a new slice here, we could just append to limitsExtensionsFields assuming that
+	// this would allocate a new underlying array, but that is too fragile, so let's copy the fields to a new slice.
+	fields := make([]reflect.StructField, 0, len(limitsExtensionsFields)+1)
+	fields = append(fields, limitsExtensionsFields...)
+	fields = append(fields, plainLimitsStructField)
+
+	// typ is the type of the new struct.
+	typ := reflect.StructOf(fields)
+
+	// cfg is an instance of a pointer to a new struct.
+	cfg := reflect.New(typ).Interface()
+
+	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
+	// In other words:
+	//     cfg.PlainLimits = limits
+	reflect.ValueOf(cfg).Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
+
+	return cfg, func() map[string]interface{} {
+		ext := map[string]interface{}{}
+		for name, i := range registeredExtensionsIndexes {
+			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+		}
+		return ext
+	}
 }
