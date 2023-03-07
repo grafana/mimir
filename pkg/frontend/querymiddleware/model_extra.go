@@ -378,32 +378,28 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
+	var histograms []mimirpb.SampleHistogramPair
 	if len(s.Histograms) > 0 {
-		histograms := make([]mimirpb.SampleHistogramPair, len(s.Histograms))
-
-		for i, h := range s.Histograms {
-			histograms[i] = mimirpb.SampleHistogramPair{
-				Timestamp: h.TimestampMs,
-				Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
-			}
-		}
-
-		stream := struct {
-			Metric     model.Metric                  `json:"metric"`
-			Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
-		}{
-			Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
-			Histograms: histograms,
-		}
-		return json.Marshal(stream)
+		histograms = make([]mimirpb.SampleHistogramPair, len(s.Histograms))
 	}
+
+	for i, h := range s.Histograms {
+		histograms[i] = mimirpb.SampleHistogramPair{
+			Timestamp: h.TimestampMs,
+			Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+		}
+	}
+
 	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values,omitempty"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms,omitempty"`
 	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
+		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values:     s.Samples,
+		Histograms: histograms,
 	}
+
 	return json.Marshal(stream)
 }
 
