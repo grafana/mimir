@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1367,30 +1368,38 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactionBlocksAndWaitPeriodNotElapsed(t *testing.T) {
 	t.Parallel()
 
+	storageDir := t.TempDir()
+	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	// Mock two tenants, each with 2 overlapping blocks.
+	spec := []*testutil.BlockSeriesSpec{{
+		Labels: labels.FromStrings(labels.MetricName, "series_1"),
+		Chunks: []chunks.Meta{tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			newSample(1574776800000, 0, nil, nil),
+			newSample(1574783999999, 0, nil, nil),
+		})},
+	}}
+
+	user1Meta1, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	require.NoError(t, err)
+	user1Meta2, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	require.NoError(t, err)
+	user2Meta1, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	require.NoError(t, err)
+	user2Meta2, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	require.NoError(t, err)
+
+	// Mock the last modified timestamp returned for each of the block's meta.json.
 	const waitPeriod = 10 * time.Minute
-
-	// Mock two tenants, each with the same exact overlapping blocks. However,
-	// the 2nd tenant has uploaded the blocks less than "wait period" ago.
-	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
-
-	for _, userID := range []string{"user-1", "user-2"} {
-		block1LastModified := time.Now().Add(-20 * time.Minute)
-		if userID == "user-2" {
-			block1LastModified = time.Now().Add(-5 * time.Minute)
-		}
-
-		bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
-		bucketClient.MockIter(userID+"/", []string{path.Join(userID, "/01DTVP434PA9VFXSW2JK000001"), path.Join(userID, "/01DTVP434PA9VFXSW2JK000002")}, nil)
-		bucketClient.MockIter(userID+"/markers/", nil, nil)
-		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000001", 1574776800000, 1574784000000), block1LastModified, nil)
-		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/deletion-mark.json"), "", nil)
-		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/no-compact-mark.json"), "", nil)
-		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000002", 1574776800000, 1574784000000), time.Now().Add(-20*time.Minute), nil)
-		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/deletion-mark.json"), "", nil)
-		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/no-compact-mark.json"), "", nil)
-		bucketClient.MockGet(path.Join(userID, "bucket-index.json.gz"), "", nil)
-		bucketClient.MockUpload(path.Join(userID, "bucket-index.json.gz"), nil)
+	bucketClient = &bucketWithMockedAttributes{
+		Bucket: bucketClient,
+		customAttributes: map[string]objstore.ObjectAttributes{
+			path.Join("user-1", user1Meta1.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-1", user1Meta2.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-2", user2Meta1.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-20 * time.Minute)},
+			path.Join("user-2", user2Meta2.ULID.String(), block.MetaFilename): {LastModified: time.Now().Add(-5 * time.Minute)},
+		},
 	}
 
 	cfg := prepareConfig(t)
@@ -1415,30 +1424,9 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	// We expect only 1 compaction job has been expected, while the 2nd has been skipped.
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
 
-	assert.ElementsMatch(t, []string{
-		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
-		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
-		`level=info component=compactor msg="discovering users from bucket"`,
-		`level=info component=compactor msg="discovered users from bucket" users=2`,
-		// User-1 compaction.
-		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
-		`level=info component=compactor user=user-1 msg="start sync of metas"`,
-		`level=info component=compactor user=user-1 msg="start of GC"`,
-		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
-		`level=info component=compactor user=user-1 msg="start of compactions"`,
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
-		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
-		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
-		// User-2 compaction (skipped).
-		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
-		`level=info component=compactor user=user-2 msg="start sync of metas"`,
-		`level=info component=compactor user=user-2 msg="start of GC"`,
-		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
-		`level=info component=compactor user=user-2 msg="skipping compaction job because blocks in this job were uploaded too recently (within wait period)" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 waitPeriodNotElapsedFor="01DTVP434PA9VFXSW2JK000001 (min time: 1574776800000, max time: 1574784000000)"`,
-		`level=info component=compactor user=user-2 msg="start of compactions"`,
-		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
-		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
-	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+	// Ensure the skipped compaction job is the expected one.
+	assert.Contains(t, strings.Split(strings.TrimSpace(logs.String()), "\n"),
+		fmt.Sprintf(`level=info component=compactor user=user-2 msg="skipping compaction job because blocks in this job were uploaded too recently (within wait period)" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 waitPeriodNotElapsedFor="%s (min time: 1574776800000, max time: 1574784000000)"`, user2Meta2.ULID.String()))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# TYPE cortex_compactor_runs_started_total counter
@@ -2199,4 +2187,18 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+type bucketWithMockedAttributes struct {
+	objstore.Bucket
+
+	customAttributes map[string]objstore.ObjectAttributes
+}
+
+func (b *bucketWithMockedAttributes) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	if attrs, ok := b.customAttributes[name]; ok {
+		return attrs, nil
+	}
+
+	return b.Bucket.Attributes(ctx, name)
 }
