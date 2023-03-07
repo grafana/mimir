@@ -279,18 +279,19 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 }
 
 type mockLimits struct {
-	maxQueryLookback               time.Duration
-	maxQueryLength                 time.Duration
-	maxTotalQueryLength            time.Duration
-	maxCacheFreshness              time.Duration
-	maxQueryParallelism            int
-	maxShardedQueries              int
-	splitInstantQueriesInterval    time.Duration
-	totalShards                    int
-	compactorShards                int
-	compactorBlocksRetentionPeriod time.Duration
-	outOfOrderTimeWindow           model.Duration
-	creationGracePeriod            time.Duration
+	maxQueryLookback                 time.Duration
+	maxQueryLength                   time.Duration
+	maxTotalQueryLength              time.Duration
+	maxCacheFreshness                time.Duration
+	maxQueryParallelism              int
+	maxShardedQueries                int
+	splitInstantQueriesInterval      time.Duration
+	totalShards                      int
+	compactorShards                  int
+	compactorBlocksRetentionPeriod   time.Duration
+	outOfOrderTimeWindow             model.Duration
+	creationGracePeriod              time.Duration
+	nativeHistogramsIngestionEnabled bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -345,6 +346,10 @@ func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
 
 func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.creationGracePeriod
+}
+
+func (m mockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
+	return m.nativeHistogramsIngestionEnabled
 }
 
 type mockHandler struct {

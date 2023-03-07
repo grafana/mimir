@@ -248,7 +248,35 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 				})
 			}
 
-			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, nil))
+			// same logic as samples above
+			histograms := make([]mimirpb.Histogram, 0) //, len(stream.Histograms)+10)
+			/* // for now we will disable query sharding for tenants who enable native histograms, as the changes to support query sharding with native histograms is non-trivial
+			for idx, histogram := range stream.Histograms {
+				if step > 0 && idx > 0 && histogram.Timestamp > stream.Histograms[idx-1].Timestamp+step {
+					histograms = append(histograms, model.SampleHistogramPair{
+						Timestamp: model.Time(stream.Histograms[idx-1].Timestamp + step),
+						Histogram: model.SampleHistogram{
+							Sum: model.FloatString(math.Float64frombits(value.StaleNaN)),
+						},
+					})
+				}
+
+				histograms = append(histograms, model.SampleHistogramPair{
+					Timestamp: model.Time(histogram.Timestamp),
+					Histogram: mimirpb.FromMimirSampleToPromCommonHistogram(*histogram.Histogram),
+				})
+			}
+
+			if len(histograms) > 0 && step > 0 {
+				histograms = append(histograms, model.SampleHistogramPair{
+					Timestamp: histograms[len(histograms)-1].Timestamp + model.Time(step),
+					Histogram: model.SampleHistogram{
+						Sum: model.FloatString(math.Float64frombits(value.StaleNaN)),
+					},
+				})
+			}*/
+
+			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}
 	}
 	return series.NewConcreteSeriesSet(set)
