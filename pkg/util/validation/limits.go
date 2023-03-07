@@ -938,7 +938,7 @@ var plainLimitsStructField = reflect.StructField{
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
 func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
 	if len(registeredExtensionsIndexes) == 0 {
-		// No extensions, so just return the plain limits and extension getter that returns nil.
+		// No extensions, so just return the plain limits and an extension getter that returns nil.
 		return limits, func() map[string]interface{} { return nil }
 	}
 
@@ -959,10 +959,6 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	reflect.ValueOf(cfg).Elem().Field(len(fields)).Set(reflect.ValueOf(limits))
 
 	return cfg, func() map[string]interface{} {
-		if len(registeredExtensionsIndexes) == 0 {
-			return nil
-		}
-
 		ext := map[string]interface{}{}
 		for name, i := range registeredExtensionsIndexes {
 			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
