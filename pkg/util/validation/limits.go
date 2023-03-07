@@ -975,7 +975,7 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	cfg := reflect.New(typ).Interface()
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
-	reflect.ValueOf(cfg).Elem().Field(len(fields)).Set(reflect.ValueOf(limits))
+	reflect.ValueOf(cfg).Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
 
 	return cfg, func() map[string]interface{} {
 		ext := map[string]interface{}{}
