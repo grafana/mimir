@@ -270,18 +270,18 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
-	return l.unmarshal(func(typ any) error {
-		return value.DecodeWithOptions(typ, yaml.DecodeOptions{KnownFields: true})
+	return l.unmarshal(func(v any) error {
+		return value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true})
 	})
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (l *Limits) UnmarshalJSON(data []byte) error {
-	return l.unmarshal(func(typ any) error {
+	return l.unmarshal(func(v any) error {
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.DisallowUnknownFields()
 
-		return dec.Decode(typ)
+		return dec.Decode(v)
 	})
 }
 
