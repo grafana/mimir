@@ -120,9 +120,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -alertmanager.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -alertmanager.alertmanager-client.tls-enabled
@@ -130,7 +130,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.alertmanager-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.alertmanager-client.tls-server-name string
@@ -192,9 +192,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.password string
     	Etcd password.
   -alertmanager.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -alertmanager.sharding-ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -alertmanager.sharding-ring.etcd.tls-enabled
@@ -202,7 +202,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.sharding-ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.sharding-ring.etcd.tls-server-name string
@@ -286,12 +286,12 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
-    	Backend for chunks cache, if not empty. Supported values: memcached.
+    	Backend for chunks cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
     	[experimental] Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
-  -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
@@ -304,11 +304,61 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.chunks-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.chunks-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.chunks-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.chunks-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.chunks-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.chunks-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.chunks-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.chunks-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.chunks-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.chunks-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
   -blocks-storage.bucket-store.consistency-delay duration
@@ -318,10 +368,10 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
     	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
   -blocks-storage.bucket-store.index-cache.backend string
-    	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
+    	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
-  -blocks-storage.bucket-store.index-cache.memcached.addresses string
+  -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
@@ -334,11 +384,61 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.index-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.index-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.index-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.index-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.index-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.index-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.index-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.index-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.index-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.index-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.index-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.index-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.index-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.index-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.index-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.index-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.index-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.index-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.index-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
@@ -352,7 +452,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
-    	Backend for metadata cache, if not empty. Supported values: memcached.
+    	Backend for metadata cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.metadata-cache.block-index-attributes-ttl duration
     	How long to cache attributes of the block index. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl duration
@@ -361,7 +461,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.chunks-list-ttl duration
     	How long to cache list of chunks for a block. (default 24h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
@@ -374,7 +474,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
@@ -389,6 +489,56 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache information that block metafile exists. Also used for tenant deletion mark file. (default 2h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-max-size-bytes int
     	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
+  -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.metadata-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.metadata-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.metadata-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.metadata-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.metadata-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.metadata-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.metadata-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.metadata-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.metadata-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.metadata-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl duration
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
@@ -692,9 +842,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.password string
     	Etcd password.
   -compactor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -compactor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -compactor.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -compactor.ring.etcd.tls-enabled
@@ -702,7 +852,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -compactor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -compactor.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -compactor.ring.etcd.tls-server-name string
@@ -780,9 +930,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.forwarding.grpc-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -distributor.forwarding.grpc-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.forwarding.grpc-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -distributor.forwarding.grpc-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -distributor.forwarding.grpc-client.tls-enabled
@@ -790,7 +940,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.forwarding.grpc-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.forwarding.grpc-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -distributor.forwarding.grpc-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.forwarding.grpc-client.tls-server-name string
@@ -830,9 +980,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.password string
     	Etcd password.
   -distributor.ha-tracker.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ha-tracker.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -distributor.ha-tracker.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -distributor.ha-tracker.etcd.tls-enabled
@@ -840,7 +990,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ha-tracker.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -distributor.ha-tracker.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ha-tracker.etcd.tls-server-name string
@@ -914,9 +1064,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.password string
     	Etcd password.
   -distributor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -distributor.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -distributor.ring.etcd.tls-enabled
@@ -924,7 +1074,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -distributor.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ring.etcd.tls-server-name string
@@ -994,9 +1144,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -ingester.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ingester.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ingester.client.tls-enabled
@@ -1004,7 +1154,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ingester.client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
@@ -1060,9 +1210,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.password string
     	Etcd password.
   -ingester.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ingester.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ingester.ring.etcd.tls-enabled
@@ -1070,7 +1220,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ingester.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.ring.etcd.tls-server-name string
@@ -1190,9 +1340,9 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.stream-timeout duration
     	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
   -memberlist.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -memberlist.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -memberlist.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -memberlist.tls-enabled
@@ -1200,7 +1350,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.tls-insecure-skip-verify
     	Skip validating server certificate.
   -memberlist.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -memberlist.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -memberlist.tls-server-name string
@@ -1236,9 +1386,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.password string
     	Etcd password.
   -overrides-exporter.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -overrides-exporter.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -overrides-exporter.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -overrides-exporter.ring.etcd.tls-enabled
@@ -1246,7 +1396,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -overrides-exporter.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -overrides-exporter.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -overrides-exporter.ring.etcd.tls-server-name string
@@ -1312,9 +1462,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -querier.frontend-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -querier.frontend-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.frontend-client.tls-enabled
@@ -1322,7 +1472,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.frontend-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -querier.frontend-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
@@ -1366,9 +1516,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
   -querier.store-gateway-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -querier.store-gateway-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.store-gateway-client.tls-enabled
@@ -1376,7 +1526,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.store-gateway-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -querier.store-gateway-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
@@ -1410,9 +1560,9 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -query-frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-frontend.grpc-client-config.tls-enabled
@@ -1420,7 +1570,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-frontend.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.grpc-client-config.tls-server-name string
@@ -1458,10 +1608,10 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
+    	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
-  -query-frontend.results-cache.memcached.addresses string
+  -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
@@ -1474,11 +1624,61 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -query-frontend.results-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -query-frontend.results-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -query-frontend.results-cache.redis.db int
+    	Database index.
+  -query-frontend.results-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -query-frontend.results-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -query-frontend.results-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -query-frontend.results-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -query-frontend.results-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -query-frontend.results-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -query-frontend.results-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -query-frontend.results-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -query-frontend.results-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -query-frontend.results-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -query-frontend.results-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -query-frontend.results-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -query-frontend.results-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -query-frontend.results-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.results-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.results-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -query-frontend.results-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -query-frontend.results-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-frontend.results-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.results-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-frontend.results-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-frontend.results-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -query-frontend.results-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
@@ -1508,9 +1708,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-scheduler.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-scheduler.grpc-client-config.tls-enabled
@@ -1518,7 +1718,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-scheduler.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
@@ -1552,9 +1752,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.password string
     	Etcd password.
   -query-scheduler.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-scheduler.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-scheduler.ring.etcd.tls-enabled
@@ -1562,7 +1762,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-scheduler.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.ring.etcd.tls-server-name string
@@ -1698,9 +1898,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
   -ruler.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.alertmanager-client.tls-enabled
@@ -1708,7 +1908,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.alertmanager-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.alertmanager-client.tls-server-name string
@@ -1736,9 +1936,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -ruler.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.client.tls-enabled
@@ -1746,7 +1946,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.client.tls-server-name string
@@ -1798,9 +1998,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
   -ruler.query-frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.query-frontend.grpc-client-config.tls-enabled
@@ -1808,7 +2008,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.query-frontend.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
@@ -1842,9 +2042,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.password string
     	Etcd password.
   -ruler.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.ring.etcd.tls-enabled
@@ -1852,7 +2052,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.ring.etcd.tls-server-name string
@@ -1996,9 +2196,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.password string
     	Etcd password.
   -store-gateway.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -store-gateway.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -store-gateway.sharding-ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -store-gateway.sharding-ring.etcd.tls-enabled
@@ -2006,7 +2206,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -store-gateway.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -store-gateway.sharding-ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -store-gateway.sharding-ring.etcd.tls-server-name string

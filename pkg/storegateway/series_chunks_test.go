@@ -1300,7 +1300,7 @@ func (c *inMemoryChunksCache) FetchMultiChunks(ctx context.Context, userID strin
 	return hits
 }
 
-func (c *inMemoryChunksCache) StoreChunks(ctx context.Context, userID string, ranges map[chunkscache.Range][]byte) {
+func (c *inMemoryChunksCache) StoreChunks(userID string, ranges map[chunkscache.Range][]byte) {
 	if c.cached[userID] == nil {
 		c.cached[userID] = make(map[chunkscache.Range][]byte)
 	}

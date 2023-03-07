@@ -28,8 +28,8 @@ func NewTracingIndexCache(cache IndexCache, logger log.Logger) IndexCache {
 	}
 }
 
-func (t *TracingIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	t.c.StorePostings(ctx, userID, blockID, l, v)
+func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+	t.c.StorePostings(userID, blockID, l, v)
 }
 
 func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
@@ -49,8 +49,8 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	return hits, misses
 }
 
-func (t *TracingIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	t.c.StoreSeriesForRef(ctx, userID, blockID, id, v)
+func (t *TracingIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	t.c.StoreSeriesForRef(userID, blockID, id, v)
 }
 
 func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
@@ -70,8 +70,8 @@ func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID 
 	return hits, misses
 }
 
-func (t *TracingIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	t.c.StoreExpandedPostings(ctx, userID, blockID, key, v)
+func (t *TracingIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
+	t.c.StoreExpandedPostings(userID, blockID, key, v)
 }
 
 func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
@@ -91,8 +91,8 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	t.c.StoreSeries(ctx, userID, blockID, matchersKey, shard, v)
+func (t *TracingIndexCache) StoreSeries(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	t.c.StoreSeries(userID, blockID, matchersKey, shard, v)
 }
 
 func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
@@ -113,8 +113,8 @@ func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, bloc
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	t.c.StoreSeriesForPostings(ctx, userID, blockID, shard, postingsKey, v)
+func (t *TracingIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	t.c.StoreSeriesForPostings(userID, blockID, shard, postingsKey, v)
 }
 
 func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
@@ -135,8 +135,8 @@ func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID s
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	t.c.StoreLabelNames(ctx, userID, blockID, matchersKey, v)
+func (t *TracingIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	t.c.StoreLabelNames(userID, blockID, matchersKey, v)
 }
 
 func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
@@ -156,8 +156,8 @@ func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, userID string, 
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	t.c.StoreLabelValues(ctx, userID, blockID, labelName, matchersKey, v)
+func (t *TracingIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	t.c.StoreLabelValues(userID, blockID, labelName, matchersKey, v)
 }
 
 func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {

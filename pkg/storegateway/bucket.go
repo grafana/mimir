@@ -134,42 +134,42 @@ type BucketStore struct {
 
 type noopCache struct{}
 
-func (noopCache) StorePostings(context.Context, string, ulid.ULID, labels.Label, []byte) {}
+func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
 	return map[labels.Label][]byte{}, keys
 }
 
-func (noopCache) StoreSeriesForRef(context.Context, string, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
 func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
-func (c noopCache) StoreExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
+func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
 }
 
 func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
+func (noopCache) StoreSeries(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
 }
 func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (noopCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
 }
 func (noopCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
+func (noopCache) StoreLabelNames(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
 }
 func (noopCache) FetchLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ indexcache.LabelMatchersKey, _ []byte) {
+func (noopCache) StoreLabelValues(_ string, _ ulid.ULID, _ string, _ indexcache.LabelMatchersKey, _ []byte) {
 }
 func (noopCache) FetchLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
@@ -733,7 +733,7 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
+	indexCache.StoreSeries(userID, blockID, entry.MatchersKey, shard, data)
 }
 
 // Series implements the storepb.StoreServer interface.
@@ -1265,7 +1265,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label names for caching", "err", err)
 		return
 	}
-	indexCache.StoreLabelNames(ctx, userID, blockID, entry.MatchersKey, data)
+	indexCache.StoreLabelNames(userID, blockID, entry.MatchersKey, data)
 }
 
 // LabelValues implements the storepb.StoreServer interface.
@@ -1449,7 +1449,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
 		return
 	}
-	indexCache.StoreLabelValues(ctx, userID, blockID, labelName, entry.MatchersKey, data)
+	indexCache.StoreLabelValues(userID, blockID, labelName, entry.MatchersKey, data)
 }
 
 // bucketBlockSet holds all blocks.

@@ -29,7 +29,7 @@ type Range struct {
 
 type Cache interface {
 	FetchMultiChunks(ctx context.Context, userID string, ranges []Range, chunksPool *pool.SafeSlabPool[byte]) (hits map[Range][]byte)
-	StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte)
+	StoreChunks(userID string, ranges map[Range][]byte)
 }
 
 type TracingCache struct {
@@ -65,8 +65,8 @@ func hitsSize(hits map[Range][]byte) (size int) {
 	return
 }
 
-func (c TracingCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
-	c.c.StoreChunks(ctx, userID, ranges)
+func (c TracingCache) StoreChunks(userID string, ranges map[Range][]byte) {
+	c.c.StoreChunks(userID, ranges)
 }
 
 type ChunksCache struct {
@@ -80,11 +80,11 @@ type ChunksCache struct {
 
 type NoopCache struct{}
 
-func (NoopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range, chunksPool *pool.SafeSlabPool[byte]) (hits map[Range][]byte) {
+func (NoopCache) FetchMultiChunks(_ context.Context, _ string, _ []Range, _ *pool.SafeSlabPool[byte]) (hits map[Range][]byte) {
 	return nil
 }
 
-func (NoopCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
+func (NoopCache) StoreChunks(_ string, _ map[Range][]byte) {
 }
 
 func NewChunksCache(logger log.Logger, client cache.Cache, reg prometheus.Registerer) (*ChunksCache, error) {
@@ -138,10 +138,10 @@ const (
 	defaultTTL = 7 * 24 * time.Hour
 )
 
-func (c *ChunksCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
+func (c *ChunksCache) StoreChunks(userID string, ranges map[Range][]byte) {
 	rangesWithTenant := make(map[string][]byte, len(ranges))
 	for r, v := range ranges {
 		rangesWithTenant[chunksKey(userID, r)] = v
 	}
-	c.cache.Store(ctx, rangesWithTenant, defaultTTL)
+	c.cache.StoreAsync(rangesWithTenant, defaultTTL)
 }

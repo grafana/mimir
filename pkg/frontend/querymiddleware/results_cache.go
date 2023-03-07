@@ -45,7 +45,9 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
+	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -56,8 +58,9 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
-	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
+	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
@@ -66,10 +69,16 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == cache.BackendMemcached {
+	switch cfg.Backend {
+	case cache.BackendMemcached:
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
+	case cache.BackendRedis:
+		if err := cfg.Redis.Validate(); err != nil {
+			return errors.Wrap(err, "query-frontend results cache")
+		}
+
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -79,8 +88,8 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	return nil
 }
 
-func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
-	return fmt.Errorf("unsupported cache backend: %q, supported values: %v", unsupportedBackend, supportedResultsCacheBackends)
+func errUnsupportedResultsCacheBackend(backend string) error {
+	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
 }
 
 // newResultsCache creates a new results cache based on the input configuration.

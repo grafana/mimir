@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -20,10 +21,13 @@ import (
 	"github.com/grafana/dskit/promregistry"
 )
 
+const (
+	dnsProviderUpdateInterval = 30 * time.Second
+)
+
 var (
-	errMemcachedConfigNoAddrs                  = errors.New("no memcached addresses provided")
-	errMemcachedDNSUpdateIntervalNotPositive   = errors.New("DNS provider update interval must be positive")
-	errMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
+	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
 	_ RemoteCacheClient = (*memcachedClient)(nil)
 )
@@ -58,7 +62,7 @@ type updatableServerSelector interface {
 type MemcachedClientConfig struct {
 	// Addresses specifies the list of memcached addresses. The addresses get
 	// resolved with the DNS provider.
-	Addresses []string `yaml:"addresses"`
+	Addresses flagext.StringSliceCSV `yaml:"addresses"`
 
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
@@ -66,54 +70,54 @@ type MemcachedClientConfig struct {
 	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
 	// to keep open as a percentage of the number of recently used idle connections.
 	// If negative, idle connections are kept open indefinitely.
-	MinIdleConnectionsHeadroomPercentage float64 `yaml:"min_idle_connections_headroom_percentage"`
+	MinIdleConnectionsHeadroomPercentage float64 `yaml:"min_idle_connections_headroom_percentage" category:"advanced"`
 
 	// MaxIdleConnections specifies the maximum number of idle connections that
 	// will be maintained per address. For better performances, this should be
 	// set to a number higher than your peak parallel requests.
-	MaxIdleConnections int `yaml:"max_idle_connections"`
+	MaxIdleConnections int `yaml:"max_idle_connections" category:"advanced"`
 
 	// MaxAsyncConcurrency specifies the maximum number of SetAsync goroutines.
-	MaxAsyncConcurrency int `yaml:"max_async_concurrency"`
+	MaxAsyncConcurrency int `yaml:"max_async_concurrency" category:"advanced"`
 
 	// MaxAsyncBufferSize specifies the queue buffer size for SetAsync operations.
-	MaxAsyncBufferSize int `yaml:"max_async_buffer_size"`
+	MaxAsyncBufferSize int `yaml:"max_async_buffer_size" category:"advanced"`
 
 	// MaxGetMultiConcurrency specifies the maximum number of concurrent GetMulti() operations.
 	// If set to 0, concurrency is unlimited.
-	MaxGetMultiConcurrency int `yaml:"max_get_multi_concurrency"`
-
-	// MaxItemSize specifies the maximum size of an item stored in memcached.
-	// Items bigger than MaxItemSize are skipped.
-	// If set to 0, no maximum size is enforced.
-	MaxItemSize flagext.Bytes `yaml:"max_item_size"`
+	MaxGetMultiConcurrency int `yaml:"max_get_multi_concurrency" category:"advanced"`
 
 	// MaxGetMultiBatchSize specifies the maximum number of keys a single underlying
-	// GetMulti() should run. If more keys are specified, internally keys are splitted
+	// GetMulti() should run. If more keys are specified, internally keys are split
 	// into multiple batches and fetched concurrently, honoring MaxGetMultiConcurrency parallelism.
 	// If set to 0, the max batch size is unlimited.
-	MaxGetMultiBatchSize int `yaml:"max_get_multi_batch_size"`
+	MaxGetMultiBatchSize int `yaml:"max_get_multi_batch_size" category:"advanced"`
 
-	// DNSProviderUpdateInterval specifies the DNS discovery update interval.
-	DNSProviderUpdateInterval time.Duration `yaml:"dns_provider_update_interval"`
-
-	// AutoDiscovery configures memached client to perform auto-discovery instead of DNS resolution
-	AutoDiscovery bool `yaml:"auto_discovery"`
+	// MaxItemSize specifies the maximum size of an item stored in memcached, in bytes.
+	// Items bigger than MaxItemSize are skipped. If set to 0, no maximum size is enforced.
+	MaxItemSize int `yaml:"max_item_size" category:"advanced"`
 }
 
-func (c *MemcachedClientConfig) validate() error {
-	if len(c.Addresses) == 0 {
-		return errMemcachedConfigNoAddrs
-	}
+func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
+	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
+	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
+	f.IntVar(&c.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
+	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
+	f.IntVar(&c.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
+	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
+	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.")
+	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
+}
 
-	// Avoid panic in time ticker.
-	if c.DNSProviderUpdateInterval <= 0 {
-		return errMemcachedDNSUpdateIntervalNotPositive
+func (c *MemcachedClientConfig) Validate() error {
+	if len(c.Addresses) == 0 {
+		return ErrNoMemcachedAddresses
 	}
 
 	// Set async only available when MaxAsyncConcurrency > 0.
 	if c.MaxAsyncConcurrency <= 0 {
-		return errMemcachedMaxAsyncConcurrencyNotPositive
+		return ErrMemcachedMaxAsyncConcurrencyNotPositive
 	}
 
 	return nil
@@ -159,7 +163,7 @@ type memcachedGetMultiResult struct {
 
 // NewMemcachedClientWithConfig makes a new RemoteCacheClient.
 func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
-	if err := config.validate(); err != nil {
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -188,7 +192,7 @@ func newMemcachedClient(
 ) (*memcachedClient, error) {
 	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 	reg = prometheus.WrapRegistererWith(
-		prometheus.Labels{labelCacheBackend: backendMemcached},
+		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
@@ -230,7 +234,6 @@ func newMemcachedClient(
 			"max_item_size":                            strconv.FormatUint(uint64(config.MaxItemSize), 10),
 			"max_get_multi_concurrency":                strconv.Itoa(config.MaxGetMultiConcurrency),
 			"max_get_multi_batch_size":                 strconv.Itoa(config.MaxGetMultiBatchSize),
-			"dns_provider_update_interval":             config.DNSProviderUpdateInterval.String(),
 		},
 	},
 		func() float64 { return 1 },
@@ -257,8 +260,8 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *memcachedClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
+func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
 			Value:      value,
@@ -464,7 +467,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 }
 
 func (c *memcachedClient) resolveAddrsLoop() {
-	ticker := time.NewTicker(c.config.DNSProviderUpdateInterval)
+	ticker := time.NewTicker(dnsProviderUpdateInterval)
 	defer ticker.Stop()
 
 	for {

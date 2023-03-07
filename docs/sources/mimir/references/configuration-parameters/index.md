@@ -981,17 +981,17 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -querier.store-gateway-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -querier.store-gateway-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -querier.store-gateway-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -1162,7 +1162,7 @@ The `frontend` block configures the query-frontend.
 
 results_cache:
   # Backend for query-frontend results cache, if not empty. Supported values:
-  # [memcached].
+  # memcached, redis.
   # CLI flag: -query-frontend.results-cache.backend
   [backend: <string> | default = ""]
 
@@ -1170,6 +1170,11 @@ results_cache:
   # The CLI flags prefix for this block configuration is:
   # query-frontend.results-cache
   [memcached: <memcached>]
+
+  # The redis block configures the Redis-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.results-cache
+  [redis: <redis>]
 
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
@@ -1371,17 +1376,17 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = true]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -ruler.alertmanager-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -ruler.alertmanager-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -ruler.alertmanager-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -1804,17 +1809,17 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
-  # (advanced) Path to the client certificate file, which will be used for
+  # (advanced) Path to the client certificate, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -alertmanager.alertmanager-client.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
   # CLI flag: -alertmanager.alertmanager-client.tls-key-path
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
+  # (advanced) Path to the CA certificates to validate server certificate
   # against. If not set, the host's root CA certificates are used.
   # CLI flag: -alertmanager.alertmanager-client.tls-ca-path
   [tls_ca_path: <string> | default = ""]
@@ -2003,18 +2008,18 @@ backoff_config:
 # CLI flag: -<prefix>.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -2134,18 +2139,18 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # CLI flag: -<prefix>.etcd.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.etcd.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.etcd.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.etcd.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -2391,18 +2396,18 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate file, which will be used for
+# (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -memberlist.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key file for the client certificate. Also requires the
+# (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -memberlist.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates file to validate server certificate
-# against. If not set, the host's root CA certificates are used.
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
 # CLI flag: -memberlist.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
@@ -2945,7 +2950,8 @@ bucket_store:
   [consistency_delay: <duration> | default = 0s]
 
   index_cache:
-    # The index cache backend type. Supported values: inmemory, memcached.
+    # The index cache backend type. Supported values: inmemory, memcached,
+    # redis.
     # CLI flag: -blocks-storage.bucket-store.index-cache.backend
     [backend: <string> | default = "inmemory"]
 
@@ -2954,6 +2960,11 @@ bucket_store:
     # blocks-storage.bucket-store.index-cache
     [memcached: <memcached>]
 
+    # The redis block configures the Redis-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.index-cache
+    [redis: <redis>]
+
     inmemory:
       # Maximum size in bytes of in-memory index cache used to speed up blocks
       # index lookups (shared between all tenants).
@@ -2961,7 +2972,8 @@ bucket_store:
       [max_size_bytes: <int> | default = 1073741824]
 
   chunks_cache:
-    # Backend for chunks cache, if not empty. Supported values: memcached.
+    # Backend for chunks cache, if not empty. Supported values: memcached,
+    # redis.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
     [backend: <string> | default = ""]
 
@@ -2969,6 +2981,11 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.chunks-cache
     [memcached: <memcached>]
+
+    # The redis block configures the Redis-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.chunks-cache
+    [redis: <redis>]
 
     # (advanced) Maximum number of sub-GetRange requests that a single GetRange
     # request can be split into when fetching chunks. Zero or negative value =
@@ -2998,7 +3015,8 @@ bucket_store:
     [fine_grained_chunks_caching_enabled: <boolean> | default = false]
 
   metadata_cache:
-    # Backend for metadata cache, if not empty. Supported values: memcached.
+    # Backend for metadata cache, if not empty. Supported values: memcached,
+    # redis.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
     [backend: <string> | default = ""]
 
@@ -3006,6 +3024,11 @@ bucket_store:
     # The CLI flags prefix for this block configuration is:
     # blocks-storage.bucket-store.metadata-cache
     [memcached: <memcached>]
+
+    # The redis block configures the Redis-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.metadata-cache
+    [redis: <redis>]
 
     # (advanced) How long to cache list of tenants in the bucket.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl
@@ -3644,10 +3667,162 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.max-get-multi-batch-size
 [max_get_multi_batch_size: <int> | default = 100]
 
-# (advanced) The maximum size of an item stored in memcached. Bigger items are
-# not stored. If set to 0, no maximum size is enforced.
+# (advanced) The maximum size of an item stored in memcached, in bytes. Bigger
+# items are not stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.memcached.max-item-size
 [max_item_size: <int> | default = 1048576]
+```
+
+### redis
+
+The `redis` block configures the Redis-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
+
+- `blocks-storage.bucket-store.chunks-cache`
+- `blocks-storage.bucket-store.index-cache`
+- `blocks-storage.bucket-store.metadata-cache`
+- `query-frontend.results-cache`
+
+&nbsp;
+
+```yaml
+# Redis Server or Cluster configuration endpoint to use for caching. A
+# comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+# CLI flag: -<prefix>.redis.endpoint
+[endpoint: <string> | default = ""]
+
+# Username to use when connecting to Redis.
+# CLI flag: -<prefix>.redis.username
+[username: <string> | default = ""]
+
+# Password to use when connecting to Redis.
+# CLI flag: -<prefix>.redis.password
+[password: <string> | default = ""]
+
+# Database index.
+# CLI flag: -<prefix>.redis.db
+[db: <int> | default = 0]
+
+# (advanced) Redis Sentinel master name. An empty string for Redis Server or
+# Redis Cluster.
+# CLI flag: -<prefix>.redis.master-name
+[master_name: <string> | default = ""]
+
+# (advanced) Client dial timeout.
+# CLI flag: -<prefix>.redis.dial-timeout
+[dial_timeout: <duration> | default = 5s]
+
+# (advanced) Client read timeout.
+# CLI flag: -<prefix>.redis.read-timeout
+[read_timeout: <duration> | default = 3s]
+
+# (advanced) Client write timeout.
+# CLI flag: -<prefix>.redis.write-timeout
+[write_timeout: <duration> | default = 3s]
+
+# (advanced) Maximum number of connections in the pool.
+# CLI flag: -<prefix>.redis.connection-pool-size
+[connection_pool_size: <int> | default = 100]
+
+# (advanced) Minimum number of idle connections.
+# CLI flag: -<prefix>.redis.min-idle-connections
+[min_idle_connections: <int> | default = 10]
+
+# (advanced) Amount of time after which client closes idle connections.
+# CLI flag: -<prefix>.redis.idle-timeout
+[idle_timeout: <duration> | default = 5m]
+
+# (advanced) Close connections older than this duration. If the value is zero,
+# then the pool does not close connections based on age.
+# CLI flag: -<prefix>.redis.max-connection-age
+[max_connection_age: <duration> | default = 0s]
+
+# (advanced) The maximum size of an item stored in Redis. Bigger items are not
+# stored. If set to 0, no maximum size is enforced.
+# CLI flag: -<prefix>.redis.max-item-size
+[max_item_size: <int> | default = 16777216]
+
+# (advanced) The maximum number of concurrent asynchronous operations can occur.
+# CLI flag: -<prefix>.redis.max-async-concurrency
+[max_async_concurrency: <int> | default = 50]
+
+# (advanced) The maximum number of enqueued asynchronous operations allowed.
+# CLI flag: -<prefix>.redis.max-async-buffer-size
+[max_async_buffer_size: <int> | default = 25000]
+
+# (advanced) The maximum number of concurrent connections running get
+# operations. If set to 0, concurrency is unlimited.
+# CLI flag: -<prefix>.redis.max-get-multi-concurrency
+[max_get_multi_concurrency: <int> | default = 100]
+
+# (advanced) The maximum size per batch for mget operations.
+# CLI flag: -<prefix>.redis.max-get-multi-batch-size
+[max_get_multi_batch_size: <int> | default = 100]
+
+# (advanced) Enable connecting to Redis with TLS.
+# CLI flag: -<prefix>.redis.tls-enabled
+[tls_enabled: <boolean> | default = false]
+
+# (advanced) Path to the client certificate, which will be used for
+# authenticating with the server. Also requires the key path to be configured.
+# CLI flag: -<prefix>.redis.tls-cert-path
+[tls_cert_path: <string> | default = ""]
+
+# (advanced) Path to the key for the client certificate. Also requires the
+# client certificate to be configured.
+# CLI flag: -<prefix>.redis.tls-key-path
+[tls_key_path: <string> | default = ""]
+
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
+# CLI flag: -<prefix>.redis.tls-ca-path
+[tls_ca_path: <string> | default = ""]
+
+# (advanced) Override the expected name on the server certificate.
+# CLI flag: -<prefix>.redis.tls-server-name
+[tls_server_name: <string> | default = ""]
+
+# (advanced) Skip validating server certificate.
+# CLI flag: -<prefix>.redis.tls-insecure-skip-verify
+[tls_insecure_skip_verify: <boolean> | default = false]
+
+# (advanced) Override the default cipher suite list (separated by commas).
+# Allowed values:
+#
+# Secure Ciphers:
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
+# - TLS_AES_128_GCM_SHA256
+# - TLS_AES_256_GCM_SHA384
+# - TLS_CHACHA20_POLY1305_SHA256
+# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+# - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+# - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+# - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+# - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+# - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+#
+# Insecure Ciphers:
+# - TLS_RSA_WITH_RC4_128_SHA
+# - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+# - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+# - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+# CLI flag: -<prefix>.redis.tls-cipher-suites
+[tls_cipher_suites: <string> | default = ""]
+
+# (advanced) Override the default minimum TLS version. Allowed values:
+# VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+# CLI flag: -<prefix>.redis.tls-min-version
+[tls_min_version: <string> | default = ""]
 ```
 
 ### s3_storage_backend

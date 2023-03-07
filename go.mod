@@ -16,8 +16,8 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230221142742-fcb3d68da3ed
-	github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
+	github.com/grafana/dskit v0.0.0-20230307154039-ee798e84baf0
+	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.45
@@ -226,9 +226,6 @@ require (
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-// Using our own fork to add custom dialer and improve perf.
-replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230302162052-1e7ad0ec11fe

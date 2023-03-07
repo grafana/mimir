@@ -40,6 +40,7 @@ type ConcreteService struct {
 	command      *Command
 	cmd          *exec.Cmd
 	readiness    ReadinessProbe
+	privileged   bool
 
 	// Maps container ports to dynamically binded local ports.
 	networkPortsContainerToLocal map[int]int
@@ -92,6 +93,10 @@ func (s *ConcreteService) SetEnvVars(env map[string]string) {
 
 func (s *ConcreteService) SetUser(user string) {
 	s.user = user
+}
+
+func (s *ConcreteService) SetPrivileged(privileged bool) {
+	s.privileged = privileged
 }
 
 func (s *ConcreteService) Start(networkName, sharedDir string) (err error) {
@@ -297,6 +302,11 @@ func (s *ConcreteService) WaitReady() (err error) {
 
 func (s *ConcreteService) buildDockerRunArgs(networkName, sharedDir string) []string {
 	args := []string{"run", "--rm", "--net=" + networkName, "--name=" + networkName + "-" + s.name, "--hostname=" + s.name}
+
+	// If running a dind container, this needs to be privileged.
+	if s.privileged {
+		args = append(args, "--privileged")
+	}
 
 	// For Drone CI users, expire the container after 6 hours using drone-gc
 	args = append(args, "--label", fmt.Sprintf("io.drone.expires=%d", time.Now().Add(6*time.Hour).Unix()))
