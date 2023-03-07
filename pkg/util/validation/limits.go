@@ -934,6 +934,7 @@ var plainLimitsStructField = reflect.StructField{
 //
 // Where TN is the type of the registered extension N, and extnameN is the name of it.
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
+// Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
 func newLimitsWithExtensions(limits interface{}) (any interface{}, getExtensions func() map[string]interface{}) {
 	fields := make([]reflect.StructField, 0, len(limitsExtensionsFields)+1)
 	fields = append(fields, limitsExtensionsFields...)
