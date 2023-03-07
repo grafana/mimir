@@ -287,35 +287,23 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 
 // unmarshal does both YAML and JSON.
 func (l *Limits) unmarshal(decode func(any) error) error {
-	// First, decode the extensions ignoring the rest of the config (if any registered).
-	var extensions map[string]interface{}
-	if len(registeredExtensions) > 0 {
-		extensionsOnlyConfig, getExtensions := newExtensionsOnlyLimitsConfig()
-
-		err := decode(extensionsOnlyConfig)
-		if err != nil {
-			return fmt.Errorf("can't decode extensions: %w", err)
-		}
-		extensions = getExtensions()
-	}
-
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
-		// Make copy of default limits. Otherwise unmarshalling would modify map in default limits.
+		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 
 	// We prevent an infinite loop of calling UnmarshalJSON by hiding behind type indirection.
 	type plain Limits
 
-	// We use newLimitsConfigThrowingAwayExtensions to avoid decoder complain about known extension fields,
-	// which were already unmarshaled above. Limits will be unmarshaled as plain limits.
-	err := decode(newLimitsConfigThrowingAwayExtensions((*plain)(l)))
+	// Decode into a reflection-crafted struct that has fields for the extensions.
+	cfg, getExtensions := newLimitsConfigWithExtensions((*plain)(l))
+	err := decode(cfg)
 	if err != nil {
 		return err
 	}
-	l.extensions = extensions
+	l.extensions = getExtensions()
 
 	return l.validate()
 }
@@ -926,69 +914,41 @@ type extension struct {
 // registeredExtensions is the list of registered extensions
 var registeredExtensions []extension
 
-// newExtensionsOnlyLimitsConfig returns an interface{} value of a pointer to a struct of type:
+// newLimitsConfigWithExtensions returns an interface{} value of a pointer to a struct of type:
 //
 //	struct {
-//	    ExtName1 T1 `yaml:"extname1"`
+//	    EXTNAME1    T1                     `yaml:"extname1" json:"extname1"`
 //	    ...
-//	    ExtN TN `yaml:"extN"`
-//	    Throwaway map[string]interface{} `yaml:",inline"`
+//	    EXTNAMEN    TN                     `yaml:"extnameN" json:"extnameN"`
+//	    PlainLimits map[string]interface{} `yaml:",inline"`
 //	}
 //
-// Where TN is the type of the registered extension, and extnameN is the name of it.
-func newExtensionsOnlyLimitsConfig() (any interface{}, getter func() map[string]interface{}) {
+// Where TN is the type of the registered extension N, and extnameN is the name of it.
+// This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
+func newLimitsConfigWithExtensions(limits interface{}) (any interface{}, getExtensions func() map[string]interface{}) {
 	fields := make([]reflect.StructField, 0, len(registeredExtensions)+1)
 	for _, e := range registeredExtensions {
 		fields = append(fields, reflect.StructField{
-			Name: strings.ToTitle(e.name),
-			Type: e.typ,
-			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, e.name, e.name)),
-		})
-	}
-	fields = append(fields, reflect.StructField{
-		Name:      "Throwaway",
-		Type:      reflect.TypeOf(map[string]interface{}{}),
-		Tag:       `yaml:",inline"`,
-		Anonymous: true,
-	})
-	typ := reflect.StructOf(fields)
-	newExtensions := reflect.New(typ).Interface()
-	return newExtensions, func() map[string]interface{} {
-		ext := map[string]interface{}{}
-		for i, e := range registeredExtensions {
-			ext[e.name] = reflect.ValueOf(newExtensions).Elem().Field(i).Interface()
-		}
-		return ext
-	}
-}
-
-// newLimitsConfigThrowingAwayExtensions returns an instance of a struct with following structure:
-//
-//		type limitsConfigThrowingAwayExtensions struct {
-//			IgnoredExtensionExt1 interface{} `yaml:"ext1"`
-//	     ...
-//			IgnoredExtensionExtN interface{} `yaml:"ext1"`
-//			*plain               `json:",inline"`
-//		}
-//
-// This makes the YAML parser ignore the extension fields, and still validate our plain config.
-func newLimitsConfigThrowingAwayExtensions(plainLimits interface{}) interface{} {
-	fields := make([]reflect.StructField, 0, len(registeredExtensions)+1)
-	for _, e := range registeredExtensions {
-		fields = append(fields, reflect.StructField{
-			Name: "IgnoredExtension" + strings.ToTitle(e.name),
+			Name: strings.ToUpper(e.name),
 			Type: e.typ,
 			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, e.name, e.name)),
 		})
 	}
 	fields = append(fields, reflect.StructField{
 		Name:      "PlainLimits",
-		Anonymous: true,
-		Type:      reflect.TypeOf(plainLimits),
+		Type:      reflect.TypeOf(limits),
 		Tag:       `yaml:",inline"`,
+		Anonymous: true,
 	})
 	typ := reflect.StructOf(fields)
 	cfg := reflect.New(typ).Interface()
-	reflect.ValueOf(cfg).Elem().Field(len(registeredExtensions)).Set(reflect.ValueOf(plainLimits))
-	return cfg
+	reflect.ValueOf(cfg).Elem().Field(len(registeredExtensions)).Set(reflect.ValueOf(limits))
+
+	return cfg, func() map[string]interface{} {
+		ext := map[string]interface{}{}
+		for i, e := range registeredExtensions {
+			ext[e.name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+		}
+		return ext
+	}
 }
