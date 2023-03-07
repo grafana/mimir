@@ -669,13 +669,16 @@ func TestEnabledByAnyTenant(t *testing.T) {
 }
 
 func TestExtensions(t *testing.T) {
-	t.Cleanup(func() { registeredExtensions = nil })
+	t.Cleanup(func() {
+		registeredExtensionsIndexes = map[string]int{}
+		limitsExtensionsFields = nil
+	})
 
 	// Downstream declares a new extension type and registers it.
 	type testExtensions struct {
 		Foo int `yaml:"foo"`
 	}
-	// By registering, we get a function that provides the extensions for a Limist instance.
+	// By registering, we get a function that provides the extensions for a Limits instance.
 	getExtensionStruct := MustRegisterExtension[testExtensions]("test_extension_struct")
 	getExtensionString := MustRegisterExtension[string]("test_extension_string")
 	getExtensionNil := MustRegisterExtension[int]("test_extension_null")

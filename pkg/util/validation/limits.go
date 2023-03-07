@@ -294,11 +294,8 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
 	}
 
-	// We prevent an infinite loop of calling UnmarshalJSON by hiding behind type indirection.
-	type plain Limits
-
 	// Decode into a reflection-crafted struct that has fields for the extensions.
-	cfg, getExtensions := newLimitsConfigWithExtensions((*plain)(l))
+	cfg, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
 	err := decode(cfg)
 	if err != nil {
 		return err
@@ -889,14 +886,16 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
 func MustRegisterExtension[E any](name string) func(*Limits) *E {
-	for _, e := range registeredExtensions {
-		if e.name == name {
-			panic(fmt.Errorf("extension %s already registered", name))
-		}
+	if _, ok := registeredExtensionsIndexes[name]; ok {
+		panic(fmt.Errorf("extension %s already registered", name))
 	}
+	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
 
-	extensionsType := reflect.TypeOf(new(E))
-	registeredExtensions = append(registeredExtensions, extension{name: name, typ: extensionsType})
+	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
+		Name: strings.ToUpper(name),
+		Type: reflect.TypeOf(new(E)),
+		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
+	})
 
 	return func(l *Limits) *E {
 		if e, ok := l.extensions[name]; ok {
@@ -906,48 +905,49 @@ func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	}
 }
 
-type extension struct {
-	name string
-	typ  reflect.Type
+// registeredExtensionsIndexes is used to keep track of the indexes of each registered extension.
+var registeredExtensionsIndexes = map[string]int{}
+
+// limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
+var limitsExtensionsFields []reflect.StructField
+
+// plainLimits is used to prevent an infinite loop of calling UnmarshalJSON/UnmarshalYAML by hiding behind type indirection.
+type plainLimits Limits
+
+// plainLimitsStructField is the last field in the struct crafted by newLimitsWithExtensions.
+var plainLimitsStructField = reflect.StructField{
+	Name:      "PlainLimits",
+	Type:      reflect.TypeOf(new(plainLimits)),
+	Tag:       `yaml:",inline"`,
+	Anonymous: true,
 }
 
-// registeredExtensions is the list of registered extensions
-var registeredExtensions []extension
-
-// newLimitsConfigWithExtensions returns an interface{} value of a pointer to a struct of type:
+// newLimitsWithExtensions returns an interface{} value of a pointer to a struct of type:
 //
 //	struct {
 //	    EXTNAME1    T1                     `yaml:"extname1" json:"extname1"`
-//	    ...
+//	    // ...
 //	    EXTNAMEN    TN                     `yaml:"extnameN" json:"extnameN"`
+//
 //	    PlainLimits map[string]interface{} `yaml:",inline"`
 //	}
 //
 // Where TN is the type of the registered extension N, and extnameN is the name of it.
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
-func newLimitsConfigWithExtensions(limits interface{}) (any interface{}, getExtensions func() map[string]interface{}) {
-	fields := make([]reflect.StructField, 0, len(registeredExtensions)+1)
-	for _, e := range registeredExtensions {
-		fields = append(fields, reflect.StructField{
-			Name: strings.ToUpper(e.name),
-			Type: e.typ,
-			Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, e.name, e.name)),
-		})
-	}
-	fields = append(fields, reflect.StructField{
-		Name:      "PlainLimits",
-		Type:      reflect.TypeOf(limits),
-		Tag:       `yaml:",inline"`,
-		Anonymous: true,
-	})
+func newLimitsWithExtensions(limits interface{}) (any interface{}, getExtensions func() map[string]interface{}) {
+	fields := make([]reflect.StructField, 0, len(limitsExtensionsFields)+1)
+	fields = append(fields, limitsExtensionsFields...)
+	fields = append(fields, plainLimitsStructField)
+
 	typ := reflect.StructOf(fields)
+
 	cfg := reflect.New(typ).Interface()
-	reflect.ValueOf(cfg).Elem().Field(len(registeredExtensions)).Set(reflect.ValueOf(limits))
+	reflect.ValueOf(cfg).Elem().Field(len(registeredExtensionsIndexes)).Set(reflect.ValueOf(limits))
 
 	return cfg, func() map[string]interface{} {
 		ext := map[string]interface{}{}
-		for i, e := range registeredExtensions {
-			ext[e.name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+		for name, i := range registeredExtensionsIndexes {
+			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
 		}
 		return ext
 	}
