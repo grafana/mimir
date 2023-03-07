@@ -174,6 +174,15 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
+	// Update Configs
+	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
+	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
+	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+
 	vault, err := vault.NewVault(t.Cfg.Vault)
 	if err != nil {
 		return nil, err
@@ -314,10 +323,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// whenever it's not running as an internal dependency (ie. querier or
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
-
-	if t.Cfg.VaultEnabled {
-		t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
-	}
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
@@ -471,19 +476,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	if t.Cfg.VaultEnabled {
-		t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
-	}
-
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
-
-	if t.Cfg.VaultEnabled {
-		t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
-	}
 
 	//nolint:revive // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
@@ -588,10 +585,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
-	if t.Cfg.VaultEnabled {
-		t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
-	}
-
 	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -654,10 +647,6 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	if t.RulerStorage == nil {
 		level.Info(util_log.Logger).Log("msg", "RulerStorage is nil.  Not starting the ruler.")
 		return nil, nil
-	}
-
-	if t.Cfg.VaultEnabled {
-		t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	}
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
@@ -767,10 +756,6 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	if t.Cfg.VaultEnabled {
-		t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
-	}
-
 	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
@@ -840,10 +825,6 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
-
-	if t.Cfg.VaultEnabled {
-		t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
-	}
 
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
