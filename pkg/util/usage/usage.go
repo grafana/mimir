@@ -50,6 +50,8 @@ func Usage(printAll bool, configs ...interface{}) error {
 					fieldCat = fieldcategory.Advanced
 				case "experimental":
 					fieldCat = fieldcategory.Experimental
+				case "deprecated":
+					fieldCat = fieldcategory.Deprecated
 				}
 			}
 		}
@@ -70,8 +72,11 @@ func Usage(printAll bool, configs ...interface{}) error {
 		// Four spaces before the tab triggers good alignment
 		// for both 4- and 8-space tab stops.
 		b.WriteString("\n    \t")
-		if fieldCat == fieldcategory.Experimental {
+		switch fieldCat {
+		case fieldcategory.Experimental:
 			b.WriteString("[experimental] ")
+		case fieldcategory.Deprecated:
+			b.WriteString("[deprecated] ")
 		}
 		b.WriteString(strings.ReplaceAll(fl.Usage, "\n", "\n    \t"))
 

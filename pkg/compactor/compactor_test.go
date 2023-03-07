@@ -67,7 +67,7 @@ compaction_retries: 123
 	flagext.DefaultValues(&cfg)
 	assert.NoError(t, yaml.Unmarshal([]byte(yamlCfg), &cfg))
 	assert.Equal(t, mimir_tsdb.DurationList{2 * time.Hour, 48 * time.Hour}, cfg.BlockRanges)
-	assert.Equal(t, time.Hour, cfg.ConsistencyDelay)
+	assert.Equal(t, time.Hour, cfg.DeprecatedConsistencyDelay)
 	assert.Equal(t, 123, cfg.BlockSyncConcurrency)
 	assert.Equal(t, "/tmp", cfg.DataDir)
 	assert.Equal(t, 15*time.Minute, cfg.CompactionInterval)
@@ -88,7 +88,7 @@ func TestConfig_ShouldSupportCliFlags(t *testing.T) {
 	}))
 
 	assert.Equal(t, mimir_tsdb.DurationList{2 * time.Hour, 48 * time.Hour}, cfg.BlockRanges)
-	assert.Equal(t, time.Hour, cfg.ConsistencyDelay)
+	assert.Equal(t, time.Hour, cfg.DeprecatedConsistencyDelay)
 	assert.Equal(t, 123, cfg.BlockSyncConcurrency)
 	assert.Equal(t, "/tmp", cfg.DataDir)
 	assert.Equal(t, 15*time.Minute, cfg.CompactionInterval)
@@ -142,7 +142,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			if actualErr := cfg.Validate(); testData.expected != "" {
+			if actualErr := cfg.Validate(log.NewNopLogger()); testData.expected != "" {
 				assert.EqualError(t, actualErr, testData.expected)
 			} else {
 				assert.NoError(t, actualErr)
