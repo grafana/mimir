@@ -209,17 +209,17 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		if len(histograms) > 0 {
-			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-				Histograms: histograms,
-			})
-		} else {
-			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-				Samples: samples,
-			})
+
+		ts := mimirpb.TimeSeries{Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels())}
+
+		if len(samples) > 0 {
+			ts.Samples = samples
 		}
+		if len(histograms) > 0 {
+			ts.Histograms = histograms
+		}
+
+		result.Timeseries = append(result.Timeseries, ts)
 	}
 
 	return result, s.Err()
