@@ -657,6 +657,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.first-level-compaction-wait-period duration
+    	[experimental] How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.
   -compactor.max-closing-blocks-concurrency int
     	Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index. (default 1)
   -compactor.max-compaction-time duration

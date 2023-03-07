@@ -6156,6 +6156,17 @@
         },
         {
           "kind": "field",
+          "name": "first_level_compaction_wait_period",
+          "required": false,
+          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.first-level-compaction-wait-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cleanup_interval",
           "required": false,
           "desc": "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.",
