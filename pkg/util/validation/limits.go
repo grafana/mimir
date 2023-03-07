@@ -887,6 +887,12 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 // This method is not thread safe and should be called only during package initialization.
 // Registering same name twice will cause a panic.
 func MustRegisterExtension[E any](name string) func(*Limits) *E {
+	if name == "" {
+		panic("extension name cannot be empty")
+	}
+	if _, ok := standardLimitsYAMLJSONKeys[name]; ok {
+		panic(fmt.Errorf("extension %s cannot be registered because it's a standard limits field", name))
+	}
 	if _, ok := registeredExtensionsIndexes[name]; ok {
 		panic(fmt.Errorf("extension %s already registered", name))
 	}
@@ -903,6 +909,19 @@ func MustRegisterExtension[E any](name string) func(*Limits) *E {
 			return e.(*E)
 		}
 		return nil
+	}
+}
+
+var standardLimitsYAMLJSONKeys = map[string]struct{}{}
+
+func init() {
+	limitsType := reflect.TypeOf(Limits{})
+	for i := 0; i < limitsType.NumField(); i++ {
+		// yamlKey/jsonKey could be empty, but we also shouldn't allow registering a field with an empty name, so just add it to the map.
+		yamlKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("yaml"), ",")
+		josnKey, _, _ := strings.Cut(limitsType.Field(i).Tag.Get("json"), ",")
+		standardLimitsYAMLJSONKeys[yamlKey] = struct{}{}
+		standardLimitsYAMLJSONKeys[josnKey] = struct{}{}
 	}
 }
 

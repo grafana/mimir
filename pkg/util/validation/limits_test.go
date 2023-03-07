@@ -714,8 +714,23 @@ func TestExtensions(t *testing.T) {
 		})
 	})
 
+	t.Run("can't register name that is already a Limits JSON/YAML key", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[int64]("max_global_series_per_user")
+		})
+	})
+
+	t.Run("can't register empty name", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[int64]("")
+		})
+	})
+
 	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
 		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
+		// Since we assign l = *defaultLimits before unmarshaling,
+		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
+		// This shouldn't happen, but let's have a test to make sure that it doesnt.
 		var def Limits
 		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
 		require.Equal(t, "default", *getExtensionString(&def))
