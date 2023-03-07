@@ -469,7 +469,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
-		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 
@@ -478,6 +477,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
+		u.cfg.BucketStore.StreamingBatchSize,
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
 		}),
