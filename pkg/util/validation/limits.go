@@ -936,17 +936,33 @@ var plainLimitsStructField = reflect.StructField{
 // Where TN is the type of the registered extension N, and extnameN is the name of it.
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
-func newLimitsWithExtensions(limits interface{}) (any interface{}, getExtensions func() map[string]interface{}) {
+func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
+	if len(registeredExtensionsIndexes) == 0 {
+		// No extensions, so just return the plain limits and extension getter that returns nil.
+		return limits, func() map[string]interface{} { return nil }
+	}
+
+	// We have extensions, craft our own type.
+	// It's not strictly necessary to create a new slice here, we could just append to limitsExtensionsFields assuming that
+	// this would allocate a new underlying array, but that is too fragile, so let's copy the fields to a new slice.
 	fields := make([]reflect.StructField, 0, len(limitsExtensionsFields)+1)
 	fields = append(fields, limitsExtensionsFields...)
 	fields = append(fields, plainLimitsStructField)
 
+	// typ is the type of the new struct.
 	typ := reflect.StructOf(fields)
 
+	// cfg is an instance of a pointer to a new struct.
 	cfg := reflect.New(typ).Interface()
-	reflect.ValueOf(cfg).Elem().Field(len(registeredExtensionsIndexes)).Set(reflect.ValueOf(limits))
+
+	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
+	reflect.ValueOf(cfg).Elem().Field(len(fields)).Set(reflect.ValueOf(limits))
 
 	return cfg, func() map[string]interface{} {
+		if len(registeredExtensionsIndexes) == 0 {
+			return nil
+		}
+
 		ext := map[string]interface{}{}
 		for name, i := range registeredExtensionsIndexes {
 			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
