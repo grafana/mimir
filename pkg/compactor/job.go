@@ -3,14 +3,19 @@
 package compactor
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"math"
+	"path"
 	"sort"
+	"time"
 
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
@@ -146,4 +151,37 @@ func (job *Job) ShardingKey() string {
 
 func (job *Job) String() string {
 	return fmt.Sprintf("%s (minTime: %d maxTime: %d)", job.Key(), job.MinTime(), job.MaxTime())
+}
+
+// jobWaitPeriodElapsed returns whether the 1st level compaction wait period has
+// elapsed for the input job. If the wait period has not elapsed, then this function
+// also returns the Meta of the first source block encountered for which the wait
+// period has not elapsed yet.
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *metadata.Meta, error) {
+	if waitPeriod <= 0 {
+		return true, nil, nil
+	}
+
+	if job.MinCompactionLevel() > 1 {
+		return true, nil, nil
+	}
+
+	// Check if the job contains any source block uploaded more recently
+	// than "wait period" ago.
+	threshold := time.Now().Add(-waitPeriod)
+
+	for _, meta := range job.Metas() {
+		metaPath := path.Join(meta.ULID.String(), block.MetaFilename)
+
+		attrs, err := userBucket.Attributes(ctx, metaPath)
+		if err != nil {
+			return false, meta, errors.Wrapf(err, "unable to get object attributes for %s", metaPath)
+		}
+
+		if attrs.LastModified.After(threshold) {
+			return false, meta, nil
+		}
+	}
+
+	return true, nil, nil
 }

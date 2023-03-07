@@ -1375,18 +1375,18 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
 
 	for _, userID := range []string{"user-1", "user-2"} {
-		lastModified := time.Now().Add(-20 * time.Minute)
+		block1LastModified := time.Now().Add(-20 * time.Minute)
 		if userID == "user-2" {
-			lastModified = time.Now().Add(-5 * time.Minute)
+			block1LastModified = time.Now().Add(-5 * time.Minute)
 		}
 
 		bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
 		bucketClient.MockIter(userID+"/", []string{path.Join(userID, "/01DTVP434PA9VFXSW2JK000001"), path.Join(userID, "/01DTVP434PA9VFXSW2JK000002")}, nil)
 		bucketClient.MockIter(userID+"/markers/", nil, nil)
-		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000001", 1574776800000, 1574784000000), lastModified, nil)
+		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000001", 1574776800000, 1574784000000), block1LastModified, nil)
 		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/deletion-mark.json"), "", nil)
 		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000001/no-compact-mark.json"), "", nil)
-		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000002", 1574776800000, 1574784000000), lastModified, nil)
+		bucketClient.MockGetAndLastModified(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/meta.json"), mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000002", 1574776800000, 1574784000000), time.Now().Add(-20*time.Minute), nil)
 		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/deletion-mark.json"), "", nil)
 		bucketClient.MockGet(path.Join(userID, "01DTVP434PA9VFXSW2JK000002/no-compact-mark.json"), "", nil)
 		bucketClient.MockGet(path.Join(userID, "bucket-index.json.gz"), "", nil)
@@ -1434,7 +1434,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 		`level=info component=compactor user=user-2 msg="start sync of metas"`,
 		`level=info component=compactor user=user-2 msg="start of GC"`,
 		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
-		`level=info component=compactor user=user-2 msg="skipped compaction because job contains source blocks for which the wait period has not elapsed yet" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000`,
+		`level=info component=compactor user=user-2 msg="skipping compaction job because blocks in this job were uploaded too recently (within wait period)" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 waitPeriodNotElapsedFor="01DTVP434PA9VFXSW2JK000001 (min time: 1574776800000, max time: 1574784000000)"`,
 		`level=info component=compactor user=user-2 msg="start of compactions"`,
 		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,

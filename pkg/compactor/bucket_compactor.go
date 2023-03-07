@@ -912,13 +912,13 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 // filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
 func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
 	for i := 0; i < len(jobs); {
-		if elapsed, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
-			level.Warn(c.logger).Log("msg", "skipped to enforce compaction wait period because unable to check if compaction job contains blocks recently uploaded", "groupKey", jobs[i].Key(), "err", err)
+		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
+			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
 
 			// Keep the job.
 			i++
 		} else if !elapsed {
-			level.Info(c.logger).Log("msg", "skipped compaction because job contains source blocks for which the wait period has not elapsed yet", "groupKey", jobs[i].Key())
+			level.Info(c.logger).Log("msg", "skipping compaction job because blocks in this job were uploaded too recently (within wait period)", "groupKey", jobs[i].Key(), "waitPeriodNotElapsedFor", notElapsedBlock.String())
 			jobs = append(jobs[:i], jobs[i+1:]...)
 		} else {
 			i++
