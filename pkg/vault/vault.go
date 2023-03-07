@@ -4,6 +4,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 
@@ -12,15 +13,15 @@ import (
 
 // Config for the Vault used to fetch secrets
 type Config struct {
-	URL       string `yaml:"url" category:"advanced"`
-	Token     string `yaml:"token" category:"advanced"`
-	MountPath string `yaml:"mount_path" category:"advanced"`
+	URL       string `yaml:"url" category:"experimental"`
+	Token     string `yaml:"token" category:"experimental"`
+	MountPath string `yaml:"mount_path" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
 	f.StringVar(&cfg.Token, "vault.token", "", "Token used to authenticate with Vault")
-	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "")
+	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
 }
 
 type Vault struct {
@@ -29,6 +30,10 @@ type Vault struct {
 }
 
 func NewVault(cfg Config) (*Vault, error) {
+	if cfg.URL == "" || cfg.Token == "" || cfg.MountPath == "" {
+		return nil, errors.New("invalid vault configuration supplied")
+	}
+
 	config := hashivault.DefaultConfig()
 	config.Address = cfg.URL
 
