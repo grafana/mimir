@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
-	mimir_tsdb "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,7 +39,7 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
+					Memcached: cache.MemcachedConfig{
 						Addresses: "localhost",
 					},
 				},
@@ -50,7 +49,7 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
+					Memcached: cache.MemcachedConfig{
 						Addresses: "",
 					},
 				},
