@@ -894,6 +894,7 @@ type Extension interface {
 // Registering same name twice will cause a panic.
 // The provided getter will return nil for nil *Limits.
 // If *Limits is not empty, the getter returns an instance of E.
+// If E is a pointer type, getter returns a non-nil pointer for non-nil *Limits.
 func MustRegisterExtension[E Extension](name string) func(*Limits) E {
 	if name == "" {
 		panic("extension name cannot be empty")
