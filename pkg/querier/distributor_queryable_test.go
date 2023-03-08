@@ -271,7 +271,7 @@ func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
 }
 
 func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
-	// TODO(histograms): Add similar test for mixed samples and histograms?
+	// Add similar test for mixed float values and histograms: https://github.com/grafana/mimir/issues/4405
 	const (
 		mint = 0
 		maxt = 10000
