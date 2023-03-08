@@ -15,6 +15,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/thanos-io/objstore"
@@ -133,6 +134,7 @@ func (t *trackedReader) Read(p []byte) (n int, err error) {
 }
 
 type series struct {
+	id   storage.SeriesRef
 	refs []chunks.Meta
 }
 
@@ -192,7 +194,10 @@ func readChunkRefs(r io.Reader, seriesCh chan<- series) {
 			panic("crc doesn't match")
 		}
 
-		seriesCh <- series{refs: chks}
+		seriesCh <- series{
+			id:   storage.SeriesRef(seriesStartOffset),
+			refs: chks,
+		}
 	}
 
 }
