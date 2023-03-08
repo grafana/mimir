@@ -46,6 +46,7 @@ type query struct {
 	samples func(from, through time.Time, step time.Duration) int
 	step    time.Duration
 
+	valueType   func(ts model.Time) chunkenc.ValueType
 	assertPoint func(t testing.TB, ts int64, point promql.Point)
 }
 
@@ -65,6 +66,7 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, promql.Point{
 					T: ts + int64((sampleRate*4)/time.Millisecond),
@@ -82,6 +84,7 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, promql.Point{
 					T: ts,
@@ -98,6 +101,7 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, promql.Point{
 					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
@@ -114,6 +118,7 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, promql.Point{
 					T: ts,
@@ -121,41 +126,7 @@ func TestQuerier(t *testing.T) {
 				}, point)
 			},
 		},
-	}
 
-	// Generate TSDB head used to simulate querying the long-term storage.
-	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), chunkenc.ValFloat)
-
-	for _, query := range queries {
-		for _, iterators := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
-				cfg.Iterators = iterators
-
-				// No samples returned by ingesters.
-				distributor := &mockDistributor{}
-				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
-				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
-
-				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-				require.NoError(t, err)
-
-				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
-				testRangeQuery(t, queryable, through, query)
-			})
-		}
-	}
-}
-
-func TestQueryHistogram(t *testing.T) {
-	var cfg Config
-	flagext.DefaultValues(&cfg)
-
-	const chunks = 24
-
-	queries := []query{
-		// Very simple single-point gets, with low step.  Performance should be
-		// similar to above.
 		{
 			query:  "foo",
 			step:   sampleRate * 4,
@@ -163,6 +134,7 @@ func TestQueryHistogram(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, ts, point.T)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
@@ -170,12 +142,12 @@ func TestQueryHistogram(t *testing.T) {
 		},
 	}
 
-	// Generate TSDB head used to simulate querying the long-term storage.
-	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), chunkenc.ValHistogram)
-
 	for _, query := range queries {
 		for _, iterators := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				// Generate TSDB head used to simulate querying the long-term storage.
+				db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), query.valueType)
+
 				cfg.Iterators = iterators
 
 				// No samples returned by ingesters.
@@ -362,7 +334,7 @@ func TestBatchMergeChunks(t *testing.T) {
 	}
 }
 
-func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType chunkenc.ValueType) (storage.Queryable, model.Time) {
+func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
@@ -383,7 +355,8 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	chunkStartTs := mint
 	ts := chunkStartTs
 	for i := 0; i < samples; i++ {
-		switch valueType {
+		valType := valueType(ts)
+		switch valType {
 		case chunkenc.ValFloat:
 			_, err := app.Append(0, l, int64(ts), float64(ts))
 			require.NoError(t, err)
@@ -394,7 +367,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 			_, err := app.AppendHistogram(0, l, int64(ts), nil, test.GenerateTestFloatHistogram(int(ts)))
 			require.NoError(t, err)
 		default:
-			t.Errorf("Unknown chunk type %v", valueType)
+			t.Errorf("Unknown chunk type %v", valType)
 		}
 
 		cnt++
