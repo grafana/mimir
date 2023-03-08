@@ -174,7 +174,7 @@ type Limits struct {
 	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 
-	extensions map[string]interface{}
+	extensions map[string]Extension
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -893,7 +893,7 @@ type Extension interface {
 // This method is not thread safe and should be called only during package initialization.
 // Registering same name twice will cause a panic.
 // The provided getter will return nil for nil *Limits.
-// If *Limits is not empty, the
+// If *Limits is not empty, the getter returns an instance of E.
 func MustRegisterExtension[E Extension](name string) func(*Limits) E {
 	if name == "" {
 		panic("extension name cannot be empty")
@@ -910,7 +910,9 @@ func MustRegisterExtension[E Extension](name string) func(*Limits) E {
 	typ := reflect.TypeOf(e)
 	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
+		extensionIsPointer[name] = true
 	}
+
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
 		Name: strings.ToUpper(name),
 		Type: typ,
@@ -945,6 +947,9 @@ func init() {
 // registeredExtensionsIndexes is used to keep track of the indexes of each registered extension.
 var registeredExtensionsIndexes = map[string]int{}
 
+// extensionIsPointer stores which extensions were provided as pointer types.
+var extensionIsPointer = map[string]bool{}
+
 // limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
 var limitsExtensionsFields []reflect.StructField
 
@@ -972,10 +977,10 @@ var plainLimitsStructField = reflect.StructField{
 // Where TN is the type of the registered extension N, and extnameN is the name of it.
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
-func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
+func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]Extension) {
 	if len(registeredExtensionsIndexes) == 0 {
 		// No extensions, so just return the plain limits and an extension getter that returns nil.
-		return limits, func() map[string]interface{} { return nil }
+		return limits, func() map[string]Extension { return nil }
 	}
 
 	// We have extensions, craft our own type.
@@ -993,6 +998,7 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 
 	// Call SetDefaults() on every field.
 	for i := range limitsExtensionsFields {
+		// This works for both pointer and non-pointer extension types, as we can always call a pointer method on a non-pointer type.
 		cfg.Elem().Field(i).Addr().Interface().(Extension).SetDefaults()
 	}
 
@@ -1001,10 +1007,14 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	//     cfg.PlainLimits = limits
 	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
 
-	return cfg.Interface(), func() map[string]interface{} {
-		ext := map[string]interface{}{}
+	return cfg.Interface(), func() map[string]Extension {
+		ext := map[string]Extension{}
 		for name, i := range registeredExtensionsIndexes {
-			ext[name] = cfg.Elem().Field(i).Addr().Interface()
+			e := cfg.Elem().Field(i)
+			if extensionIsPointer[name] {
+				e = e.Addr()
+			}
+			ext[name] = e.Interface().(Extension)
 		}
 		return ext
 	}

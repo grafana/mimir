@@ -682,6 +682,12 @@ func (s *stringExtension) SetDefaults() {
 	*s = "default"
 }
 
+type nonPtrExtension string
+
+func (nonPtrExtension) SetDefaults() {
+	// do nothing
+}
+
 func TestExtensions(t *testing.T) {
 	t.Cleanup(func() {
 		registeredExtensionsIndexes = map[string]int{}
@@ -769,5 +775,13 @@ func TestExtensions(t *testing.T) {
 
 	t.Run("getter works with nil Limits", func(t *testing.T) {
 		require.Nil(t, getExtensionStruct(nil))
+	})
+
+	t.Run("non pointer extension works properly", func(t *testing.T) {
+		getter := MustRegisterExtension[nonPtrExtension]("non_pointer")
+
+		var limits Limits
+		require.NoError(t, json.Unmarshal([]byte(`{}`), &limits), "parsing overrides")
+		require.Equal(t, nonPtrExtension(""), getter(&limits))
 	})
 }
