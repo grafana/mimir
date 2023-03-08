@@ -125,6 +125,11 @@ func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 	if err := cfg.ClientTLSConfig.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ruler gRPC client config")
 	}
+
+	if err := cfg.QueryFrontend.Validate(); err != nil {
+		return errors.Wrap(err, "invalid ruler query-frontend config")
+	}
+
 	return nil
 }
 

@@ -266,7 +266,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	return rt.codec.EncodeResponse(ctx, response)
+	return rt.codec.EncodeResponse(ctx, r, response)
 }
 
 // roundTripperHandler is an adapter that implements the Handler interface using a http.RoundTripper to perform

@@ -1571,6 +1571,11 @@ query_frontend:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
 
+  # (experimental) Format to use when retrieving query results from
+  # query-frontends. Supported values: json, protobuf
+  # CLI flag: -ruler.query-frontend.query-result-response-format
+  [query_result_response_format: <string> | default = "json"]
+
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
   # need to be in the rule group's 'source_tenants' field. If this flag is set

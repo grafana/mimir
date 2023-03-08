@@ -5,15 +5,17 @@
 
 package querymiddleware
 
+import v1 "github.com/prometheus/prometheus/web/api/v1"
+
 const jsonMimeType = "application/json"
 
-type jsonFormat struct{}
+type jsonFormatter struct{}
 
-func (j jsonFormat) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
+func (j jsonFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
 	return json.Marshal(resp)
 }
 
-func (j jsonFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
+func (j jsonFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp PrometheusResponse
 
 	if err := json.Unmarshal(buf, &resp); err != nil {
@@ -23,6 +25,10 @@ func (j jsonFormat) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	return &resp, nil
 }
 
-func (j jsonFormat) Name() string {
+func (j jsonFormatter) Name() string {
 	return formatJSON
+}
+
+func (j jsonFormatter) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: "application", SubType: "json"}
 }

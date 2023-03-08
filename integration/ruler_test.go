@@ -829,11 +829,12 @@ func TestRulerFederatedRules(t *testing.T) {
 
 func TestRulerRemoteEvaluation(t *testing.T) {
 	tcs := map[string]struct {
-		tenantsWithMetrics []string
-		groupSourceTenants []string
-		ruleGroupOwner     string
-		ruleExpression     string
-		assertEvalResult   func(model.Vector)
+		tenantsWithMetrics       []string
+		groupSourceTenants       []string
+		ruleGroupOwner           string
+		ruleExpression           string
+		queryResultPayloadFormat string
+		assertEvalResult         func(model.Vector)
 	}{
 		"non federated rule group": {
 			tenantsWithMetrics: []string{"tenant-1"},
@@ -852,6 +853,16 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
+			},
+		},
+		"protobuf query result payload format": {
+			tenantsWithMetrics:       []string{"tenant-4"},
+			ruleGroupOwner:           "tenant-4",
+			ruleExpression:           "count(sum_over_time(metric[1h]))",
+			queryResultPayloadFormat: "protobuf",
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
 			},
 		},
 	}
@@ -887,20 +898,32 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	// Start up services
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 	require.NoError(t, s.WaitReady(queryFrontend))
 
-	// Wait until both the distributor and ruler are ready
+	// Wait until the distributor is ready
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 	for tName, tc := range tcs {
 		t.Run(tName, func(t *testing.T) {
+			if tc.queryResultPayloadFormat == "" {
+				delete(flags, "-ruler.query-frontend.query-result-response-format")
+			} else {
+				flags["-ruler.query-frontend.query-result-response-format"] = tc.queryResultPayloadFormat
+			}
+
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(ruler))
+			t.Cleanup(func() {
+				_ = s.Stop(ruler)
+			})
+
+			// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
 			// Generate some series under different tenants
 			sampleTime := time.Now()
 			for _, tenantID := range tc.tenantsWithMetrics {
