@@ -198,8 +198,8 @@ func (t *timeSeriesSeriesIterator) AtT() int64 {
 // Next implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
 	if t.iF+1 >= len(t.ts.series.Samples) && t.iH+1 >= len(t.ts.series.Histograms) {
-		t.iF++
-		t.iH++
+		t.iF = len(t.ts.series.Samples)
+		t.iH = len(t.ts.series.Histograms)
 		return chunkenc.ValNone
 	}
 	if t.iF+1 >= len(t.ts.series.Samples) {
