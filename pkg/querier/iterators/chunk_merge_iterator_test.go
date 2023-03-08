@@ -250,6 +250,11 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 					assert.Equal(t, i, ts)
 					test.RequireHistogramEqual(t, generateTestHistogram(int(i)), h)
 					assert.NoError(t, iter.Err())
+					// check auto type conversion for PromQL
+					ts2, fh := iter.AtFloatHistogram()
+					assert.Equal(t, i, ts2)
+					test.RequireFloatHistogramEqual(t, generateTestHistogram(int(i)).ToFloat(), fh)
+					assert.NoError(t, iter.Err())
 				case chunkenc.ValFloatHistogram:
 					ts, h := iter.AtFloatHistogram()
 					assert.Equal(t, i, ts)

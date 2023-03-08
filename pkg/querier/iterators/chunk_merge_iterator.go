@@ -22,6 +22,7 @@ type chunkMergeIterator struct {
 	h   seriesIteratorHeap
 
 	currTime           int64
+	currValueType      chunkenc.ValueType
 	currValue          float64
 	currHistogram      *histogram.Histogram
 	currFloatHistogram *histogram.FloatHistogram
@@ -89,6 +90,7 @@ outer:
 }
 
 func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
+	c.currValueType = chunkenc.ValNone
 	if c.currErr != nil {
 		return chunkenc.ValNone
 	}
@@ -126,6 +128,7 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
 			return chunkenc.ValNone
 		}
+		c.currValueType = valType
 		return valType
 	}
 
@@ -133,6 +136,7 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (c *chunkMergeIterator) Next() chunkenc.ValueType {
+	c.currValueType = chunkenc.ValNone
 	if len(c.h) == 0 || c.currErr != nil {
 		return chunkenc.ValNone
 	}
@@ -166,20 +170,33 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	}
 
 	if c.currTime != lastTime {
+		c.currValueType = valType
 		return valType
 	}
 	return chunkenc.ValNone
 }
 
 func (c *chunkMergeIterator) At() (t int64, v float64) {
+	if c.currValueType != chunkenc.ValFloat {
+		panic(fmt.Errorf("chunkMergeIterator: calling At when cursor is at different type %v", c.currValueType))
+	}
 	return c.currTime, c.currValue
 }
 
 func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
+	if c.currValueType != chunkenc.ValHistogram {
+		panic(fmt.Errorf("chunkMergeIterator: calling AtHistogram when cursor is at different type %v", c.currValueType))
+	}
 	return c.currTime, c.currHistogram
 }
 
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	if c.currValueType == chunkenc.ValHistogram {
+		return c.currTime, c.currHistogram.ToFloat()
+	}
+	if c.currValueType != chunkenc.ValFloatHistogram {
+		panic(fmt.Errorf("chunkMergeIterator: calling AtFloatHistogram when cursor is at different type %v", c.currValueType))
+	}
 	return c.currTime, c.currFloatHistogram
 }
 
