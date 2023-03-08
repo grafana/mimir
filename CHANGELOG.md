@@ -57,10 +57,9 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Compactor: added the experimental flag `-compactor.block-upload.block-validation-enabled` with the default `true` to configure whether block validation occurs on backfilled blocks. #3411
 * [ENHANCEMENT] Ingester: apply a jitter to the first TSDB head compaction interval configured via `-blocks-storage.tsdb.head-compaction-interval`. Subsequent checks will happen at the configured interval. This should help to spread the TSDB head compaction among different ingesters over the configured interval. #4364
 * [ENHANCEMENT] Ingester: the maximum accepted value for `-blocks-storage.tsdb.head-compaction-interval` has been increased from 5m to 15m. #4364
-* [BUGFIX] Ingester: remove series from ephemeral storage even if there are no persistent series. #4052
+* [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
+* [ENHANCEMENT] Compactor: added experimental configuration parameter `-compactor.first-level-compaction-wait-period`, to configure how long the compactor should wait before compacting 1st level blocks (uploaded by ingesters). This configuration option allows to reduce the chances compactor begins compacting blocks before all ingesters have uploaded their blocks to the storage. #4401
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
-* [BUGFIX] Ingester: reuse memory when ingesting ephemeral series. #4072
-* [BUGFIX] Fix JSON and YAML marshalling of `ephemeral_series_matchers` field in `/runtime_config`. #4091
 * [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
 * [BUGFIX] Ingester: compact out-of-order data during `/ingester/flush` or when TSDB is idle. #4180
 * [BUGFIX] Ingester: conversion of global limits `max-series-per-user`, `max-series-per-metric`, `max-metadata-per-user` and `max-metadata-per-metric` into corresponding local limits now takes into account the number of ingesters in each zone. #4238
