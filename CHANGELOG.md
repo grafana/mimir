@@ -256,6 +256,7 @@
 
 ### Tools
 
+* [CHANGE] copyblocks: copying between Azure Blob Storage buckets is now supported so the `--service` flag is now required to be specified (accepted values are `gcs` or `abs`). #4756
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
 ## 2.7.3

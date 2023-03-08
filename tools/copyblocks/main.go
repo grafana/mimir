@@ -19,6 +19,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -28,7 +31,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/api/iterator"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -37,25 +39,35 @@ const (
 	delim = "/" // Used by Mimir to delimit tenants and blocks, and objects within blocks.
 )
 
-type config struct {
-	sourceBucket      string
-	destBucket        string
-	minBlockDuration  time.Duration
-	minTime           flagext.Time
-	maxTime           flagext.Time
-	tenantConcurrency int
-	blocksConcurrency int
-	copyPeriod        time.Duration
-	enabledUsers      flagext.StringSliceCSV
-	disabledUsers     flagext.StringSliceCSV
-	dryRun            bool
+const (
+	serviceGCS = "gcs" // Google Cloud Storage
+	serviceABS = "abs" // Azure Blob Storage
+)
 
-	httpListen string
+type config struct {
+	service                     string
+	sourceBucket                string
+	destBucket                  string
+	minBlockDuration            time.Duration
+	minTime                     flagext.Time
+	maxTime                     flagext.Time
+	tenantConcurrency           int
+	blocksConcurrency           int
+	copyPeriod                  time.Duration
+	enabledUsers                flagext.StringSliceCSV
+	disabledUsers               flagext.StringSliceCSV
+	dryRun                      bool
+	azureSourceAccountName      string
+	azureSourceAccountKey       string
+	azureDestinationAccountName string
+	azureDestinationAccountKey  string
+	httpListen                  string
 }
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.sourceBucket, "source-bucket", "", "Source GCS bucket with blocks.")
-	f.StringVar(&c.destBucket, "destination-bucket", "", "Destination GCS bucket with blocks.")
+	f.StringVar(&c.service, "service", "", fmt.Sprintf("Service that both the buckets are on. Acceptable values: %s or %s.", serviceGCS, serviceABS))
+	f.StringVar(&c.sourceBucket, "source-bucket", "", "Source bucket with blocks.")
+	f.StringVar(&c.destBucket, "destination-bucket", "", "Destination bucket with blocks.")
 	f.DurationVar(&c.minBlockDuration, "min-block-duration", 0, "If non-zero, ignore blocks that cover block range smaller than this.")
 	f.Var(&c.minTime, "min-time", fmt.Sprintf("If set, only blocks with MinTime >= this value are copied. The supported time format is %q.", time.RFC3339))
 	f.Var(&c.maxTime, "max-time", fmt.Sprintf("If set, only blocks with MaxTime <= this value are copied. The supported time format is %q.", time.RFC3339))
@@ -66,6 +78,10 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
+	f.StringVar(&c.azureSourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
+	f.StringVar(&c.azureSourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
+	f.StringVar(&c.azureDestinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
+	f.StringVar(&c.azureDestinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
 }
 
 type metrics struct {
@@ -169,13 +185,72 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 		disabledUsers[u] = struct{}{}
 	}
 
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return errors.Wrapf(err, "failed to create client")
-	}
+	var sourceBucket, destBucket bucket
+	switch strings.ToLower(cfg.service) {
+	case serviceGCS:
+		client, err := storage.NewClient(ctx)
+		if err != nil {
+			return errors.Wrapf(err, "failed to create client")
+		}
+		sourceBucket = &gcsBucket{
+			BucketHandle: *client.Bucket(cfg.sourceBucket),
+			name:         cfg.sourceBucket,
+		}
+		destBucket = &gcsBucket{
+			BucketHandle: *client.Bucket(cfg.destBucket),
+			name:         cfg.destBucket,
+		}
+	case serviceABS:
+		if cfg.azureSourceAccountKey == "" || cfg.azureSourceAccountName == "" {
+			return errors.New("the azure source bucket's account name and account key are required")
+		}
+		if cfg.azureDestinationAccountKey == "" || cfg.azureDestinationAccountName == "" {
+			return errors.New("the azure destination bucket's account name and account key are required")
+		}
 
-	sourceBucket := client.Bucket(cfg.sourceBucket)
-	destBucket := client.Bucket(cfg.destBucket)
+		newAzureBucketClient := func(containerURL string, accountName string, sharedKey string) (bucket, error) {
+			urlParts, err := blob.ParseURL(containerURL)
+			if err != nil {
+				return nil, err
+			}
+			containerName := urlParts.ContainerName
+			if containerName == "" {
+				return nil, errors.New("container name missing from azure bucket URL")
+			}
+			serviceURL, found := strings.CutSuffix(containerURL, containerName)
+			if !found {
+				return nil, errors.New("malformed or unexpected azure bucket URL")
+			}
+			keyCred, err := azblob.NewSharedKeyCredential(accountName, sharedKey)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to get azure shared key credential")
+			}
+			client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, keyCred, nil)
+			if err != nil {
+				return nil, err
+			}
+			containerClient, err := container.NewClientWithSharedKeyCredential(containerURL, keyCred, nil)
+			if err != nil {
+				return nil, err
+			}
+			return &azureBucket{
+				Client:          *client,
+				containerClient: *containerClient,
+				containerName:   containerName,
+			}, nil
+		}
+		var err error
+		sourceBucket, err = newAzureBucketClient(cfg.sourceBucket, cfg.azureSourceAccountName, cfg.azureSourceAccountKey)
+		if err != nil {
+			return errors.Wrapf(err, "failed to create source azure bucket client")
+		}
+		destBucket, err = newAzureBucketClient(cfg.destBucket, cfg.azureDestinationAccountName, cfg.azureDestinationAccountKey)
+		if err != nil {
+			return errors.Wrapf(err, "failed to create destination azure bucket client")
+		}
+	default:
+		return errors.Errorf("invalid service: %v", cfg.service)
+	}
 
 	tenants, err := listTenants(ctx, sourceBucket)
 	if err != nil {
@@ -195,7 +270,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 			return errors.Wrapf(err, "failed to list blocks for tenant %v", tenantID)
 		}
 
-		markers, err := listBlockMarkersForTenant(ctx, sourceBucket, tenantID, cfg.destBucket)
+		markers, err := listBlockMarkersForTenant(ctx, sourceBucket, tenantID, destBucket.Name())
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to list blocks markers for tenant", "err", err)
 			return errors.Wrapf(err, "failed to list block markers for tenant %v", tenantID)
@@ -281,7 +356,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 			m.blocksCopied.Inc()
 			level.Info(logger).Log("msg", "block copied successfully")
 
-			err = uploadCopiedMarkerFile(ctx, sourceBucket, tenantID, blockID, cfg.destBucket)
+			err = uploadCopiedMarkerFile(ctx, sourceBucket, tenantID, blockID, destBucket.Name())
 			if err != nil {
 				level.Error(logger).Log("msg", "failed to upload copied-marker file for block", "block", blockID.String(), "err", err)
 				return err
@@ -308,8 +383,8 @@ func isAllowedUser(enabled map[string]struct{}, disabled map[string]struct{}, te
 }
 
 // This method copies files within single TSDB block to a destination bucket.
-func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, markers blockMarkers, srcBkt, destBkt *storage.BucketHandle) error {
-	paths, err := listPrefix(ctx, srcBkt, tenantID+delim+blockID.String(), true)
+func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, markers blockMarkers, srcBkt, destBkt bucket) error {
+	paths, err := srcBkt.ListPrefix(ctx, tenantID+delim+blockID.String(), true)
 	if err != nil {
 		return errors.Wrapf(err, "copySingleBlock: failed to list block files for %v/%v", tenantID, blockID.String())
 	}
@@ -336,11 +411,7 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 	}
 
 	for _, fullPath := range paths {
-		srcObj := srcBkt.Object(fullPath)
-		destObj := destBkt.Object(fullPath)
-
-		copier := destObj.CopierFrom(srcObj)
-		_, err := copier.Run(ctx)
+		err := srcBkt.Copy(ctx, fullPath, destBkt)
 		if err != nil {
 			return errors.Wrapf(err, "copySingleBlock: failed to copy %v", fullPath)
 		}
@@ -349,19 +420,20 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 	return nil
 }
 
-func uploadCopiedMarkerFile(ctx context.Context, bkt *storage.BucketHandle, tenantID string, blockID ulid.ULID, targetBucketName string) error {
-	obj := bkt.Object(tenantID + delim + CopiedToBucketMarkFilename(blockID, targetBucketName))
+func uploadCopiedMarkerFile(ctx context.Context, bkt bucket, tenantID string, blockID ulid.ULID, targetBucketName string) error {
+	err := bkt.UploadMarkerFile(ctx, tenantID+delim+CopiedToBucketMarkFilename(blockID, targetBucketName))
+	if err != nil {
+		return errors.Wrap(err, "uploadCopiedMarkerFile")
 
-	w := obj.NewWriter(ctx)
-
-	return errors.Wrap(w.Close(), "uploadCopiedMarkerFile")
+	}
+	return nil
 }
 
-func loadMetaJSONFile(ctx context.Context, bkt *storage.BucketHandle, tenantID string, blockID ulid.ULID) (block.Meta, error) {
-	obj := bkt.Object(tenantID + delim + blockID.String() + delim + block.MetaFilename)
-	r, err := obj.NewReader(ctx)
+func loadMetaJSONFile(ctx context.Context, bkt bucket, tenantID string, blockID ulid.ULID) (block.Meta, error) {
+	objectName := tenantID + delim + blockID.String() + delim + block.MetaFilename
+	r, err := bkt.Get(ctx, objectName)
 	if err != nil {
-		return block.Meta{}, errors.Wrapf(err, "failed to read %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "failed to read %v", objectName)
 	}
 
 	var m block.Meta
@@ -371,17 +443,17 @@ func loadMetaJSONFile(ctx context.Context, bkt *storage.BucketHandle, tenantID s
 	closeErr := r.Close() // do this before any return.
 
 	if err != nil {
-		return block.Meta{}, errors.Wrapf(err, "read %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "read %v", objectName)
 	}
 	if closeErr != nil {
-		return block.Meta{}, errors.Wrapf(err, "close reader for %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "close reader for %v", objectName)
 	}
 
 	return m, nil
 }
 
-func listTenants(ctx context.Context, bkt *storage.BucketHandle) ([]string, error) {
-	users, err := listPrefix(ctx, bkt, "", false)
+func listTenants(ctx context.Context, bkt bucket) ([]string, error) {
+	users, err := bkt.ListPrefix(ctx, "", false)
 	if err != nil {
 		return nil, err
 	}
@@ -391,8 +463,8 @@ func listTenants(ctx context.Context, bkt *storage.BucketHandle) ([]string, erro
 	return users, nil
 }
 
-func listBlocksForTenant(ctx context.Context, bkt *storage.BucketHandle, tenantID string) ([]ulid.ULID, error) {
-	items, err := listPrefix(ctx, bkt, tenantID, false)
+func listBlocksForTenant(ctx context.Context, bkt bucket, tenantID string) ([]ulid.ULID, error) {
+	items, err := bkt.ListPrefix(ctx, tenantID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -417,8 +489,8 @@ type blockMarkers struct {
 	noCompact bool
 }
 
-func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
-	markers, err := listPrefix(ctx, bkt, tenantID+delim+block.MarkersPathname, false)
+func listBlockMarkersForTenant(ctx context.Context, bkt bucket, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
+	markers, err := bkt.ListPrefix(ctx, tenantID+delim+block.MarkersPathname, false)
 	if err != nil {
 		return nil, err
 	}
@@ -452,51 +524,6 @@ func trimDelimSuffix(items []string) {
 	for ix := range items {
 		items[ix] = strings.TrimSuffix(items[ix], delim)
 	}
-}
-
-func listPrefix(ctx context.Context, bkt *storage.BucketHandle, prefix string, recursive bool) ([]string, error) {
-	if len(prefix) > 0 && prefix[len(prefix)-1:] != delim {
-		prefix = prefix + delim
-	}
-
-	q := &storage.Query{
-		Prefix: prefix,
-	}
-	if !recursive {
-		q.Delimiter = delim
-	}
-
-	var result []string
-
-	it := bkt.Objects(ctx, q)
-	for {
-		obj, err := it.Next()
-
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-
-		if err != nil {
-			return nil, errors.Wrapf(err, "listPrefix: error listing %v", prefix)
-		}
-
-		path := ""
-		if obj.Prefix != "" { // synthetic directory, only returned when recursive=false
-			path = obj.Prefix
-		} else {
-			path = obj.Name
-		}
-
-		if strings.HasPrefix(path, prefix) {
-			path = strings.TrimPrefix(path, prefix)
-		} else {
-			return nil, errors.Errorf("listPrefix: path has invalid prefix: %v, expected prefix: %v", path, prefix)
-		}
-
-		result = append(result, path)
-	}
-
-	return result, nil
 }
 
 const CopiedMarkFilename = "copied"
