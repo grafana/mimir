@@ -123,3 +123,5 @@ The following features are currently deprecated and will be **removed in Mimir 2
   - `-compactor.consistency-delay`
 - Store-gateway
   - `-blocks-storage.bucket-store.consistency-delay`
+- Ingester
+  - `-ingester.ring.readiness-check-ring-health`

@@ -13,12 +13,15 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
 	// set on the components running the ingester ring client.
-	sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+	sharedOptionWithRingClient   = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+	readinessCheckRingHealthFlag = "ingester.ring.readiness-check-ring-health"
 )
 
 type RingConfig struct {
@@ -43,10 +46,10 @@ type RingConfig struct {
 	UnregisterOnShutdown bool `yaml:"unregister_on_shutdown" category:"advanced"`
 
 	// Config for the ingester lifecycle control
-	ObservePeriod            time.Duration `yaml:"observe_period" category:"advanced"`
-	MinReadyDuration         time.Duration `yaml:"min_ready_duration" category:"advanced"`
-	FinalSleep               time.Duration `yaml:"final_sleep" category:"advanced"`
-	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`
+	ObservePeriod                      time.Duration `yaml:"observe_period" category:"advanced"`
+	MinReadyDuration                   time.Duration `yaml:"min_ready_duration" category:"advanced"`
+	FinalSleep                         time.Duration `yaml:"final_sleep" category:"advanced"`
+	DeprecatedReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"deprecated"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -97,7 +100,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Disable the ring health check in the readiness endpoint by default so that we can quickly rollout
 	// multiple ingesters in multi-zone deployments. It's also safe to disable it when deploying in a single zone,
 	// given we expect ingesters to be deployed using StatefulSets.
-	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", false, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
+	f.BoolVar(&cfg.DeprecatedReadinessCheckRingHealth, readinessCheckRingHealthFlag, false, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 }
 
 // ToRingConfig returns a ring.Config based on the ingester
@@ -136,11 +139,18 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.TokensFilePath = cfg.TokensFilePath
 	lc.Zone = cfg.InstanceZone
 	lc.UnregisterOnShutdown = cfg.UnregisterOnShutdown
-	lc.ReadinessCheckRingHealth = cfg.ReadinessCheckRingHealth
+	lc.ReadinessCheckRingHealth = cfg.DeprecatedReadinessCheckRingHealth
 	lc.Addr = cfg.InstanceAddr
 	lc.Port = cfg.InstancePort
 	lc.ID = cfg.InstanceID
 	lc.ListenPort = cfg.ListenPort
 
 	return lc
+}
+
+func (cfg *RingConfig) Validate(logger log.Logger) error {
+	if cfg.DeprecatedReadinessCheckRingHealth {
+		util.WarnDeprecatedConfig(readinessCheckRingHealthFlag, logger)
+	}
+	return nil
 }
