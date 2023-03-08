@@ -881,13 +881,20 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 	return false
 }
 
+// Extension describes a Limits extension.
+type Extension interface {
+	// SetDefaults will be called on an empty struct before initializing.
+	SetDefaults()
+}
+
 // MustRegisterExtension registers the extensions type with given name
 // and returns a function to get a pointer to the extensions E from a *Limits instance.
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
 // Registering same name twice will cause a panic.
 // The provided getter will return nil for nil *Limits.
-func MustRegisterExtension[E any](name string) func(*Limits) *E {
+// If *Limits is not empty, the
+func MustRegisterExtension[E Extension](name string) func(*Limits) E {
 	if name == "" {
 		panic("extension name cannot be empty")
 	}
@@ -899,21 +906,26 @@ func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	}
 	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
 
+	var e E
+	typ := reflect.TypeOf(e)
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
 		Name: strings.ToUpper(name),
-		Type: reflect.TypeOf(new(E)),
+		Type: typ,
 		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
 	})
 
-	return func(l *Limits) *E {
+	return func(l *Limits) (e E) {
 		if l == nil {
-			return nil
+			return e
 		}
 
 		if e, ok := l.extensions[name]; ok {
-			return e.(*E)
+			return e.(E)
 		}
-		return nil
+		return e
 	}
 }
 
@@ -976,18 +988,23 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	// typ is the type of the new struct.
 	typ := reflect.StructOf(fields)
 
-	// cfg is an instance of a pointer to a new struct.
-	cfg := reflect.New(typ).Interface()
+	// cfg is an instance of a pointer to this new struct.
+	cfg := reflect.New(typ)
+
+	// Call SetDefaults() on every field.
+	for i := range limitsExtensionsFields {
+		cfg.Elem().Field(i).Addr().Interface().(Extension).SetDefaults()
+	}
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
 	// In other words:
 	//     cfg.PlainLimits = limits
-	reflect.ValueOf(cfg).Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
 
-	return cfg, func() map[string]interface{} {
+	return cfg.Interface(), func() map[string]interface{} {
 		ext := map[string]interface{}{}
 		for name, i := range registeredExtensionsIndexes {
-			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+			ext[name] = cfg.Elem().Field(i).Addr().Interface()
 		}
 		return ext
 	}
