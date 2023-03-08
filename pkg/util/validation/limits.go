@@ -903,8 +903,8 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 
 	var zeroE E
 	registeredExtensions[name] = registeredExtension{
-		index:        len(registeredExtensions),
-		defaultValue: func() interface{} { return zeroE.Default() },
+		index:            len(registeredExtensions),
+		reflectedDefault: func() reflect.Value { return reflect.ValueOf(zeroE.Default()) },
 	}
 
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
@@ -937,8 +937,8 @@ func init() {
 }
 
 type registeredExtension struct {
-	index        int
-	defaultValue func() interface{}
+	index            int
+	reflectedDefault func() reflect.Value
 }
 
 // registeredExtensions is used to keep track of the indexes of each registered extension.
@@ -993,7 +993,7 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	// In other words:
 	//     cfg.EXTNAME1 = cfg.EXTNAME1.Default()
 	for _, ext := range registeredExtensions {
-		cfg.Elem().Field(ext.index).Set(reflect.ValueOf(ext.defaultValue()))
+		cfg.Elem().Field(ext.index).Set(ext.reflectedDefault())
 	}
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
