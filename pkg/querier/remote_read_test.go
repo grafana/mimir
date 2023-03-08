@@ -185,7 +185,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 				},
 			},
 		},
-		"with 241 samples, we expect 2 frames with 2 chunks, and 1 frame with 1 chunk due to frame limit": {
+		"with 481 samples, we expect 2 frames with 2 chunks, and 1 frame with 1 chunk due to frame limit": {
 			samples: getNSamples(481),
 			expectedResults: []*client.StreamReadResponse{
 				{
