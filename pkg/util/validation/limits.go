@@ -897,12 +897,16 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 	if _, ok := standardLimitsYAMLJSONKeys[name]; ok {
 		panic(fmt.Errorf("extension %s cannot be registered because it's a standard limits field", name))
 	}
-	if _, ok := registeredExtensionsIndexes[name]; ok {
+	if _, ok := registeredExtensions[name]; ok {
 		panic(fmt.Errorf("extension %s already registered", name))
 	}
-	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
 
 	var zeroE E
+	registeredExtensions[name] = registeredExtension{
+		index:        len(registeredExtensions),
+		defaultValue: func() interface{} { return zeroE.Default() },
+	}
+
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
 		Name: strings.ToUpper(name),
 		Type: reflect.TypeOf(zeroE),
@@ -932,8 +936,13 @@ func init() {
 	}
 }
 
-// registeredExtensionsIndexes is used to keep track of the indexes of each registered extension.
-var registeredExtensionsIndexes = map[string]int{}
+type registeredExtension struct {
+	index        int
+	defaultValue func() interface{}
+}
+
+// registeredExtensions is used to keep track of the indexes of each registered extension.
+var registeredExtensions = map[string]registeredExtension{}
 
 // limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
 var limitsExtensionsFields []reflect.StructField
@@ -963,7 +972,7 @@ var plainLimitsStructField = reflect.StructField{
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
 func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
-	if len(registeredExtensionsIndexes) == 0 {
+	if len(registeredExtensions) == 0 {
 		// No extensions, so just return the plain limits and an extension getter that returns nil.
 		return limits, func() map[string]interface{} { return nil }
 	}
@@ -983,9 +992,8 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	// Set default values of each field
 	// In other words:
 	//     cfg.EXTNAME1 = cfg.EXTNAME1.Default()
-	for i := range limitsExtensionsFields {
-		res := cfg.Elem().Field(i).MethodByName("Default").Call(nil)
-		cfg.Elem().Field(i).Set(res[0])
+	for _, ext := range registeredExtensions {
+		cfg.Elem().Field(ext.index).Set(reflect.ValueOf(ext.defaultValue()))
 	}
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
@@ -995,8 +1003,8 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 
 	return cfg.Interface(), func() map[string]interface{} {
 		ext := map[string]interface{}{}
-		for name, i := range registeredExtensionsIndexes {
-			ext[name] = cfg.Elem().Field(i).Interface()
+		for name, re := range registeredExtensions {
+			ext[name] = cfg.Elem().Field(re.index).Interface()
 		}
 		return ext
 	}

@@ -684,7 +684,7 @@ func (stringExtension) Default() stringExtension {
 
 func TestExtensions(t *testing.T) {
 	t.Cleanup(func() {
-		registeredExtensionsIndexes = map[string]int{}
+		registeredExtensions = map[string]registeredExtension{}
 		limitsExtensionsFields = nil
 	})
 
