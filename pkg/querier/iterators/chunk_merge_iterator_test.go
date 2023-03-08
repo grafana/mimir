@@ -32,7 +32,7 @@ type chunkbound struct {
 
 type chunkencoding struct {
 	enc          chunk.Encoding
-	assertSample func(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType)
+	assertSample func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType)
 }
 
 func TestChunkMergeIterator(t *testing.T) {
@@ -58,9 +58,9 @@ func TestChunkMergeIterator(t *testing.T) {
 		},
 	} {
 		for _, encoding := range []chunkencoding{
-			{enc: chunk.PrometheusXorChunk, assertSample: assertFloatSample},
-			{enc: chunk.PrometheusHistogramChunk, assertSample: assertHistogramSample},
-			{enc: chunk.PrometheusFloatHistogramChunk, assertSample: assertFloatHistogramSample}} {
+			{enc: chunk.PrometheusXorChunk, assertSample: test.RequireIteratorIthFloat},
+			{enc: chunk.PrometheusHistogramChunk, assertSample: test.RequireIteratorIthHistogram},
+			{enc: chunk.PrometheusFloatHistogramChunk, assertSample: test.RequireIteratorIthFloatHistogram}} {
 
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				chunks := []chunk.Chunk{}
@@ -69,7 +69,7 @@ func TestChunkMergeIterator(t *testing.T) {
 				}
 				iter := NewChunkMergeIterator(chunks, 0, 0)
 				for i := tc.mint; i < tc.maxt; i++ {
-					encoding.assertSample(t, iter, i, iter.Next())
+					encoding.assertSample(t, i, iter, iter.Next())
 				}
 				assert.Equal(t, chunkenc.ValNone, iter.Next())
 			})
@@ -84,28 +84,28 @@ func TestChunkMergeIteratorMixed(t *testing.T) {
 		mkChunk(t, 125, 200, 1*time.Millisecond, chunk.PrometheusFloatHistogramChunk),
 	}, 0, 0)
 
-	assertSample := func(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType) {
+	assertSample := func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 		if i < 50 {
-			assertFloatSample(t, iter, i, valueType)
+			test.RequireIteratorIthFloat(t, i, iter, valueType)
 			return
 		}
 		if i < 125 {
-			assertHistogramSample(t, iter, i, valueType)
+			test.RequireIteratorIthHistogram(t, i, iter, valueType)
 			return
 		}
-		assertFloatHistogramSample(t, iter, i, valueType)
+		test.RequireIteratorIthFloatHistogram(t, i, iter, valueType)
 	}
 
 	for i := int64(0); i < 200; i++ {
-		assertSample(t, iter, i, iter.Next())
+		assertSample(t, i, iter, iter.Next())
 	}
 }
 
 func TestChunkMergeIteratorSeek(t *testing.T) {
 	for _, encoding := range []chunkencoding{
-		{enc: chunk.PrometheusXorChunk, assertSample: assertFloatSample},
-		{enc: chunk.PrometheusHistogramChunk, assertSample: assertHistogramSample},
-		{enc: chunk.PrometheusFloatHistogramChunk, assertSample: assertFloatHistogramSample}} {
+		{enc: chunk.PrometheusXorChunk, assertSample: test.RequireIteratorIthFloat},
+		{enc: chunk.PrometheusHistogramChunk, assertSample: test.RequireIteratorIthHistogram},
+		{enc: chunk.PrometheusFloatHistogramChunk, assertSample: test.RequireIteratorIthFloatHistogram}} {
 		t.Run(fmt.Sprintf("%v", encoding.enc), func(t *testing.T) {
 			chunks := []chunk.Chunk{
 				mkChunk(t, 0, 100, 1*time.Millisecond, encoding.enc),
@@ -118,11 +118,11 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 			for i := mint; i < maxt; i += 20 {
 				iter := NewChunkMergeIterator(chunks, 0, 0)
 				valueType := iter.Seek(i)
-				encoding.assertSample(t, iter, i, valueType)
+				encoding.assertSample(t, i, iter, valueType)
 
 				for j := i + 1; j < maxt; j++ {
 					valueType := iter.Next()
-					encoding.assertSample(t, iter, j, valueType)
+					encoding.assertSample(t, j, iter, valueType)
 				}
 				assert.Equal(t, chunkenc.ValNone, iter.Next())
 			}
@@ -139,55 +139,26 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 	mint := int64(0)
 	maxt := int64(200)
 
-	assertSample := func(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType) {
+	assertSample := func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 		if i < 50 {
-			assertFloatSample(t, iter, i, valueType)
+			test.RequireIteratorIthFloat(t, i, iter, valueType)
 			return
 		}
 		if i < 125 {
-			assertHistogramSample(t, iter, i, valueType)
+			test.RequireIteratorIthHistogram(t, i, iter, valueType)
 			return
 		}
-		assertFloatHistogramSample(t, iter, i, valueType)
+		test.RequireIteratorIthFloatHistogram(t, i, iter, valueType)
 	}
 
 	for i := mint; i < maxt; i += 10 {
 		iter := NewChunkMergeIterator(chunks, 0, 0)
-		assertSample(t, iter, i, iter.Seek(i))
+		assertSample(t, i, iter, iter.Seek(i))
 
 		for j := i + 1; j < maxt; j++ {
-			assertSample(t, iter, j, iter.Next())
+			assertSample(t, j, iter, iter.Next())
 		}
 	}
-}
-
-func assertFloatSample(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType) {
-	require.Equal(t, chunkenc.ValFloat, valueType)
-	ts, s := iter.At()
-	assert.Equal(t, i, ts)
-	assert.Equal(t, float64(i), s)
-	assert.NoError(t, iter.Err())
-}
-
-func assertHistogramSample(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType) {
-	require.Equal(t, chunkenc.ValHistogram, valueType)
-	ts, h := iter.AtHistogram()
-	assert.Equal(t, i, ts)
-	test.RequireHistogramEqual(t, generateTestHistogram(int(i)), h)
-	assert.NoError(t, iter.Err())
-	// check auto type conversion for PromQL
-	ts2, fh := iter.AtFloatHistogram()
-	assert.Equal(t, i, ts2)
-	test.RequireFloatHistogramEqual(t, generateTestHistogram(int(i)).ToFloat(), fh)
-	assert.NoError(t, iter.Err())
-}
-
-func assertFloatHistogramSample(t *testing.T, iter chunkenc.Iterator, i int64, valueType chunkenc.ValueType) {
-	require.Equal(t, chunkenc.ValFloatHistogram, valueType)
-	ts, h := iter.AtFloatHistogram()
-	assert.Equal(t, i, ts)
-	test.RequireFloatHistogramEqual(t, generateTestFloatHistogram(int(i)), h)
-	assert.NoError(t, iter.Err())
 }
 
 func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding chunk.Encoding) chunk.Chunk {
