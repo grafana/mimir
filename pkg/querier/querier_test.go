@@ -310,6 +310,10 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	}, m[0].Points)
 }
 
+// TestBatchMergeChunks is a regression test to catch one particular case
+//   when the Batch merger iterator was corrupting memory by not copying
+//   Batches by value because the Batch itself was not possible to copy
+//   by value.
 func TestBatchMergeChunks(t *testing.T) {
 	var (
 		logger     = log.NewNopLogger()
