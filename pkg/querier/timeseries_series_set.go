@@ -78,10 +78,9 @@ func (t *timeseries) Labels() labels.Labels {
 // Iterator implements the storage.Series interface
 func (t *timeseries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	return &timeSeriesSeriesIterator{
-		ts:  t,
-		iF:  -1,
-		iH:  -1,
-		atH: false,
+		ts: t,
+		iF: -1,
+		iH: -1,
 	}
 }
 
@@ -176,8 +175,10 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 		return 0, nil
 	}
 	h := t.ts.series.Histograms[t.iH]
-	// Should we automatially convert to float if the hisotgram happens to be integer histogram?
-	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	if h.IsFloatHistogram() {
+		return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	}
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h).ToFloat()
 }
 
 // AtT implements implements chunkenc.Iterator.

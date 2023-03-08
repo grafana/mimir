@@ -136,6 +136,11 @@ func TestTimeSeriesIterator(t *testing.T) {
 	i, h := it.AtHistogram()
 	require.EqualValues(t, 1232, i)
 	require.Equal(t, generateTestHistogram(7), h)
+	// Test auto conversion
+	i, fh = it.AtFloatHistogram()
+	require.EqualValues(t, 1232, i)
+	require.Equal(t, generateTestHistogram(7).ToFloat(), fh)
+
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
 	i, fh = it.AtFloatHistogram()
 	require.EqualValues(t, 1233, i)
