@@ -113,7 +113,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ce := cardinalityEstimation{cache: tt.cache}
-			ce.storeCardinalityForKey(ctx, actualKey, actualValue)
+			ce.storeCardinalityForKey(actualKey, actualValue)
 			estimate, ok := ce.lookupCardinalityForKey(ctx, tt.key)
 			if tt.cache != nil {
 				expectedFetchCount++
@@ -227,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
-				c.Store(ctx, tt.cacheContent, time.Minute)
+				c.StoreAsync(tt.cacheContent, time.Minute)
 				numSetupStoreCalls++
 			}
 

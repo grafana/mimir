@@ -667,3 +667,91 @@ func TestEnabledByAnyTenant(t *testing.T) {
 
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 }
+
+func TestExtensions(t *testing.T) {
+	t.Cleanup(func() {
+		registeredExtensionsIndexes = map[string]int{}
+		limitsExtensionsFields = nil
+	})
+
+	// Downstream declares a new extension type and registers it.
+	type testExtensions struct {
+		Foo int `yaml:"foo"`
+	}
+	// By registering, we get a function that provides the extensions for a Limits instance.
+	getExtensionStruct := MustRegisterExtension[testExtensions]("test_extension_struct")
+	getExtensionString := MustRegisterExtension[string]("test_extension_string")
+	getExtensionNil := MustRegisterExtension[int]("test_extension_null")
+
+	// Unmarshal a config with extensions.
+	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
+
+	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
+	t.Run("yaml", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
+		assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, json.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, &testExtensions{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, "bar", *getExtensionString(overrides["user"]))
+		assert.Nil(t, getExtensionNil(overrides["user"]), "Nil extension value should be returned as nil")
+	})
+
+	t.Run("can't register twice", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[testExtensions]("foo")
+			MustRegisterExtension[testExtensions]("foo")
+		})
+	})
+
+	t.Run("can't register name that is already a Limits JSON/YAML key", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[int64]("max_global_series_per_user")
+		})
+	})
+
+	t.Run("can't register empty name", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[int64]("")
+		})
+	})
+
+	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
+		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
+		// Since we assign l = *defaultLimits before unmarshaling,
+		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
+		// This shouldn't happen, but let's have a test to make sure that it doesnt.
+		var def Limits
+		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
+		require.Equal(t, "default", *getExtensionString(&def))
+		SetDefaultLimitsForYAMLUnmarshalling(def)
+
+		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.Equal(t, "one", *getExtensionString(overrides["one"]))
+		require.Equal(t, "two", *getExtensionString(overrides["two"]))
+
+		cfg = `{"three": {"test_extension_string": "three"}}`
+		overrides2 := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides2), "parsing overrides")
+		require.Equal(t, "three", *getExtensionString(overrides2["three"]))
+
+		// Previous values did not change.
+		require.Equal(t, "one", *getExtensionString(overrides["one"]))
+		require.Equal(t, "two", *getExtensionString(overrides["two"]))
+
+		// Default value did not change.
+		require.Equal(t, "default", *getExtensionString(&def))
+	})
+}

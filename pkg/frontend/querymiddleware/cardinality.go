@@ -96,7 +96,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	spanLog.LogFields(otlog.Uint64("actual cardinality", actualCardinality))
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
-		c.storeCardinalityForKey(ctx, k, actualCardinality)
+		c.storeCardinalityForKey(k, actualCardinality)
 		spanLog.LogFields(otlog.Bool("cache updated", true))
 	}
 
@@ -131,7 +131,7 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 
 // storeCardinalityForKey stores a cardinality estimate for the given key in the
 // results cache.
-func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key string, count uint64) {
+func (c *cardinalityEstimation) storeCardinalityForKey(key string, count uint64) {
 	if c.cache == nil {
 		return
 	}
@@ -143,7 +143,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(ctx context.Context, key 
 	}
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
-	c.cache.Store(ctx, map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
+	c.cache.StoreAsync(map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {

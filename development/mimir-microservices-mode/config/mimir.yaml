@@ -46,24 +46,16 @@ blocks_storage:
     sync_dir: /tmp/mimir-tsdb-querier
     consistency_delay: 5s
     index_header_lazy_loading_enabled: true
+    sync_interval: 1m
 
     index_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
-        min_idle_connections_headroom_percentage: 50
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
     chunks_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
-        min_idle_connections_headroom_percentage: 50
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
     metadata_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
-        min_idle_connections_headroom_percentage: 50
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
   s3:
     endpoint:          minio:9000
@@ -145,10 +137,7 @@ frontend:
   # scheduler_address: "query-scheduler:9011"
 
   results_cache:
-    backend: "memcached"
-    memcached:
-      addresses: "dns+memcached:11211"
-      min_idle_connections_headroom_percentage: 50
+    # Cache is configured via CLI flags. See docker-compose.jsonnet
     compression: snappy
 
 frontend_worker:

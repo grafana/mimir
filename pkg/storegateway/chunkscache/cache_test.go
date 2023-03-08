@@ -95,11 +95,11 @@ func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 				toStore[p.userID][p.r] = p.value
 			}
 			for userID, userRanges := range toStore {
-				c.StoreChunks(ctx, userID, userRanges)
+				c.StoreChunks(userID, userRanges)
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchRanges)
+			hits := c.FetchMultiChunks(ctx, testData.fetchUserID, testData.fetchRanges, nil)
 			assert.Equal(t, testData.expectedHits, hits)
 
 			// Assert on metrics.
@@ -156,7 +156,7 @@ func (c *mockedCacheClient) Fetch(_ context.Context, keys []string, _ ...cache.O
 	return hits
 }
 
-func (c *mockedCacheClient) Store(_ context.Context, data map[string][]byte, _ time.Duration) {
+func (c *mockedCacheClient) StoreAsync(data map[string][]byte, _ time.Duration) {
 	for key, value := range data {
 		c.cache[key] = value
 	}
