@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -191,18 +192,21 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 		histograms := []mimirpb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType == chunkenc.ValFloat {
+			switch valType {
+			case chunkenc.ValFloat:
 				t, v := it.At()
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: t,
 					Value:       v,
 				})
-			} else if valType == chunkenc.ValHistogram {
+			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram()
 				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
-			} else if valType == chunkenc.ValFloatHistogram {
+			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram()
 				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+			default:
+				return nil, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
 
