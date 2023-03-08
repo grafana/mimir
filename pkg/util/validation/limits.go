@@ -560,8 +560,8 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
-func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
-	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
+func (o *Overrides) OutOfOrderTimeWindow(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).OutOfOrderTimeWindow)
 }
 
 // OutOfOrderBlocksExternalLabelEnabled returns if the shipper is flagging out-of-order blocks with an external label.
