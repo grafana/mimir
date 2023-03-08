@@ -2702,6 +2702,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
+# (experimental) Time to live duration for cached query results. If query falls
+# into out-of-order time window,
+# -query-frontend.results-cache-ttl-for-out-of-order-time-window is used
+# instead.
+# CLI flag: -query-frontend.results-cache-ttl
+[results_cache_ttl: <duration> | default = 1w]
+
+# (experimental) Time to live duration for cached query results if query falls
+# into out-of-order time window. This is lower than
+# -query-frontend.results-cache-ttl so that incoming out-of-order samples are
+# returned in the query results sooner.
+# CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
+[results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -2874,18 +2888,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
-
-# (experimental) Time to live duration for cached query results. If query falls
-# into out-of-order time window,
-# -query-frontend.results-cache-ttl-for-out-of-order-time-window is used
-# instead.
-# CLI flag: -query-frontend.results-cache-ttl
-[results_cache_ttl: <duration> | default = 1w]
-
-# (experimental) Time to live duration for cached query results if query falls
-# into out-of-order time window.
-# CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
-[results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 ```
 
 ### blocks_storage

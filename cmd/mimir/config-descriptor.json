@@ -3078,7 +3078,7 @@
           "kind": "field",
           "name": "out_of_order_time_window",
           "required": false,
-          "desc": "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.",
+          "desc": "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.out-of-order-time-window",
@@ -3238,6 +3238,28 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl",
+          "required": false,
+          "desc": "Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead.",
+          "fieldValue": null,
+          "fieldDefaultValue": 604800000000000,
+          "fieldFlag": "query-frontend.results-cache-ttl",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_out_of_order_time_window",
+          "required": false,
+          "desc": "Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-out-of-order-time-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

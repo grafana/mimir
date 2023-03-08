@@ -46,6 +46,7 @@ const (
 	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
 	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
 	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
@@ -251,9 +252,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
 	_ = l.ResultsCacheTTL.Set("7d")
-	f.Var(&l.ResultsCacheTTL, "query-frontend.results-cache-ttl", fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
-	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, "Time to live duration for cached query results if query falls into out-of-order time window.")
+	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
