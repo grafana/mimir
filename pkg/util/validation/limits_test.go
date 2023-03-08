@@ -754,4 +754,8 @@ func TestExtensions(t *testing.T) {
 		// Default value did not change.
 		require.Equal(t, "default", *getExtensionString(&def))
 	})
+
+	t.Run("getter works with nil Limits", func(t *testing.T) {
+		require.Nil(t, getExtensionStruct(nil))
+	})
 }

@@ -886,6 +886,7 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 // The name will be used as YAML/JSON key to decode the extensions.
 // This method is not thread safe and should be called only during package initialization.
 // Registering same name twice will cause a panic.
+// The provided getter will return nil for nil *Limits.
 func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	if name == "" {
 		panic("extension name cannot be empty")
@@ -905,6 +906,10 @@ func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	})
 
 	return func(l *Limits) *E {
+		if l == nil {
+			return nil
+		}
+
 		if e, ok := l.extensions[name]; ok {
 			return e.(*E)
 		}
