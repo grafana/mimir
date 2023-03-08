@@ -550,10 +550,10 @@ github.com/hashicorp/errwrap
 # github.com/hashicorp/go-cleanhttp v0.5.2
 ## explicit; go 1.13
 github.com/hashicorp/go-cleanhttp
-# github.com/hashicorp/go-hclog v1.2.0 => github.com/hashicorp/go-hclog v0.12.2
+# github.com/hashicorp/go-hclog v1.2.0
 ## explicit; go 1.13
 github.com/hashicorp/go-hclog
-# github.com/hashicorp/go-immutable-radix v1.3.1 => github.com/hashicorp/go-immutable-radix v1.2.0
+# github.com/hashicorp/go-immutable-radix v1.3.1
 ## explicit
 github.com/hashicorp/go-immutable-radix
 # github.com/hashicorp/go-msgpack v0.5.5
@@ -1378,8 +1378,6 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230309083841-242e82b8e667
-# github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
-# github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 # google.golang.org/grpc => google.golang.org/grpc v1.47.0

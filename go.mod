@@ -230,11 +230,6 @@ require (
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230309083841-242e82b8e667
 
-// Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
-replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
-
-replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
-
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
 // - https://github.com/hashicorp/memberlist/pull/260
