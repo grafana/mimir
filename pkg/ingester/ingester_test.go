@@ -65,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -173,6 +174,72 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
+		},
+		"should succeed on valid series with histograms and metadata": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1))},
+					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(2))},
+				}},
+			},
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+			},
+			additionalMetrics: []string{
+				// Metadata.
+				"cortex_ingester_memory_metadata",
+				"cortex_ingester_memory_metadata_created_total",
+				"cortex_ingester_ingested_metadata_total",
+				"cortex_ingester_ingested_metadata_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
+				# TYPE cortex_ingester_ingested_metadata_failures_total counter
+				cortex_ingester_ingested_metadata_failures_total 0
+				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+				# TYPE cortex_ingester_ingested_metadata_total counter
+				cortex_ingester_ingested_metadata_total 2
+				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+				# TYPE cortex_ingester_memory_metadata gauge
+				cortex_ingester_memory_metadata 2
+				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+				# TYPE cortex_ingester_memory_metadata_created_total counter
+				cortex_ingester_memory_metadata_created_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			nativeHistograms: true,
 		},
 		"should succeed on valid series with exemplars": {
 			maxExemplars: 2,
@@ -424,7 +491,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -478,7 +545,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -2455,9 +2522,19 @@ func TestIngester_QueryStream(t *testing.T) {
 	const numSeries = 1000
 
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		lbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
-		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.Push(ctx, req)
+		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
+		floatReq, _, _, _ := mockWriteRequest(t, floatLbls, float64(seriesID), int64(seriesID))
+		_, err = i.Push(ctx, floatReq)
+		require.NoError(t, err)
+
+		histLbls := labels.FromStrings(labels.MetricName, "hist", "series_id", strconv.Itoa(seriesID))
+		histReq := mockHistogramWriteRequest(histLbls, int64(seriesID), seriesID, false)
+		_, err = i.Push(ctx, histReq)
+		require.NoError(t, err)
+
+		fhistLbls := labels.FromStrings(labels.MetricName, "fhist", "series_id", strconv.Itoa(seriesID))
+		fhistReq := mockHistogramWriteRequest(fhistLbls, int64(seriesID), seriesID, true)
+		_, err = i.Push(ctx, fhistReq)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -2546,6 +2623,8 @@ func TestIngester_QueryStream(t *testing.T) {
 				return receivedSeries, nil
 			}
 
+			expectedNumSeries := numSeries * 3
+
 			if testData.numShards > 0 {
 				for shardIndex := 0; shardIndex < testData.numShards; shardIndex++ {
 					receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
@@ -2563,11 +2642,13 @@ func TestIngester_QueryStream(t *testing.T) {
 					require.NoError(t, err)
 					assert.Greater(t, receivedSeries, 0)
 				}
+
+				expectedNumSeries = numSeries // Querying native histograms is not supported when query sharding is active.
 			} else {
 				receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
 					StartTimestampMs: math.MinInt64,
 					EndTimestampMs:   math.MaxInt64,
-					Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"}},
+					Matchers:         []*client.LabelMatcher{{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "bar"}}, // Should return all series.
 				})
 
 				require.NoError(t, err)
@@ -2576,56 +2657,110 @@ func TestIngester_QueryStream(t *testing.T) {
 
 			// Ensure we received the expected data types in response.
 			if testData.expectedStreamType == QueryStreamSamples {
-				assert.Len(t, actualTimeseries, numSeries)
+				assert.Len(t, actualTimeseries, expectedNumSeries)
 				assert.Empty(t, actualChunkseries)
 			} else {
-				assert.Len(t, actualChunkseries, numSeries)
+				assert.Len(t, actualChunkseries, expectedNumSeries)
 				assert.Empty(t, actualTimeseries)
 			}
 
-			// We expect that all series have been returned.
-			actualSeriesIDs := map[int]struct{}{}
+			// We expect that all series have been returned once per metric name.
+			actualSeriesIDs := map[string]map[int]struct{}{}
+			for _, metricName := range []string{"foo", "hist", "fhist"} {
+				actualSeriesIDs[metricName] = make(map[int]struct{})
+			}
 
 			for _, series := range actualTimeseries {
-				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				metricName := lbls.Get(labels.MetricName)
+
+				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[seriesID]
+				_, exists := actualSeriesIDs[metricName][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[seriesID] = struct{}{}
+				actualSeriesIDs[metricName][seriesID] = struct{}{}
 
-				// We expect 1 sample with the same timestamp and value we've written.
-				require.Len(t, series.Samples, 1)
-				assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
-				assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+				switch metricName {
+				case "foo":
+					// We expect 1 sample with the same timestamp and value we've written.
+					require.Len(t, series.Samples, 1)
+					assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
+					assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+				case "hist":
+					require.Len(t, series.Histograms, 1)
+					require.Equal(t, mimirpb.FromHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestHistogram(seriesID)), series.Histograms[0])
+				case "fhist":
+					require.Len(t, series.Histograms, 1)
+					require.Equal(t, mimirpb.FromFloatHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestFloatHistogram(seriesID)), series.Histograms[0])
+				default:
+					require.Fail(t, "unexpected metric name")
+				}
 			}
 
 			for _, series := range actualChunkseries {
-				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				metricName := lbls.Get(labels.MetricName)
+
+				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[seriesID]
+				_, exists := actualSeriesIDs[metricName][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[seriesID] = struct{}{}
+				actualSeriesIDs[metricName][seriesID] = struct{}{}
 
 				// We expect 1 chunk.
 				require.Len(t, series.Chunks, 1)
 
-				data, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
-				require.NoError(t, err)
+				enc := series.Chunks[0].Encoding
+				switch enc {
+				case int32(chunk.PrometheusXorChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
+					require.NoError(t, err)
 
-				// We expect 1 sample with the same timestamp and value we've written.
-				it := data.Iterator(nil)
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
 
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				actualTs, actualValue := it.At()
-				assert.Equal(t, int64(seriesID), actualTs)
-				assert.Equal(t, float64(seriesID), actualValue)
+					require.Equal(t, chunkenc.ValFloat, it.Next())
+					actualTs, actualValue := it.At()
+					assert.Equal(t, int64(seriesID), actualTs)
+					assert.Equal(t, float64(seriesID), actualValue)
 
-				assert.Equal(t, chunkenc.ValNone, it.Next())
-				assert.NoError(t, it.Err())
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				case int32(chunk.PrometheusHistogramChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncHistogram, series.Chunks[0].Data)
+					require.NoError(t, err)
+
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
+
+					require.Equal(t, chunkenc.ValHistogram, it.Next())
+					actualTs, actualHist := it.AtHistogram()
+					require.Equal(t, int64(seriesID), actualTs)
+					require.Equal(t, util_test.GenerateTestHistogram(seriesID), actualHist)
+
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				case int32(chunk.PrometheusFloatHistogramChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncFloatHistogram, series.Chunks[0].Data)
+					require.NoError(t, err)
+
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
+
+					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+					actualTs, actualHist := it.AtFloatHistogram()
+					require.Equal(t, int64(seriesID), actualTs)
+					require.Equal(t, util_test.GenerateTestFloatHistogram(seriesID), actualHist)
+
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				default:
+					require.Fail(t, "unexpected encoding")
+				}
 			}
 		})
 	}
@@ -3033,6 +3168,18 @@ func benchmarkIngesterQueryStream(ctx context.Context, b *testing.B, i *Ingester
 	}
 }
 
+func mockHistogramWriteRequest(lbls labels.Labels, timestampMs int64, histIdx int, genFloatHist bool) *mimirpb.WriteRequest {
+	var histograms []mimirpb.Histogram
+	if genFloatHist {
+		h := util_test.GenerateTestFloatHistogram(histIdx)
+		histograms = []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(timestampMs, h)}
+	} else {
+		h := util_test.GenerateTestHistogram(histIdx)
+		histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, h)}
+	}
+	return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([]labels.Labels{lbls}, histograms, nil)
+}
+
 func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
 	samples := []mimirpb.Sample{
 		{
@@ -3109,7 +3256,9 @@ func prepareHealthyIngester(b testing.TB) *Ingester {
 }
 
 func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) (*Ingester, error) {
-	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, defaultLimitsTestConfig(), "", registerer)
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.NativeHistogramsIngestionEnabled = true
+	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", registerer)
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
@@ -6450,18 +6599,18 @@ func TestNewIngestErrMsgs(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
-	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdb.GenerateTestFloatHistogram(0)))
+	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(0)))
 
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}
@@ -6598,6 +6747,10 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		Values: []model.SamplePair{{
 			Timestamp: 0,
 			Value:     1,
+		}},
+		Histograms: []model.SampleHistogramPair{{
+			Timestamp: 2,
+			Histogram: expectHistogram,
 		}},
 	}}
 
