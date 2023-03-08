@@ -882,12 +882,15 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 }
 
 // MustRegisterExtension registers the extensions type with given name
-// and returns a function to get a pointer to the extensions E from a *Limits instance.
-// The name will be used as YAML/JSON key to decode the extensions.
+// and returns a function to get the extensions value from a *Limits instance.
+//
+// The provided name will be used as YAML/JSON key to decode the extensions.
+//
+// The returned getter will return the result of E.Default() if *Limits is nil.
+//
 // This method is not thread safe and should be called only during package initialization.
-// Registering same name twice will cause a panic.
-// The provided getter will return nil for nil *Limits.
-func MustRegisterExtension[E any](name string) func(*Limits) *E {
+// Registering same name twice, or registering a name that is already a *Limits JSON or YAML key will cause a panic.
+func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits) E {
 	if name == "" {
 		panic("extension name cannot be empty")
 	}
@@ -899,21 +902,20 @@ func MustRegisterExtension[E any](name string) func(*Limits) *E {
 	}
 	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
 
+	var zeroE E
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
 		Name: strings.ToUpper(name),
-		Type: reflect.TypeOf(new(E)),
+		Type: reflect.TypeOf(zeroE),
 		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
 	})
 
-	return func(l *Limits) *E {
+	return func(l *Limits) (e E) {
 		if l == nil {
-			return nil
+			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
+			// Especially when the default values are initialized after package initialization phase, where this is registered.
+			return e.Default()
 		}
-
-		if e, ok := l.extensions[name]; ok {
-			return e.(*E)
-		}
-		return nil
+		return l.extensions[name].(E)
 	}
 }
 
@@ -975,19 +977,25 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 
 	// typ is the type of the new struct.
 	typ := reflect.StructOf(fields)
-
 	// cfg is an instance of a pointer to a new struct.
-	cfg := reflect.New(typ).Interface()
+	cfg := reflect.New(typ)
+
+	// As
+	for i := range limitsExtensionsFields {
+		// Call the Default() T method on each field and assign it to that field.
+		res := cfg.Elem().Field(i).MethodByName("Default").Call(nil)
+		cfg.Elem().Field(i).Set(res[0])
+	}
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
 	// In other words:
 	//     cfg.PlainLimits = limits
-	reflect.ValueOf(cfg).Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
 
-	return cfg, func() map[string]interface{} {
+	return cfg.Interface(), func() map[string]interface{} {
 		ext := map[string]interface{}{}
 		for name, i := range registeredExtensionsIndexes {
-			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+			ext[name] = cfg.Elem().Field(i).Interface()
 		}
 		return ext
 	}
