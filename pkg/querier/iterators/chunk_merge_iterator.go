@@ -225,6 +225,8 @@ func (h *seriesIteratorHeap) Less(i, j int) bool {
 	if iT == jT {
 		iTyp := (*h)[i].AtType()
 		jTyp := (*h)[j].AtType()
+		// In case of time equality prefer histograms as they contain more information.
+		// Returns false if types are equal which is the original way of working.
 		return iTyp > jTyp
 	}
 	return iT < jT
