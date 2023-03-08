@@ -98,6 +98,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Add support for ruler auto-scaling. #4046
 * [ENHANCEMENT] Add optional `weight` param to `newQuerierScaledObject` and `newRulerQuerierScaledObject` to allow running multiple querier deployments on different node types. #4141
 * [ENHANCEMENT] Add support for query-frontend and ruler-query-frontend auto-scaling. #4199
+* [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [BUGFIX] Shuffle sharding: when applying user class limits, honor the minimum shard size configured in `$._config.shuffle_sharding.*`. #4363
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
