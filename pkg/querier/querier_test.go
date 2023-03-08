@@ -243,38 +243,38 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				// Series with data points only before queryStart.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
 					}),
 				},
 				// Series with data points before and after queryStart, but before queryEnd.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
-						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
-						{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
-						{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
-						{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
-						{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
-						{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
-						{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
-						{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
-						{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
-						{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
 					}),
 				},
 				// Series with data points after queryEnd.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
-						{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
-						{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
-						{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
 					}),
 				},
 			},
@@ -338,8 +338,8 @@ func TestBatchMergeChunks(t *testing.T) {
 		}
 	}
 
-	c1 := convertToChunks(t, s1)
-	c2 := convertToChunks(t, s2)
+	c1 := convertToChunks(t, samplesToInterface(s1))
+	c2 := convertToChunks(t, samplesToInterface(s2))
 	chunks12 := []client.Chunk{}
 	chunks12 = append(chunks12, c1...)
 	chunks12 = append(chunks12, c2...)
