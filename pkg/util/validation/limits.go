@@ -924,10 +924,7 @@ func MustRegisterExtension[E Extension](name string) func(*Limits) E {
 			return e
 		}
 
-		if e, ok := l.extensions[name]; ok {
-			return e.(E)
-		}
-		return e
+		return l.extensions[name].(E)
 	}
 }
 
