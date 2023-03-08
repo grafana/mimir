@@ -5310,7 +5310,7 @@
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.bucket-store.consistency-delay",
               "fieldType": "duration",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "block",
@@ -7233,7 +7233,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.consistency-delay",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",

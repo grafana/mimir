@@ -14,7 +14,7 @@ This topic describes our guarantees for this Grafana Mimir major release.
 ## Flags, configuration, and minor version upgrades
 
 Upgrading Grafana Mimir from one minor version to the next minor version should work, but we don't want to bump the major version every time we remove a configuration parameter.
-We will keep deprecated flags and YAML configuration parameters in place for two minor releases.
+We will keep [deprecated features](#deprecated-features) in place for two minor releases.
 You can use the `deprecated_flags_inuse_total` metric to generate an alert that helps you determine if you're using a deprecated flag.
 
 These guarantees don't apply to [experimental features](#experimental-features).
@@ -111,3 +111,12 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+
+## Deprecated features
+
+The following features are currently deprecated and will be **removed in Mimir 2.9**:
+
+- Compactor
+  - `-compactor.consistency-delay`
+- Store-gateway
+  - `-blocks-storage.bucket-store.consistency-delay`
