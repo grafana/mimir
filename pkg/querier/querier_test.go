@@ -55,11 +55,12 @@ func TestQuerier(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	const chunks = 24
+	secondChunkStart := model.Time(0).Add(chunkOffset)
 
-	queries := []query{
+	queries := map[string]query{
 		// Windowed rates with small step;  This will cause BufferedIterator to read
 		// all the samples.
-		{
+		"float: windowed rates with small step": {
 			query:  "rate(foo[1m])",
 			step:   sampleRate * 4,
 			labels: labels.Labels{},
@@ -77,7 +78,7 @@ func TestQuerier(t *testing.T) {
 
 		// Very simple single-point gets, with low step.  Performance should be
 		// similar to above.
-		{
+		"float: single point gets with low step": {
 			query:  "foo",
 			step:   sampleRate * 4,
 			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
@@ -94,7 +95,7 @@ func TestQuerier(t *testing.T) {
 		},
 
 		// Rates with large step; excersise everything.
-		{
+		"float: rate with large step": {
 			query:  "rate(foo[1m])",
 			step:   sampleRate * 4 * 10,
 			labels: labels.Labels{},
@@ -111,7 +112,7 @@ func TestQuerier(t *testing.T) {
 		},
 
 		// Single points gets with large step; excersise Seek performance.
-		{
+		"float: single point gets with large step": {
 			query:  "foo",
 			step:   sampleRate * 4 * 10,
 			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
@@ -127,7 +128,7 @@ func TestQuerier(t *testing.T) {
 			},
 		},
 
-		{
+		"integer histogram: single point gets with low step": {
 			query:  "foo",
 			step:   sampleRate * 4,
 			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
@@ -138,6 +139,60 @@ func TestQuerier(t *testing.T) {
 			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
 				require.Equal(t, ts, point.T)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
+			},
+		},
+
+		"float histogram: single point gets with low step": {
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+			},
+		},
+
+		"float histogram: with large step": {
+			query:  "foo",
+			step:   sampleRate * 4 * 10,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+			},
+		},
+
+		"float to histogram: check transition with low steps": {
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(ts model.Time) chunkenc.ValueType {
+				if ts.After(secondChunkStart) { // New type starts new chunk anyway, so use the chunkoffset
+					return chunkenc.ValFloatHistogram
+				}
+				return chunkenc.ValFloat
+			},
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				if ts > int64(secondChunkStart) {
+					require.Equal(t, ts, point.T)
+					test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+					return
+				}
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
 			},
 		},
 	}
