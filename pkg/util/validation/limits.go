@@ -980,7 +980,6 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	// cfg is an instance of a pointer to a new struct.
 	cfg := reflect.New(typ)
 
-	// As
 	for i := range limitsExtensionsFields {
 		// Call the Default() T method on each field and assign it to that field.
 		res := cfg.Elem().Field(i).MethodByName("Default").Call(nil)
