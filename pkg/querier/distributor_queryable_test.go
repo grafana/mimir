@@ -276,7 +276,7 @@ func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
 		mint = 0
 		maxt = 10000
 	)
-	// TODO(histograms): define merge behaviour when float and integer histograms are at the same timestamp? currently it prefers the one in s1
+
 	s1 := []mimirpb.Histogram{
 		genTestHistogram(1000, 1),
 		genTestHistogram(2000, 2),
