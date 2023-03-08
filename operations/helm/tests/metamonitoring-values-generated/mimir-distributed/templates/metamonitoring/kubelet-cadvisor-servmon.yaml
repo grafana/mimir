@@ -18,6 +18,8 @@ spec:
       relabelings:
         - replacement: kubelet # add so that e.g. up{} metric doesn't get clashes with the other endpoint
           targetLabel: source
+        - targetLabel: cluster
+          replacement: "metamonitoring-values"
       metricRelabelings:
         - action: keep
           regex: storage-metamonitoring-values-mimir.*
@@ -39,6 +41,8 @@ spec:
         - targetLabel: instance # replace so that the metrics work with the default metrics mixin
           sourceLabels:
             - node
+        - targetLabel: cluster
+          replacement: "metamonitoring-values"
       metricRelabelings:
         - action: keep
           regex: metamonitoring-values-mimir.*
