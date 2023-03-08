@@ -75,6 +75,9 @@ func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return i.cachedTime, i.cachedHistogram
 }
 
+// AtFloatHistogram returns the float histogram from the chunk if the chunk type is float histogram.
+// This iterator does not automatically convert histogram type to float histogram as it's never used
+// directly with PromQL, see chunkMergeIterator for auto conversion.
 func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	if i.valType != chunkenc.ValFloatHistogram {
 		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of different type %v", i.valType))
