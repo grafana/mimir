@@ -1361,17 +1361,6 @@ func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter,
 	}
 }
 
-func stringArrayFromLabels(labels []mimirpb.LabelAdapter) []string {
-	s := make([]string, len(labels)*2)
-
-	for i, l := range labels {
-		s[2*i] = l.Name
-		s[2*i+1] = l.Value
-	}
-
-	return s
-}
-
 func protobufEncodePrometheusResponse(t *testing.T, res *mimirpb.QueryResponse) []byte {
 	encoded, err := res.Marshal()
 	require.NoError(t, err)
@@ -1438,7 +1427,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	return q.codec.EncodeResponse(r.Context(), response)
+	return q.codec.EncodeResponse(r.Context(), r, response)
 }
 
 const seconds = 1e3 // 1e3 milliseconds per second.

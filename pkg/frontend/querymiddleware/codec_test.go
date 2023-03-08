@@ -128,6 +128,83 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	}
 }
 
+func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
+	testResponse := &PrometheusResponse{
+		Status:    statusError,
+		ErrorType: string(v1.ErrExec),
+		Error:     "something went wrong",
+	}
+
+	jsonBody, err := jsonFormatter{}.EncodeResponse(testResponse)
+	require.NoError(t, err)
+
+	protobufBody, err := protobufFormatter{}.EncodeResponse(testResponse)
+	require.NoError(t, err)
+
+	scenarios := map[string]struct {
+		acceptHeader                string
+		expectedResponseContentType string
+		expectedResponseBody        []byte
+		expectedError               error
+	}{
+		"no content type in Accept header": {
+			acceptHeader:                "",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"unsupported content type in Accept header": {
+			acceptHeader:  "testing/not-a-supported-content-type",
+			expectedError: apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported"),
+		},
+		"multiple unsupported content types in Accept header": {
+			acceptHeader:  "testing/not-a-supported-content-type,testing/also-not-a-supported-content-type",
+			expectedError: apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported"),
+		},
+		"single supported content type in Accept header": {
+			acceptHeader:                "application/json",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"wildcard subtype in Accept header": {
+			acceptHeader:                "application/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"wildcard in Accept header": {
+			acceptHeader:                "*/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"multiple supported content types in Accept header": {
+			acceptHeader:                "application/vnd.mimir.queryresponse+protobuf,application/json",
+			expectedResponseContentType: mimirpb.QueryResponseMimeType,
+			expectedResponseBody:        protobufBody,
+		},
+	}
+
+	codec := newTestPrometheusCodec()
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "/something", nil)
+			require.NoError(t, err)
+			req.Header.Set("Accept", scenario.acceptHeader)
+
+			encodedResponse, err := codec.EncodeResponse(context.Background(), req, testResponse)
+			require.Equal(t, scenario.expectedError, err)
+
+			if scenario.expectedError == nil {
+				actualResponseContentType := encodedResponse.Header.Get("Content-Type")
+				require.Equal(t, scenario.expectedResponseContentType, actualResponseContentType)
+
+				actualResponseBody, err := io.ReadAll(encodedResponse.Body)
+				require.NoError(t, err)
+				require.Equal(t, scenario.expectedResponseBody, actualResponseBody)
+			}
+		})
+	}
+}
+
 type prometheusAPIResponse struct {
 	Status    string       `json:"status"`
 	Data      interface{}  `json:"data,omitempty"`
@@ -654,6 +731,8 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	)
 
 	codec := newTestPrometheusCodec()
+	req, err := http.NewRequest(http.MethodGet, "/something", nil)
+	require.NoError(b, err)
 
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
@@ -662,7 +741,7 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := codec.EncodeResponse(context.Background(), res)
+		_, err := codec.EncodeResponse(context.Background(), req, res)
 		require.NoError(b, err)
 	}
 }
