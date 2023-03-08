@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -27,13 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
 func TestBlockQuerierSeries(t *testing.T) {
 	t.Parallel()
 
@@ -44,8 +36,8 @@ func TestBlockQuerierSeries(t *testing.T) {
 	tests := map[string]struct {
 		series          *storepb.Series
 		expectedMetric  labels.Labels
-		expectedSamples []sample
-		expectedType    chunkenc.ValueType
+		expectedSamples int64
+		assertSample    func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType)
 		expectedErr     string
 	}{
 		"empty series": {
@@ -66,12 +58,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 					},
 				},
 			},
-			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedSamples: []sample{
-				{t: time.Unix(1, 0).UnixMilli(), v: 1},
-				{t: time.Unix(2, 0).UnixMilli(), v: 2},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorFloat(t, time.Unix(i, 0).UnixMilli(), float64(i), iter, valueType)
 			},
-			expectedType: chunkenc.ValFloat,
 		},
 		"should return histogram series on success": {
 			series: &storepb.Series{
@@ -86,12 +77,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 					},
 				},
 			},
-			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedSamples: []sample{
-				{t: time.Unix(1, 0).UnixMilli(), h: test.GenerateTestHistogram(1)},
-				{t: time.Unix(2, 0).UnixMilli(), h: test.GenerateTestHistogram(2)},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestHistogram(int(i)), iter, valueType)
 			},
-			expectedType: chunkenc.ValHistogram,
 		},
 		"should return float histogram series on success": {
 			series: &storepb.Series{
@@ -106,12 +96,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 					},
 				},
 			},
-			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedSamples: []sample{
-				{t: time.Unix(1, 0).UnixMilli(), fh: test.GenerateTestFloatHistogram(1)},
-				{t: time.Unix(2, 0).UnixMilli(), fh: test.GenerateTestFloatHistogram(2)},
+			expectedMetric:  labels.FromStrings("foo", "bar"),
+			expectedSamples: 2,
+			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+				test.RequireIteratorFloatHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestFloatHistogram(int(i)), iter, valueType)
 			},
-			expectedType: chunkenc.ValFloatHistogram,
 		},
 		"should return error on failure while reading encoded chunk data": {
 			series: &storepb.Series{
@@ -133,36 +122,16 @@ func TestBlockQuerierSeries(t *testing.T) {
 
 			assert.Equal(t, testData.expectedMetric, series.Labels())
 
-			sampleIx := 0
+			sampleIx := int64(0)
 
 			it := series.Iterator(nil)
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-				require.True(t, sampleIx < len(testData.expectedSamples))
-				assert.Equal(t, testData.expectedType, valType)
-				switch testData.expectedType {
-				case chunkenc.ValFloat:
-					ts, val := it.At()
-					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
-					assert.Equal(t, testData.expectedSamples[sampleIx].v, val)
-				case chunkenc.ValHistogram:
-					ts, val := it.AtHistogram()
-					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
-					test.RequireHistogramEqual(t, testData.expectedSamples[sampleIx].h, val)
-					// Test automatic conversion
-					ts, fval := it.AtFloatHistogram()
-					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
-					test.RequireFloatHistogramEqual(t, testData.expectedSamples[sampleIx].h.ToFloat(), fval)
-				case chunkenc.ValFloatHistogram:
-					ts, val := it.AtFloatHistogram()
-					assert.Equal(t, testData.expectedSamples[sampleIx].t, ts)
-					test.RequireFloatHistogramEqual(t, testData.expectedSamples[sampleIx].fh, val)
-				default:
-					t.Errorf("Test code error request unknown value type %v", testData.expectedType)
-				}
+				require.True(t, sampleIx < testData.expectedSamples)
+				testData.assertSample(t, sampleIx+1, it, valType)
 				sampleIx++
 			}
 			// make sure we've got all expected samples
-			require.Equal(t, sampleIx, len(testData.expectedSamples))
+			require.Equal(t, sampleIx, testData.expectedSamples)
 
 			if testData.expectedErr != "" {
 				require.EqualError(t, it.Err(), testData.expectedErr)
