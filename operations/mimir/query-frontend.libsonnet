@@ -40,6 +40,7 @@
     (
       if $._config.cache_results_backend == 'redis' then {
         'query-frontend.results-cache.backend': 'redis',
+        // TODO: use hardcoded redis service
         'query-frontend.results-cache.redis.endpoint': 'dnssrvnoa+redis-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
       } else {}
     ) + $.mimirRuntimeConfigFile,
