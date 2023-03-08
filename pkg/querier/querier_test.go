@@ -8,7 +8,6 @@ package querier
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -42,11 +41,12 @@ const (
 )
 
 type query struct {
-	query    string
-	labels   labels.Labels
-	samples  func(from, through time.Time, step time.Duration) int
-	expected func(t int64) (int64, float64)
-	step     time.Duration
+	query   string
+	labels  labels.Labels
+	samples func(from, through time.Time, step time.Duration) int
+	step    time.Duration
+
+	assertPoint func(t testing.TB, ts int64, point promql.Point)
 }
 
 func TestQuerier(t *testing.T) {
@@ -65,8 +65,11 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
-			expected: func(t int64) (int64, float64) {
-				return t + int64((sampleRate*4)/time.Millisecond), 1000.0
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts + int64((sampleRate*4)/time.Millisecond),
+					V: 1000.0,
+				}, point)
 			},
 		},
 
@@ -79,8 +82,11 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
-			expected: func(t int64) (int64, float64) {
-				return t, float64(t)
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
 			},
 		},
 
@@ -92,8 +98,11 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
-			expected: func(t int64) (int64, float64) {
-				return t + int64((sampleRate*4)/time.Millisecond)*10, 1000.0
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
+					V: 1000.0,
+				}, point)
 			},
 		},
 
@@ -105,8 +114,11 @@ func TestQuerier(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
-			expected: func(t int64) (int64, float64) {
-				return t, float64(t)
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
 			},
 		},
 	}
@@ -129,7 +141,7 @@ func TestQuerier(t *testing.T) {
 
 				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
-				testRangeQuery(t, queryable, through, query, chunkenc.ValFloat)
+				testRangeQuery(t, queryable, through, query)
 			})
 		}
 	}
@@ -151,8 +163,9 @@ func TestQueryHistogram(t *testing.T) {
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
-			expected: func(t int64) (int64, float64) {
-				return t, float64(10 + 8*t)
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
 			},
 		},
 	}
@@ -175,7 +188,7 @@ func TestQueryHistogram(t *testing.T) {
 
 				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
-				testRangeQuery(t, queryable, through, query, chunkenc.ValHistogram)
+				testRangeQuery(t, queryable, through, query)
 			})
 		}
 	}
@@ -932,7 +945,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 	}
 }
 
-func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query, valueType chunkenc.ValueType) *promql.Result {
+func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
 	dir := t.TempDir()
 	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
 
@@ -956,20 +969,8 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 	require.Equal(t, q.labels, series.Metric)
 	require.Equal(t, q.samples(from, through, step), len(series.Points))
 	var ts int64
-	for i, point := range series.Points {
-		expectedTime, expectedValue := q.expected(ts)
-		require.Equal(t, expectedTime, point.T, strconv.Itoa(i))
-		switch valueType {
-		case chunkenc.ValFloat:
-			require.Equal(t, expectedValue, point.V, strconv.Itoa(i))
-		case chunkenc.ValHistogram:
-			require.Equal(t, expectedValue, point.H.Count, strconv.Itoa(i))
-		case chunkenc.ValFloatHistogram:
-			require.Equal(t, expectedValue, point.H.Count, strconv.Itoa(i))
-		default:
-			t.Errorf("Unknown value type %v", valueType)
-		}
-
+	for _, point := range series.Points {
+		q.assertPoint(t, ts, point)
 		ts += int64(step / time.Millisecond)
 	}
 	return r
