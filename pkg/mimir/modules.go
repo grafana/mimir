@@ -174,6 +174,12 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
+	vault, err := vault.NewVault(t.Cfg.Vault)
+	if err != nil {
+		return nil, err
+	}
+	t.Vault = vault
+
 	// Update Configs
 	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
@@ -182,12 +188,6 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
-
-	vault, err := vault.NewVault(t.Cfg.Vault)
-	if err != nil {
-		return nil, err
-	}
-	t.Vault = vault
 
 	return nil, nil
 }
