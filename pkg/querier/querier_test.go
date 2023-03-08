@@ -375,11 +375,13 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 			_, err := app.Append(0, l, int64(ts), float64(ts))
 			require.NoError(t, err)
 		case chunkenc.ValHistogram:
-			// TODO(histograms): what about ValFloatHistogram?
 			_, err := app.AppendHistogram(0, l, int64(ts), test.GenerateTestHistogram(int(ts)), nil)
 			require.NoError(t, err)
+		case chunkenc.ValFloatHistogram:
+			_, err := app.AppendHistogram(0, l, int64(ts), nil, test.GenerateTestFloatHistogram(int(ts)))
+			require.NoError(t, err)
 		default:
-			panic("Unknown chunk type")
+			t.Errorf("Unknown chunk type %v", valueType)
 		}
 
 		cnt++
@@ -962,8 +964,10 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 			require.Equal(t, expectedValue, point.V, strconv.Itoa(i))
 		case chunkenc.ValHistogram:
 			require.Equal(t, expectedValue, point.H.Count, strconv.Itoa(i))
+		case chunkenc.ValFloatHistogram:
+			require.Equal(t, expectedValue, point.H.Count, strconv.Itoa(i))
 		default:
-			panic("Unknown value type")
+			t.Errorf("Unknown value type %v", valueType)
 		}
 
 		ts += int64(step / time.Millisecond)
