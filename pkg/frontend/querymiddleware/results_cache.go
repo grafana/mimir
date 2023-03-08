@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -337,6 +338,7 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 			return nil, err
 		}
 		accumulator.Response = merged
+		accumulator.QueryTime = math.Min64(accumulator.QueryTime, extents[i].QueryTime) // Keep oldest (minimum) timestamp.
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -353,10 +355,11 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:    acc.Extent.Start,
-		End:      acc.Extent.End,
-		Response: any,
-		TraceId:  acc.Extent.TraceId,
+		Start:     acc.Extent.Start,
+		End:       acc.Extent.End,
+		Response:  any,
+		TraceId:   acc.Extent.TraceId,
+		QueryTime: acc.QueryTime,
 	}), nil
 }
 
@@ -371,16 +374,17 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
+func toExtent(ctx context.Context, req Request, res Response, queryTime time.Time) (Extent, error) {
 	any, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 	return Extent{
-		Start:    req.GetStart(),
-		End:      req.GetEnd(),
-		Response: any,
-		TraceId:  jaegerTraceID(ctx),
+		Start:     req.GetStart(),
+		End:       req.GetEnd(),
+		Response:  any,
+		TraceId:   jaegerTraceID(ctx),
+		QueryTime: queryTime.UnixMilli(),
 	}, nil
 }
 

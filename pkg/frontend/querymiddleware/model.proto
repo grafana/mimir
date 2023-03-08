@@ -87,6 +87,8 @@ message Extent  {
   reserved 3;
   string trace_id = 4 [(gogoproto.jsontag) = "-"];
   google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
+  // unix timestamp (millis) when the query with this response was run.
+  int64 queryTime = 6;
 }
 
 message Options {
