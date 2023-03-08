@@ -242,11 +242,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 		iter = series.Iterator(iter)
 		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
 
-		frameBytesLeft := maxBytesInFrame
-		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
-		}
-
+		frameBytesLeft := initializedFrameBytesLeft(maxBytesInFrame, lbls)
 		isNext := iter.Next()
 
 		for isNext {
@@ -288,10 +284,19 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
+			frameBytesLeft = initializedFrameBytesLeft(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
 			return err
 		}
 	}
 	return ss.Err()
+}
+
+func initializedFrameBytesLeft(maxBytesInFrame int, lbls []mimirpb.LabelAdapter) int {
+	frameBytesLeft := maxBytesInFrame
+	for _, lbl := range lbls {
+		frameBytesLeft -= lbl.Size()
+	}
+	return frameBytesLeft
 }
