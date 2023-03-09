@@ -10,7 +10,7 @@
     * `cortex_bucket_store_series_merge_duration_seconds`
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
-* [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. This change also invalidates all results cached by previous Mimir version.
+* [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. This change also invalidates all results cached by previous Mimir version. #4439
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
 * [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
 * [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4304 #4318 #4375
