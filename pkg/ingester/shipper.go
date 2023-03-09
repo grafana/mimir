@@ -112,7 +112,7 @@ func NewShipper(
 // Sync performs a single synchronization, which ensures all non-compacted local blocks have been uploaded
 // to the object bucket once.
 //
-// It is not walReplayConcurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
+// It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {

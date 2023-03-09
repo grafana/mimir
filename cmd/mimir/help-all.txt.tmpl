@@ -680,7 +680,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.wal-compression-enabled
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-replay-concurrency int
-    	Maximum number of CPUs that can simultaneously processes WAL replay. 0 means disabled.
+    	Maximum number of CPUs that can simultaneously processes WAL replay. 0 means disabled. If set to a positive value it overrides the deprecated blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.storage.azure.account-key string

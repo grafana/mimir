@@ -110,7 +110,11 @@ const (
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
 
-	// maximum number of TSDBs present on the file system which can be opened in a single process without walReplayConcurrency
+	// Maximum number of TSDB users present on the file system which can be opened in a single process
+	// without concurrency. More precisely, if actual number of TSDB users is lower than this number,
+	// each TSDB is opened in a single process, while WAL replay is done in WALReplayConcurrency concurrent
+	// processes. Otherwise, TSDBs are opened in WALReplayConcurrency concurrent processes, while WAL replay
+	// is done in a single process.
 	maxTSDBOpenWithoutConcurrency = 10
 )
 
@@ -1842,7 +1846,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
 
-	userIDs, err := i.getAllUsersWithTSDB()
+	userIDs, err := i.getAllTSDBUserIDs()
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while finding existing TSDBs", "err", err)
 		return err
@@ -1896,7 +1900,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		})
 	}
 
-	// Spawn a goroutine to place on the queue all users with a TSDB found on the filesystem.
+	// Spawn a goroutine to place all users with a TSDB found on the filesystem in the queue.
 	group.Go(func() error {
 		defer close(queue)
 
@@ -1927,8 +1931,8 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	return nil
 }
 
-// getAllUsersWithTSDB finds all users with a TSDB on the filesystem.
-func (i *Ingester) getAllUsersWithTSDB() (map[string]struct{}, error) {
+// getAllTSDBUserIDs finds all users with a TSDB on the filesystem.
+func (i *Ingester) getAllTSDBUserIDs() (map[string]struct{}, error) {
 	userIDs := make(map[string]struct{})
 	walkErr := filepath.Walk(i.cfg.BlocksStorageConfig.TSDB.Dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -2242,7 +2246,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	userDB.casState(closing, closed)
 
 	// Only remove user from TSDBState when everything is cleaned up
-	// This will prevent walReplayConcurrency problems when cortex are trying to open new TSDB - Ie: New request for a given tenant
+	// This will prevent concurrency problems when cortex are trying to open new TSDB - Ie: New request for a given tenant
 	// came in - while closing the tsdb for the same tenant.
 	// If this happens now, the request will get reject as the push will not be able to acquire the lock as the tsdb will be
 	// in closed state

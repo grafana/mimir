@@ -233,7 +233,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.StripeSize, "blocks-storage.tsdb.stripe-size", 16384, headStripeSizeHelp)
 	f.BoolVar(&cfg.WALCompressionEnabled, "blocks-storage.tsdb.wal-compression-enabled", false, "True to enable TSDB WAL compression.")
 	f.IntVar(&cfg.WALSegmentSizeBytes, "blocks-storage.tsdb.wal-segment-size-bytes", wlog.DefaultSegmentSize, "TSDB WAL segments files max size (bytes).")
-	f.IntVar(&cfg.WALReplayConcurrency, "blocks-storage.tsdb.wal-replay-concurrency", 0, "Maximum number of CPUs that can simultaneously processes WAL replay. 0 means disabled.")
+	f.IntVar(&cfg.WALReplayConcurrency, "blocks-storage.tsdb.wal-replay-concurrency", 0, "Maximum number of CPUs that can simultaneously processes WAL replay. 0 means disabled. If set to a positive value it overrides the deprecated "+maxTSDBOpeningConcurrencyOnStartupFlag+" option")
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 13*time.Hour, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
@@ -252,9 +252,8 @@ func (cfg *TSDBConfig) Validate(logger log.Logger) error {
 
 	if cfg.DeprecatedMaxTSDBOpeningConcurrencyOnStartup <= 0 {
 		return errInvalidOpeningConcurrency
-	} else {
-		util.WarnDeprecatedConfig(maxTSDBOpeningConcurrencyOnStartupFlag, logger)
 	}
+	util.WarnDeprecatedConfig(maxTSDBOpeningConcurrencyOnStartupFlag, logger)
 
 	if cfg.HeadCompactionInterval <= 0 || cfg.HeadCompactionInterval > 15*time.Minute {
 		return errInvalidCompactionInterval

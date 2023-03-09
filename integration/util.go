@@ -15,15 +15,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/grafana/e2e"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
-
-	"github.com/grafana/e2e"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 var (
@@ -117,11 +116,11 @@ func getTLSFlagsWithPrefix(prefix string, servername string, http bool) map[stri
 }
 
 func GenerateTestHistogram(i int) *histogram.Histogram {
-	return tsdb.GenerateTestHistograms(i + 1)[i]
+	return tsdbutil.GenerateTestHistograms(i + 1)[i]
 }
 
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdb.GenerateTestFloatHistograms(i + 1)[i]
+	return tsdbutil.GenerateTestFloatHistograms(i + 1)[i]
 }
 
 // explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
