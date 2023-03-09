@@ -111,6 +111,9 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+- Protobuf internal query result payload format
+  - `-query-frontend.query-result-response-format=protobuf`
+  - `-ruler.query-frontend.query-result-response-format=protobuf`
 
 ## Deprecated features
 
