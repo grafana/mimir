@@ -51,14 +51,16 @@ const (
 	RulerRingKey = "ring"
 )
 
+type rulesSyncReason string
+
 const (
 	// Number of concurrent group list and group loads operations.
 	loadRulesConcurrency  = 10
 	fetchRulesConcurrency = 16
 
-	rulerSyncReasonInitial    = "initial"
-	rulerSyncReasonPeriodic   = "periodic"
-	rulerSyncReasonRingChange = "ring-change"
+	rulerSyncReasonInitial    rulesSyncReason = "initial"
+	rulerSyncReasonPeriodic   rulesSyncReason = "periodic"
+	rulerSyncReasonRingChange rulesSyncReason = "ring-change"
 
 	// Limit errors
 	errMaxRuleGroupsPerUserLimitExceeded        = "per-user rule groups limit (limit: %d actual: %d) exceeded"
@@ -210,6 +212,8 @@ type MultiTenantManager interface {
 	Stop()
 	// ValidateRuleGroup validates a rulegroup
 	ValidateRuleGroup(rulefmt.RuleGroup) []error
+	// Start evaluating rules.
+	Start()
 }
 
 // Ruler evaluates rules.
@@ -314,7 +318,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
-	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, r.cfg.Ring.NumTokens))
+	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, r.cfg.Ring.NumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, r.logger)
 	delegate = ring.NewAutoForgetDelegate(r.cfg.Ring.Common.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, r.logger)
 
@@ -346,14 +350,30 @@ func (r *Ruler) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
-	// Wait until the ring client detected this instance in the ACTIVE state to
-	// make sure that when we'll run the initial sync we already know  the tokens
-	// assigned to this instance.
+	// Sync the rule when the ruler JOINING the ring,
+	// Activate the rule evaluation after the ruler is ACTIVE in the ring.
+	// This is to make sure that the ruler is ready to evaluate alert rules once it is ACTIVE in the ring.
+	level.Info(r.logger).Log("msg", "waiting until ruler is JOINING in the ring")
+	if err := ring.WaitInstanceState(ctx, r.ring, r.lifecycler.GetInstanceID(), ring.JOINING); err != nil {
+		return err
+	}
+	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
+
+	// here during joining, we can start to download rules from object storage and sync them to the local rule manager
+	r.syncRules(ctx, rulerSyncReasonInitial)
+
+	if err = r.lifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
+		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
+	}
+
 	level.Info(r.logger).Log("msg", "waiting until ruler is ACTIVE in the ring")
 	if err := ring.WaitInstanceState(ctx, r.ring, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 		return err
 	}
 	level.Info(r.logger).Log("msg", "ruler is ACTIVE in the ring")
+
+	r.manager.Start()
+	level.Info(r.logger).Log("msg", "ruler is only now starting to evaluate rules")
 
 	// TODO: ideally, ruler would wait until its queryable is finished starting.
 	return nil
@@ -385,10 +405,15 @@ func tokenForGroup(g *rulespb.RuleGroupDesc) uint32 {
 	return ringHasher.Sum32()
 }
 
-func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string) (bool, error) {
+func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string, reason rulesSyncReason) (bool, error) {
 	hash := tokenForGroup(g)
-
-	rlrs, err := r.Get(hash, RingOp, nil, nil, nil)
+	var rlrs ring.ReplicationSet
+	var err error
+	if reason == rulerSyncReasonInitial {
+		rlrs, err = r.Get(hash, RuleSyncRingOp, nil, nil, nil)
+	} else {
+		rlrs, err = r.Get(hash, RuleEvalRingOp, nil, nil, nil)
+	}
 	if err != nil {
 		return false, errors.Wrap(err, "error reading ring to verify rule group ownership")
 	}
@@ -406,11 +431,10 @@ func (r *Ruler) run(ctx context.Context) error {
 	tick := time.NewTicker(r.cfg.PollInterval)
 	defer tick.Stop()
 
-	ringLastState, _ := r.ring.GetAllHealthy(RingOp)
+	ringLastState, _ := r.ring.GetAllHealthy(RuleEvalRingOp)
 	ringTicker := time.NewTicker(util.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
 	defer ringTicker.Stop()
 
-	r.syncRules(ctx, rulerSyncReasonInitial)
 	for {
 		select {
 		case <-ctx.Done():
@@ -420,7 +444,7 @@ func (r *Ruler) run(ctx context.Context) error {
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
-			currRingState, _ := r.ring.GetAllHealthy(RingOp)
+			currRingState, _ := r.ring.GetAllHealthy(RuleEvalRingOp)
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState
@@ -434,11 +458,11 @@ func (r *Ruler) run(ctx context.Context) error {
 
 // It's not safe to call this function concurrently.
 // We expect this function is only called from Ruler.run().
-func (r *Ruler) syncRules(ctx context.Context, reason string) {
+func (r *Ruler) syncRules(ctx context.Context, reason rulesSyncReason) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
-	r.metrics.rulerSync.WithLabelValues(reason).Inc()
+	r.metrics.rulerSync.WithLabelValues(string(reason)).Inc()
 
-	configs, err := r.listRules(ctx)
+	configs, err := r.listRules(ctx, reason)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to list rules", "err", err)
 		return
@@ -465,13 +489,13 @@ func (r *Ruler) loadRuleGroups(ctx context.Context, configs map[string]rulespb.R
 	return r.store.LoadRuleGroups(ctx, configs)
 }
 
-func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
+func (r *Ruler) listRules(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
 	start := time.Now()
 	defer func() {
 		r.metrics.listRules.Observe(time.Since(start).Seconds())
 	}()
 
-	result, err = r.listRulesSharded(ctx)
+	result, err = r.listRulesSharded(ctx, reason)
 	if err != nil {
 		return
 	}
@@ -485,7 +509,7 @@ func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGr
 	return
 }
 
-func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRulesSharded(ctx context.Context, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
 	users, err := r.store.ListAllUsers(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
@@ -535,7 +559,7 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors)
+				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason)
 				if len(filtered) == 0 {
 					continue
 				}
@@ -557,11 +581,11 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 //
 // Reason why this function is not a method on Ruler is to make sure we don't accidentally use r.ring,
 // but only ring passed as parameter.
-func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter) []*rulespb.RuleGroupDesc {
+func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason) []*rulespb.RuleGroupDesc {
 	// Prune the rule group to only contain rules that this ruler is responsible for, based on ring.
 	var result []*rulespb.RuleGroupDesc
 	for _, g := range ruleGroups {
-		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr)
+		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason)
 		if err != nil {
 			ringCheckErrors.Inc()
 			level.Error(log).Log("msg", "failed to check if the ruler replica owns the rule group", "user", userID, "namespace", g.Namespace, "group", g.Name, "err", err)
@@ -711,7 +735,7 @@ func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 		ring = r.ring.ShuffleShard(userID, shardSize)
 	}
 
-	rulers, err := ring.GetReplicationSetForOperation(RingOp)
+	rulers, err := ring.GetReplicationSetForOperation(RuleEvalRingOp)
 	if err != nil {
 		return nil, err
 	}
