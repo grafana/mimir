@@ -214,13 +214,10 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 			return nil, err
 		}
 
-		ts := mimirpb.TimeSeries{Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels())}
-
-		if len(samples) > 0 {
-			ts.Samples = samples
-		}
-		if len(histograms) > 0 {
-			ts.Histograms = histograms
+		ts := mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Samples:    samples,
+			Histograms: histograms,
 		}
 
 		result.Timeseries = append(result.Timeseries, ts)
