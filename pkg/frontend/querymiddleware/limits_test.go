@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -289,7 +288,7 @@ type mockLimits struct {
 	totalShards                      int
 	compactorShards                  int
 	compactorBlocksRetentionPeriod   time.Duration
-	outOfOrderTimeWindow             model.Duration
+	outOfOrderTimeWindow             time.Duration
 	creationGracePeriod              time.Duration
 	nativeHistogramsIngestionEnabled bool
 }
@@ -340,7 +339,7 @@ func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 	return m.compactorBlocksRetentionPeriod
 }
 
-func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
+func (m mockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
 	return m.outOfOrderTimeWindow
 }
 

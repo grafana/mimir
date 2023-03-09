@@ -555,7 +555,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		oooWindow := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {
 			tenantsWithOutOfOrderEnabledCount++
 
@@ -599,7 +599,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
+					OutOfOrderTimeWindow: oooTW.Milliseconds(),
 				},
 			},
 		}
@@ -821,7 +821,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
@@ -1707,7 +1707,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -2339,8 +2339,8 @@ func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.La
 	return newIngestErr(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
-func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow model.Duration) error {
-	return newIngestErr(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", oooTimeWindow.String()), timestamp, labels)
+func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) error {
+	return newIngestErr(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
 func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {

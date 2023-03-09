@@ -1697,7 +1697,7 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	mcache := cache.NewMockCache()
 	m := splitAndCacheMiddleware{
 		limits: mockLimits{
-			outOfOrderTimeWindow: model.Duration(time.Hour),
+			outOfOrderTimeWindow: time.Hour,
 		},
 		cache: mcache,
 	}
