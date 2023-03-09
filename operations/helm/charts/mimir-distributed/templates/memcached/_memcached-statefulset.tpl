@@ -92,7 +92,7 @@ spec:
             - -v
             - -u {{ .port }}
             {{- range $key, $value := .extraArgs }}
-            - "-{{ $key }}{{ if $value }} {{ $value }}{{- end }}"
+            - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
             {{- end }}
           env:
             {{- with $.ctx.Values.global.extraEnv }}
