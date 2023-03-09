@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 2.7.0-rc.0
+
 ### Grafana Mimir
 
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
@@ -30,6 +32,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
    * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
    * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
    * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
+* [CHANGE] Store-gateway: Remove unused resolution, step and range parameters from store-gateway SeriesRequest #4032
 * [CHANGE] Store-gateway: the streaming store-gateway is now enabled by default. The new default setting for `-blocks-storage.bucket-store.batch-series-size` is `5000`. #4330 #4332
   * The following metrics have been removed:
     * `cortex_bucket_store_series_get_all_duration_seconds`
@@ -45,7 +48,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Ruler: introduced concurrency when loading per-tenant rules configuration. This improvement is expected to speed up the ruler start up time in a Mimir cluster with a large number of tenants. #4258
 * [ENHANCEMENT] Compactor: Add `reason` label to `cortex_compactor_runs_failed_total`. The value can be `shutdown` or `error`. #4012
 * [ENHANCEMENT] Store-gateway: enforce `max_fetched_series_per_query`. #4056
-* [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
+* [ENHANCEMENT] Query-frontend: Disambiguate logs for failed queries. #4067
 * [ENHANCEMENT] Query-frontend: log caller user agent in query stats logs. #4093
 * [ENHANCEMENT] Store-gateway: add `data_type` label with values on `cortex_bucket_store_partitioner_extended_ranges_total`, `cortex_bucket_store_partitioner_expanded_ranges_total`, `cortex_bucket_store_partitioner_requested_ranges_total`, `cortex_bucket_store_partitioner_expanded_bytes_total`, `cortex_bucket_store_partitioner_requested_bytes_total` for `postings`, `series`, and `chunks`. #4095
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation rate when loading TSDB chunks from Memcached. #4074
@@ -56,6 +59,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227 #4255
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
+* [ENHANCEMENT] Distributor: moves the distributor push wrappers from the API configuration into the distributor configuration. #4244
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.1` to `alpine:3.17.2`. #4240
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227 #4316
@@ -69,6 +73,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Compactor: added experimental configuration parameter `-compactor.first-level-compaction-wait-period`, to configure how long the compactor should wait before compacting 1st level blocks (uploaded by ingesters). This configuration option allows to reduce the chances compactor begins compacting blocks before all ingesters have uploaded their blocks to the storage. #4401
 * [BUGFIX] Store-gateway: return `Canceled` rather than `Aborted` or `Internal` error when the calling querier cancels a label names or values request, and return `Internal` if processing the request fails for another reason. #4061
 * [BUGFIX] Querier: track canceled requests with status code `499` in the metrics instead of `503` or `422`. #4099
+* [BUGFIX] Store-gateway: removes unnecessary double chunks per query limit check from queryable block store. #4171
 * [BUGFIX] Ingester: compact out-of-order data during `/ingester/flush` or when TSDB is idle. #4180
 * [BUGFIX] Ingester: conversion of global limits `max-series-per-user`, `max-series-per-metric`, `max-metadata-per-user` and `max-metadata-per-metric` into corresponding local limits now takes into account the number of ingesters in each zone. #4238
 * [BUGFIX] Ingester: track `cortex_ingester_memory_series` metric consistently with `cortex_ingester_memory_series_created_total` and `cortex_ingester_memory_series_removed_total`. #4312
@@ -115,7 +120,14 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Documentation
 
+* [ENHANCEMENT] Add guide on alternative migration method for Thanos to Mimir #3554
+* [ENHANCEMENT] Restore "Migrate from Cortex" for Jsonnet. #3929
 * [ENHANCEMENT] Document migration from microservices to read-write deployment mode. #3951
+* [ENHANCEMENT] Do not error when there is nothing to commit as part of a publish #4058
+* [ENHANCEMENT] Explain how to run Mimir locally using docker-compose #4079
+* [ENHANCEMENT] Docs: use long flag names in runbook commands. #4088
+* [ENHANCEMENT] Clarify how ingester replication happens. #4101
+* [ENHANCEMENT] Improvements to the Get Started guide. #4315
 * [BUGFIX] Added indentation to Azure and SWIFT backend definition. #4263
 
 ### Tools
