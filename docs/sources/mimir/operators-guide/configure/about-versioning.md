@@ -14,7 +14,7 @@ This topic describes our guarantees for this Grafana Mimir major release.
 ## Flags, configuration, and minor version upgrades
 
 Upgrading Grafana Mimir from one minor version to the next minor version should work, but we don't want to bump the major version every time we remove a configuration parameter.
-We will keep deprecated flags and YAML configuration parameters in place for two minor releases.
+We will keep [deprecated features](#deprecated-features) in place for two minor releases.
 You can use the `deprecated_flags_inuse_total` metric to generate an alert that helps you determine if you're using a deprecated flag.
 
 These guarantees don't apply to [experimental features](#experimental-features).
@@ -82,16 +82,20 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+- Querier
+  - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
+  - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
+  - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
@@ -107,3 +111,18 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+- Protobuf internal query result payload format
+  - `-query-frontend.query-result-response-format=protobuf`
+  - `-ruler.query-frontend.query-result-response-format=protobuf`
+- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
+
+## Deprecated features
+
+The following features are currently deprecated and will be **removed in Mimir 2.9**:
+
+- Compactor
+  - `-compactor.consistency-delay`
+- Store-gateway
+  - `-blocks-storage.bucket-store.consistency-delay`
+- Ingester
+  - `-ingester.ring.readiness-check-ring-health`

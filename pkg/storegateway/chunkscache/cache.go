@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -27,8 +28,8 @@ type Range struct {
 }
 
 type Cache interface {
-	FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte)
-	StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte)
+	FetchMultiChunks(ctx context.Context, userID string, ranges []Range, chunksPool *pool.SafeSlabPool[byte]) (hits map[Range][]byte)
+	StoreChunks(userID string, ranges map[Range][]byte)
 }
 
 type TracingCache struct {
@@ -43,8 +44,8 @@ func NewTracingCache(c Cache, l log.Logger) TracingCache {
 	}
 }
 
-func (c TracingCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
-	hits = c.c.FetchMultiChunks(ctx, userID, ranges)
+func (c TracingCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range, chunksPool *pool.SafeSlabPool[byte]) (hits map[Range][]byte) {
+	hits = c.c.FetchMultiChunks(ctx, userID, ranges, chunksPool)
 
 	l := spanlogger.FromContext(ctx, c.l)
 	level.Debug(l).Log(
@@ -64,8 +65,8 @@ func hitsSize(hits map[Range][]byte) (size int) {
 	return
 }
 
-func (c TracingCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
-	c.c.StoreChunks(ctx, userID, ranges)
+func (c TracingCache) StoreChunks(userID string, ranges map[Range][]byte) {
+	c.c.StoreChunks(userID, ranges)
 }
 
 type ChunksCache struct {
@@ -79,11 +80,11 @@ type ChunksCache struct {
 
 type NoopCache struct{}
 
-func (NoopCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
+func (NoopCache) FetchMultiChunks(_ context.Context, _ string, _ []Range, _ *pool.SafeSlabPool[byte]) (hits map[Range][]byte) {
 	return nil
 }
 
-func (NoopCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
+func (NoopCache) StoreChunks(_ string, _ map[Range][]byte) {
 }
 
 func NewChunksCache(logger log.Logger, client cache.Cache, reg prometheus.Registerer) (*ChunksCache, error) {
@@ -107,7 +108,7 @@ func NewChunksCache(logger log.Logger, client cache.Cache, reg prometheus.Regist
 	return c, nil
 }
 
-func (c *ChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range) (hits map[Range][]byte) {
+func (c *ChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []Range, chunksPool *pool.SafeSlabPool[byte]) (hits map[Range][]byte) {
 	keysMap := make(map[string]Range, len(ranges))
 	keys := make([]string, len(ranges))
 	for i, r := range ranges {
@@ -116,7 +117,7 @@ func (c *ChunksCache) FetchMultiChunks(ctx context.Context, userID string, range
 		keys[i] = k
 	}
 
-	hitBytes := c.cache.Fetch(ctx, keys)
+	hitBytes := c.cache.Fetch(ctx, keys, cache.WithAllocator(pool.NewSafeSlabPoolAllocator(chunksPool)))
 	if len(hitBytes) > 0 {
 		hits = make(map[Range][]byte, len(hitBytes))
 		for key, b := range hitBytes {
@@ -137,10 +138,10 @@ const (
 	defaultTTL = 7 * 24 * time.Hour
 )
 
-func (c *ChunksCache) StoreChunks(ctx context.Context, userID string, ranges map[Range][]byte) {
+func (c *ChunksCache) StoreChunks(userID string, ranges map[Range][]byte) {
 	rangesWithTenant := make(map[string][]byte, len(ranges))
 	for r, v := range ranges {
 		rangesWithTenant[chunksKey(userID, r)] = v
 	}
-	c.cache.Store(ctx, rangesWithTenant, defaultTTL)
+	c.cache.StoreAsync(rangesWithTenant, defaultTTL)
 }

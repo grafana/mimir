@@ -21,8 +21,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // genLabels will create a slice of labels where each label has an equal chance to occupy a value from [0,labelBuckets]. It returns a slice of length labelBuckets^len(labelSet)
@@ -59,6 +61,7 @@ func genLabels(
 // newMockShardedQueryable creates a shard-aware in memory queryable.
 func newMockShardedQueryable(
 	nSamples int,
+	nHistograms int,
 	labelSet []string,
 	labelBuckets int,
 	delayPerSeries time.Duration,
@@ -70,10 +73,14 @@ func newMockShardedQueryable(
 			Value:     model.SampleValue(i),
 		})
 	}
+	histograms := make([]mimirpb.Histogram, 0, nHistograms)
+	for i := 0; i < nHistograms; i++ {
+		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(int64(i*1000), test.GenerateTestHistogram(i)))
+	}
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))
 	for _, ls := range sets {
-		xs = append(xs, series.NewConcreteSeries(ls, samples, nil))
+		xs = append(xs, series.NewConcreteSeries(ls, samples, histograms))
 	}
 
 	return &mockShardedQueryable{
@@ -234,24 +241,26 @@ func TestGenLabelsSize(t *testing.T) {
 
 func TestNewMockShardedqueryable(t *testing.T) {
 	for _, tc := range []struct {
-		shards                 uint64
-		nSamples, labelBuckets int
-		labelSet               []string
+		shards                              uint64
+		nSamples, nHistograms, labelBuckets int
+		labelSet                            []string
 	}{
 		{
 			nSamples:     100,
+			nHistograms:  30,
 			shards:       1,
 			labelBuckets: 3,
 			labelSet:     []string{"a", "b", "c"},
 		},
 		{
 			nSamples:     0,
+			nHistograms:  0,
 			shards:       2,
 			labelBuckets: 3,
 			labelSet:     []string{"a", "b", "c"},
 		},
 	} {
-		q := newMockShardedQueryable(tc.nSamples, tc.labelSet, tc.labelBuckets, 0)
+		q := newMockShardedQueryable(tc.nSamples, tc.nHistograms, tc.labelSet, tc.labelBuckets, 0)
 		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
 
 		seriesCt := 0
@@ -273,11 +282,16 @@ func TestNewMockShardedqueryable(t *testing.T) {
 				seriesCt++
 				iter = set.At().Iterator(iter)
 				samples := 0
+				histograms := 0
 				for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
-					require.Equal(t, chunkenc.ValFloat, valType)
-					samples++
+					if valType == chunkenc.ValFloat {
+						samples++
+					} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+						histograms++
+					}
 				}
 				require.Equal(t, tc.nSamples, samples)
+				// require.Equal(t, tc.nHistograms, histograms) // TODO(histograms): ignoring this as it is expected for now since we currently do NOT support query sharding for histograms
 			}
 
 		}

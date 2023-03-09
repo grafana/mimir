@@ -26,26 +26,28 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag     = "validation.max-length-label-name"
-	maxLabelValueLengthFlag    = "validation.max-length-label-value"
-	maxMetadataLengthFlag      = "validation.max-metadata-length"
-	creationGracePeriodFlag    = "validation.create-grace-period"
-	maxQueryLengthFlag         = "store.max-query-length"
-	maxPartialQueryLengthFlag  = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
-	requestRateFlag            = "distributor.request-rate-limit"
-	requestBurstSizeFlag       = "distributor.request-burst-size"
-	ingestionRateFlag          = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
+	MaxSeriesPerMetricFlag                 = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag               = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                   = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                 = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
+	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
+	maxLabelValueLengthFlag                = "validation.max-length-label-value"
+	maxMetadataLengthFlag                  = "validation.max-metadata-length"
+	creationGracePeriodFlag                = "validation.create-grace-period"
+	maxQueryLengthFlag                     = "store.max-query-length"
+	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	requestRateFlag                        = "distributor.request-rate-limit"
+	requestBurstSizeFlag                   = "distributor.request-burst-size"
+	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -124,7 +126,9 @@ type Limits struct {
 	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
+	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -204,9 +208,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.")
+	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.")
-	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
+	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
@@ -224,6 +228,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
+
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
@@ -246,6 +251,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
+	_ = l.ResultsCacheTTL.Set("7d")
+	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
+	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
+	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -560,8 +569,8 @@ func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
-func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
-	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
+func (o *Overrides) OutOfOrderTimeWindow(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).OutOfOrderTimeWindow)
 }
 
 // OutOfOrderBlocksExternalLabelEnabled returns if the shipper is flagging out-of-order blocks with an external label.
@@ -779,6 +788,14 @@ func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
 	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
 }
 
+func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTL)
+}
+
+func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -882,33 +899,44 @@ func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
 }
 
 // MustRegisterExtension registers the extensions type with given name
-// and returns a function to get a pointer to the extensions E from a *Limits instance.
-// The name will be used as YAML/JSON key to decode the extensions.
+// and returns a function to get the extensions value from a *Limits instance.
+//
+// The provided name will be used as YAML/JSON key to decode the extensions.
+//
+// The returned getter will return the result of E.Default() if *Limits is nil.
+//
 // This method is not thread safe and should be called only during package initialization.
-// Registering same name twice will cause a panic.
-func MustRegisterExtension[E any](name string) func(*Limits) *E {
+// Registering same name twice, or registering a name that is already a *Limits JSON or YAML key will cause a panic.
+func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits) E {
 	if name == "" {
 		panic("extension name cannot be empty")
 	}
 	if _, ok := standardLimitsYAMLJSONKeys[name]; ok {
 		panic(fmt.Errorf("extension %s cannot be registered because it's a standard limits field", name))
 	}
-	if _, ok := registeredExtensionsIndexes[name]; ok {
+	if _, ok := registeredExtensions[name]; ok {
 		panic(fmt.Errorf("extension %s already registered", name))
 	}
-	registeredExtensionsIndexes[name] = len(registeredExtensionsIndexes)
+
+	var zeroE E
+	registeredExtensions[name] = registeredExtension{
+		index:            len(registeredExtensions),
+		reflectedDefault: func() reflect.Value { return reflect.ValueOf(zeroE.Default()) },
+	}
 
 	limitsExtensionsFields = append(limitsExtensionsFields, reflect.StructField{
 		Name: strings.ToUpper(name),
-		Type: reflect.TypeOf(new(E)),
+		Type: reflect.TypeOf(zeroE),
 		Tag:  reflect.StructTag(fmt.Sprintf(`yaml:"%s" json:"%s"`, name, name)),
 	})
 
-	return func(l *Limits) *E {
-		if e, ok := l.extensions[name]; ok {
-			return e.(*E)
+	return func(l *Limits) (e E) {
+		if l == nil {
+			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
+			// Especially when the default values are initialized after package initialization phase, where this is registered.
+			return e.Default()
 		}
-		return nil
+		return l.extensions[name].(E)
 	}
 }
 
@@ -925,8 +953,13 @@ func init() {
 	}
 }
 
-// registeredExtensionsIndexes is used to keep track of the indexes of each registered extension.
-var registeredExtensionsIndexes = map[string]int{}
+type registeredExtension struct {
+	index            int
+	reflectedDefault func() reflect.Value
+}
+
+// registeredExtensions is used to keep track of the indexes of each registered extension.
+var registeredExtensions = map[string]registeredExtension{}
 
 // limitsExtensionsFields is the list of the extension fields to be added to the reflection-crafted Limits struct.
 var limitsExtensionsFields []reflect.StructField
@@ -956,7 +989,7 @@ var plainLimitsStructField = reflect.StructField{
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
 func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
-	if len(registeredExtensionsIndexes) == 0 {
+	if len(registeredExtensions) == 0 {
 		// No extensions, so just return the plain limits and an extension getter that returns nil.
 		return limits, func() map[string]interface{} { return nil }
 	}
@@ -970,19 +1003,25 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 
 	// typ is the type of the new struct.
 	typ := reflect.StructOf(fields)
-
 	// cfg is an instance of a pointer to a new struct.
-	cfg := reflect.New(typ).Interface()
+	cfg := reflect.New(typ)
+
+	// Set default values of each field
+	// In other words:
+	//     cfg.EXTNAME1 = cfg.EXTNAME1.Default()
+	for _, ext := range registeredExtensions {
+		cfg.Elem().Field(ext.index).Set(ext.reflectedDefault())
+	}
 
 	// set the limits provided (they probably contain default limits) to the new struct, so we'll unmarshal on top of them.
 	// In other words:
 	//     cfg.PlainLimits = limits
-	reflect.ValueOf(cfg).Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf(limits))
 
-	return cfg, func() map[string]interface{} {
+	return cfg.Interface(), func() map[string]interface{} {
 		ext := map[string]interface{}{}
-		for name, i := range registeredExtensionsIndexes {
-			ext[name] = reflect.ValueOf(cfg).Elem().Field(i).Interface()
+		for name, re := range registeredExtensions {
+			ext[name] = cfg.Elem().Field(re.index).Interface()
 		}
 		return ext
 	}

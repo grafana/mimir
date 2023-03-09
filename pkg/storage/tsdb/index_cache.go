@@ -25,8 +25,11 @@ const (
 	// IndexCacheBackendInMemory is the value for the in-memory index cache backend.
 	IndexCacheBackendInMemory = "inmemory"
 
-	// IndexCacheBackendMemcached is the value for the memcached index cache backend.
+	// IndexCacheBackendMemcached is the value for the Memcached index cache backend.
 	IndexCacheBackendMemcached = cache.BackendMemcached
+
+	// IndexCacheBackendRedis is the value for the Redis index cache backend.
+	IndexCacheBackendRedis = cache.BackendRedis
 
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory
@@ -35,7 +38,7 @@ const (
 )
 
 var (
-	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
+	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached, IndexCacheBackendRedis}
 
 	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
 )
@@ -52,8 +55,9 @@ func (cfg *IndexCacheConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Backend, prefix+"backend", IndexCacheBackendDefault, fmt.Sprintf("The index cache backend type. Supported values: %s.", strings.Join(supportedIndexCacheBackends, ", ")))
 
-	cfg.InMemory.RegisterFlagsWithPrefix(f, prefix+"inmemory.")
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.InMemory.RegisterFlagsWithPrefix(prefix+"inmemory.", f)
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 }
 
 // Validate the config.
@@ -62,8 +66,9 @@ func (cfg *IndexCacheConfig) Validate() error {
 		return errUnsupportedIndexCacheBackend
 	}
 
-	if cfg.Backend == IndexCacheBackendMemcached {
-		if err := cfg.Memcached.Validate(); err != nil {
+	// Validate backend config only when not using the in-memory cache.
+	if cfg.Backend == IndexCacheBackendMemcached || cfg.Backend == IndexCacheBackendRedis {
+		if err := cfg.BackendConfig.Validate(); err != nil {
 			return err
 		}
 	}
@@ -75,7 +80,7 @@ type InMemoryIndexCacheConfig struct {
 	MaxSizeBytes uint64 `yaml:"max_size_bytes"`
 }
 
-func (cfg *InMemoryIndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+func (cfg *InMemoryIndexCacheConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Uint64Var(&cfg.MaxSizeBytes, prefix+"max-size-bytes", uint64(1*units.Gibibyte), "Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants).")
 }
 
@@ -86,6 +91,8 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 		return newInMemoryIndexCache(cfg.InMemory, logger, registerer)
 	case IndexCacheBackendMemcached:
 		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
+	case IndexCacheBackendRedis:
+		return newRedisIndexCache(cfg.Redis, logger, registerer)
 	default:
 		return nil, errUnsupportedIndexCacheBackend
 	}
@@ -106,8 +113,8 @@ func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, regi
 	})
 }
 
-func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
-	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
+	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
@@ -115,6 +122,20 @@ func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, regist
 	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
+	}
+
+	return indexcache.NewTracingIndexCache(c, logger), nil
+}
+
+func newRedisIndexCache(cfg cache.RedisClientConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
+	client, err := cache.NewRedisClient(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "create index cache redis client")
+	}
+
+	c, err := indexcache.NewRemoteIndexCache(logger, client, registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "create redis-based index cache")
 	}
 
 	return indexcache.NewTracingIndexCache(c, logger), nil

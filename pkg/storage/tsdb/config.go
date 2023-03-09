@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -80,6 +81,8 @@ const (
 	headPostingsForMatchersCacheTTLHelp  = "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls."
 	headPostingsForMatchersCacheSizeHelp = "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0."
 	headPostingsForMatchersCacheForce    = "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call."
+
+	consistencyDelayFlag = "blocks-storage.bucket-store.consistency-delay"
 )
 
 // Validation errors
@@ -146,7 +149,7 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate() error {
+func (cfg *BlocksStorageConfig) Validate(logger log.Logger) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
@@ -155,7 +158,7 @@ func (cfg *BlocksStorageConfig) Validate() error {
 		return err
 	}
 
-	return cfg.BucketStore.Validate()
+	return cfg.BucketStore.Validate(logger)
 }
 
 // TSDBConfig holds the config for TSDB opened in the ingesters.
@@ -287,19 +290,19 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                  string              `yaml:"sync_dir"`
-	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
-	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	ConsistencyDelay         time.Duration       `yaml:"consistency_delay" category:"advanced"`
-	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                    string              `yaml:"sync_dir"`
+	SyncInterval               time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent              int                 `yaml:"max_concurrent" category:"advanced"`
+	TenantSyncConcurrency      int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency       int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency        int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	DeprecatedConsistencyDelay time.Duration       `yaml:"consistency_delay" category:"deprecated"` // Deprecated. Remove in Mimir 2.9.
+	IndexCache                 IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache                ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache              MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksDelay   time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	BucketIndex                BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin         time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
 	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"advanced"`
@@ -347,7 +350,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
-	f.DurationVar(&cfg.ConsistencyDelay, "blocks-storage.bucket-store.consistency-delay", 0, "Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.")
+	f.DurationVar(&cfg.DeprecatedConsistencyDelay, consistencyDelayFlag, 0, "Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.")
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
@@ -359,7 +362,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 }
 
 // Validate the config.
-func (cfg *BucketStoreConfig) Validate() error {
+func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
 	}
@@ -371,6 +374,9 @@ func (cfg *BucketStoreConfig) Validate() error {
 	}
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
+	}
+	if cfg.DeprecatedConsistencyDelay > 0 {
+		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
 	}
 	return nil
 }
