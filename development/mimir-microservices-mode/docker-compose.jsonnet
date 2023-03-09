@@ -252,7 +252,11 @@ std.manifestYamlDoc({
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
       ],
-      volumes: ['./config:/etc/prometheus', '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml'],
+      volumes: [
+        './config:/etc/prometheus',
+        '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml',
+        '../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml',
+      ],
       ports: ['9090:9090'],
     },
   },
