@@ -26,26 +26,28 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag     = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag   = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag       = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag     = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag      = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag  = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag      = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag     = "validation.max-length-label-name"
-	maxLabelValueLengthFlag    = "validation.max-length-label-value"
-	maxMetadataLengthFlag      = "validation.max-metadata-length"
-	creationGracePeriodFlag    = "validation.create-grace-period"
-	maxQueryLengthFlag         = "store.max-query-length"
-	maxPartialQueryLengthFlag  = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
-	requestRateFlag            = "distributor.request-rate-limit"
-	requestBurstSizeFlag       = "distributor.request-burst-size"
-	ingestionRateFlag          = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
+	MaxSeriesPerMetricFlag                 = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag               = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                   = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                 = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
+	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
+	maxLabelValueLengthFlag                = "validation.max-length-label-value"
+	maxMetadataLengthFlag                  = "validation.max-metadata-length"
+	creationGracePeriodFlag                = "validation.create-grace-period"
+	maxQueryLengthFlag                     = "store.max-query-length"
+	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	requestRateFlag                        = "distributor.request-rate-limit"
+	requestBurstSizeFlag                   = "distributor.request-burst-size"
+	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -124,7 +126,9 @@ type Limits struct {
 	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
+	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -204,7 +208,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.")
+	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
@@ -224,6 +228,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
+
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
@@ -246,6 +251,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
+	_ = l.ResultsCacheTTL.Set("7d")
+	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
+	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
+	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -777,6 +786,14 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 
 func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
 	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
+}
+
+func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTL)
+}
+
+func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

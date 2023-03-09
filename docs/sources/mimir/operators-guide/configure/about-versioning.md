@@ -114,6 +114,7 @@ The following features are currently experimental:
 - Protobuf internal query result payload format
   - `-query-frontend.query-result-response-format=protobuf`
   - `-ruler.query-frontend.query-result-response-format=protobuf`
+- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 
 ## Deprecated features
 

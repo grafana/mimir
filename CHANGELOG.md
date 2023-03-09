@@ -16,6 +16,7 @@
 * [ENHANCEMENT] Query-frontend and ruler: add experimental, more performant protobuf internal query result response format enabled with `-ruler.query-frontend.query-result-response-format=protobuf`. #4331
 * [ENHANCEMENT] Ruler: increased tolerance for missed iterations on alerts, reducing the chances of flapping firing alerts during ruler restarts. #4432
 * [ENHANCEMENT] Querier and store-gateway: optimized `.*` and `.+` regular expression label matchers. #4432
+* [ENHANCEMENT] Query-frontend: results cache TTL is now configurable by using `-query-frontend.results-cache-ttl` and `-query-frontend.results-cache-ttl-for-out-of-order-time-window` options. These values can also be specified per tenant. Default values are unchanged (7 days and 10 minutes respectively). #4385
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 
 ### Mixin
