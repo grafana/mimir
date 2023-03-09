@@ -2606,7 +2606,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) Whether the shipper should label out-of-order blocks with an
 # external label before uploading them. Setting this label will compact
 # out-of-order blocks separately from non-out-of-order blocks
-# CLI flag: -out-of-order-blocks-external-label-enabled
+# CLI flag: -ingester.out-of-order-blocks-external-label-enabled
 [out_of_order_blocks_external_label_enabled: <boolean> | default = false]
 
 # (experimental) Label used to define the group label for metrics separation.

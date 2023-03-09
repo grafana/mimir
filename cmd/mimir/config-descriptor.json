@@ -3092,7 +3092,7 @@
           "desc": "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "out-of-order-blocks-external-label-enabled",
+          "fieldFlag": "ingester.out-of-order-blocks-external-label-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
