@@ -199,6 +199,10 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
+
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
 				StatusCode:    200,
@@ -206,7 +210,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := codec.EncodeResponse(context.Background(), decoded)
+			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
 
 			expectedJSON, err := bodyBuffer(httpResponse)
@@ -354,8 +358,11 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			codec := NewPrometheusCodec(reg, formatJSON)
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
 
-			encoded, err := codec.EncodeResponse(context.Background(), tc.response)
+			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, tc.response)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, encoded.StatusCode)
 			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))

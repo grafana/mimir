@@ -1184,7 +1184,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error.
   -ingester.out-of-order-time-window duration
-    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.
+    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
@@ -1262,7 +1262,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.readiness-check-ring-health
-    	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.
+    	[deprecated] When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
@@ -1607,6 +1607,10 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.results-cache-ttl duration
+    	[experimental] Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
+  -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
+    	[experimental] Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
   -query-frontend.results-cache.compression string
@@ -2013,6 +2017,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.query-result-response-format string
+    	[experimental] Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "json")
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled

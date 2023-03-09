@@ -47,20 +47,20 @@ var protobufResponseHistogram = mimirpb.FloatHistogram{
 }
 
 var protobufCodecScenarios = []struct {
-	name        string
-	resp        mimirpb.QueryResponse
-	expected    *PrometheusResponse
-	expectedErr error
+	name                  string
+	payload               mimirpb.QueryResponse
+	response              *PrometheusResponse
+	expectedDecodingError error
 }{
 	{
 		name: "successful string response",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_String_{
 				String_: &mimirpb.StringData{Value: "foo", TimestampMs: 1500},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValString.String(),
@@ -76,7 +76,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful scalar response",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
 				Scalar: &mimirpb.ScalarData{
@@ -85,7 +85,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValScalar.String(),
@@ -98,13 +98,13 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful empty vector response",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -115,17 +115,17 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with single series with no labels",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
-						{Metric: []string{}, TimestampMs: 1_000, Value: 200},
+						{Metric: nil, TimestampMs: 1_000, Value: 200},
 					},
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -138,7 +138,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with single series with one label",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -148,7 +148,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -161,7 +161,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with single series with many labels",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -171,7 +171,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -190,7 +190,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with multiple series",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -201,7 +201,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -215,7 +215,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with histogram value",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -229,7 +229,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -245,7 +245,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with float and histogram values",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -262,7 +262,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
@@ -282,7 +282,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful vector response with malformed metric symbols",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
 				Vector: &mimirpb.VectorData{
@@ -292,17 +292,17 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expectedErr: apierror.New(apierror.TypeInternal, "error decoding response: metric is malformed: expected even number of symbols, but got 1"),
+		expectedDecodingError: apierror.New(apierror.TypeInternal, "error decoding response: metric is malformed: expected even number of symbols, but got 1"),
 	},
 	{
 		name: "successful matrix response with no series",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -313,17 +313,17 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with single series with no labels and no samples",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
-						{Metric: []string{}, Samples: []mimirpb.Sample{}},
+						{Metric: nil, Samples: nil},
 					},
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -336,17 +336,17 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with single series with one label and no samples",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
-						{Metric: []string{"foo", "bar"}, Samples: []mimirpb.Sample{}},
+						{Metric: []string{"foo", "bar"}, Samples: nil},
 					},
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -359,17 +359,17 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with single series with many labels and no samples",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
-						{Metric: []string{"foo", "bar", "baz", "blah"}, Samples: []mimirpb.Sample{}},
+						{Metric: []string{"foo", "bar", "baz", "blah"}, Samples: nil},
 					},
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -387,7 +387,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with single series with one sample",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -402,7 +402,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -423,7 +423,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with single series with many samples",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -439,7 +439,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -461,7 +461,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with multiple series",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -472,7 +472,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -492,7 +492,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with histogram value",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -505,7 +505,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -521,7 +521,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with float and histogram values",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -535,7 +535,7 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -552,7 +552,7 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "successful matrix response with malformed metric symbols",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{
@@ -562,17 +562,17 @@ var protobufCodecScenarios = []struct {
 				},
 			},
 		},
-		expectedErr: apierror.New(apierror.TypeInternal, "error decoding response: metric is malformed: expected even number of symbols, but got 1"),
+		expectedDecodingError: apierror.New(apierror.TypeInternal, "error decoding response: metric is malformed: expected even number of symbols, but got 1"),
 	},
 	{
 		name: "successful empty matrix response",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QueryResponse_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
 				Matrix: &mimirpb.MatrixData{},
 			},
 		},
-		expected: &PrometheusResponse{
+		response: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
@@ -583,12 +583,18 @@ var protobufCodecScenarios = []struct {
 	},
 	{
 		name: "error response",
-		resp: mimirpb.QueryResponse{
+		payload: mimirpb.QueryResponse{
 			Status:    mimirpb.QueryResponse_ERROR,
 			ErrorType: mimirpb.QueryResponse_UNAVAILABLE,
 			Error:     "failed",
 		},
-		expectedErr: apierror.New(apierror.TypeUnavailable, "failed"),
+		response: &PrometheusResponse{
+			Status:    statusError,
+			ErrorType: string(apierror.TypeUnavailable),
+			Error:     "failed",
+			Headers:   expectedProtobufResponseHeaders,
+		},
+		expectedDecodingError: apierror.New(apierror.TypeUnavailable, "failed"),
 	},
 }
 
@@ -600,7 +606,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			codec := NewPrometheusCodec(reg, formatProtobuf)
 
-			body, err := tc.resp.Marshal()
+			body, err := tc.payload.Marshal()
 			require.NoError(t, err)
 			httpResponse := &http.Response{
 				StatusCode:    200,
@@ -609,13 +615,13 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				ContentLength: int64(len(body)),
 			}
 			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-			if err != nil || tc.expectedErr != nil {
-				require.Equal(t, tc.expectedErr, err)
+			if err != nil || tc.expectedDecodingError != nil {
+				require.Equal(t, tc.expectedDecodingError, err)
 				return
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, decoded)
+			require.Equal(t, tc.response, decoded)
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -631,13 +637,58 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	}
 }
 
+func TestProtobufFormat_EncodeResponse(t *testing.T) {
+	for _, tc := range protobufCodecScenarios {
+		if tc.response == nil {
+			continue
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg, formatProtobuf)
+
+			expectedBodyBytes, err := tc.payload.Marshal()
+			require.NoError(t, err)
+
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
+			}
+
+			httpResponse, err := codec.EncodeResponse(context.Background(), httpRequest, tc.response)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, httpResponse.StatusCode)
+			require.Equal(t, mimirpb.QueryResponseMimeType, httpResponse.Header.Get("Content-Type"))
+
+			actualBodyBytes, err := io.ReadAll(httpResponse.Body)
+			require.NoError(t, err)
+
+			actualBody := mimirpb.QueryResponse{}
+			err = actualBody.Unmarshal(actualBodyBytes)
+			require.NoError(t, err)
+			require.Equal(t, tc.payload, actualBody)
+			require.Len(t, actualBodyBytes, len(expectedBodyBytes))
+
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "protobuf", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "protobuf", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(expectedBodyBytes)), *payloadSizeHistogram.SampleSum)
+		})
+	}
+}
+
 func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
 	reg := prometheus.NewPedanticRegistry()
 	codec := NewPrometheusCodec(reg, formatProtobuf)
 
 	for _, tc := range protobufCodecScenarios {
-		body, err := tc.resp.Marshal()
+		body, err := tc.payload.Marshal()
 		require.NoError(b, err)
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
@@ -649,8 +700,33 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 				}
 
 				_, err = codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-				if err != nil || tc.expectedErr != nil {
-					require.Equal(b, tc.expectedErr, err)
+				if err != nil || tc.expectedDecodingError != nil {
+					require.Equal(b, tc.expectedDecodingError, err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, formatProtobuf)
+
+	req := &http.Request{
+		Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
+	}
+
+	for _, tc := range protobufCodecScenarios {
+		if tc.response == nil {
+			continue
+		}
+
+		b.Run(tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := codec.EncodeResponse(context.Background(), req, tc.response)
+
+				if err != nil {
+					require.NoError(b, err)
 				}
 			}
 		})

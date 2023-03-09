@@ -314,7 +314,7 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	// if the error error is an APIError, ensure it gets written as a JSON response
+	// if the error is an APIError, ensure it gets written as a JSON response
 	if resp, ok := apierror.HTTPResponseFromError(err); ok {
 		_ = server.WriteResponse(w, resp)
 		return

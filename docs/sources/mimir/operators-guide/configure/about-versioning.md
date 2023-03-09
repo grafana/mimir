@@ -111,6 +111,10 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+- Protobuf internal query result payload format
+  - `-query-frontend.query-result-response-format=protobuf`
+  - `-ruler.query-frontend.query-result-response-format=protobuf`
+- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 
 ## Deprecated features
 
@@ -120,3 +124,5 @@ The following features are currently deprecated and will be **removed in Mimir 2
   - `-compactor.consistency-delay`
 - Store-gateway
   - `-blocks-storage.bucket-store.consistency-delay`
+- Ingester
+  - `-ingester.ring.readiness-check-ring-health`

@@ -185,8 +185,8 @@ func TestStreamedRemoteRead(t *testing.T) {
 				},
 			},
 		},
-		"with 241 samples, we expect 1 frame with 2 chunks, and 1 frame with 1 chunk due to frame limit": {
-			samples: getNSamples(241),
+		"with 481 samples, we expect 2 frames with 2 chunks, and 1 frame with 1 chunk due to frame limit": {
+			samples: getNSamples(481),
 			expectedResults: []*client.StreamReadResponse{
 				{
 					ChunkedSeries: []*client.StreamChunkedSeries{
@@ -197,18 +197,17 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(0, 241),
+									Data:      getIndexedXORChunk(0, 481),
 								},
 								{
 									MinTimeMs: 120,
 									MaxTimeMs: 239,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(1, 241),
+									Data:      getIndexedXORChunk(1, 481),
 								},
 							},
 						},
 					},
-					QueryIndex: 0,
 				},
 				{
 					ChunkedSeries: []*client.StreamChunkedSeries{
@@ -217,14 +216,34 @@ func TestStreamedRemoteRead(t *testing.T) {
 							Chunks: []client.StreamChunk{
 								{
 									MinTimeMs: 240,
-									MaxTimeMs: 240,
+									MaxTimeMs: 359,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(2, 241),
+									Data:      getIndexedXORChunk(2, 481),
+								},
+								{
+									MinTimeMs: 360,
+									MaxTimeMs: 479,
+									Type:      client.XOR,
+									Data:      getIndexedXORChunk(3, 481),
 								},
 							},
 						},
 					},
-					QueryIndex: 0,
+				},
+				{
+					ChunkedSeries: []*client.StreamChunkedSeries{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Chunks: []client.StreamChunk{
+								{
+									MinTimeMs: 480,
+									MaxTimeMs: 480,
+									Type:      client.XOR,
+									Data:      getIndexedXORChunk(4, 481),
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -243,8 +262,9 @@ func TestStreamedRemoteRead(t *testing.T) {
 					}, nil
 				},
 			}
-			// Labelset has 10 bytes. Full frame in test data has roughly 160 bytes. This allows us to have at max 2 frames in this test.
-			maxBytesInFrame := 10 + 160*2
+			// The labelset for this test has 10 bytes and a full chunk is roughly 165 bytes; for this test we want a
+			// frame to contain at most 2 chunks.
+			maxBytesInFrame := 10 + 165*2
 
 			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
 
@@ -283,6 +303,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 				require.Equal(t, tc.expectedResults[i], &res)
 				i++
 			}
+			require.Len(t, tc.expectedResults, i)
 		})
 	}
 }

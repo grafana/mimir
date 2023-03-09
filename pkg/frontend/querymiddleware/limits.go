@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
 
@@ -62,7 +61,7 @@ type Limits interface {
 	CompactorBlocksRetentionPeriod(userID string) time.Duration
 
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
-	OutOfOrderTimeWindow(userID string) model.Duration
+	OutOfOrderTimeWindow(userID string) time.Duration
 
 	// CreationGracePeriod returns the time interval to control how far into the future
 	// incoming samples are accepted compared to the wall clock.
@@ -70,6 +69,13 @@ type Limits interface {
 
 	// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 	NativeHistogramsIngestionEnabled(userID string) bool
+
+	// ResultsCacheTTL returns TTL for cached results for query that doesn't fall into out of order window, or
+	// if out of order ingestion is disabled.
+	ResultsCacheTTL(userID string) time.Duration
+
+	// ResultsCacheForOutOfOrderWindowTTL returns TTL for cached results for query that falls into out-of-order ingestion window.
+	ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -266,7 +272,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	return rt.codec.EncodeResponse(ctx, response)
+	return rt.codec.EncodeResponse(ctx, r, response)
 }
 
 // roundTripperHandler is an adapter that implements the Handler interface using a http.RoundTripper to perform
