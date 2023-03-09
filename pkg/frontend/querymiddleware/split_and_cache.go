@@ -94,6 +94,9 @@ type splitAndCacheMiddleware struct {
 	splitter               CacheSplitter
 	extractor              Extractor
 	shouldCacheReq         shouldCacheFn
+
+	// Can be set from tests
+	currentTime func() time.Time
 }
 
 // newSplitAndCacheMiddleware makes a new splitAndCacheMiddleware.
@@ -127,6 +130,7 @@ func newSplitAndCacheMiddleware(
 			extractor:              extractor,
 			shouldCacheReq:         shouldCacheReq,
 			logger:                 logger,
+			currentTime:            time.Now,
 		}
 	})
 }
@@ -170,7 +174,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		}
 
 		// Lookup all keys from cache.
-		fetchedExtents := s.fetchCacheExtents(ctx, tenantIDs, lookupKeys)
+		fetchedExtents := s.fetchCacheExtents(ctx, s.currentTime(), tenantIDs, lookupKeys)
 
 		for lookupIdx, extents := range fetchedExtents {
 			if len(extents) == 0 {
@@ -216,7 +220,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(len(execReqs)))
 
-	queryTime := time.Now()
+	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
 		execResps, err := doRequests(ctx, s.next, execReqs, true)
@@ -319,7 +323,8 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req Request) (splitRequ
 // is guaranteed to have the same length of the input keys. For each input key, the fetched
 // extents are stored in the returned slice at the same position. In case of error or cache miss,
 // the returned extents are empty.
-func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, tenantIDs []string, keys []string) [][]Extent {
+// Extents created from queries that outlived current configured TTL are filtered out.
+func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now time.Time, tenantIDs []string, keys []string) [][]Extent {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "fetchCacheExtents")
 	defer spanLog.Finish()
 
@@ -344,10 +349,9 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, tenantI
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))
 	returnedBytes := 0
-	extendsOutOfTTL := 0
+	extentsOutOfTTL := 0
 
-	ttl, ttlInOOO, oooWindow := s.getCacheOptions(tenantIDs)
-	now := time.Now()
+	ttl, ttlForExtentsInOOOWindow, oooWindow := s.getCacheOptions(tenantIDs)
 
 	for foundKey, foundData := range founds {
 		// Find the index of this cache key.
@@ -377,20 +381,24 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, tenantI
 		for ix := range resp.Extents {
 			if resp.Extents[ix].QueryTime == 0 {
 				// If we don't know the query time, it's too old.
-				extendsOutOfTTL++
+				extentsOutOfTTL++
 				continue
 			}
 
 			usedTTL := ttl
 			if oooWindow > 0 && extentWithinOOOWindow(&resp.Extents[ix], now, oooWindow) {
-				usedTTL = ttlInOOO
+				usedTTL = ttlForExtentsInOOOWindow
 			}
 			if resp.Extents[ix].QueryTime < now.UnixMilli()-usedTTL.Milliseconds() {
-				extendsOutOfTTL++
+				extentsOutOfTTL++
 				continue
 			}
 
 			extents[keyIdx] = append(extents[keyIdx], resp.Extents[ix])
+		}
+
+		if len(extents[keyIdx]) == 0 {
+			extents[keyIdx] = nil
 		}
 
 		returnedBytes += len(foundData)
@@ -399,7 +407,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, tenantI
 	spanLog.LogKV("requested keys", len(hashedKeys))
 	spanLog.LogKV("found keys", len(founds))
 	spanLog.LogKV("returned bytes", returnedBytes)
-	spanLog.LogKV("extents filtered out due to ttl", extendsOutOfTTL)
+	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
 
 	return extents
 }

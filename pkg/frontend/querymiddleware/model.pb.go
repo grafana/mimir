@@ -516,7 +516,8 @@ type Extent struct {
 	End      int64      `protobuf:"varint,2,opt,name=end,proto3" json:"end"`
 	TraceId  string     `protobuf:"bytes,4,opt,name=trace_id,json=traceId,proto3" json:"-"`
 	Response *types.Any `protobuf:"bytes,5,opt,name=response,proto3" json:"response"`
-	// unix timestamp (millis) when the query with this response was run.
+	// Unix timestamp (millis) when the query with this response was executed.
+	// If the response is combination of multiple queries over time, queryTime is timestamp of oldest query.
 	QueryTime int64 `protobuf:"varint,6,opt,name=queryTime,proto3" json:"queryTime,omitempty"`
 }
 
