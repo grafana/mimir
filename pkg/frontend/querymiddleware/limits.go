@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
 
@@ -62,7 +61,7 @@ type Limits interface {
 	CompactorBlocksRetentionPeriod(userID string) time.Duration
 
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
-	OutOfOrderTimeWindow(userID string) model.Duration
+	OutOfOrderTimeWindow(userID string) time.Duration
 
 	// CreationGracePeriod returns the time interval to control how far into the future
 	// incoming samples are accepted compared to the wall clock.
