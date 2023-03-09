@@ -242,11 +242,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 		iter = series.Iterator(iter)
 		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
 
-		frameBytesLeft := maxBytesInFrame
-		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
-		}
-
+		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()
 
 		for isNext {
@@ -263,11 +259,11 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				Type:      client.StreamChunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
-			frameBytesLeft -= chks[len(chks)-1].Size()
+			frameBytesRemaining -= chks[len(chks)-1].Size()
 
 			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
 			isNext = iter.Next()
-			if frameBytesLeft > 0 && isNext {
+			if frameBytesRemaining > 0 && isNext {
 				continue
 			}
 
@@ -288,10 +284,19 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
+			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
 			return err
 		}
 	}
 	return ss.Err()
+}
+
+func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []mimirpb.LabelAdapter) int {
+	frameBytesLeft := maxBytesInFrame
+	for _, lbl := range lbls {
+		frameBytesLeft -= lbl.Size()
+	}
+	return frameBytesLeft
 }
