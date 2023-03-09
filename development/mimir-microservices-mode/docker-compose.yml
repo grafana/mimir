@@ -135,6 +135,17 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "grafana":
+    "environment":
+      - "GF_AUTH_ANONYMOUS_ENABLED=true"
+      - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
+    "image": "grafana/grafana:9.4.3"
+    "ports":
+      - "3000:3000"
+    "volumes":
+      - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
+      - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
+      - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
   "grafana-agent":
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
@@ -233,7 +244,8 @@
       - "9090:9090"
     "volumes":
       - "./config:/etc/prometheus"
-      - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml"
+      - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml"
+      - "../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml"
   "querier":
     "build":
       "context": "."
