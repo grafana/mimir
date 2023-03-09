@@ -83,15 +83,14 @@ func TestInMemoryIndexCache_AvoidsDeadlock(t *testing.T) {
 	assert.NoError(t, err)
 	cache.lru = l
 
-	ctx := context.Background()
-	cache.StorePostings(ctx, user, ulid.MustNew(0, nil), labels.Label{Name: "test2", Value: "1"}, []byte{42, 33, 14, 67, 11})
+	cache.StorePostings(user, ulid.MustNew(0, nil), labels.Label{Name: "test2", Value: "1"}, []byte{42, 33, 14, 67, 11})
 
 	assert.Equal(t, uint64(sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(cache.curSize), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
 
 	// This triggers deadlock logic.
-	cache.StorePostings(ctx, user, ulid.MustNew(0, nil), labels.Label{Name: "test1", Value: "1"}, []byte{42})
+	cache.StorePostings(user, ulid.MustNew(0, nil), labels.Label{Name: "test1", Value: "1"}, []byte{42})
 
 	assert.Equal(t, uint64(sliceHeaderSize+1), cache.curSize)
 	assert.Equal(t, float64(cache.curSize), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))
@@ -139,7 +138,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 	}{
 		{
 			typ: cacheTypePostings,
-			set: func(id uint64, b []byte) { cache.StorePostings(ctx, user, uid(id), lbl, b) },
+			set: func(id uint64, b []byte) { cache.StorePostings(user, uid(id), lbl, b) },
 			get: func(id uint64) ([]byte, bool) {
 				hits, _ := cache.FetchMultiPostings(ctx, user, uid(id), []labels.Label{lbl})
 				b, ok := hits[lbl]
@@ -150,7 +149,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeSeriesForRef,
 			set: func(id uint64, b []byte) {
-				cache.StoreSeriesForRef(ctx, user, uid(id), storage.SeriesRef(id), b)
+				cache.StoreSeriesForRef(user, uid(id), storage.SeriesRef(id), b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				seriesRef := storage.SeriesRef(id)
@@ -163,7 +162,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeExpandedPostings,
 			set: func(id uint64, b []byte) {
-				cache.StoreExpandedPostings(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), b)
+				cache.StoreExpandedPostings(user, uid(id), CanonicalLabelMatchersKey(matchers), b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchExpandedPostings(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers))
@@ -172,7 +171,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeSeries,
 			set: func(id uint64, b []byte) {
-				cache.StoreSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
+				cache.StoreSeries(user, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard)
@@ -181,7 +180,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeSeriesForPostings,
 			set: func(id uint64, b []byte) {
-				cache.StoreSeriesForPostings(ctx, user, uid(id), shard, CanonicalPostingsKey([]storage.SeriesRef{1}), b)
+				cache.StoreSeriesForPostings(user, uid(id), shard, CanonicalPostingsKey([]storage.SeriesRef{1}), b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchSeriesForPostings(ctx, user, uid(id), shard, CanonicalPostingsKey([]storage.SeriesRef{1}))
@@ -190,7 +189,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeLabelNames,
 			set: func(id uint64, b []byte) {
-				cache.StoreLabelNames(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), b)
+				cache.StoreLabelNames(user, uid(id), CanonicalLabelMatchersKey(matchers), b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchLabelNames(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers))
@@ -199,7 +198,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeLabelValues,
 			set: func(id uint64, b []byte) {
-				cache.StoreLabelValues(ctx, user, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers), b)
+				cache.StoreLabelValues(user, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers), b)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchLabelValues(ctx, user, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers))
@@ -266,11 +265,10 @@ func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 	cache.lru = l
 
 	id := ulid.MustNew(0, nil)
-	ctx := context.Background()
 
-	cache.StorePostings(ctx, user, id, labels.Label{Name: "test", Value: "123"}, []byte{42, 33})
-	cache.StorePostings(ctx, user, id, labels.Label{Name: "test", Value: "124"}, []byte{42, 33})
-	cache.StorePostings(ctx, user, id, labels.Label{Name: "test", Value: "125"}, []byte{42, 33})
+	cache.StorePostings(user, id, labels.Label{Name: "test", Value: "123"}, []byte{42, 33})
+	cache.StorePostings(user, id, labels.Label{Name: "test", Value: "124"}, []byte{42, 33})
+	cache.StorePostings(user, id, labels.Label{Name: "test", Value: "125"}, []byte{42, 33})
 
 	assert.Equal(t, uint64(2*sliceHeaderSize+4), cache.curSize)
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.overflow.WithLabelValues(cacheTypePostings)))
@@ -309,7 +307,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, []labels.Label{lbls}, pMisses)
 
 	// Add sliceHeaderSize + 2 bytes.
-	cache.StorePostings(ctx, user, id, lbls, []byte{42, 33})
+	cache.StorePostings(user, id, lbls, []byte{42, 33})
 	assert.Equal(t, uint64(sliceHeaderSize+2), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(sliceHeaderSize+2), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))
@@ -335,7 +333,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, []labels.Label{{Name: "test", Value: "124"}}, pMisses)
 
 	// Add sliceHeaderSize + 3 more bytes.
-	cache.StoreSeriesForRef(ctx, user, id, 1234, []byte{222, 223, 224})
+	cache.StoreSeriesForRef(user, id, 1234, []byte{222, 223, 224})
 	assert.Equal(t, uint64(2*sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(sliceHeaderSize+2), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))
@@ -359,7 +357,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	for i := 0; i < sliceHeaderSize; i++ {
 		v = append(v, 3)
 	}
-	cache.StorePostings(ctx, user, id, lbls2, v)
+	cache.StorePostings(user, id, lbls2, v)
 
 	assert.Equal(t, uint64(2*sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
@@ -387,7 +385,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, emptyPostingsMisses, pMisses)
 
 	// Add same item again.
-	cache.StorePostings(ctx, user, id, lbls2, v)
+	cache.StorePostings(user, id, lbls2, v)
 
 	assert.Equal(t, uint64(2*sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
@@ -406,7 +404,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, emptyPostingsMisses, pMisses)
 
 	// Add too big item.
-	cache.StorePostings(ctx, user, id, labels.Label{Name: "test", Value: "toobig"}, append(v, 5))
+	cache.StorePostings(user, id, labels.Label{Name: "test", Value: "toobig"}, append(v, 5))
 	assert.Equal(t, uint64(2*sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(2*sliceHeaderSize+5), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))
@@ -439,7 +437,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 
 	lbls3 := labels.Label{Name: "test", Value: "124"}
 
-	cache.StorePostings(ctx, user, id, lbls3, []byte{})
+	cache.StorePostings(user, id, lbls3, []byte{})
 
 	assert.Equal(t, uint64(sliceHeaderSize), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
@@ -459,7 +457,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 
 	// nil works and still allocates empty slice.
 	lbls4 := labels.Label{Name: "test", Value: "125"}
-	cache.StorePostings(ctx, user, id, lbls4, []byte(nil))
+	cache.StorePostings(user, id, lbls4, []byte(nil))
 
 	assert.Equal(t, 2*uint64(sliceHeaderSize), cache.curSize)
 	assert.Equal(t, float64(2), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))

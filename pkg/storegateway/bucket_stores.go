@@ -427,7 +427,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
 		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
-		block.NewConsistencyDelayMetaFilter(userLogger, u.cfg.BucketStore.ConsistencyDelay, fetcherReg),
+		block.NewConsistencyDelayMetaFilter(userLogger, u.cfg.BucketStore.DeprecatedConsistencyDelay, fetcherReg),
 		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
 		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksDelay, u.cfg.BucketStore.MetaSyncConcurrency),
@@ -469,7 +469,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
-		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 
@@ -478,6 +477,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
+		u.cfg.BucketStore.StreamingBatchSize,
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
 		}),

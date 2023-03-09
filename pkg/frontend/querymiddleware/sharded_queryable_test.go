@@ -454,14 +454,28 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 
 		it = set.At().Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
-				return nil, fmt.Errorf("unsupported value type %v", valType)
+			switch valType {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				stream.Samples = append(stream.Samples, mimirpb.Sample{
+					Value:       v,
+					TimestampMs: t,
+				})
+			case chunkenc.ValHistogram:
+				t, v := it.AtHistogram()
+				stream.Histograms = append(stream.Histograms, mimirpb.FloatHistogramPair{
+					Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(v.ToFloat()),
+					TimestampMs: t,
+				})
+			case chunkenc.ValFloatHistogram:
+				t, v := it.AtFloatHistogram()
+				stream.Histograms = append(stream.Histograms, mimirpb.FloatHistogramPair{
+					Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(v),
+					TimestampMs: t,
+				})
+			default:
+				panic(fmt.Errorf("Unexpected value type: %x", valType))
 			}
-			t, v := it.At()
-			stream.Samples = append(stream.Samples, mimirpb.Sample{
-				Value:       v,
-				TimestampMs: t,
-			})
 		}
 
 		if it.Err() != nil {

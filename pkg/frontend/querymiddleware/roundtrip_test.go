@@ -139,7 +139,7 @@ func TestInstantTripperware(t *testing.T) {
 			return nil, err
 		}
 
-		return codec.EncodeResponse(r.Context(), &PrometheusResponse{
+		return codec.EncodeResponse(r.Context(), r, &PrometheusResponse{
 			Status: "success",
 			Data: &PrometheusData{
 				ResultType: "vector",

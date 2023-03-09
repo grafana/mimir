@@ -281,7 +281,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(ctx, splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -381,11 +381,9 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, tenantIDs []string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []string, extents []Extent) {
 	ttl := resultsCacheTTL
-	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, func(tenantID string) time.Duration {
-		return time.Duration(s.limits.OutOfOrderTimeWindow(tenantID))
-	})
+	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, s.limits.OutOfOrderTimeWindow)
 	if lowerTTLWithinTimePeriod > 0 && len(extents) > 0 &&
 		extents[len(extents)-1].End >= time.Now().Add(-lowerTTLWithinTimePeriod).UnixMilli() {
 		ttl = resultsCacheLowerTTL
@@ -400,7 +398,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, ttl)
+	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, ttl)
 }
 
 // splitRequest holds information about a split request.
