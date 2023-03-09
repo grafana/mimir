@@ -30,6 +30,8 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
    * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
    * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
 * [CHANGE] Store-gateway: the streaming store-gateway is now enabled by default. The new default setting for `-blocks-storage.bucket-store.batch-series-size` is `5000`. #4330
+* [CHANGE] Compactor: the configuration parameter `-compactor.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
+* [CHANGE] Store-gateway: the configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
 * [FEATURE] Ruler: added `keep_firing_for` support to alerting rules. #4099
 * [FEATURE] Distributor, ingester: ingestion of native histograms. The new per-tenant limit `-ingester.native-histograms-ingestion-enabled` controls whether native histograms are stored or ignored. #4159
 * [FEATURE] Query-frontend: Introduce experimental `-query-frontend.query-sharding-target-series-per-shard` to allow query sharding to take into account cardinality of similar requests executed previously. This feature uses the same cache that's used for results caching. #4121 #4177 #4188 #4254

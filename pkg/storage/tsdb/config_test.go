@@ -131,7 +131,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			actualErr := cfg.Validate()
+			actualErr := cfg.Validate(log.NewNopLogger())
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
