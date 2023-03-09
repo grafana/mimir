@@ -3267,6 +3267,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.wal-segment-size-bytes
   [wal_segment_size_bytes: <int> | default = 134217728]
 
+  # (advanced) Maximum number of CPUs that can simultaneously processes WAL
+  # replay. 0 means disabled.
+  # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
+  [wal_replay_concurrency: <int> | default = 0]
+
   # (advanced) True to flush blocks to storage on shutdown. If false, incomplete
   # blocks will be reused after restart.
   # CLI flag: -blocks-storage.tsdb.flush-blocks-on-shutdown
@@ -3299,7 +3304,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) limit the number of concurrently opening TSDB's on startup
+  # (deprecated) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
