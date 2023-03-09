@@ -880,7 +880,7 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (advanced) When enabled the readiness probe succeeds only after all
+  # (deprecated) When enabled the readiness probe succeeds only after all
   # instances are ACTIVE and healthy in the ring, otherwise only the instance
   # itself is checked. This option should be disabled if in your cluster
   # multiple instances can be rolled out simultaneously, otherwise rolling

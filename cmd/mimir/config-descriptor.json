@@ -2658,7 +2658,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.readiness-check-ring-health",
               "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             }
           ],
           "fieldValue": null,

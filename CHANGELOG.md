@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: the configuration parameter `-ingester.ring.readiness-check-ring-health` has been deprecated and will be removed in Mimir 2.9. #4422
 * [CHANGE] Ruler: changed default value of `-ruler.evaluation-delay-duration` option from 0 to 1m. #4250
 * [CHANGE] Querier: Errors with status code `422` coming from the store-gateway are propagated and not converted to the consistency check error anymore. #4100
 * [CHANGE] Store-gateway: When a query hits `max_fetched_chunks_per_query` and `max_fetched_series_per_query` limits, an error with the status code `422` is created and returned. #4056
