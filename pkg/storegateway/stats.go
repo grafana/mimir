@@ -47,6 +47,8 @@ type queryStats struct {
 	chunksFetchedSizeSum   int
 	chunksRefetched        int
 	chunksRefetchedSizeSum int
+	chunksProcessed        int
+	chunksProcessedSizeSum int
 	chunksReturned         int
 	chunksReturnedSizeSum  int
 
@@ -110,6 +112,8 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.chunksFetchedSizeSum += o.chunksFetchedSizeSum
 	s.chunksRefetched += o.chunksRefetched
 	s.chunksRefetchedSizeSum += o.chunksRefetchedSizeSum
+	s.chunksProcessed += o.chunksProcessed
+	s.chunksProcessedSizeSum += o.chunksProcessedSizeSum
 	s.chunksReturned += o.chunksReturned
 	s.chunksReturnedSizeSum += o.chunksReturnedSizeSum
 
