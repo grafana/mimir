@@ -81,8 +81,7 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 )
 
-// Distributor is a storage.SampleAppender and a client.Querier which
-// forwards appends and queries to individual ingesters.
+// Distributor forwards appends and queries to individual ingesters.
 type Distributor struct {
 	services.Service
 
