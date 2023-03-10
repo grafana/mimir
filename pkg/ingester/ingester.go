@@ -109,6 +109,10 @@ const (
 	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
+
+	// Value used to track the limit between sequential and concurrent TSDB opernings.
+	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
+	maxTSDBOpenWithoutConcurrency = 10
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -1678,7 +1682,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(userID)
+	db, err := i.createTSDB(userID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1691,7 +1695,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 }
 
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -1723,6 +1727,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:              walReplayConcurrency,
 		SeriesLifecycleCallback:           userDB,
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
@@ -1833,13 +1838,25 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
 
+	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
+	if err != nil {
+		level.Error(i.logger).Log("msg", "error while finding existing TSDBs", "err", err)
+		return err
+	}
+
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	tsdbOpenConcurrency, tsdbWALReplayConcurrency := getOpenTSDBsConcurrencyConfig(i.cfg.BlocksStorageConfig.TSDB, len(userIDs))
+
 	// Create a pool of workers which will open existing TSDBs.
-	for n := 0; n < i.cfg.BlocksStorageConfig.TSDB.MaxTSDBOpeningConcurrencyOnStartup; n++ {
+	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
 				startTime := time.Now()
 
-				db, err := i.createTSDB(userID)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
@@ -1858,46 +1875,11 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		})
 	}
 
-	// Spawn a goroutine to find all users with a TSDB on the filesystem.
+	// Spawn a goroutine to place all users with a TSDB found on the filesystem in the queue.
 	group.Go(func() error {
-		// Close the queue once filesystem walking is done.
 		defer close(queue)
 
-		walkErr := filepath.Walk(i.cfg.BlocksStorageConfig.TSDB.Dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				// If the root directory doesn't exist, we're OK (not needed to be created upfront).
-				if os.IsNotExist(err) && path == i.cfg.BlocksStorageConfig.TSDB.Dir {
-					return filepath.SkipDir
-				}
-
-				level.Error(i.logger).Log("msg", "an error occurred while iterating the filesystem storing TSDBs", "path", path, "err", err)
-				return errors.Wrapf(err, "an error occurred while iterating the filesystem storing TSDBs at %s", path)
-			}
-
-			// Skip root dir and all other files
-			if path == i.cfg.BlocksStorageConfig.TSDB.Dir || !info.IsDir() {
-				return nil
-			}
-
-			// Top level directories are assumed to be user TSDBs
-			userID := info.Name()
-			f, err := os.Open(path)
-			if err != nil {
-				level.Error(i.logger).Log("msg", "unable to open TSDB dir", "err", err, "user", userID, "path", path)
-				return errors.Wrapf(err, "unable to open TSDB dir %s for user %s", path, userID)
-			}
-			defer f.Close()
-
-			// If the dir is empty skip it
-			if _, err := f.Readdirnames(1); err != nil {
-				if errors.Is(err, io.EOF) {
-					return filepath.SkipDir
-				}
-
-				level.Error(i.logger).Log("msg", "unable to read TSDB dir", "err", err, "user", userID, "path", path)
-				return errors.Wrapf(err, "unable to read TSDB dir %s for user %s", path, userID)
-			}
-
+		for _, userID := range userIDs {
 			// Enqueue the user to be processed.
 			select {
 			case queue <- userID:
@@ -1906,16 +1888,12 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				// Interrupt in case a failure occurred in another goroutine.
 				return nil
 			}
-
-			// Don't descend into subdirectories.
-			return filepath.SkipDir
-		})
-
-		return errors.Wrapf(walkErr, "unable to walk directory %s containing existing TSDBs", i.cfg.BlocksStorageConfig.TSDB.Dir)
+		}
+		return nil
 	})
 
 	// Wait for all workers to complete.
-	err := group.Wait()
+	err = group.Wait()
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while opening existing TSDBs", "err", err)
 		return err
@@ -1926,6 +1904,74 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
+}
+
+func getOpenTSDBsConcurrencyConfig(tsdbConfig mimir_tsdb.TSDBConfig, userCount int) (tsdbOpenConcurrency, tsdbWALReplayConcurrency int) {
+	tsdbOpenConcurrency = tsdbConfig.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	tsdbWALReplayConcurrency = 0
+	// When WALReplayConcurrency is enabled, we want to ensure the WAL replay at ingester startup
+	// doesn't use more than the configured number of CPU cores. In order to optimize performance
+	// both on single tenant and multi tenant Mimir clusters, we use a heuristic to decide whether
+	// it's better to parallelize the WAL replay of each single TSDB (low number of tenants) or
+	// the WAL replay of multiple TSDBs at the same time (high number of tenants).
+	if tsdbConfig.WALReplayConcurrency > 0 {
+		if userCount <= maxTSDBOpenWithoutConcurrency {
+			tsdbOpenConcurrency = 1
+			tsdbWALReplayConcurrency = tsdbConfig.WALReplayConcurrency
+		} else {
+			tsdbOpenConcurrency = tsdbConfig.WALReplayConcurrency
+			tsdbWALReplayConcurrency = 1
+		}
+	}
+	return
+}
+
+// findUserIDsWithTSDBOnFilesystem finds all users with a TSDB on the filesystem.
+func (i *Ingester) findUserIDsWithTSDBOnFilesystem() ([]string, error) {
+	var userIDs []string
+	walkErr := filepath.Walk(i.cfg.BlocksStorageConfig.TSDB.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// If the root directory doesn't exist, we're OK (not needed to be created upfront).
+			if os.IsNotExist(err) && path == i.cfg.BlocksStorageConfig.TSDB.Dir {
+				return filepath.SkipDir
+			}
+
+			level.Error(i.logger).Log("msg", "an error occurred while iterating the filesystem storing TSDBs", "path", path, "err", err)
+			return errors.Wrapf(err, "an error occurred while iterating the filesystem storing TSDBs at %s", path)
+		}
+
+		// Skip root dir and all other files
+		if path == i.cfg.BlocksStorageConfig.TSDB.Dir || !info.IsDir() {
+			return nil
+		}
+
+		// Top level directories are assumed to be user TSDBs
+		userID := info.Name()
+		f, err := os.Open(path)
+		if err != nil {
+			level.Error(i.logger).Log("msg", "unable to open TSDB dir", "err", err, "user", userID, "path", path)
+			return errors.Wrapf(err, "unable to open TSDB dir %s for user %s", path, userID)
+		}
+		defer f.Close()
+
+		// If the dir is empty skip it
+		if _, err := f.Readdirnames(1); err != nil {
+			if errors.Is(err, io.EOF) {
+				return filepath.SkipDir
+			}
+
+			level.Error(i.logger).Log("msg", "unable to read TSDB dir", "err", err, "user", userID, "path", path)
+			return errors.Wrapf(err, "unable to read TSDB dir %s for user %s", path, userID)
+		}
+
+		// Save userId.
+		userIDs = append(userIDs, userID)
+
+		// Don't descend into subdirectories.
+		return filepath.SkipDir
+	})
+
+	return userIDs, errors.Wrapf(walkErr, "unable to walk directory %s containing existing TSDBs", i.cfg.BlocksStorageConfig.TSDB.Dir)
 }
 
 // getOldestUnshippedBlockMetric returns the unix timestamp of the oldest unshipped block or

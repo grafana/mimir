@@ -662,7 +662,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
-    	limit the number of concurrently opening TSDB's on startup (default 10)
+    	[deprecated] limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.out-of-order-capacity-max int
@@ -679,6 +679,8 @@ Usage of ./cmd/mimir/mimir:
     	The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.tsdb.wal-compression-enabled
     	True to enable TSDB WAL compression.
+  -blocks-storage.tsdb.wal-replay-concurrency int
+    	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.storage.azure.account-key string

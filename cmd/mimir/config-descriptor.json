@@ -7091,6 +7091,17 @@
             },
             {
               "kind": "field",
+              "name": "wal_replay_concurrency",
+              "required": false,
+              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.wal-replay-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "flush_blocks_on_shutdown",
               "required": false,
               "desc": "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.",
@@ -7153,7 +7164,7 @@
               "fieldDefaultValue": 10,
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
