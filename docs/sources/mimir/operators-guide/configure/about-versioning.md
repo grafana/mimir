@@ -126,3 +126,8 @@ The following features are currently deprecated and will be **removed in Mimir 2
   - `-blocks-storage.bucket-store.consistency-delay`
 - Ingester
   - `-ingester.ring.readiness-check-ring-health`
+
+The following features are currently deprecated and will be **removed in Mimir 2.10**:
+
+- Ingester
+  - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`

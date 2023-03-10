@@ -110,11 +110,8 @@ const (
 	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
 	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
 
-	// Maximum number of TSDB users present on the file system which can be opened in a single process
-	// without concurrency. More precisely, if actual number of TSDB users is lower than this number,
-	// each TSDB is opened in a single process, while WAL replay is done in WALReplayConcurrency concurrent
-	// processes. Otherwise, TSDBs are opened in WALReplayConcurrency concurrent processes, while WAL replay
-	// is done in a single process.
+	// Value used to track the limit between sequential and concurrent TSDB opernings.
+	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
 )
 
@@ -1685,7 +1682,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(userID)
+	db, err := i.createTSDB(userID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1697,10 +1694,8 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	return db, nil
 }
 
-type tsdbOption func(*tsdb.Options)
-
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(userID string, additionalTsdbOptions ...tsdbOption) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -1721,7 +1716,8 @@ func (i *Ingester) createTSDB(userID string, additionalTsdbOptions ...tsdbOption
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
-	tsdbOptions := &tsdb.Options{
+	// Create a new user database
+	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                  blockRanges[0],
 		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
@@ -1731,6 +1727,7 @@ func (i *Ingester) createTSDB(userID string, additionalTsdbOptions ...tsdbOption
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:              walReplayConcurrency,
 		SeriesLifecycleCallback:           userDB,
 		BlocksToDelete:                    userDB.blocksToDelete,
 		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
@@ -1746,12 +1743,7 @@ func (i *Ingester) createTSDB(userID string, additionalTsdbOptions ...tsdbOption
 		HeadPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
 		HeadPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
 		EnableNativeHistograms:            i.limits.NativeHistogramsIngestionEnabled(userID),
-	}
-	for _, tsdbOption := range additionalTsdbOptions {
-		tsdbOption(tsdbOptions)
-	}
-	// Create a new user database
-	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, tsdbOptions, nil)
+	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
@@ -1846,7 +1838,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
 
-	userIDs, err := i.getAllTSDBUserIDs()
+	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
 		level.Error(i.logger).Log("msg", "error while finding existing TSDBs", "err", err)
 		return err
@@ -1856,32 +1848,15 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		return nil
 	}
 
-	var concurrentOpenTSDBCount = i.cfg.BlocksStorageConfig.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
-	var walReplayConcurrency = 0
-	// If TSDBConfig.WALReplayConcurrency is set to a positive value, we honor it and ignore value of
-	// TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup, being the latter deprecated.
-	// If TSDBConfig.WALReplayConcurrency is 0, it is ignored, and TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
-	// determines the number of concurrent processes opening TSDBs.
-	if i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency > 0 {
-		if len(userIDs) <= maxTSDBOpenWithoutConcurrency {
-			concurrentOpenTSDBCount = 1
-			walReplayConcurrency = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
-		} else {
-			concurrentOpenTSDBCount = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
-			walReplayConcurrency = 1
-		}
-	}
-	walReplayConcurrencyOption := func(tsdbOptions *tsdb.Options) {
-		tsdbOptions.WALReplayConcurrency = walReplayConcurrency
-	}
+	tsdbOpenConcurrency, walReplayConcurrency := i.getConcurrencyConfig(len(userIDs))
 
 	// Create a pool of workers which will open existing TSDBs.
-	for n := 0; n < concurrentOpenTSDBCount; n++ {
+	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
 				startTime := time.Now()
 
-				db, err := i.createTSDB(userID, walReplayConcurrencyOption)
+				db, err := i.createTSDB(userID, walReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
@@ -1904,7 +1879,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	group.Go(func() error {
 		defer close(queue)
 
-		for userID := range userIDs {
+		for _, userID := range userIDs {
 			// Enqueue the user to be processed.
 			select {
 			case queue <- userID:
@@ -1931,9 +1906,28 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	return nil
 }
 
-// getAllTSDBUserIDs finds all users with a TSDB on the filesystem.
-func (i *Ingester) getAllTSDBUserIDs() (map[string]struct{}, error) {
-	userIDs := make(map[string]struct{})
+func (i *Ingester) getConcurrencyConfig(userCount int) (tsdbOpenConcurrency, walReplayConcurrency int) {
+	tsdbOpenConcurrency = i.cfg.BlocksStorageConfig.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	walReplayConcurrency = 0
+	// If TSDBConfig.WALReplayConcurrency is set to a positive value, we honor it and ignore value of
+	// TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup, being the latter deprecated.
+	// If TSDBConfig.WALReplayConcurrency is 0, it is ignored, and TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	// determines the number of concurrent processes opening TSDBs.
+	if i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency > 0 {
+		if userCount <= maxTSDBOpenWithoutConcurrency {
+			tsdbOpenConcurrency = 1
+			walReplayConcurrency = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
+		} else {
+			tsdbOpenConcurrency = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
+			walReplayConcurrency = 1
+		}
+	}
+	return
+}
+
+// findUserIDsWithTSDBOnFilesystem finds all users with a TSDB on the filesystem.
+func (i *Ingester) findUserIDsWithTSDBOnFilesystem() ([]string, error) {
+	var userIDs []string
 	walkErr := filepath.Walk(i.cfg.BlocksStorageConfig.TSDB.Dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// If the root directory doesn't exist, we're OK (not needed to be created upfront).
@@ -1970,7 +1964,7 @@ func (i *Ingester) getAllTSDBUserIDs() (map[string]struct{}, error) {
 		}
 
 		// Save userId.
-		userIDs[userID] = struct{}{}
+		userIDs = append(userIDs, userID)
 
 		// Don't descend into subdirectories.
 		return filepath.SkipDir

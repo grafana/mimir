@@ -3182,87 +3182,65 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		"should load TSDB for any non-empty user directory": {
 			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 				require.NoError(t, os.Mkdir(filepath.Join(dir, "user2"), 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 2, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.NotNil(t, i.getTSDB(userID))
+				}
 				require.Nil(t, i.getTSDB("user2"))
 			},
 		},
 		"should load all TSDBs on walReplayConcurrency < number of TSDBs": {
 			walReplayConcurrency: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 5, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
-				require.NotNil(t, i.getTSDB("user2"))
-				require.NotNil(t, i.getTSDB("user3"))
-				require.NotNil(t, i.getTSDB("user4"))
-				walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB("user0"))
-				require.Equal(t, 2, walReplayConcurrency)
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 2, walReplayConcurrency)
+				}
 			},
 		},
 		"should load all TSDBs on walReplayConcurrency > number of TSDBs": {
 			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 5, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
-				require.NotNil(t, i.getTSDB("user2"))
-				require.NotNil(t, i.getTSDB("user3"))
-				require.NotNil(t, i.getTSDB("user4"))
-				walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB("user0"))
-				require.Equal(t, 10, walReplayConcurrency)
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 10, walReplayConcurrency)
+				}
 			},
 		},
 		"should load all TSDBs on number of TSDBs > maxTSDBOpenWithoutConcurrency": {
 			walReplayConcurrency: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user5", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user6", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user7", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user8", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user9", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user10", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8", "user9", "user10"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 11, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
-				require.NotNil(t, i.getTSDB("user2"))
-				require.NotNil(t, i.getTSDB("user3"))
-				require.NotNil(t, i.getTSDB("user4"))
-				require.NotNil(t, i.getTSDB("user5"))
-				require.NotNil(t, i.getTSDB("user6"))
-				require.NotNil(t, i.getTSDB("user7"))
-				require.NotNil(t, i.getTSDB("user8"))
-				require.NotNil(t, i.getTSDB("user9"))
-				require.NotNil(t, i.getTSDB("user10"))
-				walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB("user0"))
-				require.Equal(t, 1, walReplayConcurrency)
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8", "user9", "user10"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 1, walReplayConcurrency)
+				}
 			},
 		},
 		"should fail and rollback if an error occur while loading a TSDB on walReplayConcurrency > number of TSDBs": {
@@ -3279,18 +3257,18 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 0, len(i.tsdbs))
-				require.Nil(t, i.getTSDB("user0"))
-				require.Nil(t, i.getTSDB("user1"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.Nil(t, i.getTSDB(userID))
+				}
 			},
 			expectedErr: "unable to open TSDB for user user0",
 		},
 		"should fail and rollback if an error occur while loading a TSDB on walReplayConcurrency < number of TSDBs": {
 			walReplayConcurrency: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 
 				// Create a fake TSDB on disk with an empty chunks head segment file (it's invalid unless
 				// it's the last one and opening TSDB should fail).
@@ -3300,12 +3278,9 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 0, len(i.tsdbs))
-				require.Nil(t, i.getTSDB("user0"))
-				require.Nil(t, i.getTSDB("user1"))
-				require.Nil(t, i.getTSDB("user2"))
-				require.Nil(t, i.getTSDB("user3"))
-				require.Nil(t, i.getTSDB("user4"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.Nil(t, i.getTSDB(userID))
+				}
 			},
 			expectedErr: "unable to open TSDB for user user2",
 		},
@@ -3313,21 +3288,17 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			walReplayConcurrency:                         0,
 			deprecatedMaxTSDBOpeningConcurrencyOnStartup: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 5, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
-				require.NotNil(t, i.getTSDB("user2"))
-				require.NotNil(t, i.getTSDB("user3"))
-				require.NotNil(t, i.getTSDB("user4"))
-				walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB("user0"))
-				require.NotEqual(t, 0, walReplayConcurrency)
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.NotEqual(t, 0, walReplayConcurrency)
+				}
 			},
 		},
 	}

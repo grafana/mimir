@@ -3268,9 +3268,10 @@ tsdb:
   [wal_segment_size_bytes: <int> | default = 134217728]
 
   # (advanced) Maximum number of CPUs that can simultaneously processes WAL
-  # replay. 0 means disabled. If set to a positive value it overrides the
-  # deprecated blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
-  # option
+  # replay. If it is set to 0, then each TSDB is replayed with a concurrency
+  # equal to the number of CPU cores available on the machine. If set to a
+  # positive value it overrides the deprecated
+  # blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option
   # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
   [wal_replay_concurrency: <int> | default = 0]
 
