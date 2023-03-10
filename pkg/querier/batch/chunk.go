@@ -44,8 +44,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			i.batch.Index++
 		}
 		if i.batch.Index+size < i.batch.Length {
-			// TODO for native histograms: check and return the Batch size if it matches
-			return chunkenc.ValFloat
+			return i.batch.ValueType
 		}
 	}
 

@@ -259,6 +259,11 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		return 1
 	}
 
+	// TODO: Remove when https://github.com/grafana/mimir/issues/3992 is solved. Also remove EnabledByAnyTenant (unless used elsewhere)
+	if validation.EnabledByAnyTenant(tenantIDs, s.limit.NativeHistogramsIngestionEnabled) {
+		return 1
+	}
+
 	// Check the default number of shards configured for the given tenant.
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
@@ -384,33 +389,37 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	case promql.Vector:
 		res := make([]SampleStream, 0, len(v))
 		for _, sample := range v {
-			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
-				Samples: []mimirpb.Sample{{TimestampMs: sample.Point.T, Value: sample.Point.V}}})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+			}
+			if sample.Point.H != nil {
+				ss.Histograms = mimirpb.FromPointsToHistograms([]promql.Point{sample.Point})
+			} else {
+				ss.Samples = mimirpb.FromPointsToSamples([]promql.Point{sample.Point})
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 
 	case promql.Matrix:
 		res := make([]SampleStream, 0, len(v))
 		for _, series := range v {
-			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
-				Samples: fromPointsToSamples(series.Points),
-			})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
+			}
+			samples := mimirpb.FromPointsToSamples(series.Points)
+			if len(samples) > 0 {
+				ss.Samples = samples
+			}
+			histograms := mimirpb.FromPointsToHistograms(series.Points)
+			if len(histograms) > 0 {
+				ss.Histograms = histograms
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 
 	}
 
 	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
-}
-
-// Note this is relatively expensive.
-func fromPointsToSamples(points []promql.Point) []mimirpb.Sample {
-	samples := make([]mimirpb.Sample, len(points))
-	for i := 0; i < len(points); i++ {
-		samples[i].TimestampMs = points[i].T
-		samples[i].Value = points[i].V
-	}
-	return samples
 }

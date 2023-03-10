@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -323,6 +324,10 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
+	if s.Histogram != nil {
+		return errors.New("cannot unmarshal native histogram from JSON")
+	}
+
 	*vs = vectorSampleStream{
 		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
 		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
@@ -331,39 +336,70 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 }
 
 func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if len(vs.Samples) != 1 {
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
+	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
+		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
 	}
-	return json.Marshal(model.Sample{
-		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-		Timestamp: model.Time(vs.Samples[0].TimestampMs),
-		Value:     model.SampleValue(vs.Samples[0].Value),
-	})
+	var sample model.Sample
+	if len(vs.Samples) == 1 {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Samples[0].TimestampMs),
+			Value:     model.SampleValue(vs.Samples[0].Value),
+		}
+	} else {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
+			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
+		}
+	}
+	return json.Marshal(sample)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SampleStream) UnmarshalJSON(data []byte) error {
 	var stream struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}
 	if err := json.Unmarshal(data, &stream); err != nil {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	s.Samples = stream.Values
+	if len(stream.Values) > 0 {
+		s.Samples = stream.Values
+	}
+	if len(stream.Histograms) > 0 {
+		return fmt.Errorf("cannot unmarshal native histograms from JSON, but stream contains %d histograms", len(stream.Histograms))
+	}
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
-	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
+	var histograms []mimirpb.SampleHistogramPair
+	if len(s.Histograms) > 0 {
+		histograms = make([]mimirpb.SampleHistogramPair, len(s.Histograms))
 	}
+
+	for i, h := range s.Histograms {
+		histograms[i] = mimirpb.SampleHistogramPair{
+			Timestamp: h.TimestampMs,
+			Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+		}
+	}
+
+	stream := struct {
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values,omitempty"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms,omitempty"`
+	}{
+		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values:     s.Samples,
+		Histograms: histograms,
+	}
+
 	return json.Marshal(stream)
 }
 

@@ -10,7 +10,7 @@ weight: 70
 The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
 On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
-To find the right blocks to look up at query time, the store-gateway requires an almost up-to-date view of the bucket in long-term storage.
+To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 
 - Periodically downloading the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
@@ -175,7 +175,7 @@ For example, if you're running Memcached in Kubernetes, you might:
 
 ### Chunks cache
 
-The store-gateway can also use a cache to store [chunks]({{< relref "../../reference-glossary.md#chunk" >}}) that are fetched from long-term storage.
+The store-gateway can also use a cache to store [chunks]({{< relref "../../../references/glossary.md#chunk" >}}) that are fetched from long-term storage.
 Chunks contain actual samples, and can be reused if a query hits the same series for the same time range.
 Chunks can only be cached in Memcached.
 

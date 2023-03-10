@@ -21,6 +21,9 @@ spec:
             - statefulset
             - pod
           separator: ''
+      relabelings:
+        - targetLabel: cluster
+          replacement: "metamonitoring-values"
       path: /metrics
       honorLabels: true # retain namespace label from kube-state-metrics
   namespaceSelector:

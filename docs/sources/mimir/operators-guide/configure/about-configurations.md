@@ -15,7 +15,7 @@ To see the most common CLI flags that you need to get started with Grafana Mimir
 
 A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
 
-To see the current configuration state of any component, use the [`/config`]({{< relref "../reference-http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../reference-http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
+To see the current configuration state of any component, use the [`/config`]({{< relref "../../references/http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../../references/http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
 
 ## Common configurations
 

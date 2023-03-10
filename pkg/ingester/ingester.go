@@ -175,6 +175,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 }
 
+func (cfg *Config) Validate(logger log.Logger) error {
+	return cfg.IngesterRing.Validate(logger)
+}
+
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	if cfg.IgnoreSeriesLimitForMetricNames == "" {
 		return nil
@@ -304,16 +308,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
-	// Replace specific metrics which we can't directly track but we need to read
-	// them from the underlying system (ie. TSDB).
 	if registerer != nil {
-		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_memory_series",
-			Help: "The current number of series in memory.",
-		}, func() float64 {
-			return float64(i.seriesCount.Load())
-		})
-
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
@@ -564,7 +559,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		oooWindow := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {
 			tenantsWithOutOfOrderEnabledCount++
 
@@ -608,7 +603,7 @@ func (i *Ingester) applyTSDBSettings() {
 					MaxExemplars: int64(localValue),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
-					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
+					OutOfOrderTimeWindow: oooTW.Milliseconds(),
 				},
 			},
 		}
@@ -830,7 +825,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow model.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
@@ -1716,7 +1711,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -2049,13 +2044,24 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 }
 
 func (i *Ingester) compactionLoop(ctx context.Context) error {
-	ticker := time.NewTicker(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+	// At ingester startup, spread the first compaction over the configured compaction
+	// interval. Then, the next compactions will happen at a regular interval. This logic
+	// helps to have different ingesters running the compaction at a different time,
+	// effectively spreading the compactions over the configured interval.
+	ticker := time.NewTicker(util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1))
 	defer ticker.Stop()
+	tickerRunOnce := false
 
 	for ctx.Err() == nil {
 		select {
 		case <-ticker.C:
 			i.compactBlocks(ctx, false, nil)
+
+			// Run it at a regular (configured) interval after the fist compaction.
+			if !tickerRunOnce {
+				ticker.Reset(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
+				tickerRunOnce = true
+			}
 
 		case req := <-i.forceCompactTrigger:
 			i.compactBlocks(ctx, true, req.users)
@@ -2337,8 +2343,8 @@ func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.La
 	return newIngestErr(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
-func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow model.Duration) error {
-	return newIngestErr(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", oooTimeWindow.String()), timestamp, labels)
+func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) error {
+	return newIngestErr(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
 func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {

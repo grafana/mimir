@@ -69,7 +69,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"should fail on too high compaction interval": {
 			setup: func(cfg *BlocksStorageConfig) {
-				cfg.TSDB.HeadCompactionInterval = 10 * time.Minute
+				cfg.TSDB.HeadCompactionInterval = 20 * time.Minute
 			},
 			expectedErr: errInvalidCompactionInterval,
 		},
@@ -121,6 +121,12 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidWALSegmentSizeBytes,
 		},
+		"should fail on invalid store-gateway streaming batch size": {
+			setup: func(cfg *BlocksStorageConfig) {
+				cfg.BucketStore.StreamingBatchSize = 0
+			},
+			expectedErr: errInvalidStreamingBatchSize,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -131,7 +137,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			actualErr := cfg.Validate()
+			actualErr := cfg.Validate(log.NewNopLogger())
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}

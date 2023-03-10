@@ -16,8 +16,8 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230221142742-fcb3d68da3ed
-	github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
+	github.com/grafana/dskit v0.0.0-20230307154039-ee798e84baf0
+	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.45
@@ -60,13 +60,15 @@ require (
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.69.0
 	github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
+	github.com/xlab/treeprint v1.1.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rc3.0.20230109164642-7d168dd20efd
 	go.opentelemetry.io/otel v1.11.2
 	go.opentelemetry.io/otel/trace v1.11.2
 	go.uber.org/multierr v1.9.0
-	golang.org/x/exp v0.0.0-20230124195608-d38c7dcee874
+	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
 	google.golang.org/api v0.108.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
@@ -198,7 +200,6 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/weaveworks/promrus v1.2.0 // indirect
-	github.com/xlab/treeprint v1.1.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
@@ -226,16 +227,8 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-// Using our own fork to add custom dialer and improve perf.
-replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
-
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230203043840-d2d23d984970
-
-// Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
-replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
-
-replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230309083841-242e82b8e667
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -256,3 +249,6 @@ replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup-golang-1.19.2)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
+
+// Replace goautoneg with a fork until https://github.com/munnerz/goautoneg/pull/5 is merged
+replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc

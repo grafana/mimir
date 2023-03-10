@@ -1071,11 +1071,12 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				// Ensure Mimir external labels have been removed.
 				assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
 
-				// Ensure samples have been correctly queried. The Thanos store also deduplicate samples
-				// in most cases, but it's not strictly required guaranteeing deduplication at this stage.
+				// Ensure samples have been correctly queried. The store-gateway doesn't deduplicate chunks,
+				// so the same sample is returned twice because in this test we query two identical blocks.
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
 				assert.Equal(t, []sample{
+					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
 					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
 				}, samples)
 			}
@@ -1480,7 +1481,7 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 
-	cfg.BucketStore.ConsistencyDelay = 0
+	cfg.BucketStore.DeprecatedConsistencyDelay = 0
 	cfg.BucketStore.BucketIndex.Enabled = false // mocks used in tests don't expect index reads
 	cfg.BucketStore.IgnoreBlocksWithin = 0
 	cfg.BucketStore.SyncDir = tmpDir

@@ -1077,7 +1077,7 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeriesForPostings(ctx, userID, blockID, shard, itemID.postingsKey, data)
+	indexCache.StoreSeriesForPostings(userID, blockID, shard, itemID.postingsKey, data)
 }
 
 func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings []byte) ([]byte, error) {

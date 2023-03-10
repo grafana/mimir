@@ -1,5 +1,8 @@
 std.manifestYamlDoc({
   _config:: {
+    // Cache backend to use for results, chunks, index, and metadata caches. Options are 'memcached' or 'redis'.
+    cache_backend: 'memcached',
+
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
@@ -28,12 +31,12 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.minio +
     self.prometheus +
+    self.grafana +
     self.grafana_agent +
     self.otel_collector +
-    self.memcached +
-    self.memcached_exporter +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
+    (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     {},
 
   distributor:: {
@@ -133,6 +136,8 @@ std.manifestYamlDoc({
     }),
   },
 
+  local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache'],
+
   local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
 
   // This function builds docker-compose declaration for Mimir service.
@@ -178,6 +183,7 @@ std.manifestYamlDoc({
         (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
         (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
         (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
+        std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),
       ]),
     ],
     environment: [
@@ -226,6 +232,19 @@ std.manifestYamlDoc({
     },
   },
 
+  redis:: {
+    redis: {
+      image: 'redis:7.0.7',
+      command: [
+        'redis-server',
+        '--maxmemory 64mb',
+        '--maxmemory-policy allkeys-lru',
+        "--save ''",
+         '--appendonly no'
+      ],
+    },
+  },
+
   prometheus:: {
     prometheus: {
       image: 'prom/prometheus:v2.32.1',
@@ -233,8 +252,28 @@ std.manifestYamlDoc({
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
       ],
-      volumes: ['./config:/etc/prometheus', '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml'],
+      volumes: [
+        './config:/etc/prometheus',
+        '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml',
+        '../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml',
+      ],
       ports: ['9090:9090'],
+    },
+  },
+
+  grafana:: {
+    grafana: {
+      image: 'grafana/grafana:9.4.3',
+      environment: [
+        'GF_AUTH_ANONYMOUS_ENABLED=true',
+        'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+      ],
+      volumes: [
+        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+        './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
+        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
+      ],
+      ports: ['3000:3000'],
     },
   },
 

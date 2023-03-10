@@ -161,6 +161,10 @@ dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.sv
 dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "results-cache").port }}
 {{- end -}}
 
+{{- define "mimir.adminCacheAddress" -}}
+dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "admin-cache").port }}
+{{- end -}}
+
 {{/*
 Memberlist bind port
 */}}
@@ -388,6 +392,7 @@ Examples:
 {{- define "mimir.componentSectionFromName" -}}
 {{- $componentsMap := dict
   "admin-api" "admin_api"
+  "admin-cache" "admin-cache"
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"

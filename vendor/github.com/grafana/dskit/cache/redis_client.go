@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	errRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
-	errRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
+	ErrRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
+	ErrRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
 	_ RemoteCacheClient = (*redisClient)(nil)
 )
@@ -103,36 +103,34 @@ type RedisClientConfig struct {
 
 // RegisterFlagsWithPrefix adds the flags required to config this to the given FlagSet
 func (c *RedisClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&c.Endpoint, prefix+".endpoint", "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.")
-	f.StringVar(&c.Username, prefix+".username", "", "Username to use when connecting to Redis.")
-	f.Var(&c.Password, prefix+".password", "Password to use when connecting to Redis.")
-	f.IntVar(&c.DB, prefix+".db", 0, "Database index.")
-	f.StringVar(&c.MasterName, prefix+".master-name", "", "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.")
-	f.DurationVar(&c.DialTimeout, prefix+".dial-timeout", time.Second*5, "Client dial timeout.")
-	f.DurationVar(&c.ReadTimeout, prefix+".read-timeout", time.Second*3, "Client read timeout.")
-	f.DurationVar(&c.WriteTimeout, prefix+".write-timeout", time.Second*3, "Client write timeout.")
-	f.IntVar(&c.ConnectionPoolSize, prefix+".connection-pool-size", 100, "Maximum number of connections in the pool.")
-	f.IntVar(&c.MinIdleConnections, prefix+".min-idle-connections", 10, "Minimum number of idle connections.")
-	f.DurationVar(&c.MaxConnectionAge, prefix+".max-connection-age", 0, "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.")
-	f.DurationVar(&c.IdleTimeout, prefix+".idle-timeout", time.Minute*5, "Amount of time after which client closes idle connections.")
-
-	f.IntVar(&c.MaxAsyncConcurrency, prefix+".max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
-	f.IntVar(&c.MaxAsyncBufferSize, prefix+".max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
-	f.IntVar(&c.MaxGetMultiConcurrency, prefix+".max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
-	f.IntVar(&c.MaxGetMultiBatchSize, prefix+".max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
-	f.IntVar(&c.MaxItemSize, prefix+".max-item-size", 16*1024*1024, "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.")
-
-	f.BoolVar(&c.TLSEnabled, prefix+".tls-enabled", false, "Enable connecting to Redis with TLS.")
+	f.Var(&c.Endpoint, prefix+"endpoint", "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.")
+	f.StringVar(&c.Username, prefix+"username", "", "Username to use when connecting to Redis.")
+	f.Var(&c.Password, prefix+"password", "Password to use when connecting to Redis.")
+	f.IntVar(&c.DB, prefix+"db", 0, "Database index.")
+	f.StringVar(&c.MasterName, prefix+"master-name", "", "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.")
+	f.DurationVar(&c.DialTimeout, prefix+"dial-timeout", time.Second*5, "Client dial timeout.")
+	f.DurationVar(&c.ReadTimeout, prefix+"read-timeout", time.Second*3, "Client read timeout.")
+	f.DurationVar(&c.WriteTimeout, prefix+"write-timeout", time.Second*3, "Client write timeout.")
+	f.IntVar(&c.ConnectionPoolSize, prefix+"connection-pool-size", 100, "Maximum number of connections in the pool.")
+	f.IntVar(&c.MinIdleConnections, prefix+"min-idle-connections", 10, "Minimum number of idle connections.")
+	f.DurationVar(&c.MaxConnectionAge, prefix+"max-connection-age", 0, "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.")
+	f.DurationVar(&c.IdleTimeout, prefix+"idle-timeout", time.Minute*5, "Amount of time after which client closes idle connections.")
+	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
+	f.IntVar(&c.MaxAsyncBufferSize, prefix+"max-async-buffer-size", 25000, "The maximum number of enqueued asynchronous operations allowed.")
+	f.IntVar(&c.MaxGetMultiConcurrency, prefix+"max-get-multi-concurrency", 100, "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.")
+	f.IntVar(&c.MaxGetMultiBatchSize, prefix+"max-get-multi-batch-size", 100, "The maximum size per batch for mget operations.")
+	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 16*1024*1024, "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.")
+	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Redis with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (c *RedisClientConfig) Validate() error {
 	if c.Endpoint.String() == "" {
-		return errRedisConfigNoEndpoint
+		return ErrRedisConfigNoEndpoint
 	}
 	// Set async only available when MaxAsyncConcurrency > 0.
 	if c.MaxAsyncConcurrency <= 0 {
-		return errRedisMaxAsyncConcurrencyNotPositive
+		return ErrRedisMaxAsyncConcurrencyNotPositive
 	}
 	return nil
 }
@@ -178,7 +176,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	}
 
 	reg = prometheus.WrapRegistererWith(
-		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendRedis},
+		prometheus.Labels{labelCacheName: name, labelCacheBackend: backendValueRedis},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
 	metrics := newClientMetrics(reg)
@@ -217,9 +215,9 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 }
 
 // SetAsync implement RemoteCacheClient.
-func (c *redisClient) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(ctx, key, value, ttl, func(ctx context.Context, key string, buf []byte, ttl time.Duration) error {
-		_, err := c.Set(ctx, key, value, ttl).Result()
+func (c *redisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+		_, err := c.Set(context.Background(), key, value, ttl).Result()
 		return err
 	})
 }

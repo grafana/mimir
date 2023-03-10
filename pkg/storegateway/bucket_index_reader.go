@@ -131,17 +131,17 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	if err != nil {
 		return promise, false
 	}
-	r.cacheExpandedPostings(ctx, r.block.userID, key, refs)
+	r.cacheExpandedPostings(r.block.userID, key, refs)
 	return promise, false
 }
 
-func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef) {
+func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef) {
 	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
 	}
-	r.block.indexCache.StoreExpandedPostings(ctx, userID, r.block.meta.ULID, key, data)
+	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, data)
 }
 
 func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, bool) {
@@ -463,7 +463,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				// is expected to handle a different set of keys.
 				output[p.keyID] = newBigEndianPostings(pBytes[4:])
 
-				r.block.indexCache.StorePostings(ctx, r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
+				r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 
 				// If we just fetched it we still have to update the stats for touched postings.
 				stats.update(func(stats *queryStats) {
@@ -575,7 +575,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 
 		loaded.addSeries(id, c)
 
-		r.block.indexCache.StoreSeriesForRef(ctx, r.block.userID, r.block.meta.ULID, id, c)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, c)
 	}
 	return nil
 }

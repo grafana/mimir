@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -29,41 +30,88 @@ func TestSyncRuleGroups(t *testing.T) {
 	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
-	const user = "testUser"
+	const (
+		user1      = "testUser1"
+		user2      = "testUser2"
+		namespace1 = "ns1"
+		namespace2 = "ns2"
+	)
 
 	userRules := map[string]rulespb.RuleGroupList{
-		user: {
+		user1: {
 			&rulespb.RuleGroupDesc{
 				Name:      "group1",
-				Namespace: "ns",
+				Namespace: namespace1,
+				Interval:  30 * time.Second,
+				User:      user1,
+			},
+		},
+		user2: {
+			&rulespb.RuleGroupDesc{
+				Name:      "group2",
+				Namespace: namespace2,
 				Interval:  1 * time.Minute,
-				User:      user,
+				User:      user2,
 			},
 		},
 	}
 	m.SyncRuleGroups(context.Background(), userRules)
-
-	mgr := getManager(m, user)
-	require.NotNil(t, mgr)
-
+	mgr1 := getManager(m, user1)
+	require.NotNil(t, mgr1)
 	test.Poll(t, 1*time.Second, true, func() interface{} {
-		return mgr.(*mockRulesManager).running.Load()
+		return mgr1.(*mockRulesManager).running.Load()
+	})
+
+	mgr2 := getManager(m, user2)
+	require.NotNil(t, mgr2)
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return mgr2.(*mockRulesManager).running.Load()
 	})
 
 	// Verify that user rule groups are now cached locally.
 	{
 		users, err := m.mapper.users()
 		require.NoError(t, err)
-		require.Equal(t, []string{user}, users)
+		require.Contains(t, users, user2)
+		require.Contains(t, users, user1)
+	}
+
+	// Verify that rule groups are now written to disk.
+	{
+		rulegroup1 := filepath.Join(m.mapper.Path, user1, namespace1)
+		f, error := m.mapper.FS.Open(rulegroup1)
+		require.NoError(t, error)
+		defer f.Close()
+
+		bt := make([]byte, 100)
+		n, error := f.Read(bt)
+		require.NoError(t, error)
+		require.Equal(t, string("groups:\n    - name: group1\n      interval: 30s\n      rules: []\n"), string(bt[:n]))
+	}
+
+	{
+		rulegroup2 := filepath.Join(m.mapper.Path, user2, namespace2)
+		f, error := m.mapper.FS.Open(rulegroup2)
+		require.NoError(t, error)
+		defer f.Close()
+
+		bt := make([]byte, 100)
+		n, error := f.Read(bt)
+		require.NoError(t, error)
+		require.Equal(t, string("groups:\n    - name: group2\n      interval: 1m\n      rules: []\n"), string(bt[:n]))
 	}
 
 	// Passing empty map / nil stops all managers.
 	m.SyncRuleGroups(context.Background(), nil)
-	require.Nil(t, getManager(m, user))
+	require.Nil(t, getManager(m, user1))
 
 	// Make sure old manager was stopped.
 	test.Poll(t, 1*time.Second, false, func() interface{} {
-		return mgr.(*mockRulesManager).running.Load()
+		return mgr1.(*mockRulesManager).running.Load()
+	})
+
+	test.Poll(t, 1*time.Second, false, func() interface{} {
+		return mgr2.(*mockRulesManager).running.Load()
 	})
 
 	// Verify that local rule groups were removed.
@@ -76,9 +124,9 @@ func TestSyncRuleGroups(t *testing.T) {
 	// Resync same rules as before. Previously this didn't restart the manager.
 	m.SyncRuleGroups(context.Background(), userRules)
 
-	newMgr := getManager(m, user)
+	newMgr := getManager(m, user1)
 	require.NotNil(t, newMgr)
-	require.True(t, mgr != newMgr)
+	require.True(t, mgr1 != newMgr)
 
 	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return newMgr.(*mockRulesManager).running.Load()
@@ -88,7 +136,7 @@ func TestSyncRuleGroups(t *testing.T) {
 	{
 		users, err := m.mapper.users()
 		require.NoError(t, err)
-		require.Equal(t, []string{user}, users)
+		require.Contains(t, users, user1)
 	}
 
 	m.Stop()

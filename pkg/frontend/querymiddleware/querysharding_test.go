@@ -1034,6 +1034,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 		hints             *Hints
 		totalShards       int
 		maxShardedQueries int
+		nativeHistograms  bool
 		expectedShards    int
 		compactorShards   int
 	}{
@@ -1127,6 +1128,15 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries: 64,
 			expectedShards:    1,
 		},
+		"native histograms accepted": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			nativeHistograms:  true,
+			compactorShards:   10,
+			expectedShards:    1,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1141,9 +1151,10 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			}
 
 			limits := mockLimits{
-				totalShards:       testData.totalShards,
-				maxShardedQueries: testData.maxShardedQueries,
-				compactorShards:   testData.compactorShards,
+				totalShards:                      testData.totalShards,
+				maxShardedQueries:                testData.maxShardedQueries,
+				compactorShards:                  testData.compactorShards,
+				nativeHistogramsIngestionEnabled: testData.nativeHistograms,
 			}
 			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
 
@@ -1234,6 +1245,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			newSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, factor(5)),
 		})
 		queryableSlow = newMockShardedQueryable(
+			2,
 			2,
 			[]string{"a", "b", "c"},
 			1,
@@ -1443,6 +1455,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 		labelBuckets     int
 		labels           []string
 		samplesPerSeries int
+		histsPerSeries   int
 		query            string
 		desc             string
 	}{
@@ -1454,6 +1467,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			labelBuckets:     16,
 			labels:           []string{"a", "b", "c"},
 			samplesPerSeries: 100,
+			histsPerSeries:   30,
 			query:            `sum(rate(http_requests_total[5m]))`,
 			desc:             "sum nogroup",
 		},
@@ -1462,6 +1476,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			labelBuckets:     16,
 			labels:           []string{"a", "b", "c"},
 			samplesPerSeries: 100,
+			histsPerSeries:   30,
 			query:            `sum by(a) (rate(http_requests_total[5m]))`,
 			desc:             "sum by",
 		},
@@ -1470,6 +1485,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			labelBuckets:     16,
 			labels:           []string{"a", "b", "c"},
 			samplesPerSeries: 100,
+			histsPerSeries:   30,
 			query:            `sum without (a) (rate(http_requests_total[5m]))`,
 			desc:             "sum without",
 		},
@@ -1489,6 +1505,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 
 			queryable := newMockShardedQueryable(
 				tc.samplesPerSeries,
+				tc.histsPerSeries,
 				tc.labels,
 				tc.labelBuckets,
 				delayPerSeries,
@@ -1524,12 +1541,13 @@ func BenchmarkQuerySharding(b *testing.B) {
 
 				b.Run(
 					fmt.Sprintf(
-						"desc:[%s]---shards:[%d]---series:[%.0f]---delayPerSeries:[%s]---samplesPerSeries:[%d]",
+						"desc:[%s]---shards:[%d]---series:[%.0f]---delayPerSeries:[%s]---samplesPerSeries:[%d]---histsPerSeries:[%d]",
 						tc.desc,
 						shardFactor,
 						math.Pow(float64(tc.labelBuckets), float64(len(tc.labels))),
 						delayPerSeries,
 						tc.samplesPerSeries,
+						tc.histsPerSeries,
 					),
 					func(b *testing.B) {
 						for n := 0; n < b.N; n++ {

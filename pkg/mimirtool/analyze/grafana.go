@@ -20,6 +20,11 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
+var (
+	lvRegexp = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
+	qrRegexp = regexp.MustCompile(`query_result\((.+)\)`)
+)
+
 type MetricsInGrafana struct {
 	MetricsUsed    model.LabelValues   `json:"metricsUsed"`
 	OverallMetrics map[string]struct{} `json:"-"`
@@ -58,12 +63,12 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Process metrics in templating
 	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics)...)
 
-	var parseErrs []string
+	parseErrs := make([]string, 0, len(parseErrors))
 	for _, err := range parseErrors {
 		parseErrs = append(parseErrs, err.Error())
 	}
 
-	var metricsInBoard []string
+	metricsInBoard := make([]string, 0, len(metrics))
 	for metric := range metrics {
 		if metric == "" {
 			continue
@@ -113,8 +118,7 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 
 		// label_values
 		if strings.Contains(query, "label_values") {
-			re := regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
-			sm := re.FindStringSubmatch(query)
+			sm := lvRegexp.FindStringSubmatch(query)
 			// In case of really gross queries, like - https://github.com/grafana/jsonnet-libs/blob/e97ab17f67ab40d5fe3af7e59151dd43be03f631/hass-mixin/dashboard.libsonnet#L93
 			if len(sm) > 0 {
 				query = sm[1]
@@ -122,8 +126,7 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 		}
 		// query_result
 		if strings.Contains(query, "query_result") {
-			re := regexp.MustCompile(`query_result\((.+)\)`)
-			query = re.FindStringSubmatch(query)[1]
+			query = qrRegexp.FindStringSubmatch(query)[1]
 		}
 		err = parseQuery(query, metrics)
 		if err != nil {

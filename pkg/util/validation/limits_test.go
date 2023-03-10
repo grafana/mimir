@@ -667,3 +667,108 @@ func TestEnabledByAnyTenant(t *testing.T) {
 
 	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
 }
+
+type structExtension struct {
+	Foo int `yaml:"foo"`
+}
+
+func (te structExtension) Default() structExtension {
+	return structExtension{Foo: 42}
+}
+
+type stringExtension string
+
+func (stringExtension) Default() stringExtension {
+	return "default string extension value"
+}
+
+func TestExtensions(t *testing.T) {
+	t.Cleanup(func() {
+		registeredExtensions = map[string]registeredExtension{}
+		limitsExtensionsFields = nil
+	})
+
+	getExtensionStruct := MustRegisterExtension[structExtension]("test_extension_struct")
+	getExtensionString := MustRegisterExtension[stringExtension]("test_extension_string")
+
+	// Unmarshal a config with extensions.
+	// JSON is a valid YAML, so we can use it here to avoid having to fight the whitespaces.
+
+	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
+	t.Run("yaml", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, structExtension{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, stringExtension("bar"), getExtensionString(overrides["user"]))
+	})
+
+	t.Run("json", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, json.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
+		assert.Equal(t, structExtension{Foo: 1}, getExtensionStruct(overrides["user"]))
+		assert.Equal(t, stringExtension("bar"), getExtensionString(overrides["user"]))
+	})
+
+	t.Run("can't register twice", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[structExtension]("foo")
+			MustRegisterExtension[structExtension]("foo")
+		})
+	})
+
+	t.Run("can't register name that is already a Limits JSON/YAML key", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[stringExtension]("max_global_series_per_user")
+		})
+	})
+
+	t.Run("can't register empty name", func(t *testing.T) {
+		require.Panics(t, func() {
+			MustRegisterExtension[stringExtension]("")
+		})
+	})
+
+	t.Run("default value", func(t *testing.T) {
+		var limits Limits
+		require.NoError(t, json.Unmarshal([]byte(`{}`), &limits), "parsing overrides")
+		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
+		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
+		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
+		// Since we assign l = *defaultLimits before unmarshaling,
+		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
+		// This shouldn't happen, but let's have a test to make sure that it doesnt.
+		var def Limits
+		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
+		require.Equal(t, stringExtension("default"), getExtensionString(&def))
+		SetDefaultLimitsForYAMLUnmarshalling(def)
+
+		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.Equal(t, stringExtension("one"), getExtensionString(overrides["one"]))
+		require.Equal(t, stringExtension("two"), getExtensionString(overrides["two"]))
+
+		cfg = `{"three": {"test_extension_string": "three"}}`
+		overrides2 := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides2), "parsing overrides")
+		require.Equal(t, stringExtension("three"), getExtensionString(overrides2["three"]))
+
+		// Previous values did not change.
+		require.Equal(t, stringExtension("one"), getExtensionString(overrides["one"]))
+		require.Equal(t, stringExtension("two"), getExtensionString(overrides["two"]))
+
+		// Default value did not change.
+		require.Equal(t, stringExtension("default"), getExtensionString(&def))
+	})
+
+	t.Run("getter works with nil Limits returning default values", func(t *testing.T) {
+		require.Equal(t, structExtension{}.Default(), getExtensionStruct(nil))
+	})
+}

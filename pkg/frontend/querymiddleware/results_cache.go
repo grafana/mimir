@@ -45,7 +45,9 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
+	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -56,8 +58,9 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
-	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
+	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
@@ -66,10 +69,16 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == cache.BackendMemcached {
+	switch cfg.Backend {
+	case cache.BackendMemcached:
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
+	case cache.BackendRedis:
+		if err := cfg.Redis.Validate(); err != nil {
+			return errors.Wrap(err, "query-frontend results cache")
+		}
+
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -79,8 +88,8 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	return nil
 }
 
-func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
-	return fmt.Errorf("unsupported cache backend: %q, supported values: %v", unsupportedBackend, supportedResultsCacheBackends)
+func errUnsupportedResultsCacheBackend(backend string) error {
+	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
 }
 
 // newResultsCache creates a new results cache based on the input configuration.
@@ -487,17 +496,47 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 	return result
 }
 
-func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
-	result := SampleStream{
-		Labels:  stream.Labels,
-		Samples: make([]mimirpb.Sample, 0, len(stream.Samples)),
-	}
-	for _, sample := range stream.Samples {
+func filterFloatStream(start, end int64, streamSamples []mimirpb.Sample) []mimirpb.Sample {
+	result := make([]mimirpb.Sample, 0, len(streamSamples))
+	for _, sample := range streamSamples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
-			result.Samples = append(result.Samples, sample)
+			result = append(result, sample)
 		}
 	}
-	if len(result.Samples) == 0 {
+	return result
+}
+
+func filterHistogramStream(start, end int64, streamSamples []mimirpb.FloatHistogramPair) []mimirpb.FloatHistogramPair {
+	result := make([]mimirpb.FloatHistogramPair, 0, len(streamSamples))
+	for _, sample := range streamSamples {
+		if start <= sample.TimestampMs && sample.TimestampMs <= end {
+			result = append(result, sample)
+		}
+	}
+	return result
+}
+
+func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
+	result := SampleStream{
+		Labels: stream.Labels,
+	}
+	gotSamples := false
+	gotHistograms := false
+	if len(stream.Histograms) > 0 {
+		histograms := filterHistogramStream(start, end, stream.Histograms)
+		if len(histograms) > 0 {
+			result.Histograms = histograms
+			gotHistograms = true
+		}
+	}
+	if len(stream.Samples) > 0 {
+		samples := filterFloatStream(start, end, stream.Samples)
+		if len(samples) > 0 {
+			result.Samples = samples
+			gotSamples = true
+		}
+	}
+	if !gotHistograms && !gotSamples {
 		return SampleStream{}, false
 	}
 	return result, true

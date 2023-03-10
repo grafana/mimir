@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ConcreteSeriesSet implements storage.SeriesSet.
@@ -55,15 +57,17 @@ func (c *ConcreteSeriesSet) Warnings() storage.Warnings {
 
 // ConcreteSeries implements storage.Series.
 type ConcreteSeries struct {
-	labels  labels.Labels
-	samples []model.SamplePair
+	labels     labels.Labels
+	samples    []model.SamplePair
+	histograms []mimirpb.Histogram
 }
 
-// NewConcreteSeries instantiates an in memory series from a list of samples & labels
-func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair) *ConcreteSeries {
+// NewConcreteSeries instantiates an in memory series from a list of samples & histograms & labels
+func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair, histograms []mimirpb.Histogram) *ConcreteSeries {
 	return &ConcreteSeries{
-		labels:  ls,
-		samples: samples,
+		labels:     ls,
+		samples:    samples,
+		histograms: histograms,
 	}
 }
 
@@ -79,52 +83,138 @@ func (c *ConcreteSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 
 // concreteSeriesIterator implements chunkenc.Iterator.
 type concreteSeriesIterator struct {
-	cur    int
-	series *ConcreteSeries
+	curFloat int
+	curHisto int
+	atHisto  bool
+	series   *ConcreteSeries
 }
 
 // NewConcreteSeriesIterator instantiates an in memory chunkenc.Iterator
 func NewConcreteSeriesIterator(series *ConcreteSeries) chunkenc.Iterator {
 	return &concreteSeriesIterator{
-		cur:    -1,
-		series: series,
+		curFloat: -1,
+		curHisto: -1,
+		atHisto:  false,
+		series:   series,
 	}
+}
+
+// atTypeHisto is an internal method to differentiate between histogram and float histogram value types
+// Checking that c.curHisto is a valid index in the c.series.histograms array and that
+// c.atHisto is true must be done outside of this
+func (c *concreteSeriesIterator) atTypeHisto() chunkenc.ValueType {
+	if c.series.histograms[c.curHisto].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
+	return chunkenc.ValHistogram
+}
+
+// atType returns current timestamp and value type
+func (c *concreteSeriesIterator) atType() (int64, chunkenc.ValueType) {
+	if c.atHisto {
+		if c.curHisto < 0 || c.curHisto >= len(c.series.histograms) {
+			return 0, chunkenc.ValNone
+		}
+		return c.series.histograms[c.curHisto].Timestamp, c.atTypeHisto()
+	}
+	if c.curFloat < 0 || c.curFloat >= len(c.series.samples) {
+		return 0, chunkenc.ValNone
+	}
+	return int64(c.series.samples[c.curFloat].Timestamp), chunkenc.ValFloat
 }
 
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
+	oldTime, oldType := c.atType()
+	if oldTime >= t { // only advance via Seek
+		return oldType
+	}
+
+	c.curFloat = sort.Search(len(c.series.samples), func(n int) bool {
 		return c.series.samples[n].Timestamp >= model.Time(t)
 	})
-	if c.cur < len(c.series.samples) {
+	c.curHisto = sort.Search(len(c.series.histograms), func(n int) bool {
+		return c.series.histograms[n].Timestamp >= t
+	})
+
+	if c.curFloat >= len(c.series.samples) && c.curHisto >= len(c.series.histograms) {
+		return chunkenc.ValNone
+	}
+	if c.curFloat >= len(c.series.samples) {
+		c.atHisto = true
+		return c.atTypeHisto()
+	}
+	if c.curHisto >= len(c.series.histograms) {
+		c.atHisto = false
 		return chunkenc.ValFloat
 	}
-	return chunkenc.ValNone
+	if int64(c.series.samples[c.curFloat].Timestamp) < c.series.histograms[c.curHisto].Timestamp {
+		c.curHisto--
+		c.atHisto = false
+		return chunkenc.ValFloat
+	}
+	c.curFloat--
+	c.atHisto = true
+	return c.atTypeHisto()
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
-	s := c.series.samples[c.cur]
+	if c.atHisto {
+		panic(errors.New("concreteSeriesIterator: Calling At() when cursor is at histogram"))
+	}
+	s := c.series.samples[c.curFloat]
 	return int64(s.Timestamp), float64(s.Value)
 }
 
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
-	c.cur++
-	if c.cur < len(c.series.samples) {
+	if c.curFloat+1 >= len(c.series.samples) && c.curHisto+1 >= len(c.series.histograms) {
+		c.curFloat = len(c.series.samples)
+		c.curHisto = len(c.series.histograms)
+		return chunkenc.ValNone
+	}
+	if c.curFloat+1 >= len(c.series.samples) {
+		c.curHisto++
+		c.atHisto = true
+		return c.atTypeHisto()
+	}
+	if c.curHisto+1 >= len(c.series.histograms) {
+		c.curFloat++
+		c.atHisto = false
 		return chunkenc.ValFloat
 	}
-	return chunkenc.ValNone
+	if int64(c.series.samples[c.curFloat+1].Timestamp) < c.series.histograms[c.curHisto+1].Timestamp {
+		c.curFloat++
+		c.atHisto = false
+		return chunkenc.ValFloat
+	}
+	c.curHisto++
+	c.atHisto = true
+	return c.atTypeHisto()
 }
 
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+	if !c.atHisto {
+		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
+	}
+	h := c.series.histograms[c.curHisto]
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+	if !c.atHisto {
+		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
+	}
+	h := c.series.histograms[c.curHisto]
+	if h.IsFloatHistogram() {
+		return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+	}
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h).ToFloat()
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
-	s := c.series.samples[c.cur]
-	return int64(s.Timestamp)
+	if c.atHisto {
+		return c.series.histograms[c.curHisto].Timestamp
+	}
+	return int64(c.series.samples[c.curFloat].Timestamp)
 }
 
 func (c *concreteSeriesIterator) Err() error {
@@ -177,6 +267,7 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 		series = append(series, &ConcreteSeries{
 			labels:  metricToLabels(ss.Metric),
 			samples: ss.Values,
+			// histograms: ss.Histograms, // cannot convert the decoded matrix form to the expected encoded format. this method is only used in tests so ignoring histogram support for now
 		})
 	}
 	return NewConcreteSeriesSet(series)
@@ -187,8 +278,7 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(ls))
 	for _, l := range ls {
 		series = append(series, &ConcreteSeries{
-			labels:  l,
-			samples: nil,
+			labels: l,
 		})
 	}
 	return NewConcreteSeriesSet(series)
