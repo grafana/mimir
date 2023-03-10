@@ -38,7 +38,7 @@ spec:
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" $ "component" "gateway") | nindent 8 }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       {{- if $.Values.image.pullSecrets }}
