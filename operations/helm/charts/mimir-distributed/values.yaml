@@ -384,7 +384,7 @@ rbac:
   create: true
   # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
-  # -- podSecurityContext is the default pod security context for mimir and cache components
+  # -- podSecurityContext is the default pod security context for Mimir, GEM, gateway, and cache components.
   # When installing on OpenShift, override podSecurityContext settings with
   #
   # rbac:
@@ -1836,7 +1836,7 @@ results-cache:
 rollout_operator:
   enabled: true
 
-  # -- podSecurityContext is the pod security context for the rollout operator
+  # -- podSecurityContext is the pod security context for the rollout operator.
   # When installing on OpenShift, override podSecurityContext settings with
   #
   # rollout_operator:
