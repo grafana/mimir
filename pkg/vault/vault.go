@@ -24,9 +24,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
 }
 
+type SecretsEngine interface {
+	Get(ctx context.Context, path string) (*hashivault.KVSecret, error)
+}
+
 type Vault struct {
-	client *hashivault.Client
-	config Config
+	KVStore SecretsEngine
 }
 
 func NewVault(cfg Config) (*Vault, error) {
@@ -44,15 +47,14 @@ func NewVault(cfg Config) (*Vault, error) {
 
 	client.SetToken(cfg.Token)
 	vault := &Vault{
-		client: client,
-		config: cfg,
+		KVStore: client.KVv2(cfg.MountPath),
 	}
 
 	return vault, nil
 }
 
 func (v *Vault) ReadSecret(path string) ([]byte, error) {
-	secret, err := v.client.KVv2(v.config.MountPath).Get(context.Background(), path)
+	secret, err := v.KVStore.Get(context.Background(), path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read secret from vault: %v", err)
 	}
