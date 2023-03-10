@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"net/http"
 	"testing"
-
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

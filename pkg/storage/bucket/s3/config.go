@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 	"github.com/grafana/dskit/flagext"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/pkg/errors"
