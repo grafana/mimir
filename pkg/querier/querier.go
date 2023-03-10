@@ -163,7 +163,7 @@ type QueryableWithFilter interface {
 
 	// UseQueryable returns true if this queryable should be used to satisfy the query for given time range.
 	// Query min and max time are in milliseconds since epoch.
-	UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool
+	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
 }
 
 // NewQueryable creates a new Queryable for mimir.
@@ -195,7 +195,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			logger:             logger,
 		}
 
-		if distributor.UseQueryable(now, mint, maxt, userID) {
+		if distributor.UseQueryable(now, mint, maxt) {
 			dqr, err := distributor.Querier(ctx, mint, maxt)
 			if err != nil {
 				return nil, err
@@ -204,7 +204,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 		}
 
 		for _, s := range stores {
-			if !s.UseQueryable(now, mint, maxt, userID) {
+			if !s.UseQueryable(now, mint, maxt) {
 				continue
 			}
 
@@ -466,19 +466,19 @@ type storeQueryable struct {
 	QueryStoreAfter time.Duration
 }
 
-func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool {
+func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool {
 	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
 	if s.QueryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.QueryStoreAfter)) {
 		return false
 	}
-	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT, userID)
+	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT)
 }
 
 type alwaysTrueFilterQueryable struct {
 	storage.Queryable
 }
 
-func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64, _ string) bool {
+func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
 	return true
 }
 
@@ -492,7 +492,7 @@ type useBeforeTimestampQueryable struct {
 	ts int64 // Timestamp in milliseconds
 }
 
-func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int64, _ string) bool {
+func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int64) bool {
 	if u.ts == 0 {
 		return true
 	}

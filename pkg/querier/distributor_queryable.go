@@ -68,8 +68,8 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
 	now := time.Now()
 
-	// queryIngestersWithin might have changed since d.UseQueryable() was called, so we check it again when creating a querier
-	if !d.useQueryable(now, mint, maxt, queryIngestersWithin) {
+	// Don't create distributorQuerier if maxt is not within QueryIngestersWithin w.r.t. current time.
+	if queryIngestersWithin != 0 && maxt < util.TimeToMillis(now.Add(-queryIngestersWithin)) {
 		return storage.NoopQuerier(), nil
 	}
 
@@ -84,14 +84,12 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 	}, nil
 }
 
-func (d distributorQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64, userID string) bool {
-	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
-	return d.useQueryable(now, queryMinT, queryMaxT, queryIngestersWithin)
-}
-
-func (d distributorQueryable) useQueryable(now time.Time, _, queryMaxT int64, queryIngestersWithin time.Duration) bool {
-	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-queryIngestersWithin))
+func (d distributorQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
+	// Always returns true. The proper check is done in `distributorQueryable.Querier()` - if the time range being
+	// queried doesn't overlap with queryIngestersWithin, a noopQuerier will be returned instead.
+	// This code could be simplified and `UseQueryable()` removed, see
+	// https://github.com/grafana/mimir/pull/4287#discussion_r1132488638
+	return true
 }
 
 type distributorQuerier struct {

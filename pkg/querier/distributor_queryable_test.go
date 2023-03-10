@@ -122,11 +122,11 @@ func TestDistributorQueryableFilter(t *testing.T) {
 	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
 	queryMaxT := util.TimeToMillis(now)
 
-	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT, ""))
-	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT, ""))
+	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT))
+	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT))
 
 	// Same query, hour+1ms later, is not sent to ingesters.
-	require.False(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT, ""))
+	require.False(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
 }
 
 // TODO: test queryable with override
