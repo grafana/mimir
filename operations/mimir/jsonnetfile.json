@@ -45,15 +45,6 @@
         }
       },
       "version": "master"
-    },
-    {
-      "source": {
-        "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs.git",
-          "subdir": "redis"
-        }
-      },
-      "version": "master"
     }
   ],
   "legacyImports": true
