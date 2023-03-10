@@ -114,6 +114,9 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
+# (experimental)
+[vault_enabled: <boolean> | default = ]
+
 # (experimental) How long to wait between SIGTERM and shutdown. After receiving
 # SIGTERM, Mimir will report not-ready status via /ready endpoint.
 # CLI flag: -shutdown-delay
@@ -201,6 +204,19 @@ activity_tracker:
   # size the file in advance. Additional activities are ignored.
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
+
+vault:
+  # (experimental) Location of the Vault server
+  # CLI flag: -vault.url
+  [url: <string> | default = ""]
+
+  # (experimental) Token used to authenticate with Vault
+  # CLI flag: -vault.token
+  [token: <string> | default = ""]
+
+  # (experimental) Location of secrets engine within Vault
+  # CLI flag: -vault.mount-path
+  [mount_path: <string> | default = ""]
 
 # The ruler block configures the ruler.
 [ruler: <ruler>]

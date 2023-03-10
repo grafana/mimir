@@ -14,7 +14,7 @@ import (
 )
 
 func TestReadSecret(t *testing.T) {
-	mockKVStore := NewMockKVStore()
+	mockKVStore := newMockKVStore()
 	mockKVStore.On("Get", mock.Anything, "test/secret1").Return(&hashivault.KVSecret{
 		Data: map[string]interface{}{
 			"value": "foo1",
@@ -71,7 +71,7 @@ type mockKVStore struct {
 	mock.Mock
 }
 
-func NewMockKVStore() *mockKVStore {
+func newMockKVStore() *mockKVStore {
 	return &mockKVStore{}
 }
 
