@@ -1855,8 +1855,6 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
-				startTime := time.Now()
-
 				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
