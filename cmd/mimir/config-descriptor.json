@@ -6958,7 +6958,7 @@
               "fieldDefaultValue": 1,
               "fieldFlag": "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

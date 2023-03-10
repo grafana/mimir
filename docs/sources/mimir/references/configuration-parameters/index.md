@@ -3196,7 +3196,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
-  # (advanced) This option controls into how many ranges the chunks of each
+  # (experimental) This option controls into how many ranges the chunks of each
   # series from each block are split. This value is effectively the number of
   # chunks cache items per series per block when
   # -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled

@@ -342,7 +342,7 @@ type BucketStoreConfig struct {
 	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
 
 	StreamingBatchSize   int `yaml:"streaming_series_batch_size" category:"advanced"`
-	ChunkRangesPerSeries int `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"advanced"`
+	ChunkRangesPerSeries int `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
