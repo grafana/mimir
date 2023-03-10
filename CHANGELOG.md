@@ -1,9 +1,10 @@
 # Changelog
 
 ## main / unreleased
-* [FEATURE] Add capability to configure the used S3 Storage Class [#3438] (https://github.com/grafana/mimir/pull/4300) (@inbarpatashnik)
 
 ### Grafana Mimir
+
+* [FEATURE] Add capability to configure the S3 storage class. #3438
 
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332

@@ -14,7 +14,7 @@ import (
 
 const (
 	// Applied to PUT operations to denote the desired storage class for S3 Objects
-	awsStorageClassHeader = "X-Amz-storage-Class"
+	awsStorageClassHeader = "X-Amz-Storage-Class"
 )
 
 // NewBucketClient creates a new S3 bucket client
