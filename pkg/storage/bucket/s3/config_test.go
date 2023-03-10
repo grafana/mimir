@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	s3_service "github.com/aws/aws-sdk-go/service/s3"
 )
 
 func TestSSEConfig_Validate(t *testing.T) {
@@ -76,7 +77,7 @@ func TestConfig_Validate(t *testing.T) {
 					BucketName:       "mimir-block",
 					SSE:              *sseCfg,
 					SignatureVersion: SignatureVersionV4,
-					StorageClass:     StorageClassStandard,
+					StorageClass:     s3_service.StorageClassStandard,
 				}
 				return cfg
 			},
@@ -93,7 +94,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass if valid storage signature version is set": {
 			setup: func() *Config {
 				return &Config{
-					SignatureVersion: SignatureVersionV4, StorageClass: StorageClassStandardInfrequentAccess,
+					SignatureVersion: SignatureVersionV4, StorageClass: s3_service.StorageClassStandard,
 				}
 			},
 		},
@@ -103,7 +104,7 @@ func TestConfig_Validate(t *testing.T) {
 					Endpoint:         "mimir-blocks.s3.eu-central-1.amazonaws.com",
 					BucketName:       "mimir-blocks",
 					SignatureVersion: SignatureVersionV4,
-					StorageClass:     StorageClassGlacier,
+					StorageClass:     s3_service.StorageClassStandard,
 				}
 			},
 			expected: errInvalidEndpointPrefix,
