@@ -6689,9 +6689,9 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize openings with single WAL replay": {
 			walReplayConcurrency:               3,
 			maxTSDBOpeningConcurrencyOnStartup: 10,
-			tenantCount:                        5,
-			expectedTSDBOpenConcurrency:        1,
-			expectedTSDBWALReplayConcurrency:   3,
+			tenantCount:                        15,
+			expectedTSDBOpenConcurrency:        3,
+			expectedTSDBWALReplayConcurrency:   1,
 		},
 	}
 	for testName, testData := range tests {
