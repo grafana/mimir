@@ -1135,7 +1135,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries: 64,
 			nativeHistograms:  true,
 			compactorShards:   10,
-			expectedShards:    1,
+			expectedShards:    10,
 		},
 	}
 
