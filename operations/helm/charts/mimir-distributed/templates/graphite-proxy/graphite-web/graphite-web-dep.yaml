@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.graphite.web.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "graphite-web") | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "graphite-web") | nindent 8 }}
       containers:
         - name: graphite-web
           image: "{{ .Values.graphite.web.image.repository }}:{{ .Values.graphite.web.image.tag }}"

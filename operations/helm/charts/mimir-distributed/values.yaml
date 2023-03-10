@@ -386,7 +386,7 @@ rbac:
   type: psp
   # Default pod security context for mimir and cache components
   # When using OpenShift, set
-  securityContext:
+  podSecurityContext:
     fsGroup: 10001
     runAsGroup: 10001
     runAsNonRoot: true
@@ -1829,6 +1829,21 @@ results-cache:
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
   enabled: true
+
+  podSecurityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Set the container security context
+  securityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    allowPrivilegeEscalation: false
 
 minio:
   enabled: true

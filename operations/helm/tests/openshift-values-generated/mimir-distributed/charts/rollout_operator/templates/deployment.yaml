@@ -29,11 +29,17 @@ spec:
     spec:
       serviceAccountName: openshift-values-rollout-operator
       securityContext:
-        {}
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rollout-operator
           securityContext:
-            {}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
           image: "grafana/rollout-operator:v0.2.0"
           imagePullPolicy: IfNotPresent
           args:
