@@ -1,0 +1,6 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.25"
+
+# Set rbac type to SecurityContextConstraints (SCC)
+rbac:
+  type: scc
