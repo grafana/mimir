@@ -341,11 +341,11 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 
 		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
 			// Keep older (minimum) timestamp.
-			accumulator.QueryTimestampMs = math.Min64(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+			accumulator.QueryTimestampMs = math.Min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		} else {
 			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
 			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
-			accumulator.QueryTimestampMs = math.Max64(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+			accumulator.QueryTimestampMs = math.Max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		}
 	}
 
