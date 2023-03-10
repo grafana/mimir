@@ -7,12 +7,12 @@ package s3
 
 import (
 	"encoding/base64"
-	"net/http"
-	"testing"
+	s3_service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	s3_service "github.com/aws/aws-sdk-go/service/s3"
+	"net/http"
+	"testing"
 )
 
 func TestSSEConfig_Validate(t *testing.T) {
