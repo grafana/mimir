@@ -1532,10 +1532,10 @@ type symbolizedLabel struct {
 	name, value uint32
 }
 
-// decodeSeriesForTime decodes a series entry from the given byte slice decoding all chunk metas of the series.
-// If skipChunks is specified decodeSeriesForTime does not return any chunks, but only labels and only if at least single chunk is within time range.
-// decodeSeriesForTime returns false, when there are no series data for given time range.
-func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
+// decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
+// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
+// decodeSeries returns false, when there are no series data for given time range.
+func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
 	*lset = (*lset)[:0]
 	*chks = (*chks)[:0]
 
@@ -1582,11 +1582,6 @@ func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta,
 		mint = maxt
 	}
 	return len(*chks) > 0, d.Err()
-}
-
-// NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
-func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
-	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

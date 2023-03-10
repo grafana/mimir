@@ -638,5 +638,5 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	}
 	stats.seriesTouched++
 	stats.seriesTouchedSizeSum += len(b)
-	return decodeSeriesForTime(b, lset, chks, skipChunks)
+	return decodeSeries(b, lset, chks, skipChunks)
 }
