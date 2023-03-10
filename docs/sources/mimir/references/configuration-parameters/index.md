@@ -3894,7 +3894,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # The S3 storage class to use. Details can be found at
 # https://aws.amazon.com/s3/storage-classes/.
 # CLI flag: -<prefix>.s3.storage-class
-[storage_class: <string> | default = ""]
+[storage_class: <string> | default = "STANDARD"]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
