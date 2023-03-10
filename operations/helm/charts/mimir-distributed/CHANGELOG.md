@@ -33,11 +33,11 @@ Entries should include a reference to the Pull Request that introduced the chang
   small.yaml, large.yaml, capped-small.yaml or capped-large.yaml Helm values file. #3740
   > **Note:** For more information, refer to the [Grafana Enterprise Metrics configuration](https://grafana.com/docs/enterprise-metrics/latest/config).
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23. #4285
+* [ENHANCEMENT] Set default pod security context under `rbac.podSecurityContext` for easier install on OpenShift. #4272
 * [BUGFIX] Allow override of Kubernetes version for nginx HPA. #4299
 * [BUGFIX] Do not generate query-frontend-headless service if query scheduler is enabled. Fixes parity with jsonnet. #4353
 * [BUGFIX] Apply `clusterLabel` to ServiceMonitors for kube-state-metrics, kubelet, and cadvisor. #4126
 * [BUGFIX] Add http port in distributor headless service. Fixes parity with jsonnet. #4392
-* [BUGFIX] Do not set user identities in `securityContext` on Mimir components when `rbac.type` equals `scc` because doing so conflicts with OpenShift security context constraints. #4272
 
 ## 4.2.0
 
