@@ -516,8 +516,9 @@ type Extent struct {
 	End      int64      `protobuf:"varint,2,opt,name=end,proto3" json:"end"`
 	TraceId  string     `protobuf:"bytes,4,opt,name=trace_id,json=traceId,proto3" json:"-"`
 	Response *types.Any `protobuf:"bytes,5,opt,name=response,proto3" json:"response"`
-	// Unix timestamp (millis) when the query with this response was executed.
-	// If the response is combination of multiple queries over time, queryTime is timestamp of oldest query.
+	// Unix timestamp when the query with this response was executed.
+	// If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
+	// When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
 	QueryTimestampMs int64 `protobuf:"varint,6,opt,name=query_timestamp_ms,json=queryTimestampMs,proto3" json:"query_timestamp_ms,omitempty"`
 }
 
