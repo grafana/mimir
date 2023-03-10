@@ -72,7 +72,6 @@ mimir {
   store_gateway_container+: k.util.resourcesRequests('100m', '128Mi'),
   store_gateway_statefulset+: statefulSet.mixin.spec.withReplicas(1),
 
-  # TODO abstract for both memcached and redis
   local smallMemcached = {
     cpu_requests:: '100m',
     memory_limit_mb:: 64,
