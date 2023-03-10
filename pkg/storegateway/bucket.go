@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -152,12 +151,6 @@ func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.Lab
 }
 
 func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
-	return nil, false
-}
-
-func (noopCache) StoreSeries(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
-}
-func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
 	return nil, false
 }
 
@@ -544,202 +537,6 @@ type seriesEntry struct {
 	lset labels.Labels
 	refs []chunks.ChunkRef
 	chks []storepb.AggrChunk
-}
-
-type bucketSeriesSet struct {
-	set []seriesEntry
-	i   int
-	err error
-}
-
-func newBucketSeriesSet(set []seriesEntry) *bucketSeriesSet {
-	return &bucketSeriesSet{
-		set: set,
-		i:   -1,
-	}
-}
-
-func (s *bucketSeriesSet) Next() bool {
-	if s.i >= len(s.set)-1 {
-		return false
-	}
-	s.i++
-	return true
-}
-
-func (s *bucketSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	return s.set[s.i].lset, s.set[s.i].chks
-}
-
-func (s *bucketSeriesSet) Err() error {
-	return s.err
-}
-
-// blockSeriesSkippingChunks returns series matching given matchers, that have some data in given time range.
-// This function doesn't lookup chunks and so the search is performed over the entire block to make the result cacheable.
-func blockSeriesSkippingChunks(
-	ctx context.Context,
-	indexr *bucketIndexReader, // Index reader for block.
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
-	seriesHasher seriesHasher, // Block-specific series hash cache (used only if shard selector is specified).
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
-	logger log.Logger,
-) (storepb.SeriesSet, *safeQueryStats, error) {
-	span, ctx := tracing.StartSpan(ctx, "blockSeriesSkippingChunks()")
-	span.LogKV(
-		"block ID", indexr.block.meta.ULID.String(),
-		"block min time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
-		"block max time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
-	)
-	defer span.Finish()
-
-	reqStats := newSafeQueryStats()
-
-	span.LogKV("msg", "manipulating mint/maxt to cover the entire block")
-	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
-
-	if res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger); ok {
-		span.LogKV("msg", "using cached result", "len", len(res))
-		return newBucketSeriesSet(res), reqStats, nil
-	}
-
-	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "expanded matching posting")
-	}
-
-	// We can't compute the series hash yet because we're still missing the series labels.
-	// However, if the hash is already in the cache, then we can remove all postings for series
-	// not belonging to the shard.
-	var seriesCacheStats queryStats
-	if shard != nil {
-		ps = filterPostingsByCachedShardHash(ps, shard, seriesHasher, &seriesCacheStats)
-	}
-
-	if len(ps) == 0 {
-		return storepb.EmptySeriesSet(), reqStats, nil
-	}
-
-	// Preload all series index data.
-	// TODO(bwplotka): Consider not keeping all series in memory all the time.
-	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	loadedSeries, err := indexr.preloadSeries(ctx, ps, reqStats)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "preload series")
-	}
-
-	// Transform all series into the response types and mark their relevant chunks
-	// for preloading.
-	var (
-		res       []seriesEntry
-		lookupErr error
-	)
-
-	tracing.DoWithSpan(ctx, "blockSeriesSkippingChunks() lookup series", func(ctx context.Context, span opentracing.Span) {
-		var (
-			symbolizedLset []symbolizedLabel
-			chks           []chunks.Meta
-			postingsStats  = &queryStats{}
-		)
-
-		// Keep track of postings lookup stats in a dedicated stats structure that doesn't require lock
-		// and then merge it once done. We do it to avoid the lock overhead because unsafeLoadSeriesForTime()
-		// may be called many times.
-		defer func() {
-			reqStats.merge(postingsStats)
-		}()
-
-		for _, id := range ps {
-			ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, true, minTime, maxTime, postingsStats)
-			if err != nil {
-				lookupErr = errors.Wrap(err, "read series")
-				return
-			}
-			if !ok {
-				// No matching chunks for this time duration, skip series.
-				continue
-			}
-
-			lset, err := indexr.LookupLabelsSymbols(symbolizedLset)
-			if err != nil {
-				lookupErr = errors.Wrap(err, "lookup labels symbols")
-				return
-			}
-
-			// Skip the series if it doesn't belong to the shard.
-			if !shardOwned(shard, seriesHasher, id, lset, &seriesCacheStats) {
-				continue
-			}
-
-			// Check series limit after filtering out series not belonging to the requested shard (if any).
-			if err := seriesLimiter.Reserve(1); err != nil {
-				lookupErr = errors.Wrap(err, "exceeded series limit")
-				return
-			}
-
-			s := seriesEntry{lset: lset}
-			res = append(res, s)
-		}
-	})
-
-	if lookupErr != nil {
-		return nil, nil, lookupErr
-	}
-
-	storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, res, logger)
-	reqStats.merge(&seriesCacheStats)
-	return newBucketSeriesSet(res), reqStats, nil
-}
-
-type seriesCacheEntry struct {
-	LabelSets   []labels.Labels
-	MatchersKey indexcache.LabelMatchersKey
-	Shard       sharding.ShardSelector
-}
-
-func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, logger log.Logger) ([]seriesEntry, bool) {
-	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, ok := indexCache.FetchSeries(ctx, userID, blockID, matchersKey, shard)
-	if !ok {
-		return nil, false
-	}
-	var entry seriesCacheEntry
-	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
-		return nil, false
-	}
-	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
-		return nil, false
-	}
-	if entry.Shard != maybeNilShard(shard) {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard, "requested_shard", maybeNilShard(shard))
-		return nil, false
-	}
-
-	res := make([]seriesEntry, len(entry.LabelSets))
-	for i, lset := range entry.LabelSets {
-		res[i].lset = lset
-	}
-	return res, true
-}
-
-func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, series []seriesEntry, logger log.Logger) {
-	entry := seriesCacheEntry{
-		LabelSets:   make([]labels.Labels, len(series)),
-		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
-		Shard:       maybeNilShard(shard),
-	}
-	for i, s := range series {
-		entry.LabelSets[i] = s.lset
-	}
-	data, err := encodeSnappyGob(entry)
-	if err != nil {
-		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
-		return
-	}
-	indexCache.StoreSeries(userID, blockID, entry.MatchersKey, shard, data)
 }
 
 // Series implements the storepb.StoreServer interface.
@@ -1159,7 +956,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
 
-			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.logger)
+			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
@@ -1195,7 +992,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}, nil
 }
 
-func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, logger log.Logger) ([]string, error) {
+func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger) ([]string, error) {
 	names, ok := fetchCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
 	if ok {
 		return names, nil
@@ -1212,11 +1009,29 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		return names, nil
 	}
 
-	seriesSet, _, err := blockSeriesSkippingChunks(ctx, indexr, matchers, nil, nil, seriesLimiter, logger)
+	// We ignore request's min/max time and query the entire block to make the result cacheable.
+	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
+	seriesSetsIterator, err := openBlockSeriesChunkRefsSetsIterator(
+		ctx,
+		seriesPerBatch,
+		indexr.block.userID,
+		indexr,
+		indexr.block.indexCache,
+		indexr.block.meta,
+		matchers,
+		nil,
+		cachedSeriesHasher{nil},
+		true,
+		minTime, maxTime,
+		1, // we skip chunks, so this doesn't make any difference
+		newSafeQueryStats(),
+		logger,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch series")
 	}
-
+	seriesSetsIterator = newLimitingSeriesChunkRefsSetIterator(seriesSetsIterator, NewLimiter(0, nil), seriesLimiter)
+	seriesSet := newSeriesChunkRefsSeriesSet(seriesSetsIterator)
 	// Extract label names from all series. Many label names will be the same, so we need to deduplicate them.
 	labelNames := map[string]struct{}{}
 	for seriesSet.Next() {
@@ -1718,10 +1533,10 @@ type symbolizedLabel struct {
 	name, value uint32
 }
 
-// decodeSeriesForTime decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.
-// If skipChunks is specified decodeSeriesForTime does not return any chunks, but only labels and only if at least single chunk is within time range.
-// decodeSeriesForTime returns false, when there are no series data for given time range.
-func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, selectMint, selectMaxt int64) (ok bool, err error) {
+// decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
+// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
+// decodeSeries returns false, when there are no series data for given time range.
+func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
 	*lset = (*lset)[:0]
 	*chks = (*chks)[:0]
 
@@ -1753,32 +1568,21 @@ func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta,
 			ref += d.Varint64()
 		}
 
-		if mint > selectMaxt {
-			break
+		// Found a chunk.
+		if skipChunks {
+			// We are not interested in chunks and we know there is at least one, that's enough to return series.
+			return true, nil
 		}
 
-		if maxt >= selectMint {
-			// Found a chunk.
-			if skipChunks {
-				// We are not interested in chunks and we know there is at least one, that's enough to return series.
-				return true, nil
-			}
-
-			*chks = append(*chks, chunks.Meta{
-				Ref:     chunks.ChunkRef(ref),
-				MinTime: mint,
-				MaxTime: maxt,
-			})
-		}
+		*chks = append(*chks, chunks.Meta{
+			Ref:     chunks.ChunkRef(ref),
+			MinTime: mint,
+			MaxTime: maxt,
+		})
 
 		mint = maxt
 	}
 	return len(*chks) > 0, d.Err()
-}
-
-// NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
-func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
-	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

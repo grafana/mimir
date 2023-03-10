@@ -26,7 +26,6 @@ const (
 	cacheTypePostings          = "Postings"
 	cacheTypeSeriesForRef      = "SeriesForRef"
 	cacheTypeExpandedPostings  = "ExpandedPostings"
-	cacheTypeSeries            = "Series"
 	cacheTypeSeriesForPostings = "SeriesForPostings"
 	cacheTypeLabelNames        = "LabelNames"
 	cacheTypeLabelValues       = "LabelValues"
@@ -37,7 +36,6 @@ var (
 		cacheTypePostings,
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
-		cacheTypeSeries,
 		cacheTypeSeriesForPostings,
 		cacheTypeLabelNames,
 		cacheTypeLabelValues,
@@ -65,11 +63,6 @@ type IndexCache interface {
 
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
 	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
-
-	// StoreSeries stores the result of a Series() call.
-	StoreSeries(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
-	// FetchSeries fetches the result of a Series() call.
-	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 
 	// StoreSeriesForPostings stores a series set for the provided postings.
 	StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)

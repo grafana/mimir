@@ -22,6 +22,7 @@
 * [ENHANCEMENT] Query-frontend: results cache TTL is now configurable by using `-query-frontend.results-cache-ttl` and `-query-frontend.results-cache-ttl-for-out-of-order-time-window` options. These values can also be specified per tenant. Default values are unchanged (7 days and 10 minutes respectively). #4385
 * [ENHANCEMENT] Ingester: added advanced configuration parameter `-blocks-storage.tsdb.wal-replay-concurrency` representing the maximum number of CPUs used during WAL replay. #4445
 * [ENHANCEMENT] Ingester: added metrics `cortex_ingester_tsdb_open_duration_seconds_total` to measure the total time it takes to open all existing TSDBs. The time tracked by this metric also includes the TSDBs WAL replay duration. #4465
+* [ENHANCEMENT] Store-gateway: use streaming implementation for LabelNames RPC. The batch size for streaming is controlled by `-blocks-storage.bucket-store.batch-series-size`. #4464
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 

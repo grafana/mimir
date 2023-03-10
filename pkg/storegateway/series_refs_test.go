@@ -2206,17 +2206,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	}
 }
 
-type forbiddenFetchMultiSeriesForRefsIndexCache struct {
-	indexcache.IndexCache
-
-	t *testing.T
-}
-
-func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
-	assert.Fail(c.t, "index cache FetchMultiSeriesForRefs should not be called")
-	return nil, nil
-}
-
 type forbiddenFetchMultiPostingsIndexCache struct {
 	indexcache.IndexCache
 
