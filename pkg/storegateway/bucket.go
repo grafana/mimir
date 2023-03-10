@@ -1023,6 +1023,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		cachedSeriesHasher{nil},
 		true,
 		minTime, maxTime,
+		1, // we skip chunks, so this doesn't make any difference
 		newSafeQueryStats(),
 		logger,
 	)
