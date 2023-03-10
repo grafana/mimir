@@ -1015,6 +1015,20 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				mkExtentWithStepAndQueryTime(40, 160, 20, now),
 			},
 		},
+		"Should left-extend extent with zero query timestamp if request starts earlier than extent in cache and use recent query timestamp": {
+			req: &PrometheusRangeQueryRequest{
+				Start: 40,
+				End:   80,
+				Step:  20,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
+			},
+			expectedUpdatedExtents: true,
+			expectedCachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(40, 160, 20, now),
+			},
+		},
 		"Should right-extend extent if request ends later than extent in cache": {
 			req: &PrometheusRangeQueryRequest{
 				Start: 100,
@@ -1027,6 +1041,20 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
 				mkExtentWithStepAndQueryTime(60, 180, 20, now-100),
+			},
+		},
+		"Should right-extend extent with zero query timestamp if request ends later than extent in cache": {
+			req: &PrometheusRangeQueryRequest{
+				Start: 100,
+				End:   180,
+				Step:  20,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
+			},
+			expectedUpdatedExtents: true,
+			expectedCachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 180, 20, now),
 			},
 		},
 		"Should not throw error if complete-overlapped smaller Extent is erroneous": {
@@ -1177,12 +1205,17 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		e4 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-5*time.Minute.Milliseconds())
 		mw.storeCacheExtents("key-4", []string{"tenant"}, []Extent{e4})
 
-		actual := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{"tenant"}, []string{"key-1", "key-2", "key-3", "key-4"})
+		// No query time, extent ends inside of OOO window (30min). This will be used.
+		e5 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, 0)
+		mw.storeCacheExtents("key-5", []string{"tenant"}, []Extent{e5})
+
+		actual := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{"tenant"}, []string{"key-1", "key-2", "key-3", "key-4", "key-5"})
 		expected := [][]Extent{
 			nil,
 			{e2},
 			nil,
 			{e4},
+			{e5},
 		}
 		assert.Equal(t, expected, actual)
 	})

@@ -89,7 +89,7 @@ message Extent  {
   google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
   // Unix timestamp (millis) when the query with this response was executed.
   // If the response is combination of multiple queries over time, queryTime is timestamp of oldest query.
-  int64 queryTime = 6;
+  int64 query_timestamp_ms = 6;
 }
 
 message Options {

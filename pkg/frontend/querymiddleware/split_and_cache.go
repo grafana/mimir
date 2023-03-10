@@ -379,17 +379,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 		// Filter out extents that are outside TTL.
 		for ix := range resp.Extents {
-			if resp.Extents[ix].QueryTime == 0 {
-				// If we don't know the query time, it's too old.
-				extentsOutOfTTL++
-				continue
-			}
-
-			usedTTL := ttl
-			if oooWindow > 0 && extentWithinOOOWindow(&resp.Extents[ix], now, oooWindow) {
-				usedTTL = ttlForExtentsInOOOWindow
-			}
-			if resp.Extents[ix].QueryTime < now.UnixMilli()-usedTTL.Milliseconds() {
+			// If we don't know the query timestamp, we use the cached result.
+			// This is temporary ... after max 7 days (previous hardcoded TTL) all cached results will have query timestamp recorded.
+			usedTTL := getTTLForExtent(now, ttl, ttlForExtentsInOOOWindow, oooWindow, &resp.Extents[ix])
+			if resp.Extents[ix].QueryTimestampMs > 0 && resp.Extents[ix].QueryTimestampMs < now.UnixMilli()-usedTTL.Milliseconds() {
 				extentsOutOfTTL++
 				continue
 			}
@@ -421,14 +414,12 @@ func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlI
 
 // storeCacheExtents stores the extents for given key in the cache.
 func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []string, extents []Extent) {
-	ttl, ttlInOOO, oooWindow := s.getCacheOptions(tenantIDs)
-
-	now := time.Now()
-
-	usedTTL := ttl
-	if oooWindow > 0 && len(extents) > 0 && extentWithinOOOWindow(&extents[len(extents)-1], now, oooWindow) {
-		usedTTL = ttlInOOO
+	if len(extents) == 0 {
+		return
 	}
+
+	ttl, ttlInOOO, oooWindow := s.getCacheOptions(tenantIDs)
+	usedTTL := getTTLForExtent(time.Now(), ttl, ttlInOOO, oooWindow, &extents[len(extents)-1])
 
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
@@ -442,8 +433,11 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
 }
 
-func extentWithinOOOWindow(e *Extent, now time.Time, oooWindow time.Duration) bool {
-	return e.End >= now.Add(-oooWindow).UnixMilli()
+func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e *Extent) time.Duration {
+	if oooWindow > 0 && e.End >= now.Add(-oooWindow).UnixMilli() {
+		return ttlInOOOWindow
+	}
+	return ttl
 }
 
 // splitRequest holds information about a split request.

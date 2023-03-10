@@ -113,10 +113,10 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		panic(err)
 	}
 	return Extent{
-		Start:     start,
-		End:       end,
-		Response:  any,
-		QueryTime: queryTime,
+		Start:            start,
+		End:              end,
+		Response:         any,
+		QueryTimestampMs: queryTime,
 	}
 }
 

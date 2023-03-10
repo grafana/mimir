@@ -338,7 +338,15 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 			return nil, err
 		}
 		accumulator.Response = merged
-		accumulator.QueryTime = math.Min64(accumulator.QueryTime, extents[i].QueryTime) // Keep oldest (minimum) timestamp.
+
+		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
+			// Keep older (minimum) timestamp.
+			accumulator.QueryTimestampMs = math.Min64(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		} else {
+			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
+			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
+			accumulator.QueryTimestampMs = math.Max64(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		}
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -355,11 +363,11 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:     acc.Extent.Start,
-		End:       acc.Extent.End,
-		Response:  any,
-		TraceId:   acc.Extent.TraceId,
-		QueryTime: acc.QueryTime,
+		Start:            acc.Extent.Start,
+		End:              acc.Extent.End,
+		Response:         any,
+		TraceId:          acc.Extent.TraceId,
+		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }
 
@@ -380,11 +388,11 @@ func toExtent(ctx context.Context, req Request, res Response, queryTime time.Tim
 		return Extent{}, err
 	}
 	return Extent{
-		Start:     req.GetStart(),
-		End:       req.GetEnd(),
-		Response:  any,
-		TraceId:   jaegerTraceID(ctx),
-		QueryTime: queryTime.UnixMilli(),
+		Start:            req.GetStart(),
+		End:              req.GetEnd(),
+		Response:         any,
+		TraceId:          jaegerTraceID(ctx),
+		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
 
