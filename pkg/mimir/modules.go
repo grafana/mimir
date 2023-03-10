@@ -268,11 +268,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	}
 	t.Cfg.RuntimeConfig.Loader = loadRuntimeConfig
 
-	// make sure to set default limits before we start loading configuration into memory
-	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
-	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
-	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
-
 	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
 	// We need to preserve the option in the querier yaml for two releases
 	// If the querier config is configured by the user, the default limit is overwritten
@@ -280,6 +275,11 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	if t.Cfg.Querier.QueryIngestersWithin != querier.DefaultQuerierCfgQueryIngestersWithin {
 		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
 	}
+
+	// make sure to set default limits before we start loading configuration into memory
+	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
+	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
+	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
 
 	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
