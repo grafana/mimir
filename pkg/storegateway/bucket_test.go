@@ -1570,11 +1570,12 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			b1.meta.ULID: b1,
 			b2.meta.ULID: b2,
 		},
-		queryGate:            gate.NewNoop(),
-		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
-		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
-		maxSeriesPerBatch:    65536,
-		chunkPool:            chunkPool,
+		queryGate:                gate.NewNoop(),
+		chunksLimiterFactory:     newStaticChunksLimiterFactory(0),
+		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
+		maxSeriesPerBatch:        65536,
+		numChunksRangesPerSeries: 1,
+		chunkPool:                chunkPool,
 	}
 
 	srv := newBucketStoreTestServer(t, store)
