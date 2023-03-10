@@ -1613,7 +1613,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				testCase.skipChunks,
 				minT,
 				maxT,
-				1,
+				2,
 				newSafeQueryStats(),
 				nil,
 			)
