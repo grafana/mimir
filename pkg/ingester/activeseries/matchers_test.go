@@ -157,7 +157,7 @@ func TestAmlabelMatchersToProm_HappyCase(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")
-	assert.Equal(t, expected, amlabelMatcherToProm(amMatcher))
+	assert.Equal(t, expected.String(), amlabelMatcherToProm(amMatcher).String())
 }
 
 func TestAmlabelMatchersToProm_MatchTypeValues(t *testing.T) {

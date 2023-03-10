@@ -9,13 +9,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestGatherIndexHealthStats(t *testing.T) {
@@ -36,14 +36,14 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-				sample{40, 0, tsdb.GenerateTestHistogram(1), nil},
-				sample{50, 0, tsdb.GenerateTestHistogram(2), nil},
-				sample{60, 0, tsdb.GenerateTestHistogram(3), nil},
+				sample{40, 0, test.GenerateTestHistogram(1), nil},
+				sample{50, 0, test.GenerateTestHistogram(2), nil},
+				sample{60, 0, test.GenerateTestHistogram(3), nil},
 			}),
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-				sample{70, 0, tsdb.GenerateTestHistogram(4), nil},
-				sample{80, 0, tsdb.GenerateTestHistogram(5), nil},
-				sample{90, 0, tsdb.GenerateTestHistogram(6), nil},
+				sample{70, 0, test.GenerateTestHistogram(4), nil},
+				sample{80, 0, test.GenerateTestHistogram(5), nil},
+				sample{90, 0, test.GenerateTestHistogram(6), nil},
 			}),
 		},
 	}

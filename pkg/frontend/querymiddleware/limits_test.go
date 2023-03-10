@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -279,18 +278,21 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 }
 
 type mockLimits struct {
-	maxQueryLookback               time.Duration
-	maxQueryLength                 time.Duration
-	maxTotalQueryLength            time.Duration
-	maxCacheFreshness              time.Duration
-	maxQueryParallelism            int
-	maxShardedQueries              int
-	splitInstantQueriesInterval    time.Duration
-	totalShards                    int
-	compactorShards                int
-	compactorBlocksRetentionPeriod time.Duration
-	outOfOrderTimeWindow           model.Duration
-	creationGracePeriod            time.Duration
+	maxQueryLookback                 time.Duration
+	maxQueryLength                   time.Duration
+	maxTotalQueryLength              time.Duration
+	maxCacheFreshness                time.Duration
+	maxQueryParallelism              int
+	maxShardedQueries                int
+	splitInstantQueriesInterval      time.Duration
+	totalShards                      int
+	compactorShards                  int
+	compactorBlocksRetentionPeriod   time.Duration
+	outOfOrderTimeWindow             time.Duration
+	creationGracePeriod              time.Duration
+	nativeHistogramsIngestionEnabled bool
+	resultsCacheTTL                  time.Duration
+	resultsCacheOutOfOrderWindowTTL  time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -339,12 +341,24 @@ func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 	return m.compactorBlocksRetentionPeriod
 }
 
-func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
+func (m mockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
 	return m.outOfOrderTimeWindow
+}
+
+func (m mockLimits) ResultsCacheTTL(userID string) time.Duration {
+	return m.resultsCacheTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration {
+	return m.resultsCacheOutOfOrderWindowTTL
 }
 
 func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.creationGracePeriod
+}
+
+func (m mockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
+	return m.nativeHistogramsIngestionEnabled
 }
 
 type mockHandler struct {

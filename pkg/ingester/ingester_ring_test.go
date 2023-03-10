@@ -53,7 +53,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.ObservePeriod = 10 * time.Minute
 	cfg.MinReadyDuration = 3 * time.Minute
 	cfg.FinalSleep = 2 * time.Minute
-	cfg.ReadinessCheckRingHealth = false
+	cfg.DeprecatedReadinessCheckRingHealth = false
 	cfg.ListenPort = 10
 
 	// The lifecycler config should be generated based upon the ingester ring config
@@ -75,7 +75,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	expected.TokensFilePath = cfg.TokensFilePath
 	expected.Zone = cfg.InstanceZone
 	expected.UnregisterOnShutdown = cfg.UnregisterOnShutdown
-	expected.ReadinessCheckRingHealth = cfg.ReadinessCheckRingHealth
+	expected.ReadinessCheckRingHealth = cfg.DeprecatedReadinessCheckRingHealth
 	expected.Addr = cfg.InstanceAddr
 	expected.Port = cfg.InstancePort
 	expected.ID = cfg.InstanceID

@@ -291,7 +291,7 @@ func copyLabel(l labels.Label) labels.Label {
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StorePostings(_ context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
@@ -314,7 +314,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
 	c.set(cacheKeySeriesForRef{userID, blockID, id}, v)
 }
 
@@ -336,7 +336,7 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID s
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
+func (c *InMemoryIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
 	c.set(cacheKeyExpandedPostings{userID, blockID, key}, v)
 }
 
@@ -346,7 +346,7 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID str
 }
 
 // StoreSeries stores the result of a Series() call.
-func (c *InMemoryIndexCache) StoreSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+func (c *InMemoryIndexCache) StoreSeries(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)}, v)
 }
 
@@ -356,17 +356,17 @@ func (c *InMemoryIndexCache) FetchSeries(_ context.Context, userID string, block
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *InMemoryIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
 	c.set(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey}, v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *InMemoryIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+func (c *InMemoryIndexCache) FetchSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
 	return c.get(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey})
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *InMemoryIndexCache) StoreLabelNames(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+func (c *InMemoryIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
 	c.set(cacheKeyLabelNames{userID, blockID, matchersKey}, v)
 }
 
@@ -376,7 +376,7 @@ func (c *InMemoryIndexCache) FetchLabelNames(_ context.Context, userID string, b
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *InMemoryIndexCache) StoreLabelValues(_ context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+func (c *InMemoryIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
 	c.set(cacheKeyLabelValues{userID, blockID, labelName, matchersKey}, v)
 }
 

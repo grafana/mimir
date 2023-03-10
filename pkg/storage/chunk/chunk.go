@@ -6,6 +6,7 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
 	"unsafe"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -120,24 +123,38 @@ func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Ch
 	}
 }
 
-// Samples returns all SamplePairs for the chunk.
-func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
+// Samples returns all SamplePairs and Histograms for the chunk.
+func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
 	it := c.Data.NewIterator(nil)
 	return rangeValues(it, from, through)
 }
 
 // rangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
-	result := []model.SamplePair{}
-	if it.FindAtOrAfter(oldestInclusive) == chunkenc.ValNone {
-		return result, it.Err()
+func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
+	resultFloat := []model.SamplePair{}
+	resultHist := []mimirpb.Histogram{}
+	currValType := it.FindAtOrAfter(oldestInclusive)
+	if currValType == chunkenc.ValNone {
+		return resultFloat, resultHist, it.Err()
 	}
-	for !it.Value().Timestamp.After(newestInclusive) {
-		result = append(result, it.Value())
-		if it.Scan() == chunkenc.ValNone {
+	for !model.Time(it.Timestamp()).After(newestInclusive) {
+		switch currValType {
+		case chunkenc.ValFloat:
+			resultFloat = append(resultFloat, it.Value())
+		case chunkenc.ValHistogram:
+			t, h := it.AtHistogram()
+			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
+		case chunkenc.ValFloatHistogram:
+			t, h := it.AtFloatHistogram()
+			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+		default:
+			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
+		}
+		currValType = it.Scan()
+		if currValType == chunkenc.ValNone {
 			break
 		}
 	}
-	return result, it.Err()
+	return resultFloat, resultHist, it.Err()
 }

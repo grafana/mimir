@@ -34,10 +34,6 @@ type BucketStoreMetrics struct {
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
 
-	// Metrics tracked when streaming store-gateway is disabled.
-	synchronousSeriesGetAllDuration prometheus.Histogram
-	synchronousSeriesMergeDuration  prometheus.Histogram
-
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
 	streamingSeriesBatchPreloadingLoadDuration prometheus.Histogram
@@ -100,16 +96,6 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
-	})
-	m.synchronousSeriesGetAllDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_series_get_all_duration_seconds",
-		Help:    "Time it takes until all per-block prepares and loads for a query are finished. This metric is tracked only if streaming store-gateway is disabled.",
-		Buckets: durationBuckets,
-	})
-	m.synchronousSeriesMergeDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_series_merge_duration_seconds",
-		Help:    "Time it takes to merge sub-results from all queried blocks into a single result. This metric is tracked only if streaming store-gateway is disabled.",
-		Buckets: durationBuckets,
 	})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
@@ -186,22 +172,22 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.streamingSeriesRequestDurationByStage = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
-		Help:    "Time it takes to process a series request split by stages. This metric is tracked only if streaming store-gateway is enabled.",
+		Help:    "Time it takes to process a series request split by stages.",
 		Buckets: durationBuckets,
 	}, []string{"stage"})
 	m.streamingSeriesBatchPreloadingLoadDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_load_duration_seconds",
-		Help:    "Time spent by store-gateway to load batches for a single request. This metric is tracked only if streaming store-gateway is enabled and if the request is split into 2+ batches.",
+		Help:    "Time spent by store-gateway to load batches for a single request. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
 	})
 	m.streamingSeriesBatchPreloadingWaitDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
-		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if streaming store-gateway is enabled and if the request is split into 2+ batches.",
+		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
 	})
 	m.streamingSeriesRefsFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_refs_fetch_duration_seconds",
-		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request. This metric is tracked only if streaming store-gateway is enabled.",
+		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request.",
 		Buckets: durationBuckets,
 	})
 

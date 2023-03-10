@@ -21,11 +21,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
+	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/exp/slices"
 
@@ -72,7 +74,7 @@ type Codec interface {
 	// EncodeRequest encodes a Request into an http request.
 	EncodeRequest(context.Context, Request) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
-	EncodeResponse(context.Context, Response) (*http.Response, error)
+	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
 }
 
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
@@ -155,11 +157,14 @@ type formatter interface {
 	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
 	DecodeResponse([]byte) (*PrometheusResponse, error)
 	Name() string
+	ContentType() v1.MIMEType
 }
 
-var knownFormats = map[string]formatter{
-	jsonMimeType:                  jsonFormat{},
-	mimirpb.QueryResponseMimeType: protobufFormat{},
+var jsonFormatterInstance = jsonFormatter{}
+
+var knownFormats = []formatter{
+	jsonFormatterInstance,
+	protobufFormatter{},
 }
 
 func NewPrometheusCodec(registerer prometheus.Registerer, queryResultResponseFormat string) Codec {
@@ -366,20 +371,19 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	log.LogFields(otlog.Int("bytes", len(buf)))
 
 	contentType := r.Header.Get("Content-Type")
-	f, ok := knownFormats[contentType]
-
-	if !ok {
+	formatter := findFormatter(contentType)
+	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
 	}
 
 	start := time.Now()
-	resp, err := f.DecodeResponse(buf)
+	resp, err := formatter.DecodeResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationDecode, f.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationDecode, f.Name()).Observe(float64(len(buf)))
+	c.metrics.duration.WithLabelValues(operationDecode, formatter.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationDecode, formatter.Name()).Observe(float64(len(buf)))
 
 	if resp.Status == statusError {
 		return nil, apierror.New(apierror.Type(resp.ErrorType), resp.Error)
@@ -391,7 +395,17 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	return resp, nil
 }
 
-func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
+func findFormatter(contentType string) formatter {
+	for _, f := range knownFormats {
+		if f.ContentType().String() == contentType {
+			return f
+		}
+	}
+
+	return nil
+}
+
+func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
@@ -403,28 +417,46 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*htt
 		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 	}
 
-	// TODO: select format based on Accept header
-	f := knownFormats[jsonMimeType]
+	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	if formatter == nil {
+		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
+	}
 
 	start := time.Now()
-	b, err := f.EncodeResponse(a)
+	b, err := formatter.EncodeResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, f.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, f.Name()).Observe(float64(len(b)))
+	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
 
 	resp := http.Response{
 		Header: http.Header{
-			"Content-Type": []string{"application/json"},
+			"Content-Type": []string{selectedContentType},
 		},
 		Body:          io.NopCloser(bytes.NewBuffer(b)),
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
+}
+
+func (prometheusCodec) negotiateContentType(acceptHeader string) (string, formatter) {
+	if acceptHeader == "" {
+		return jsonMimeType, jsonFormatterInstance
+	}
+
+	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
+		for _, formatter := range knownFormats {
+			if formatter.ContentType().Satisfies(clause) {
+				return formatter.ContentType().String(), formatter
+			}
+		}
+	}
+
+	return "", nil
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
@@ -451,10 +483,24 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 					stream.Samples = stream.Samples[1:]
 				} else if existingEndTs > stream.Samples[0].TimestampMs {
 					// Overlap might be big, use heavier algorithm to remove overlap.
-					stream.Samples = sliceSamples(stream.Samples, existingEndTs)
+					stream.Samples = sliceFloatSamples(stream.Samples, existingEndTs)
 				} // else there is no overlap, yay!
 			}
 			existing.Samples = append(existing.Samples, stream.Samples...)
+
+			if len(existing.Histograms) > 0 && len(stream.Histograms) > 0 {
+				existingEndTs := existing.Histograms[len(existing.Histograms)-1].TimestampMs
+				if existingEndTs == stream.Histograms[0].TimestampMs {
+					// Typically this the cases where only 1 sample point overlap,
+					// so optimize with simple code.
+					stream.Histograms = stream.Histograms[1:]
+				} else if existingEndTs > stream.Histograms[0].TimestampMs {
+					// Overlap might be big, use heavier algorithm to remove overlap.
+					stream.Histograms = sliceHistogramSamples(stream.Histograms, existingEndTs)
+				} // else there is no overlap, yay!
+			}
+			existing.Histograms = append(existing.Histograms, stream.Histograms...)
+
 			output[metric] = existing
 		}
 	}
@@ -473,11 +519,31 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 	return result
 }
 
-// sliceSamples assumes given samples are sorted by timestamp in ascending order and
+// sliceFloatSamples assumes given samples are sorted by timestamp in ascending order and
 // return a sub slice whose first element's is the smallest timestamp that is strictly
 // bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
-// timestamps in samples.
-func sliceSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+// timestamps in samples
+func sliceFloatSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
+		return samples
+	}
+
+	if len(samples) > 0 && minTs > samples[len(samples)-1].TimestampMs {
+		return samples[len(samples):]
+	}
+
+	searchResult := sort.Search(len(samples), func(i int) bool {
+		return samples[i].TimestampMs > minTs
+	})
+
+	return samples[searchResult:]
+}
+
+// sliceHistogramSamples assumes given samples are sorted by timestamp in ascending order and
+// return a sub slice whose first element's is the smallest timestamp that is strictly
+// bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
+// timestamps in samples
+func sliceHistogramSamples(samples []mimirpb.FloatHistogramPair, minTs int64) []mimirpb.FloatHistogramPair {
 	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
 		return samples
 	}

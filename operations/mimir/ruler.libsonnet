@@ -48,8 +48,8 @@
 
     deployment.new(name, 2, [$.ruler_container]) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts,

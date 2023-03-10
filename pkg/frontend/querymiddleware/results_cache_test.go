@@ -7,7 +7,6 @@ package querymiddleware
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
-	mimir_tsdb "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,8 +38,9 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "localhost",
+					Memcached: cache.MemcachedClientConfig{
+						Addresses:           []string{"localhost"},
+						MaxAsyncConcurrency: 1,
 					},
 				},
 			},
@@ -50,12 +49,12 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "",
+					Memcached: cache.MemcachedClientConfig{
+						Addresses: nil,
 					},
 				},
 			},
-			expected: errors.New("query-frontend results cache: no memcached addresses configured"),
+			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"should fail with unsupported backend": {
 			cfg: ResultsCacheConfig{
@@ -63,14 +62,14 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 					Backend: "unsupported",
 				},
 			},
-			expected: errUnsupportedResultsCacheBackend("unsupported"),
+			expected: errUnsupportedBackend,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if testData.expected != nil {
-				assert.EqualError(t, testData.cfg.Validate(), testData.expected.Error())
+				assert.ErrorIs(t, testData.cfg.Validate(), testData.expected)
 			} else {
 				assert.NoError(t, testData.cfg.Validate())
 			}

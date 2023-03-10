@@ -13,6 +13,8 @@ const (
 	Advanced
 	// Experimental is the experimental field category.
 	Experimental
+	// Deprecated is the deprecated field category.
+	Deprecated
 )
 
 func (c Category) String() string {
@@ -23,6 +25,8 @@ func (c Category) String() string {
 		return "advanced"
 	case Experimental:
 		return "experimental"
+	case Deprecated:
+		return "deprecated"
 	default:
 		panic(fmt.Sprintf("Unknown field category: %d", c))
 	}

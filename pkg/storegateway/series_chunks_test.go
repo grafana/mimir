@@ -520,7 +520,7 @@ func (b testBlock) toSeriesChunkRefs(seriesIndex int) seriesChunkRefs {
 	return b.toSeriesChunkRefsWithNRanges(seriesIndex, 1)
 }
 
-func TestRangeLoadingSeriesChunksSetIterator(t *testing.T) {
+func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 	block1 := testBlock{
 		ulid:   ulid.MustNew(1, nil),
 		series: generateSeriesEntries(t, 10),
@@ -1290,7 +1290,7 @@ func newInMemoryChunksCache() chunkscache.Cache {
 	}
 }
 
-func (c *inMemoryChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Range) map[chunkscache.Range][]byte {
+func (c *inMemoryChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Range, chunksPool *pool.SafeSlabPool[byte]) map[chunkscache.Range][]byte {
 	hits := make(map[chunkscache.Range][]byte, len(ranges))
 	for _, r := range ranges {
 		if cached, ok := c.cached[userID][r]; ok {
@@ -1300,7 +1300,7 @@ func (c *inMemoryChunksCache) FetchMultiChunks(ctx context.Context, userID strin
 	return hits
 }
 
-func (c *inMemoryChunksCache) StoreChunks(ctx context.Context, userID string, ranges map[chunkscache.Range][]byte) {
+func (c *inMemoryChunksCache) StoreChunks(userID string, ranges map[chunkscache.Range][]byte) {
 	if c.cached[userID] == nil {
 		c.cached[userID] = make(map[chunkscache.Range][]byte)
 	}

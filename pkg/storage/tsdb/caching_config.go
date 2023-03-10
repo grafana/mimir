@@ -31,6 +31,8 @@ import (
 // subrangeSize is the size of each subrange that bucket objects are split into for better caching
 const subrangeSize int64 = 16000
 
+var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
@@ -42,9 +44,10 @@ type ChunksCacheConfig struct {
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string, logger log.Logger) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	// TODO: Deprecated in Mimir 2.7, remove in Mimir 2.9
 	flagext.DeprecatedFlag(f, prefix+"subrange-size", fmt.Sprintf("Deprecated, %d bytes is now always used. Size of each subrange that bucket object is split into for better caching.", subrangeSize), logger)
@@ -76,9 +79,10 @@ type MetadataCacheConfig struct {
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	f.DurationVar(&cfg.TenantsListTTL, prefix+"tenants-list-ttl", 15*time.Minute, "How long to cache list of tenants in the bucket.")
 	f.DurationVar(&cfg.TenantBlocksListTTL, prefix+"tenant-blocks-list-ttl", 5*time.Minute, "How long to cache list of blocks for each tenant.")
