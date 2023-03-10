@@ -40,7 +40,7 @@ import (
 type Config struct {
 	Iterators            bool          `yaml:"iterators" category:"advanced"`
 	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.7.0, remove in Mimir 2.9.0
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.XX-2.0, remove in Mimir 2.XX.0
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -76,8 +76,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
-	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.9.0
-	// TODO: Remove in Mimir 2.9.0
+	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.XX.0
+	// TODO: Remove in Mimir 2.XX.0
 	cfg.QueryIngestersWithin = DefaultQuerierCfgQueryIngestersWithin
 
 	cfg.EngineConfig.RegisterFlags(f)
