@@ -1834,6 +1834,7 @@ func (i *Ingester) closeAllTSDB() {
 // concurrently opening TSDB.
 func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	level.Info(i.logger).Log("msg", "opening existing TSDBs")
+	startTime := time.Now()
 
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -1867,8 +1868,6 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				i.tsdbs[userID] = db
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
-
-				i.metrics.walReplayTime.Observe(time.Since(startTime).Seconds())
 			}
 
 			return nil
@@ -1902,6 +1901,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	// Update the usage statistics once all TSDBs have been opened.
 	i.updateUsageStats()
 
+	i.metrics.openExistingTSDB.Add(time.Since(startTime).Seconds())
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
 }
