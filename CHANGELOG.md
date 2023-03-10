@@ -40,6 +40,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Docs: Fix broken links #4470 
+
 ### Tools
 
 ## 2.7.0-rc.0
