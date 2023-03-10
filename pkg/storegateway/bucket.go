@@ -847,7 +847,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
 			stats.streamingSeriesEncodeResponseDuration += encodeDuration
 			stats.streamingSeriesSendResponseDuration += sendDuration
-			stats.streamingSeriesOtherDuration += time.Duration(util_math.Max64(0, int64(time.Since(iterationBegin)-
+			stats.streamingSeriesOtherDuration += time.Duration(util_math.Max(0, int64(time.Since(iterationBegin)-
 				stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
 		})
 
