@@ -6948,6 +6948,17 @@
               "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "chunk_ranges_per_series",
+              "required": false,
+              "desc": "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "blocks-storage.bucket-store.chunk-ranges-per-series",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

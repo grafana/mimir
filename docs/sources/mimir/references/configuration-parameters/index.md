@@ -3196,6 +3196,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
+  # (advanced) This option controls into how many ranges the chunks of each
+  # series from each block are split. This value is effectively the number of
+  # chunks cache items per series per block.
+  # CLI flag: -blocks-storage.bucket-store.chunk-ranges-per-series
+  [chunk_ranges_per_series: <int> | default = 1]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.

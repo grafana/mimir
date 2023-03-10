@@ -281,6 +281,8 @@ Usage of ./cmd/mimir/mimir:
     	Size - in bytes - of the largest chunks pool bucket. (default 50000000)
   -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
     	Size - in bytes - of the smallest chunks pool bucket. (default 16000)
+  -blocks-storage.bucket-store.chunk-ranges-per-series int
+    	This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block. (default 1)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
