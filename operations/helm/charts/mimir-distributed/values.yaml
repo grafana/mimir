@@ -3382,7 +3382,7 @@ continuous_test:
     requests:
       cpu: "1"
       memory: 512Mi
-  # -- Security context for the continuous test Deployment, ignored if rbac.type==scc
+  # -- Security context for the continuous test Deployment
   securityContext: {}
   # -- Service for monitoring continuous test
   service:
