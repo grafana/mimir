@@ -107,16 +107,11 @@ Assuming that you have enabled shuffle sharding for the write path, to enable sh
 
 - `-distributor.ingestion-tenant-shard-size=<size>`
 
-The following flags are set appropriately by default to enable shuffle sharding for ingesters on the read path. If you need to modify their defaults:
+The following flag is set appropriately by default to enable shuffle sharding for ingesters on the read path. If you need to modify its defaults:
 
 - `-querier.shuffle-sharding-ingesters-enabled=true`<br />
   Shuffle sharding for ingesters on the read path can be explicitly enabled or disabled.
-- `-querier.query-ingesters-within=<period>`<br />
-  Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since 'now - query ingesters within'. If this period is `0`, shuffle sharding for ingesters on the read path is disabled, which means all ingesters in the Mimir cluster are queried for any tenant.
-  The configured `<period>` should be:
-  - greater than `-querier.query-store-after` and,
-  - greater than the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
-    When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in a uploaded block to be available for querying is `3h`.
+    - If shuffle sharding is enabled, queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which might have received series since now - `-blocks-storage.tsdb.retention-period`. Otherwise, the request is sent to all ingesters.
 
 If you enable ingesters shuffle sharding only for the write path, queriers and rulers on the read path always query all ingesters instead of querying the subset of ingesters that belong to the tenant's shard.
 Keeping ingesters shuffle sharding enabled only on the write path does not lead to incorrect query results, but might increase query latency.
@@ -127,7 +122,7 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 
 1. Explicitly disable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false` since this is enabled by default.
 1. Enable ingesters shuffle sharding on the write path.
-1. Wait for at least the amount of time specified via `-querier.query-ingesters-within`.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
 1. Enable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 #### Limitation: Decreasing the tenant shard size
@@ -135,13 +130,13 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size when you enable ingesters’ shuffle sharding on the read path.
 
 If a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how large the tenant shard was previously, and as a result, they potentially miss an ingester with data for that tenant.
-The query-ingesters-within period, which is used to select the ingesters that might have received series since 'now - query ingesters within', doesn't work correctly for finding tenant shards if the tenant shard size is decreased.
+The blocks-storage.tsdb.retention-period, which is used to select the ingesters that might have received series since 'now - blocks-storage.tsdb.retention-period', doesn't work correctly for finding tenant shards if the tenant shard size is decreased.
 
 Although decreasing the tenant shard size is not supported, consider the following workaround:
 
 1. Disable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
-1. Wait for at least the amount of time specified via `-querier.query-ingesters-within`.
+1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
 1. Re-enable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 ### Query-frontend and query-scheduler shuffle sharding
