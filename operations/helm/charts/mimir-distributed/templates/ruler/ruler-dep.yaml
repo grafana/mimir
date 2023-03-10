@@ -27,10 +27,8 @@ spec:
       {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ruler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

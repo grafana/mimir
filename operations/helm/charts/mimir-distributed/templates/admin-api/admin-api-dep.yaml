@@ -27,10 +27,8 @@ spec:
       {{- if .Values.admin_api.priorityClassName }}
       priorityClassName: {{ .Values.admin_api.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.admin_api.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "admin-api") | nindent 8 }}
       initContainers:
         {{- with .Values.admin_api.initContainers }}
         {{- toYaml . | nindent 8 }}

@@ -27,10 +27,8 @@ spec:
       {{- if .Values.overrides_exporter.priorityClassName }}
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.overrides_exporter.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}

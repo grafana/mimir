@@ -16,11 +16,9 @@ metadata:
   {{- end }}
 spec:
   serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
-  {{- if ne $.Values.rbac.type "scc" }}
   {{- with .podSecurityContext }}
   securityContext:
     {{- . | toYaml | nindent 4 }}
-  {{- end }}
   {{- end }}
   {{- with .containerSecurityContext }}
   containers:

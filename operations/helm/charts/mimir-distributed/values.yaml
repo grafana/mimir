@@ -384,6 +384,12 @@ rbac:
   create: true
   # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
+  # If type==psp, use the following fixed user identities in securityContext
+  # If type==scc, these identities are not set, because it conflicts with security context constraints
+  fixedIdentities:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsUser: 10001
 
 alertmanager:
   enabled: true
@@ -488,12 +494,9 @@ alertmanager:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for alermeneger pods, ignored if rbac.type==scc
+  # -- SecurityContext for alermeneger pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -661,12 +664,9 @@ distributor:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for distributor pods, ignored if rbac.type==scc
+  # -- SecurityContext for distributor pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -785,12 +785,9 @@ ingester:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for ingester pods, ignored if rbac.type==scc
+  # -- SecurityContext for ingester pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -916,12 +913,9 @@ overrides_exporter:
     #  topologyKey: kubernetes.io/hostname
     #  whenUnsatisfiable: ScheduleAnyway
 
-  # -- SecurityContext for overrides-exporter pods, ignored if rbac.type==scc
+  # -- SecurityContext for overrides-exporter pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1008,12 +1002,9 @@ ruler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for ruler pods, ignored if rbac.type==scc
+  # -- SecurityContext for ruler pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1087,12 +1078,9 @@ querier:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for querier pods, ignored if rbac.type==scc
+  # -- SecurityContext for querier pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1163,12 +1151,9 @@ query_frontend:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for query-fronted pods, ignored if rbac.type==scc
+  # -- SecurityContext for query-fronted pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1240,12 +1225,9 @@ query_scheduler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for query-scheduler pods, ignored if rbac.type==scc
+  # -- SecurityContext for query-scheduler pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1365,12 +1347,9 @@ store_gateway:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for store-gateway pods, ignored if rbac.type==scc
+  # -- SecurityContext for store-gateway pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1538,12 +1517,9 @@ compactor:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for compactor pods, ignored if rbac.type==scc
+  # -- SecurityContext for compactor pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -1576,12 +1552,9 @@ memcached:
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
-  # -- The SecurityContext for memcached pods, ignored if rbac.type==scc
+  # -- The SecurityContext for memcached pods
   podSecurityContext:
-    fsGroup: 11211
-    runAsGroup: 11211
     runAsNonRoot: true
-    runAsUser: 11211
     seccompProfile:
       type: RuntimeDefault
 
@@ -1973,10 +1946,7 @@ nginx:
   extraVolumeMounts: []
   # -- The SecurityContext for nginx containers, ignored if rbac.type==scc
   podSecurityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
   # -- The SecurityContext for nginx containers
@@ -2304,12 +2274,9 @@ gateway:
   # -- Init containers https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
   initContainers: []
 
-  # -- SecurityContext for gateway pods, ignored if rbac.type==scc
+  # -- SecurityContext for gateway pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -2855,12 +2822,9 @@ tokengenJob:
   annotations: {}
   initContainers: []
 
-  # -- SecurityContext for tokengenjob pods, ignored if rbac.type==scc
+  # -- SecurityContext for tokengenjob pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -2908,12 +2872,9 @@ admin_api:
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
 
-  # -- SecurityContext for admin-api pods, ignored if rbac.type==scc
+  # -- SecurityContext for admin-api pods
   securityContext:
-    fsGroup: 10001
-    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
 
@@ -3088,12 +3049,9 @@ graphite:
     persistence:
       subPath:
 
-    # -- SecurityContext for graphite querier pods, ignored if rbac.type==scc
+    # -- SecurityContext for graphite querier pods
     securityContext:
-      fsGroup: 10001
-      runAsGroup: 10001
       runAsNonRoot: true
-      runAsUser: 10001
       seccompProfile:
         type: RuntimeDefault
 
@@ -3169,12 +3127,9 @@ graphite:
     persistence:
       subPath:
 
-    # -- SecurityContext for graphite write-proxy pods, ignored if rbac.type==scc
+    # -- SecurityContext for graphite write-proxy pods
     securityContext:
-      fsGroup: 10001
-      runAsGroup: 10001
       runAsNonRoot: true
-      runAsUser: 10001
       seccompProfile:
         type: RuntimeDefault
 
@@ -3244,12 +3199,9 @@ graphite:
     # -- Pod Disruption Budget
     podDisruptionBudget: {}
 
-    # -- SecurityContext for graphite web pods, ignored if rbac.type==scc
+    # -- SecurityContext for graphite web pods
     securityContext:
-      fsGroup: 10001
-      runAsGroup: 10001
       runAsNonRoot: true
-      runAsUser: 10001
       seccompProfile:
         type: RuntimeDefault
 

@@ -67,6 +67,12 @@ is_mimir_or_gem_image(image) {
 	startswith(image, "grafana/enterprise-metrics")
 }
 
+is_openshift(x) {
+	some object in x
+	object.contents.kind == "Values"
+	object.contents.spec.rbac.type == "scc"
+}
+
 deny[msg] {
 	obj := input[i].contents
 	msg := sprintf("Mimir or GEM containers do not have the restricted security context: %v", [obj])
@@ -91,10 +97,28 @@ deny[msg] {
 	obj.kind in ["StatefulSet", "Deployment"]
 	pod_spec := obj.spec.template.spec
 	is_mimir_or_gem_image(pod_spec.containers[j].image)
+	not is_openshift(input)
 	required_security_context := {
 		"fsGroup": 10001,
 		"runAsGroup": 10001,
 		"runAsUser": 10001,
+		"runAsNonRoot": true,
+		"seccompProfile": {"type": "RuntimeDefault"},
+	}
+
+	some field, value in required_security_context
+	object.get(pod_spec.securityContext, field, "") != value
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [obj])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	pod_spec := obj.spec.template.spec
+	is_mimir_or_gem_image(pod_spec.containers[j].image)
+	is_openshift(input)
+	required_security_context := {
 		"runAsNonRoot": true,
 		"seccompProfile": {"type": "RuntimeDefault"},
 	}

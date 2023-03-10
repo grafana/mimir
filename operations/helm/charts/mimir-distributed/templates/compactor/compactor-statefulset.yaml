@@ -52,10 +52,8 @@ spec:
       {{- if .Values.compactor.priorityClassName }}
       priorityClassName: {{ .Values.compactor.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.compactor.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "compactor") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.compactor.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

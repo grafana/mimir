@@ -4,3 +4,6 @@ kubeVersionOverride: "1.25"
 # Set rbac type to SecurityContextConstraints (SCC)
 rbac:
   type: scc
+
+enterprise:
+  enabled: true

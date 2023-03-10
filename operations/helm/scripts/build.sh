@@ -64,7 +64,7 @@ for FILEPATH in $TESTS; do
 
   echo ""
   echo "Templating $TEST_NAME"
-  ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns")
+  ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns" "--set-string" "regoTestGenerateValues=true")
 
   echo "Checking for kubeVersionOverride inside tests' values.yaml ..."
   if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then

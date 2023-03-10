@@ -62,10 +62,8 @@ spec:
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.ingester.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" $args | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ingester.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

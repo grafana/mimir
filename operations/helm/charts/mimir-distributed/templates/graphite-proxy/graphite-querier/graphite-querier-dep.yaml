@@ -27,10 +27,8 @@ spec:
       {{- if .Values.graphite.querier.priorityClassName }}
       priorityClassName: {{ .Values.graphite.querier.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.graphite.querier.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
       initContainers:
         {{- with .Values.graphite.querier.initContainers }}
         {{- toYaml . | nindent 8 }}

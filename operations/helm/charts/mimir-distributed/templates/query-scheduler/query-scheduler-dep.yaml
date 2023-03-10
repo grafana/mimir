@@ -26,10 +26,8 @@ spec:
       {{- if .Values.query_scheduler.priorityClassName }}
       priorityClassName: {{ .Values.query_scheduler.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.query_scheduler.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.query_scheduler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

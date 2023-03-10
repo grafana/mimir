@@ -27,10 +27,8 @@ spec:
       {{- if .Values.graphite.write_proxy.priorityClassName }}
       priorityClassName: {{ .Values.graphite.write_proxy.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.graphite.write_proxy.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "graphite-write-proxy") | nindent 8 }}
       initContainers:
         {{- with .Values.graphite.write_proxy.initContainers }}
         {{- toYaml . | nindent 8 }}

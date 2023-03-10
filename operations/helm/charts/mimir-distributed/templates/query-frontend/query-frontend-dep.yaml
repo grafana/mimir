@@ -26,10 +26,8 @@ spec:
       {{- if .Values.query_frontend.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.query_frontend.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

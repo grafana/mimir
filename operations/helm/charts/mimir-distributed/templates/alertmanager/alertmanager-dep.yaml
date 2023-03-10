@@ -31,10 +31,8 @@ spec:
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}
-      {{- if ne .Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

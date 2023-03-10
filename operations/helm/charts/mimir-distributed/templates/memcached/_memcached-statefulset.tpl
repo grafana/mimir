@@ -40,10 +40,8 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
-      {{- if ne $.ctx.Values.rbac.type "scc" }}
       securityContext:
-        {{- toYaml $.ctx.Values.memcached.podSecurityContext | nindent 8 }}
-      {{- end }}
+        {{- include "mimir.lib.securityContext" (dict "ctx" $.ctx "component" $.component) | nindent 8 }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       nodeSelector:
