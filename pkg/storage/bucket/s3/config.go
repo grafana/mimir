@@ -17,6 +17,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore/providers/s3"
+	"github.com/aws/aws-sdk-go"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -32,26 +33,15 @@ const (
 	// SSES3 config type constant to configure S3 server side encryption with AES-256
 	// https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html
 	SSES3 = "SSE-S3"
-
-	// The s3 Storage Class options which define the data access, resiliency & const requirements of objects
-	StorageClassGlacier                  = "GLACIER"
-	StorageClassDeepArchive              = "DEEP_ARCHIVE"
-	StorageClassGlacierInstantRetrieval  = "GLACIER_IR"
-	StorageClassIntelligentTiering       = "INTELLIGENT_TIERING"
-	StorageClassOneZoneInfrequentAccess  = "ONEZONE_IA"
-	StorageClassOutposts                 = "OUTPOSTS"
-	StorageClassReducedRedundancy        = "REDUCED_REDUNDANCY"
-	StorageClassStandard                 = "STANDARD"
-	StorageClassStandardInfrequentAccess = "STANDARD_IA"
 )
 
 var (
 	supportedSignatureVersions     = []string{SignatureVersionV4, SignatureVersionV2}
 	supportedSSETypes              = []string{SSEKMS, SSES3}
-	supportedStorageClasses        = []string{StorageClassGlacier, StorageClassDeepArchive, StorageClassGlacierInstantRetrieval, StorageClassIntelligentTiering, StorageClassOneZoneInfrequentAccess, StorageClassOutposts, StorageClassReducedRedundancy, StorageClassStandard, StorageClassStandardInfrequentAccess}
+	supportedStorageClasses        = ObjectVersionStorageClass_Values() []string
 	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
 	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
-	errUnsupportedStorageClass     = errors.New("unsupported S3 storage class")
+	errUnsupportedStorageClass     = fmt.Errorf("unsupported S3 storage class(supported values: %s)", strings.Join(supportedStorageClasses, ", "))
 	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
 	errInvalidEndpointPrefix       = errors.New("the endpoint must not prefixed with the bucket name")
 )

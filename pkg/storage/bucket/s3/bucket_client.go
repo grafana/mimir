@@ -14,7 +14,7 @@ import (
 
 const (
 	// Applied to PUT operations to denote the desired storage class for S3 Objects
-	awsStorageClassHeader = "X-Amz-storage-Class"
+	awsStorageClassHeader = "X-Amz-Storage-Class"
 )
 
 // NewBucketClient creates a new S3 bucket client
@@ -50,7 +50,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		AccessKey:       cfg.AccessKeyID,
 		SecretKey:       cfg.SecretAccessKey.String(),
 		Insecure:        cfg.Insecure,
-		PutUserMetadata: map[string]string{awsStorageClassHeader: cfg.StorageClass},
+		PutUserMetadata: map[string]string{awsStorageClassHeader: ""},
 		SSEConfig:       sseCfg,
 		HTTPConfig: s3.HTTPConfig{
 			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
