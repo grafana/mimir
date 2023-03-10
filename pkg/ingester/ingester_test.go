@@ -6663,3 +6663,46 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
 }
+
+func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
+	tests := map[string]struct {
+		walReplayConcurrency               int
+		maxTSDBOpeningConcurrencyOnStartup int
+		tenantCount                        int
+		expectedTSDBOpenConcurrency        int
+		expectedTSDBWALReplayConcurrency   int
+	}{
+		"if -blocks-storage.tsdb.wal-replay-concurrency is 0, -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup is used": {
+			walReplayConcurrency:               0,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        5,
+			expectedTSDBOpenConcurrency:        10,
+			expectedTSDBWALReplayConcurrency:   0,
+		},
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are <= 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize WAL replay on sequential openings": {
+			walReplayConcurrency:               3,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        5,
+			expectedTSDBOpenConcurrency:        1,
+			expectedTSDBWALReplayConcurrency:   3,
+		},
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize openings with single WAL replay": {
+			walReplayConcurrency:               3,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        5,
+			expectedTSDBOpenConcurrency:        1,
+			expectedTSDBWALReplayConcurrency:   3,
+		},
+	}
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tsdbConfig := mimir_tsdb.TSDBConfig{
+				WALReplayConcurrency:                         testData.walReplayConcurrency,
+				DeprecatedMaxTSDBOpeningConcurrencyOnStartup: testData.maxTSDBOpeningConcurrencyOnStartup,
+			}
+			tsdbOpenConcurrency, tsdbWALReplayConcurrency := getOpenTSDBsConcurrencyConfig(tsdbConfig, testData.tenantCount)
+			require.Equal(t, testData.expectedTSDBOpenConcurrency, tsdbOpenConcurrency)
+			require.Equal(t, testData.expectedTSDBWALReplayConcurrency, tsdbWALReplayConcurrency)
+		})
+	}
+}

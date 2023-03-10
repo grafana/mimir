@@ -3271,7 +3271,7 @@ tsdb:
   # replay. If it is set to 0, then each TSDB is replayed with a concurrency
   # equal to the number of CPU cores available on the machine. If set to a
   # positive value it overrides the deprecated
-  # blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option
+  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
   # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
   [wal_replay_concurrency: <int> | default = 0]
 

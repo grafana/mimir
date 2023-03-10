@@ -1848,7 +1848,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		return nil
 	}
 
-	tsdbOpenConcurrency, walReplayConcurrency := i.getConcurrencyConfig(len(userIDs))
+	tsdbOpenConcurrency, tsdbWALReplayConcurrency := getOpenTSDBsConcurrencyConfig(i.cfg.BlocksStorageConfig.TSDB, len(userIDs))
 
 	// Create a pool of workers which will open existing TSDBs.
 	for n := 0; n < tsdbOpenConcurrency; n++ {
@@ -1856,7 +1856,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 			for userID := range queue {
 				startTime := time.Now()
 
-				db, err := i.createTSDB(userID, walReplayConcurrency)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
@@ -1906,20 +1906,21 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	return nil
 }
 
-func (i *Ingester) getConcurrencyConfig(userCount int) (tsdbOpenConcurrency, walReplayConcurrency int) {
-	tsdbOpenConcurrency = i.cfg.BlocksStorageConfig.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
-	walReplayConcurrency = 0
-	// If TSDBConfig.WALReplayConcurrency is set to a positive value, we honor it and ignore value of
-	// TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup, being the latter deprecated.
-	// If TSDBConfig.WALReplayConcurrency is 0, it is ignored, and TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
-	// determines the number of concurrent processes opening TSDBs.
-	if i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency > 0 {
+func getOpenTSDBsConcurrencyConfig(tsdbConfig mimir_tsdb.TSDBConfig, userCount int) (tsdbOpenConcurrency, tsdbWALReplayConcurrency int) {
+	tsdbOpenConcurrency = tsdbConfig.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	tsdbWALReplayConcurrency = 0
+	// When WALReplayConcurrency is enabled, we want to ensure the WAL replay at ingester startup
+	// doesn't use more than the configured number of CPU cores. In order to optimize performance
+	// both on single tenant and multi tenant Mimir clusters, we use a heuristic to decide whether
+	// it's better to parallelize the WAL replay of each single TSDB (low number of tenants) or
+	// the WAL replay of multiple TSDBs at the same time (high number of tenants).
+	if tsdbConfig.WALReplayConcurrency > 0 {
 		if userCount <= maxTSDBOpenWithoutConcurrency {
 			tsdbOpenConcurrency = 1
-			walReplayConcurrency = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
+			tsdbWALReplayConcurrency = tsdbConfig.WALReplayConcurrency
 		} else {
-			tsdbOpenConcurrency = i.cfg.BlocksStorageConfig.TSDB.WALReplayConcurrency
-			walReplayConcurrency = 1
+			tsdbOpenConcurrency = tsdbConfig.WALReplayConcurrency
+			tsdbWALReplayConcurrency = 1
 		}
 	}
 	return
