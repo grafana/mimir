@@ -169,15 +169,6 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeSeries,
-			set: func(id uint64, b []byte) {
-				cache.StoreSeries(user, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
-			},
-			get: func(id uint64) ([]byte, bool) {
-				return cache.FetchSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard)
-			},
-		},
-		{
 			typ: cacheTypeSeriesForPostings,
 			set: func(id uint64, b []byte) {
 				cache.StoreSeriesForPostings(user, uid(id), shard, CanonicalPostingsKey([]storage.SeriesRef{1}), b)

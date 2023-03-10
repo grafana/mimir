@@ -26,7 +26,6 @@ const (
 	cacheTypePostings          = "Postings"
 	cacheTypeSeriesForRef      = "SeriesForRef"
 	cacheTypeExpandedPostings  = "ExpandedPostings"
-	cacheTypeSeries            = "Series"
 	cacheTypeSeriesForPostings = "SeriesForPostings"
 	cacheTypeLabelNames        = "LabelNames"
 	cacheTypeLabelValues       = "LabelValues"
@@ -37,7 +36,6 @@ var (
 		cacheTypePostings,
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
-		cacheTypeSeries,
 		cacheTypeSeriesForPostings,
 		cacheTypeLabelNames,
 		cacheTypeLabelValues,
