@@ -384,12 +384,15 @@ rbac:
   create: true
   # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
-  # If type==psp, use the following fixed user identities in securityContext
-  # If type==scc, these identities are not set, because it conflicts with security context constraints
-  fixedIdentities:
+  # Default pod security context for mimir and cache components
+  # When using OpenShift, set
+  securityContext:
     fsGroup: 10001
     runAsGroup: 10001
+    runAsNonRoot: true
     runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
 alertmanager:
   enabled: true
@@ -494,11 +497,8 @@ alertmanager:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for alermeneger pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for alermeneger pods
+  securityContext: {}
 
   # -- The SecurityContext for alertmanager containers
   containerSecurityContext:
@@ -664,11 +664,8 @@ distributor:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for distributor pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for distributor pods
+  securityContext: {}
 
   # -- The SecurityContext for distributor containers
   containerSecurityContext:
@@ -785,11 +782,8 @@ ingester:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for ingester pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for ingester pods
+  securityContext: {}
 
   # -- The SecurityContext for ingester containers
   containerSecurityContext:
@@ -913,11 +907,8 @@ overrides_exporter:
     #  topologyKey: kubernetes.io/hostname
     #  whenUnsatisfiable: ScheduleAnyway
 
-  # -- SecurityContext for overrides-exporter pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for overrides-exporter pods
+  securityContext: {}
 
   # -- The SecurityContext for overrides-exporter containers
   containerSecurityContext:
@@ -1002,11 +993,8 @@ ruler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for ruler pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for ruler pods
+  securityContext: {}
 
   # -- The SecurityContext for ruler containers
   containerSecurityContext:
@@ -1078,11 +1066,8 @@ querier:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for querier pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for querier pods
+  securityContext: {}
 
   # -- The SecurityContext for querier containers
   containerSecurityContext:
@@ -1151,11 +1136,8 @@ query_frontend:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for query-fronted pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for query-fronted pods
+  securityContext: {}
 
   # -- The SecurityContext for query-frontend containers
   containerSecurityContext:
@@ -1225,11 +1207,8 @@ query_scheduler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  # -- SecurityContext for query-scheduler pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for query-scheduler pods
+  securityContext: {}
 
   # -- The SecurityContext for query-scheduler containers
   containerSecurityContext:
@@ -1347,11 +1326,8 @@ store_gateway:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for store-gateway pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for store-gateway pods
+  securityContext: {}
 
   # -- The SecurityContext for store-gateway containers
   containerSecurityContext:
@@ -1517,11 +1493,8 @@ compactor:
       port: http-metrics
     initialDelaySeconds: 60
 
-  # -- SecurityContext for compactor pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for compactor pods
+  securityContext: {}
 
   # -- The SecurityContext for compactor containers
   containerSecurityContext:
@@ -1552,11 +1525,8 @@ memcached:
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
-  # -- The SecurityContext for memcached pods
-  podSecurityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- The SecurityContext override for memcached pods
+  podSecurityContext: {}
 
   # -- The name of the PriorityClass for memcached pods
   priorityClassName: null
@@ -1944,11 +1914,9 @@ nginx:
   extraVolumes: []
   # -- Volume mounts to add to the nginx pods
   extraVolumeMounts: []
-  # -- The SecurityContext for nginx containers, ignored if rbac.type==scc
-  podSecurityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- The SecurityContext override for nginx containers
+  podSecurityContext: {}
+
   # -- The SecurityContext for nginx containers
   containerSecurityContext:
     readOnlyRootFilesystem: true
@@ -2274,11 +2242,8 @@ gateway:
   # -- Init containers https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
   initContainers: []
 
-  # -- SecurityContext for gateway pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for gateway pods
+  securityContext: {}
 
     # -- The SecurityContext for gateway containers
   containerSecurityContext:
@@ -2822,11 +2787,8 @@ tokengenJob:
   annotations: {}
   initContainers: []
 
-  # -- SecurityContext for tokengenjob pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for tokengenjob pods
+  securityContext: {}
 
   # -- The SecurityContext for tokengenjob containers
   containerSecurityContext:
@@ -2872,11 +2834,8 @@ admin_api:
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
 
-  # -- SecurityContext for admin-api pods
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+  # -- SecurityContext override for admin-api pods
+  securityContext: {}
 
   # -- The SecurityContext for admin_api containers
   containerSecurityContext:
@@ -3049,11 +3008,8 @@ graphite:
     persistence:
       subPath:
 
-    # -- SecurityContext for graphite querier pods
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    # -- SecurityContext override for graphite querier pods
+    securityContext: {}
 
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -3127,11 +3083,8 @@ graphite:
     persistence:
       subPath:
 
-    # -- SecurityContext for graphite write-proxy pods
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    # -- SecurityContext override for graphite write-proxy pods
+    securityContext: {}
 
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -3199,11 +3152,8 @@ graphite:
     # -- Pod Disruption Budget
     podDisruptionBudget: {}
 
-    # -- SecurityContext for graphite web pods
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    # -- SecurityContext override for graphite web pods
+    securityContext: {}
 
     containerSecurityContext:
       allowPrivilegeEscalation: false

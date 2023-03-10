@@ -5,5 +5,10 @@ kubeVersionOverride: "1.25"
 rbac:
   type: scc
 
+  securityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+
 enterprise:
   enabled: true

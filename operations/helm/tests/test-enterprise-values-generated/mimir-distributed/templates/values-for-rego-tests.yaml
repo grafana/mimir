@@ -62,10 +62,7 @@ spec:
       requests:
         cpu: 10m
         memory: 32Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -124,10 +121,7 @@ spec:
         cpu: 10m
         memory: 32Mi
     schedulerName: ""
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -228,10 +222,7 @@ spec:
         cpu: 100m
         memory: 512Mi
     schedulerName: ""
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -322,10 +313,7 @@ spec:
       requests:
         cpu: 100m
         memory: 512Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -567,10 +555,7 @@ spec:
       host: mimir.example.com
       tls:
         termination: edge
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       clusterIP: null
@@ -754,10 +739,7 @@ spec:
           pattern = .*
           intervals = 0:1s
           retentions = 10s:8d,10min:1y
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+      securityContext: {}
       service:
         annotations: {}
         labels: {}
@@ -796,10 +778,7 @@ spec:
         requests:
           cpu: 100m
           memory: 512Mi
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+      securityContext: {}
       service:
         annotations: {}
         labels: {}
@@ -856,10 +835,7 @@ spec:
         requests:
           cpu: 100m
           memory: 128Mi
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+      securityContext: {}
       service:
         annotations: {}
         labels: {}
@@ -938,10 +914,7 @@ spec:
         cpu: 100m
         memory: 512Mi
     schedulerName: ""
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -993,10 +966,7 @@ spec:
       pullPolicy: IfNotPresent
       repository: memcached
       tag: 1.6.17-alpine
-    podSecurityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    podSecurityContext: {}
     priorityClassName: null
   memcachedExporter:
     containerSecurityContext:
@@ -1799,10 +1769,7 @@ spec:
     podAnnotations: {}
     podDisruptionBudget: {}
     podLabels: {}
-    podSecurityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    podSecurityContext: {}
     priorityClassName: null
     readinessProbe:
       httpGet:
@@ -1872,10 +1839,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -1917,10 +1881,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -1965,10 +1926,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -2014,10 +1972,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -2034,7 +1989,7 @@ spec:
       whenUnsatisfiable: ScheduleAnyway
   rbac:
     create: true
-    fixedIdentities:
+    securityContext:
       fsGroup: 10001
       runAsGroup: 10001
       runAsNonRoot: true
@@ -2142,10 +2097,7 @@ spec:
       requests:
         cpu: 100m
         memory: 128Mi
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -2217,10 +2169,7 @@ spec:
         cpu: 100m
         memory: 512Mi
     schedulerName: ""
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
     service:
       annotations: {}
       labels: {}
@@ -2263,8 +2212,5 @@ spec:
     extraEnvFrom: []
     initContainers: []
     priorityClassName: null
-    securityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
+    securityContext: {}
   useExternalConfig: false
