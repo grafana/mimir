@@ -170,7 +170,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 }
 
 func (t *Mimir) initVault() (services.Service, error) {
-	if !t.Cfg.VaultEnabled {
+	if !t.Cfg.Vault.Enabled {
 		return nil, nil
 	}
 
@@ -186,6 +186,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
 	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 

@@ -114,9 +114,6 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
-# (experimental)
-[vault_enabled: <boolean> | default = ]
-
 # (experimental) How long to wait between SIGTERM and shutdown. After receiving
 # SIGTERM, Mimir will report not-ready status via /ready endpoint.
 # CLI flag: -shutdown-delay
@@ -206,6 +203,10 @@ activity_tracker:
   [max_entries: <int> | default = 1024]
 
 vault:
+  # (experimental) Enables fetching of keys and certificates from Vault
+  # CLI flag: -vault.enabled
+  [enabled: <boolean> | default = false]
+
   # (experimental) Location of the Vault server
   # CLI flag: -vault.url
   [url: <string> | default = ""]

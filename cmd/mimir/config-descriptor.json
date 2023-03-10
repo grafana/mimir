@@ -37,16 +37,6 @@
     },
     {
       "kind": "field",
-      "name": "vault_enabled",
-      "required": false,
-      "desc": "",
-      "fieldValue": null,
-      "fieldDefaultValue": false,
-      "fieldType": "boolean",
-      "fieldCategory": "experimental"
-    },
-    {
-      "kind": "field",
       "name": "shutdown_delay",
       "required": false,
       "desc": "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.",
@@ -8454,6 +8444,17 @@
       "required": false,
       "desc": "",
       "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "Enables fetching of keys and certificates from Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "vault.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
         {
           "kind": "field",
           "name": "url",

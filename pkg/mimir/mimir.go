@@ -99,7 +99,6 @@ type Config struct {
 	Target                          flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
-	VaultEnabled                    bool                   `yaml:"vault_enabled" category:"experimental"`
 	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
 	PrintConfig                     bool                   `yaml:"-"`

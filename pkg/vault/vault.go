@@ -13,12 +13,15 @@ import (
 
 // Config for the Vault used to fetch secrets
 type Config struct {
+	Enabled bool `yaml:"enabled" category:"experimental"`
+
 	URL       string `yaml:"url" category:"experimental"`
 	Token     string `yaml:"token" category:"experimental"`
 	MountPath string `yaml:"mount_path" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, "vault.enabled", false, "Enables fetching of keys and certificates from Vault")
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
 	f.StringVar(&cfg.Token, "vault.token", "", "Token used to authenticate with Vault")
 	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
