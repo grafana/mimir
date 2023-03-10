@@ -956,7 +956,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
 
-			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.logger)
+			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
@@ -992,7 +992,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}, nil
 }
 
-func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, logger log.Logger) ([]string, error) {
+func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger) ([]string, error) {
 	names, ok := fetchCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
 	if ok {
 		return names, nil
@@ -1013,7 +1013,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
 	seriesSetsIterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
-		5000,
+		seriesPerBatch,
 		indexr.block.userID,
 		indexr,
 		indexr.block.indexCache,
