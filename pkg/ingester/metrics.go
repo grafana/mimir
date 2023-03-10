@@ -268,7 +268,7 @@ func newIngesterMetrics(
 
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_open_duration_seconds",
-			Help: "The total time it takes to open all existing TSDBs. This time also includes the TSDBs WAL replay duration.",
+			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
 		}),
 
 		discarded: newDiscardedMetrics(r),
