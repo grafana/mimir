@@ -587,8 +587,6 @@ github.com/hashicorp/go-secure-stdlib/strutil
 github.com/hashicorp/go-sockaddr
 # github.com/hashicorp/go-uuid v1.0.3
 ## explicit
-# github.com/hashicorp/go-version v1.6.0
-## explicit
 # github.com/hashicorp/golang-lru v0.6.0
 ## explicit; go 1.12
 github.com/hashicorp/golang-lru/simplelru
@@ -719,11 +717,11 @@ github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.69.0
-## explicit; go 1.18
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.73.0
+## explicit; go 1.19
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.69.0
-## explicit; go 1.18
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.73.0
+## explicit; go 1.19
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite
 # github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 ## explicit; go 1.11
@@ -1030,14 +1028,11 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
-# go.opentelemetry.io/collector v0.57.2
-## explicit; go 1.17
-go.opentelemetry.io/collector/consumer/consumererror
-# go.opentelemetry.io/collector/featuregate v0.69.0
-## explicit; go 1.18
+# go.opentelemetry.io/collector/featuregate v0.73.0
+## explicit; go 1.19
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.0.0-rc3.0.20230109164642-7d168dd20efd
-## explicit; go 1.18
+# go.opentelemetry.io/collector/pdata v1.0.0-rc7
+## explicit; go 1.19
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
 go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/logs/v1
@@ -1051,15 +1046,11 @@ go.opentelemetry.io/collector/pdata/internal/data/protogen/trace/v1
 go.opentelemetry.io/collector/pdata/internal/json
 go.opentelemetry.io/collector/pdata/internal/otlp
 go.opentelemetry.io/collector/pdata/pcommon
-go.opentelemetry.io/collector/pdata/plog
-go.opentelemetry.io/collector/pdata/plog/internal/plogjson
 go.opentelemetry.io/collector/pdata/pmetric
 go.opentelemetry.io/collector/pdata/pmetric/internal/pmetricjson
 go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
-go.opentelemetry.io/collector/pdata/ptrace
-go.opentelemetry.io/collector/pdata/ptrace/internal/ptracejson
-# go.opentelemetry.io/collector/semconv v0.69.0
-## explicit; go 1.18
+# go.opentelemetry.io/collector/semconv v0.73.0
+## explicit; go 1.19
 go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
 ## explicit; go 1.18

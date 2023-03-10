@@ -173,6 +173,11 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 		})
 	}
 
+	histograms := make([]mimirpb.Histogram, 0, len(promTs.Histograms))
+	for _, histogram := range promTs.Histograms {
+		histograms = append(histograms, promToMimirHistogram(histogram))
+	}
+
 	exemplars := make([]mimirpb.Exemplar, 0, len(promTs.Exemplars))
 	for _, exemplar := range promTs.Exemplars {
 		labels := make([]mimirpb.LabelAdapter, 0, len(exemplar.Labels))
@@ -193,9 +198,46 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = labels
 	ts.Samples = samples
+	ts.Histograms = histograms
 	ts.Exemplars = exemplars
 
 	return mimirpb.PreallocTimeseries{TimeSeries: ts}
+}
+
+func promToMimirHistogram(h prompb.Histogram) mimirpb.Histogram {
+	pSpans := make([]mimirpb.BucketSpan, len(h.PositiveSpans))
+	for _, span := range h.PositiveSpans {
+		pSpans = append(
+			pSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+	nSpans := make([]mimirpb.BucketSpan, len(h.NegativeSpans))
+	for _, span := range h.NegativeSpans {
+		nSpans = append(
+			nSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+
+	return mimirpb.Histogram{
+		Count:          &mimirpb.Histogram_CountInt{CountInt: h.GetCountInt()},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()},
+		NegativeSpans:  nSpans,
+		NegativeDeltas: h.NegativeDeltas,
+		NegativeCounts: h.NegativeCounts,
+		PositiveSpans:  pSpans,
+		PositiveDeltas: h.PositiveDeltas,
+		PositiveCounts: h.PositiveCounts,
+		Timestamp:      h.Timestamp,
+	}
 }
 
 // TimeseriesToOTLPRequest is used in tests.
@@ -215,15 +257,35 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			attributes.PutStr(l.Name, l.Value)
 		}
 
-		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-		metric.SetName(name)
-		metric.SetEmptyGauge()
+		rm := d.ResourceMetrics()
+		sm := rm.AppendEmpty().ScopeMetrics()
 
-		for _, sample := range ts.Samples {
-			datapoint := metric.Gauge().DataPoints().AppendEmpty()
-			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
-			datapoint.SetDoubleValue(sample.Value)
-			attributes.CopyTo(datapoint.Attributes())
+		if len(ts.Samples) > 0 {
+			metric := sm.AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName(name)
+			metric.SetEmptyGauge()
+			for _, sample := range ts.Samples {
+				datapoint := metric.Gauge().DataPoints().AppendEmpty()
+				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
+				datapoint.SetDoubleValue(sample.Value)
+				attributes.CopyTo(datapoint.Attributes())
+			}
+		}
+
+		if len(ts.Histograms) > 0 {
+			metric := sm.AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName(name + "_hist")
+			metric.SetEmptyExponentialHistogram()
+			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			for _, histogram := range ts.Histograms {
+				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(histogram.Timestamp)*1000000)))
+				datapoint.SetScale(histogram.Schema)
+				datapoint.SetCount(histogram.GetCountInt())
+				datapoint.SetSum(histogram.GetSum())
+				datapoint.SetZeroCount(histogram.GetZeroCountInt())
+				attributes.CopyTo(datapoint.Attributes())
+			}
 		}
 	}
 

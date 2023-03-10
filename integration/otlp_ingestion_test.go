@@ -13,11 +13,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestOTLPIngestion(t *testing.T) {
@@ -82,7 +82,7 @@ func TestOTLPIngestion(t *testing.T) {
 				{Name: "foo", Value: "bar"},
 			},
 			Histograms: []prompb.Histogram{
-				remote.HistogramToHistogramProto(1337, tsdb.GenerateTestHistograms(1)[0]),
+				remote.HistogramToHistogramProto(1337, test.GenerateTestHistograms(1)[0]),
 			},
 		},
 	}

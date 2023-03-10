@@ -115,14 +115,14 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 // The bucket indexes conversion was adjusted, since OTel exp. histogram bucket
 // index 0 corresponds to the range (1, base] while Prometheus bucket index 0
 // to the range (base 1].
-func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets) ([]*prompb.BucketSpan, []int64) {
+func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets) ([]prompb.BucketSpan, []int64) {
 	bucketCounts := buckets.BucketCounts()
 	if bucketCounts.Len() == 0 {
 		return nil, nil
 	}
 
 	var (
-		spans         []*prompb.BucketSpan
+		spans         []prompb.BucketSpan
 		deltas        []int64
 		prevCount     int64
 		nextBucketIdx int32
@@ -148,7 +148,7 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets) 
 			// at the very beginning, or because we have found a gap
 			// of more than two buckets. The constant 2 is copied from the logic in
 			// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-			spans = append(spans, &prompb.BucketSpan{
+			spans = append(spans, prompb.BucketSpan{
 				Offset: delta,
 				Length: 0,
 			})
