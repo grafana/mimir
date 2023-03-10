@@ -111,6 +111,10 @@ type BucketStore struct {
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
 
+	// numChunksRangesPerSeries controls into how many ranges the chunks of each series from each block are split.
+	// This value is effectively the number of chunks cache items per series per block.
+	numChunksRangesPerSeries int
+
 	// fineGrainedChunksCachingEnabled controls whether to use the per series chunks caching
 	// or rely on the transparent caching bucket.
 	fineGrainedChunksCachingEnabled bool
@@ -227,6 +231,7 @@ func NewBucketStore(
 	fetcher block.MetadataFetcher,
 	dir string,
 	maxSeriesPerBatch int,
+	numChunksRangesPerSeries int,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioners blockPartitioners,
@@ -260,6 +265,7 @@ func NewBucketStore(
 		metrics:                     metrics,
 		userID:                      userID,
 		maxSeriesPerBatch:           maxSeriesPerBatch,
+		numChunksRangesPerSeries:    numChunksRangesPerSeries,
 	}
 
 	for _, option := range options {
@@ -977,6 +983,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				cachedSeriesHasher{blockSeriesHashCache},
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
+				s.numChunksRangesPerSeries,
 				stats,
 				s.logger,
 			)
