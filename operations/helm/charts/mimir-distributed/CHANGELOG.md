@@ -38,6 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Do not generate query-frontend-headless service if query scheduler is enabled. Fixes parity with jsonnet. #4353
 * [BUGFIX] Apply `clusterLabel` to ServiceMonitors for kube-state-metrics, kubelet, and cadvisor. #4126
 * [BUGFIX] Add http port in distributor headless service. Fixes parity with jsonnet. #4392
+* [BUGFIX] Generate the pod security context on the pod level in graphite web deployment, instead of on container level. #4272
 
 ## 4.2.0
 

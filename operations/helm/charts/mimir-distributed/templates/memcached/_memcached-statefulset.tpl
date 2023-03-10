@@ -41,7 +41,7 @@ spec:
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
       securityContext:
-        {{- include "mimir.lib.podSecurityContext" (dict "ctx" $.ctx "component" $.component) | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" $.ctx "component" "memcached") | nindent 8 }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       nodeSelector:
