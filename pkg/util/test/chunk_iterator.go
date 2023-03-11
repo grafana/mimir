@@ -11,7 +11,7 @@ import (
 )
 
 // RequireIteratorFloat checks that the iterator contains the expected
-// value and type at the position.
+// float value and type at the position.
 func RequireIteratorFloat(t *testing.T, expectedTs int64, expectedV float64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 	require.Equal(t, chunkenc.ValFloat, valueType)
 	ts, s := iter.At()
@@ -25,7 +25,7 @@ func RequireIteratorIthFloat(t *testing.T, i int64, iter chunkenc.Iterator, valu
 }
 
 // RequireIteratorHistogram checks that the iterator contains the expected
-// value and type at the position.
+// histogram value and type at the position. Also test automatic conversion to float histogram.
 func RequireIteratorHistogram(t *testing.T, expectedTs int64, expectedV *histogram.Histogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 	require.Equal(t, chunkenc.ValHistogram, valueType)
 	ts, h := iter.AtHistogram()
@@ -44,7 +44,7 @@ func RequireIteratorIthHistogram(t *testing.T, i int64, iter chunkenc.Iterator, 
 }
 
 // RequireIteratorFloatHistogram checks that the iterator contains the expected
-// value and type at the position.
+// float histogram value and type at the position.
 func RequireIteratorFloatHistogram(t *testing.T, expectedTs int64, expectedV *histogram.FloatHistogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
 	require.Equal(t, chunkenc.ValFloatHistogram, valueType)
 	ts, h := iter.AtFloatHistogram()

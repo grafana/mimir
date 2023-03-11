@@ -104,67 +104,26 @@ func TestTimeSeriesIterator(t *testing.T) {
 	}
 
 	it := ts.Iterator(nil)
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(1233)) // Seek to early part
-	i, fh := it.AtFloatHistogram()
-	require.EqualValues(t, 1233, i)
-	require.Equal(t, generateTestFloatHistogram(8), fh)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	i, v := it.At()
-	require.EqualValues(t, 1234, i)
-	require.Equal(t, 3.14, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1235)) // Seek to middle
-	i, v = it.At()
-	require.EqualValues(t, 1235, i)
-	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1235)) // Seek to same place
-	i, v = it.At()
-	require.EqualValues(t, 1235, i)
-	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	i, v = it.At()
-	require.EqualValues(t, 1236, i)
-	require.Equal(t, 3.16, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1237)) // Seek to end
-	i, v = it.At()
-	require.EqualValues(t, 1237, i)
-	require.Equal(t, 3.17, v)
-	require.Equal(t, chunkenc.ValNone, it.Seek(1238)) // Seek to past end
-	require.Equal(t, chunkenc.ValNone, it.Seek(1238)) // Ensure that seeking to same end still returns ValNone
+
+	test.RequireIteratorFloatHistogram(t, 1233, generateTestFloatHistogram(8), it, it.Seek(1233)) // Seek to early part
+	test.RequireIteratorFloat(t, 1234, 3.14, it, it.Next())
+	test.RequireIteratorFloat(t, 1235, 3.15, it, it.Seek(1235)) // Seek to middle
+	test.RequireIteratorFloat(t, 1235, 3.15, it, it.Seek(1235)) // Seek to same place
+	test.RequireIteratorFloat(t, 1236, 3.16, it, it.Next())
+	test.RequireIteratorFloat(t, 1237, 3.17, it, it.Seek(1237)) // Seek to end
+	require.Equal(t, chunkenc.ValNone, it.Seek(1238))           // Seek to past end
+	require.Equal(t, chunkenc.ValNone, it.Seek(1238))           // Ensure that seeking to same end still returns ValNone
 
 	it = ts.Iterator(it)
-	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	i, h := it.AtHistogram()
-	require.EqualValues(t, 1232, i)
-	require.Equal(t, generateTestHistogram(7), h)
-	// Test auto conversion
-	i, fh = it.AtFloatHistogram()
-	require.EqualValues(t, 1232, i)
-	require.Equal(t, generateTestHistogram(7).ToFloat(), fh)
 
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-	i, fh = it.AtFloatHistogram()
-	require.EqualValues(t, 1233, i)
-	require.Equal(t, generateTestFloatHistogram(8), fh)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	i, v = it.At()
-	require.EqualValues(t, 1234, i)
-	require.Equal(t, 3.14, v)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	i, v = it.At()
-	require.EqualValues(t, 1235, i)
-	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1232)) // Ensure seek doesn't do anything if already past seek target.
-	i, v = it.At()
-	require.EqualValues(t, 1235, i)
-	require.Equal(t, 3.15, v)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	i, v = it.At()
-	require.EqualValues(t, 1236, i)
-	require.Equal(t, 3.16, v)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1237))
-	i, v = it.At()
-	require.EqualValues(t, 1237, i)
-	require.Equal(t, 3.17, v)
+	test.RequireIteratorHistogram(t, 1232, generateTestHistogram(7), it, it.Next())
+	test.RequireIteratorFloatHistogram(t, 1233, generateTestFloatHistogram(8), it, it.Next())
+	test.RequireIteratorFloat(t, 1234, 3.14, it, it.Next())
+	test.RequireIteratorFloat(t, 1235, 3.15, it, it.Next())
+	test.RequireIteratorFloat(t, 1235, 3.15, it, it.Seek(1232)) // Ensure seek doesn't do anything if already past seek target.
+	test.RequireIteratorFloat(t, 1236, 3.16, it, it.Next())
+	test.RequireIteratorFloat(t, 1237, 3.17, it, it.Next())
 	require.Equal(t, chunkenc.ValNone, it.Next())
+
 	it.At() // Ensure an At after a full iteration doesn't cause a panic
 }
