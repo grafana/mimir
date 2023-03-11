@@ -6,12 +6,14 @@
 package querier
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/propertytest"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -126,4 +128,39 @@ func TestTimeSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
 	it.At() // Ensure an At after a full iteration doesn't cause a panic
+}
+
+func TestTimeSeriesIteratorProperties(t *testing.T) {
+	propertytest.RequireIteratorProperties(t, generateTimeSeriesIterator)
+}
+
+func generateTimeSeriesIterator(r *rand.Rand) propertytest.IteratorValue {
+	iv := propertytest.IteratorValue{}
+	size := r.Intn(10) // max 10 items
+	series := mimirpb.TimeSeries{
+		Samples:    make([]mimirpb.Sample, 0, size),
+		Histograms: make([]mimirpb.Histogram, 0, size),
+	}
+	types := []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram}
+	timestamp := r.Int63n(10)
+	iv.Mint = timestamp
+	for i := 0; i < size; i++ {
+		iv.Maxt = timestamp
+		switch types[r.Intn(len(types))] {
+		case chunkenc.ValFloat:
+			v := r.Float64()
+			series.Samples = append(series.Samples, mimirpb.Sample{TimestampMs: timestamp, Value: v})
+			iv.Values = append(iv.Values, mimirpb.Sample{TimestampMs: timestamp, Value: v})
+		case chunkenc.ValHistogram:
+			series.Histograms = append(series.Histograms, mimirpb.FromHistogramToHistogramProto(timestamp, generateTestHistogram(r.Intn(1000))))
+			iv.Values = append(iv.Values, mimirpb.FromHistogramToHistogramProto(timestamp, generateTestHistogram(r.Intn(1000))))
+		case chunkenc.ValFloatHistogram:
+			series.Histograms = append(series.Histograms, mimirpb.FromFloatHistogramToHistogramProto(timestamp, generateTestFloatHistogram(r.Intn(1000))))
+			iv.Values = append(iv.Values, mimirpb.FromFloatHistogramToHistogramProto(timestamp, generateTestFloatHistogram(r.Intn(1000))))
+		}
+		timestamp += 1 + r.Int63n(10) // Only generate series that are strictly monotone
+	}
+	tseries := timeseries{series: series}
+	iv.It = tseries.Iterator(nil)
+	return iv
 }
