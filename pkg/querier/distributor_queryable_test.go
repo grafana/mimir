@@ -442,6 +442,30 @@ func TestIngesterStreamingMixedTypedResults(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
+func TestDistributorQuerier_LabelNames(t *testing.T) {
+	const mint, maxt = 0, 10
+
+	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	labelNames := []string{"foo", "job"}
+
+	t.Run("with matchers", func(t *testing.T) {
+		t.Run("queryLabelNamesWithMatchers=true", func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
+				Return(labelNames, nil)
+
+			queryable := newDistributorQueryable(d, nil, 0, log.NewNopLogger())
+			querier, err := queryable.Querier(context.Background(), mint, maxt)
+			require.NoError(t, err)
+
+			names, warnings, err := querier.LabelNames(someMatchers...)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			assert.Equal(t, labelNames, names)
+		})
+	})
+}
+
 func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	const (
 		numSeries          = 10000
