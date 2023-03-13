@@ -21,8 +21,8 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 - Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/data-configuration/agent/install_agent/).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
-> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../architecture/deployment-modes/index.md#monolithic-mode" >}}).
-> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../architecture/deployment-modes/index.md" >}}).
+> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../operators-guide/architecture/deployment-modes/index.md#monolithic-mode" >}}).
+> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../operators-guide/architecture/deployment-modes/index.md" >}}).
 
 ## Download Grafana Mimir
 
@@ -50,7 +50,7 @@ In a terminal, run one of the following commands:
 To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file named `demo.yaml`:
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../../configurations/demo.yaml)
+[embedmd]:# (../../../configurations/demo.yaml)
 ```yaml
 # Do not use this configuration in production.
 # It is for demonstration purposes only.
@@ -101,7 +101,7 @@ store_gateway:
 
 > **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
 > If possible and to help us understand more about how the open source community runs Mimir, we kindly ask you to keep the usage reporting feature enabled.
-> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
+> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../operators-guide/configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
 
 ## Run Grafana Mimir
 
