@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 type mockSampleAndChunkQueryable struct {
@@ -44,14 +45,14 @@ func (m mockSampleAndChunkQueryable) ChunkQuerier(ctx context.Context, mint, max
 
 type mockQuerier struct {
 	storage.Querier
-	matrix model.Matrix
+	seriesSet storage.SeriesSet
 }
 
 func (m mockQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if sp == nil {
 		panic("mockQuerier: select params must be set")
 	}
-	return series.MatrixToSeriesSet(m.matrix)
+	return m.seriesSet
 }
 
 type mockChunkQuerier struct {
@@ -70,17 +71,13 @@ func TestSampledRemoteRead(t *testing.T) {
 	q := &mockSampleAndChunkQueryable{
 		queryableFn: func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return mockQuerier{
-				matrix: model.Matrix{
-					{
-						Metric: model.Metric{"foo": "bar"},
-						Values: []model.SamplePair{
-							{Timestamp: 0, Value: 0},
-							{Timestamp: 1, Value: 1},
-							{Timestamp: 2, Value: 2},
-							{Timestamp: 3, Value: 3},
-						},
-					},
-				},
+				seriesSet: series.NewConcreteSeriesSet([]storage.Series{
+					series.NewConcreteSeries(
+						labels.FromStrings("foo", "bar"),
+						[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+						[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+					),
+				}),
 			}, nil
 		},
 	}
@@ -123,6 +120,9 @@ func TestSampledRemoteRead(t *testing.T) {
 							{Value: 1, TimestampMs: 1},
 							{Value: 2, TimestampMs: 2},
 							{Value: 3, TimestampMs: 3},
+						},
+						Histograms: []mimirpb.Histogram{
+							mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
 						},
 					},
 				},

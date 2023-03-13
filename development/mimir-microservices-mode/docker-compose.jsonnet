@@ -31,6 +31,7 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.minio +
     self.prometheus +
+    self.grafana +
     self.grafana_agent +
     self.otel_collector +
     self.jaeger +
@@ -251,8 +252,28 @@ std.manifestYamlDoc({
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
       ],
-      volumes: ['./config:/etc/prometheus', '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml'],
+      volumes: [
+        './config:/etc/prometheus',
+        '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml',
+        '../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml',
+      ],
       ports: ['9090:9090'],
+    },
+  },
+
+  grafana:: {
+    grafana: {
+      image: 'grafana/grafana:9.4.3',
+      environment: [
+        'GF_AUTH_ANONYMOUS_ENABLED=true',
+        'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+      ],
+      volumes: [
+        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+        './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
+        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
+      ],
+      ports: ['3000:3000'],
     },
   },
 

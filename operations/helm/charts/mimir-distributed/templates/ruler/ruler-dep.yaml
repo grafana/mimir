@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ruler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

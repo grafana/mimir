@@ -33,14 +33,6 @@ patches:
       - op: remove
         path: /spec/ports/1
 
-  # TODO(logiraptor): Helm doesn't add an http port to distributor-headless
-  - target:
-      kind: Service
-      name: 'mimir-(distributor-headless)'
-    patch: |-
-      - op: remove
-        path: /spec/ports/0
-
   # TODO(logiraptor): Helm's compactor service is not headless
   - target:
       kind: Service

@@ -69,6 +69,13 @@ type Limits interface {
 
 	// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 	NativeHistogramsIngestionEnabled(userID string) bool
+
+	// ResultsCacheTTL returns TTL for cached results for query that doesn't fall into out of order window, or
+	// if out of order ingestion is disabled.
+	ResultsCacheTTL(userID string) time.Duration
+
+	// ResultsCacheForOutOfOrderWindowTTL returns TTL for cached results for query that falls into out-of-order ingestion window.
+	ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -100,7 +107,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	// Clamp the time range based on the max query lookback and block retention period.
 	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
-	maxLookback := util_math.MinDuration(blocksRetentionPeriod, maxQueryLookback)
+	maxLookback := util_math.Min(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
 		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 

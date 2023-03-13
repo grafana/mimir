@@ -406,6 +406,7 @@ Examples:
   "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
+  "memcached" "memcached"
   "metadata-cache" "metadata-cache"
   "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"

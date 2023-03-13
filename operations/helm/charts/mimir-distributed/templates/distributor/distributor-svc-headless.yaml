@@ -15,6 +15,10 @@ spec:
   type: ClusterIP
   clusterIP: None
   ports:
+    - port: {{ include "mimir.serverHttpListenPort" .}}
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
     - port: {{ include "mimir.serverGrpcListenPort" . }}
       protocol: TCP
       name: grpc

@@ -39,6 +39,9 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+const resultsCacheTTL = 24 * time.Hour
+const resultsCacheLowerTTL = 10 * time.Minute
+
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	var (
 		dayOneStartTime   = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
@@ -233,7 +236,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		true,
 		24*time.Hour,
 		false,
-		mockLimits{maxCacheFreshness: 10 * time.Minute},
+		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -444,7 +447,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		true,
 		24*time.Hour,
 		true, // caching of step-unaligned requests is enabled in this test.
-		mockLimits{maxCacheFreshness: 10 * time.Minute},
+		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -600,7 +603,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				true,
 				24*time.Hour,
 				false,
-				mockLimits{maxCacheFreshness: maxCacheFreshness},
+				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
 				cacheSplitter,
@@ -1048,7 +1051,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				true,
 				24*time.Hour,
 				false,
-				mockLimits{},
+				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
 				cacheSplitter,
@@ -1093,7 +1096,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		true,
 		24*time.Hour,
 		false,
-		mockLimits{},
+		mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -1112,8 +1115,8 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys and some extends filled up on partial cache hit", func(t *testing.T) {
-		mw.storeCacheExtents("key-1", nil, []Extent{mkExtent(10, 20)})
-		mw.storeCacheExtents("key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents("key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
+		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1126,7 +1129,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		require.NoError(t, err)
 		cacheBackend.StoreAsync(map[string][]byte{cacheHashKey("key-1"): buf}, 0)
 
-		mw.storeCacheExtents("key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1697,7 +1700,9 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	mcache := cache.NewMockCache()
 	m := splitAndCacheMiddleware{
 		limits: mockLimits{
-			outOfOrderTimeWindow: time.Hour,
+			outOfOrderTimeWindow:            time.Hour,
+			resultsCacheTTL:                 resultsCacheTTL,
+			resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL,
 		},
 		cache: mcache,
 	}

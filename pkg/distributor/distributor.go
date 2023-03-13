@@ -81,8 +81,7 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 )
 
-// Distributor is a storage.SampleAppender and a client.Querier which
-// forwards appends and queries to individual ingesters.
+// Distributor forwards appends and queries to individual ingesters.
 type Distributor struct {
 	services.Service
 
@@ -903,12 +902,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
 		for _, ts := range req.Timeseries {
 			for _, s := range ts.Samples {
-				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
-				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
+				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, s.TimestampMs)
+				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, s.TimestampMs)
 			}
 			for _, h := range ts.Histograms {
-				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, h.Timestamp)
-				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, h.Timestamp)
+				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, h.Timestamp)
 			}
 		}
 		// Update this metric even in case of errors.
