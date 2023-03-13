@@ -7,7 +7,6 @@ package iterators
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -26,45 +25,45 @@ var (
 	generateTestFloatHistogram = test.GenerateTestFloatHistogram
 )
 
-type chunkbound struct {
+type chunkBounds struct {
 	mint, maxt model.Time
 }
 
-type chunkencoding struct {
+type chunkEncoding struct {
 	enc          chunk.Encoding
 	assertSample func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType)
 }
 
 func TestChunkMergeIterator(t *testing.T) {
 	for i, tc := range []struct {
-		chunkbounds []chunkbound
+		chunkBounds []chunkBounds
 		mint, maxt  int64
 	}{
 		{
-			chunkbounds: []chunkbound{{0, 100}},
+			chunkBounds: []chunkBounds{{0, 100}},
 			maxt:        100,
 		},
 		{
-			chunkbounds: []chunkbound{{0, 100}, {0, 100}},
+			chunkBounds: []chunkBounds{{0, 100}, {0, 100}},
 			maxt:        100,
 		},
 		{
-			chunkbounds: []chunkbound{{0, 100}, {50, 150}, {100, 200}},
+			chunkBounds: []chunkBounds{{0, 100}, {50, 150}, {100, 200}},
 			maxt:        200,
 		},
 		{
-			chunkbounds: []chunkbound{{0, 100}, {100, 200}},
+			chunkBounds: []chunkBounds{{0, 100}, {100, 200}},
 			maxt:        200,
 		},
 	} {
-		for _, encoding := range []chunkencoding{
+		for _, encoding := range []chunkEncoding{
 			{enc: chunk.PrometheusXorChunk, assertSample: test.RequireIteratorIthFloat},
 			{enc: chunk.PrometheusHistogramChunk, assertSample: test.RequireIteratorIthHistogram},
 			{enc: chunk.PrometheusFloatHistogramChunk, assertSample: test.RequireIteratorIthFloatHistogram}} {
 
-			t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%v/%s", i, encoding.enc), func(t *testing.T) {
 				chunks := []chunk.Chunk{}
-				for _, bounds := range tc.chunkbounds {
+				for _, bounds := range tc.chunkBounds {
 					chunks = append(chunks, mkChunk(t, bounds.mint, bounds.maxt, 1*time.Millisecond, encoding.enc))
 				}
 				iter := NewChunkMergeIterator(chunks, 0, 0)
@@ -102,7 +101,7 @@ func TestChunkMergeIteratorMixed(t *testing.T) {
 }
 
 func TestChunkMergeIteratorSeek(t *testing.T) {
-	for _, encoding := range []chunkencoding{
+	for _, encoding := range []chunkEncoding{
 		{enc: chunk.PrometheusXorChunk, assertSample: test.RequireIteratorIthFloat},
 		{enc: chunk.PrometheusHistogramChunk, assertSample: test.RequireIteratorIthHistogram},
 		{enc: chunk.PrometheusFloatHistogramChunk, assertSample: test.RequireIteratorIthFloatHistogram}} {
@@ -140,6 +139,9 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 	maxt := int64(200)
 
 	assertSample := func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
+		// The merge iterator prefers the value with more information if
+		// timestamps collide (for float samples it used to randomly drop one)
+		// thus the float values from 50-75 are masked by histogram values.
 		if i < 50 {
 			test.RequireIteratorIthFloat(t, i, iter, valueType)
 			return
