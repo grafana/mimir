@@ -311,10 +311,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 }
 
 // TestBatchMergeChunks is a regression test to catch one particular case
-//
-//	when the Batch merger iterator was corrupting memory by not copying
-//	Batches by value because the Batch itself was not possible to copy
-//	by value.
+// when the Batch merger iterator was corrupting memory by not copying
+// Batches by value because the Batch itself was not possible to copy
+// by value.
 func TestBatchMergeChunks(t *testing.T) {
 	var (
 		logger     = log.NewNopLogger()
@@ -332,9 +331,9 @@ func TestBatchMergeChunks(t *testing.T) {
 	s2 := []mimirpb.Sample{}
 
 	for i := 0; i < 12; i++ {
-		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).Unix() * 1000})
+		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).UnixMilli()})
 		if i != 9 { // let series 3 miss a point
-			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).Unix() * 1000})
+			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).UnixMilli()})
 		}
 	}
 
@@ -386,12 +385,7 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 2, m.Len())
-	require.Equal(t, len(m[0].Points), len(m[1].Points))
-	for i, point := range m[0].Points {
-		otherpoint := m[1].Points[i]
-		require.Equal(t, point.T, otherpoint.T)
-		require.Equal(t, point.V, otherpoint.V)
-	}
+	require.ElementsMatch(t, m[0].Points, m[1].Points)
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
