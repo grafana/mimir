@@ -85,8 +85,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 		"-blocks-storage.tsdb.retention-period":    "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
 
 		// Enable protobuf format so that we can use native histograms.
-		"-query-frontend.query-result-response-format":  "protobuf",
-		"-ingester.native-histograms-ingestion-enabled": "true",
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start dependencies in common with all test cases.
