@@ -76,7 +76,12 @@ func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	if i.valType != chunkenc.ValHistogram && i.valType != chunkenc.ValFloatHistogram {
+	if i.valType == chunkenc.ValHistogram {
+		// use cache as histogram
+		t, h := i.AtHistogram()
+		return t, h.ToFloat()
+	}
+	if i.valType != chunkenc.ValFloatHistogram {
 		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of different type %v", i.valType))
 	}
 
@@ -84,12 +89,6 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 		return i.cachedTime, i.cachedFloatHistogram
 	}
 
-	if i.valType == chunkenc.ValHistogram {
-		t, h := i.it.AtHistogram()
-		i.cachedTime, i.cachedFloatHistogram = t, h.ToFloat()
-		i.cacheValid = true
-		return i.cachedTime, i.cachedFloatHistogram
-	}
 	i.cachedTime, i.cachedFloatHistogram = i.it.AtFloatHistogram()
 	i.cacheValid = true
 	return i.cachedTime, i.cachedFloatHistogram
