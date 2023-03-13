@@ -9,26 +9,11 @@ import (
 
 	hashivault "github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReadSecret(t *testing.T) {
 	mockKVStore := newMockKVStore()
-	mockKVStore.On("Get", mock.Anything, "test/secret1").Return(&hashivault.KVSecret{
-		Data: map[string]interface{}{
-			"value": "foo1",
-		},
-	}, nil)
-
-	mockKVStore.On("Get", mock.Anything, "test/secret2").Return(&hashivault.KVSecret{
-		Data: map[string]interface{}{
-			"value": "foo2",
-		},
-	}, nil)
-
-	mockKVStore.On("Get", mock.Anything, "test/secret3").Return(&hashivault.KVSecret{}, errors.New("vault error"))
-
 	mimirVaultClient := Vault{
 		KVStore: mockKVStore,
 	}
@@ -52,6 +37,14 @@ func TestReadSecret(t *testing.T) {
 			path:        "test/secret3",
 			expectError: true,
 		},
+		"secret returned is nil": {
+			path:        "test/secret4",
+			expectError: true,
+		},
+		"secret data is not a string": {
+			path:        "test/secret5",
+			expectError: true,
+		},
 	}
 
 	for testName, testCase := range tests {
@@ -68,14 +61,53 @@ func TestReadSecret(t *testing.T) {
 }
 
 type mockKVStore struct {
-	mock.Mock
+	values map[string]mockValue
+}
+
+type mockValue struct {
+	secret *hashivault.KVSecret
+	err    error
 }
 
 func newMockKVStore() *mockKVStore {
-	return &mockKVStore{}
+	return &mockKVStore{
+		values: map[string]mockValue{
+			"test/secret1": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo1",
+					},
+				},
+				err: nil,
+			},
+			"test/secret2": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo2",
+					},
+				},
+				err: nil,
+			},
+			"test/secret3": {
+				secret: nil,
+				err:    errors.New("non-existent path"),
+			},
+			"test/secret4": {
+				secret: nil,
+				err:    nil,
+			},
+			"test/secret5": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": 123,
+					},
+				},
+				err: nil,
+			},
+		},
+	}
 }
 
 func (m *mockKVStore) Get(ctx context.Context, path string) (*hashivault.KVSecret, error) {
-	args := m.Called(ctx, path)
-	return args.Get(0).(*hashivault.KVSecret), args.Error(1)
+	return m.values[path].secret, m.values[path].err
 }

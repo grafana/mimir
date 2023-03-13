@@ -36,8 +36,8 @@ type Vault struct {
 }
 
 func NewVault(cfg Config) (*Vault, error) {
-	if cfg.URL == "" || cfg.Token == "" || cfg.MountPath == "" {
-		return nil, errors.New("invalid vault configuration supplied")
+	if err := validateVaultConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	config := hashivault.DefaultConfig()
@@ -56,12 +56,37 @@ func NewVault(cfg Config) (*Vault, error) {
 	return vault, nil
 }
 
+func validateVaultConfig(cfg Config) error {
+	if cfg.URL == "" {
+		return errors.New("empty vault URL supplied")
+	}
+
+	if cfg.Token == "" {
+		return errors.New("empty vault authentication token supplied")
+	}
+
+	if cfg.MountPath == "" {
+		return errors.New("empty vault mount path supplied")
+	}
+
+	return nil
+}
+
 func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	secret, err := v.KVStore.Get(context.Background(), path)
+
 	if err != nil {
 		return nil, fmt.Errorf("unable to read secret from vault: %v", err)
 	}
 
-	data := []byte(secret.Data["value"].(string))
-	return data, nil
+	if secret == nil || secret.Data == nil {
+		return nil, errors.New("secret data is nil")
+	}
+
+	data, ok := secret.Data["value"].(string)
+	if !ok {
+		return nil, fmt.Errorf("secret data type is not string, found %#v", secret.Data["value"])
+	}
+
+	return []byte(data), nil
 }
