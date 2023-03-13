@@ -127,7 +127,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 			it := series.Iterator(nil)
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				require.True(t, sampleIx < testData.expectedSamples)
-				testData.assertSample(t, sampleIx+1, it, valType)
+				testData.assertSample(t, sampleIx+1, it, valType) // +1 because the chunk contains samples starting from timestamp 1, not 0
 				sampleIx++
 			}
 			// make sure we've got all expected samples
