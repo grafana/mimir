@@ -49,6 +49,7 @@ var (
 	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
 	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
 	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
+	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
 	errTLSFileNotAllowed                 = errors.New("setting TLS ca_file, cert_file or key_file is not allowed")
 	errSlackAPIURLFileNotAllowed         = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
 	errVictorOpsAPIKeyFileNotAllowed     = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
@@ -440,12 +441,19 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.BearerTokenFile != "" {
 		return errPasswordFileNotAllowed
 	}
-	if cfg.OAuth2 != nil && cfg.OAuth2.ClientSecretFile != "" {
-		return errOAuth2SecretFileNotAllowed
+	if cfg.OAuth2 != nil {
+		if cfg.OAuth2.ClientSecretFile != "" {
+			return errOAuth2SecretFileNotAllowed
+		}
+		// Mimir's "firewall" doesn't protect OAuth2 client, so we disallow Proxy settings here.
+		if cfg.OAuth2.ProxyURL.URL != nil {
+			return errProxyURLNotAllowed
+		}
+		if cfg.OAuth2.ProxyFromEnvironment {
+			return errProxyFromEnvironmentURLNotAllowed
+		}
 	}
-	if cfg.OAuth2 != nil && cfg.OAuth2.ProxyURL.URL != nil {
-		return errProxyURLNotAllowed
-	}
+	// We allow setting proxy config (cfg.ProxyConfig), because Mimir's "firewall" protects those calls.
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
 
