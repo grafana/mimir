@@ -111,7 +111,7 @@ func TestTimeSeriesIterator(t *testing.T) {
 	test.RequireIteratorFloat(t, 1235, 3.15, it, it.Seek(1235)) // Seek to same place
 	test.RequireIteratorFloat(t, 1236, 3.16, it, it.Next())
 	test.RequireIteratorFloat(t, 1237, 3.17, it, it.Seek(1237)) // Seek to end
-	require.Equal(t, chunkenc.ValNone, it.Seek(1238))           // Seek to past end
+	require.Equal(t, chunkenc.ValNone, it.Seek(1238))           // Seek past end
 	require.Equal(t, chunkenc.ValNone, it.Seek(1238))           // Ensure that seeking to same end still returns ValNone
 
 	it = ts.Iterator(it)
