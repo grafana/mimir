@@ -19,6 +19,8 @@ type chunkIterator struct {
 	chunk.Chunk
 	it chunk.Iterator
 
+	isExhausted bool
+
 	// At() is called often in the heap code, so caching its result seems like
 	// a good idea.
 	cacheValid  bool
@@ -33,7 +35,8 @@ func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
 
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
-	if int64(i.Through) < t {
+	if int64(i.Through) < t || i.isExhausted {
+		i.isExhausted = true
 		return chunkenc.ValNone
 	}
 
@@ -76,6 +79,9 @@ func (i *chunkIterator) AtT() int64 {
 }
 
 func (i *chunkIterator) Next() chunkenc.ValueType {
+	if i.isExhausted {
+		return chunkenc.ValNone
+	}
 	i.cacheValid = false
 	return i.it.Scan()
 }
