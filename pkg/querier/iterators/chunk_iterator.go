@@ -21,7 +21,7 @@ type chunkIterator struct {
 
 	valType chunkenc.ValueType
 
-	// At() is called often in the heap code, so caching its result seems like
+	// AtT() is called often in the heap code, so caching its result seems like
 	// a good idea.
 	cacheValid           bool
 	cachedTime           int64
@@ -95,15 +95,24 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 }
 
 func (i *chunkIterator) AtT() int64 {
+	if i.cacheValid {
+		return i.cachedTime
+	}
 	switch i.valType {
 	case chunkenc.ValFloat:
-		t, _ := i.At()
+		t, v := i.At()
+		i.cacheValid = true
+		i.cachedValue = v
 		return t
 	case chunkenc.ValHistogram:
-		t, _ := i.AtHistogram()
+		t, h := i.AtHistogram()
+		i.cacheValid = true
+		i.cachedHistogram = h
 		return t
 	case chunkenc.ValFloatHistogram:
-		t, _ := i.AtFloatHistogram()
+		t, fh := i.AtFloatHistogram()
+		i.cacheValid = true
+		i.cachedFloatHistogram = fh
 		return t
 	default:
 		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
