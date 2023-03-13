@@ -331,9 +331,9 @@ func TestBatchMergeChunks(t *testing.T) {
 	s2 := []mimirpb.Sample{}
 
 	for i := 0; i < 12; i++ {
-		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).UnixMilli()})
+		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
 		if i != 9 { // let series 3 miss a point
-			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i)*time.Second).UnixMilli()})
+			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
 		}
 	}
 
