@@ -561,37 +561,33 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 
 func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 	var (
-		c, overflow chunk.EncodedChunk
-		mint, maxt  int64
-		err         error
+		overflow chunk.EncodedChunk
+		err      error
 	)
 
 	chunks := []chunk.Chunk{}
-	ensureChunk := func(enc chunk.Encoding, t int64) {
-		if c == nil || c.Encoding() != enc {
-			if c != nil {
-				chunks = append(chunks, chunk.NewChunk(nil, c, model.Time(mint), model.Time(maxt)))
-			}
-			mint = t
-			maxt = t
-			c, err = chunk.NewForEncoding(enc)
+	ensureChunk := func(enc chunk.Encoding, ts int64) {
+		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != enc {
+			c, err := chunk.NewForEncoding(enc)
+			require.NoError(t, err)
+			chunks = append(chunks, chunk.NewChunk(nil, c, model.Time(ts), model.Time(ts)))
 			return
 		}
-		maxt = t
+		chunks[len(chunks)-1].Through = model.Time(ts)
 	}
 
 	for _, s := range samples {
 		switch s := s.(type) {
 		case mimirpb.Sample:
 			ensureChunk(chunk.PrometheusXorChunk, s.TimestampMs)
-			overflow, err = c.Add(model.SamplePair{Value: model.SampleValue(s.Value), Timestamp: model.Time(s.TimestampMs)})
+			overflow, err = chunks[len(chunks)-1].Data.Add(model.SamplePair{Value: model.SampleValue(s.Value), Timestamp: model.Time(s.TimestampMs)})
 		case mimirpb.Histogram:
 			if s.IsFloatHistogram() {
 				ensureChunk(chunk.PrometheusFloatHistogramChunk, s.Timestamp)
-				overflow, err = c.AddFloatHistogram(s.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&s))
+				overflow, err = chunks[len(chunks)-1].Data.AddFloatHistogram(s.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&s))
 			} else {
 				ensureChunk(chunk.PrometheusHistogramChunk, s.Timestamp)
-				overflow, err = c.AddHistogram(s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s))
+				overflow, err = chunks[len(chunks)-1].Data.AddHistogram(s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s))
 			}
 		default:
 			t.Errorf("convertToChunks - unhandled type: %T", s)
@@ -600,7 +596,6 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 		require.Nil(t, overflow)
 	}
 
-	chunks = append(chunks, chunk.NewChunk(nil, c, model.Time(mint), model.Time(maxt)))
 	clientChunks, err := chunkcompat.ToChunks(chunks)
 	require.NoError(t, err)
 
