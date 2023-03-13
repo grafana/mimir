@@ -289,8 +289,8 @@ func (q *BlocksStoreQueryable) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), q.subservices)
 }
 
-// Querier returns a new Querier on the storage.
-func (q *BlocksStoreQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+// OptionalQuerier returns a new Querier on the storage.
+func (q *BlocksStoreQueryable) OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
 	if s := q.State(); s != services.Running {
 		return nil, errors.Errorf("BlocksStoreQueryable is not running: %v", s)
 	}

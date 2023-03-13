@@ -36,12 +36,13 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 	now := time.Now()
 
 	tests := map[string]struct {
-		querySeries          bool
-		queryIngestersWithin time.Duration
-		queryMinT            int64
-		queryMaxT            int64
-		expectedMinT         int64
-		expectedMaxT         int64
+		querySeries            bool
+		queryIngestersWithin   time.Duration
+		queryMinT              int64
+		queryMaxT              int64
+		expectedQuerierSkipped bool
+		expectedMinT           int64
+		expectedMaxT           int64
 	}{
 		"should not manipulate query time range if queryIngestersWithin is disabled": {
 			queryIngestersWithin: 0,
@@ -65,11 +66,10 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
 		},
 		"should skip the query if the query max time is older than queryIngestersWithin": {
-			queryIngestersWithin: time.Hour,
-			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-90 * time.Minute)),
-			expectedMinT:         0,
-			expectedMaxT:         0,
+			queryIngestersWithin:   time.Hour,
+			queryMinT:              util.TimeToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:              util.TimeToMillis(now.Add(-90 * time.Minute)),
+			expectedQuerierSkipped: true,
 		},
 		"should manipulate query time range if queryIngestersWithin is enabled and query max time is older, but the query is for /series": {
 			querySeries:          true,
@@ -90,8 +90,14 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, log.NewNopLogger())
-			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
+			querier, err := queryable.OptionalQuerier(ctx, now, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
+			if testData.expectedQuerierSkipped {
+				require.Nil(t, querier)
+				return
+			}
+
+			require.NotNil(t, querier)
 
 			hints := &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
 			if testData.querySeries {
@@ -101,13 +107,9 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			seriesSet := querier.Select(true, hints)
 			require.NoError(t, seriesSet.Err())
 
-			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
-				assert.Len(t, distributor.Calls, 0)
-			} else {
-				require.Len(t, distributor.Calls, 1)
-				assert.InDelta(t, testData.expectedMinT, int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), float64(5*time.Second.Milliseconds()))
-				assert.Equal(t, testData.expectedMaxT, int64(distributor.Calls[0].Arguments.Get(2).(model.Time)))
-			}
+			require.Len(t, distributor.Calls, 1)
+			assert.InDelta(t, testData.expectedMinT, int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), float64(5*time.Second.Milliseconds()))
+			assert.Equal(t, testData.expectedMaxT, int64(distributor.Calls[0].Arguments.Get(2).(model.Time)))
 		})
 	}
 }
@@ -121,11 +123,19 @@ func TestDistributorQueryableFilter(t *testing.T) {
 	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
 	queryMaxT := util.TimeToMillis(now)
 
-	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT))
-	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT))
+	ctx := context.Background()
+	q, err := dq.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
+	require.NoError(t, err)
+	require.NotNil(t, q)
+
+	q, err = dq.OptionalQuerier(ctx, now.Add(time.Hour), queryMinT, queryMaxT)
+	require.NoError(t, err)
+	require.NotNil(t, q)
 
 	// Same query, hour+1ms later, is not sent to ingesters.
-	require.False(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
+	q, err = dq.OptionalQuerier(ctx, now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT)
+	require.NoError(t, err)
+	require.Nil(t, q)
 }
 
 func TestIngesterStreaming(t *testing.T) {
@@ -167,8 +177,9 @@ func TestIngesterStreaming(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
+	querier, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
 	require.NoError(t, err)
+	require.NotNil(t, querier)
 
 	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt})
 	require.NoError(t, seriesSet.Err())
@@ -243,8 +254,9 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
+	querier, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
 	require.NoError(t, err)
+	require.NotNil(t, querier)
 
 	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
@@ -455,8 +467,9 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 				Return(labelNames, nil)
 
 			queryable := newDistributorQueryable(d, nil, 0, log.NewNopLogger())
-			querier, err := queryable.Querier(context.Background(), mint, maxt)
+			querier, err := queryable.OptionalQuerier(context.Background(), time.Now(), mint, maxt)
 			require.NoError(t, err)
+			require.NotNil(t, querier)
 
 			names, warnings, err := querier.LabelNames(someMatchers...)
 			require.NoError(t, err)
@@ -505,8 +518,9 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+	querier, err := queryable.OptionalQuerier(ctx, time.Now(), math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
+	require.NotNil(b, querier)
 
 	b.ResetTimer()
 

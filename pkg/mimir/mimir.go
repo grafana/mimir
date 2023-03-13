@@ -679,8 +679,7 @@ type Mimir struct {
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 
-	// Queryables that the querier should use to query the long term storage.
-	StoreQueryables []querier.QueryableWithFilter
+	StoreQueryable querier.Queryable
 }
 
 // New makes a new Mimir.

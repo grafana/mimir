@@ -38,7 +38,7 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) Queryable {
 	return distributorQueryable{
 		logger:               logger,
 		distributor:          distributor,
@@ -54,21 +54,21 @@ type distributorQueryable struct {
 	queryIngestersWithin time.Duration
 }
 
-func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return &distributorQuerier{
-		logger:               d.logger,
-		distributor:          d.distributor,
-		ctx:                  ctx,
-		mint:                 mint,
-		maxt:                 maxt,
-		chunkIterFn:          d.iteratorFn,
-		queryIngestersWithin: d.queryIngestersWithin,
-	}, nil
-}
-
-func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bool {
+func (d distributorQueryable) OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
 	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.queryIngestersWithin))
+	if d.queryIngestersWithin == 0 || maxt >= util.TimeToMillis(now.Add(-d.queryIngestersWithin)) {
+		return &distributorQuerier{
+			logger:               d.logger,
+			distributor:          d.distributor,
+			ctx:                  ctx,
+			mint:                 mint,
+			maxt:                 maxt,
+			chunkIterFn:          d.iteratorFn,
+			queryIngestersWithin: d.queryIngestersWithin,
+		}, nil
+	}
+
+	return nil, nil
 }
 
 type distributorQuerier struct {

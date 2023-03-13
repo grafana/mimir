@@ -1744,7 +1744,15 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			})
 
 			// Query metrics.
-			q, err := engine.NewRangeQuery(queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
+			qb := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+				q, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
+				if q == nil && err == nil {
+					err = fmt.Errorf("nil queryable")
+				}
+				return q, err
+			})
+
+			q, err := engine.NewRangeQuery(qb, nil, testData.query, queryStart, queryEnd, 15*time.Second)
 			require.NoError(t, err)
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")

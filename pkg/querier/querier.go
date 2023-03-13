@@ -99,19 +99,13 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, store Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
 
-	ns := make([]QueryableWithFilter, len(stores))
-	for ix, s := range stores {
-		ns[ix] = storeQueryable{
-			QueryableWithFilter: s,
-			QueryStoreAfter:     cfg.QueryStoreAfter,
-		}
-	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
+	storeQ := storeQueryable{q: store, queryStoreAfter: cfg.QueryStoreAfter}
+	queryable := NewQueryable(distributorQueryable, storeQ, iteratorFunc, cfg, limits, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -151,17 +145,15 @@ func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	return storage.NewSeriesSetToChunkSet(q.Querier.Select(sortSeries, hints, matchers...))
 }
 
-// QueryableWithFilter extends Queryable interface with `UseQueryable` filtering function.
-type QueryableWithFilter interface {
-	storage.Queryable
-
-	// UseQueryable returns true if this queryable should be used to satisfy the query for given time range.
-	// Query min and max time are in milliseconds since epoch.
-	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
+// Queryable interface is similar to storage.Queryable, but it can return nil querier, if query should not use this queryable.
+type Queryable interface {
+	// OptionalQuerier returns storage.Querier that should be used to satisfy the query in given time range, or nil,
+	// if this queryable should not be used for given time range.
+	OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error)
 }
 
-// NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
+// NewQueryable creates a new storage.Queryable for mimir.
+func NewQueryable(distributor Queryable, store Queryable, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -189,24 +181,20 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			logger:             logger,
 		}
 
-		if distributor.UseQueryable(now, mint, maxt) {
-			dqr, err := distributor.Querier(ctx, mint, maxt)
-			if err != nil {
-				return nil, err
-			}
+		dqr, err := distributor.OptionalQuerier(ctx, now, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
+		if dqr != nil {
 			q.queriers = append(q.queriers, dqr)
 		}
 
-		for _, s := range stores {
-			if !s.UseQueryable(now, mint, maxt) {
-				continue
-			}
+		cqr, err := store.OptionalQuerier(ctx, now, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
 
-			cqr, err := s.Querier(ctx, mint, maxt)
-			if err != nil {
-				return nil, err
-			}
-
+		if cqr != nil {
 			q.queriers = append(q.queriers, cqr)
 		}
 
@@ -456,53 +444,44 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 }
 
 type storeQueryable struct {
-	QueryableWithFilter
-	QueryStoreAfter time.Duration
+	q               Queryable
+	queryStoreAfter time.Duration
 }
 
-func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool {
-	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
-	if s.QueryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.QueryStoreAfter)) {
-		return false
+func (s storeQueryable) OptionalQuerier(ctx context.Context, now time.Time, queryMinT, queryMaxT int64) (storage.Querier, error) {
+	if s.q == nil {
+		return nil, nil
 	}
-	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT)
-}
 
-type alwaysTrueFilterQueryable struct {
-	storage.Queryable
-}
-
-func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
-	return true
-}
-
-// UseAlwaysQueryable wraps storage.Queryable into QueryableWithFilter, with no query filtering.
-func UseAlwaysQueryable(q storage.Queryable) QueryableWithFilter {
-	return alwaysTrueFilterQueryable{Queryable: q}
+	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
+	if s.queryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.queryStoreAfter)) {
+		return nil, nil
+	}
+	return s.q.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
 }
 
 type useBeforeTimestampQueryable struct {
-	storage.Queryable
+	q  Queryable
 	ts int64 // Timestamp in milliseconds
 }
 
-func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int64) bool {
-	if u.ts == 0 {
-		return true
+func (u useBeforeTimestampQueryable) OptionalQuerier(ctx context.Context, now time.Time, queryMinT, queryMaxT int64) (storage.Querier, error) {
+	if u.ts == 0 || queryMinT < u.ts {
+		return u.q.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
 	}
-	return queryMinT < u.ts
+	return nil, nil
 }
 
 // UseBeforeTimestampQueryable returns QueryableWithFilter, that is used only if query starts before given timestamp.
 // If timestamp is zero (time.IsZero), queryable is always used.
-func UseBeforeTimestampQueryable(queryable storage.Queryable, ts time.Time) QueryableWithFilter {
+func UseBeforeTimestampQueryable(queryable Queryable, ts time.Time) Queryable {
 	t := int64(0)
 	if !ts.IsZero() {
 		t = util.TimeToMillis(ts)
 	}
 	return useBeforeTimestampQueryable{
-		Queryable: queryable,
-		ts:        t,
+		q:  queryable,
+		ts: t,
 	}
 }
 
