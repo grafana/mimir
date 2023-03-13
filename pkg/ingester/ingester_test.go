@@ -6577,24 +6577,37 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
+		streamChunks     bool
 	}{
-		"integer histogram": {
+		"integer histogram stream chunks": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
+			streamChunks:     true,
 		},
-		"float histogram": {
+		"float histogram stream chunks": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
+			streamChunks:     true,
+		},
+		"integer histogram stream samples": {
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
+			expectHistogram:  expectedSampleHistogram,
+			streamChunks:     false,
+		},
+		"float histogram stream samples": {
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
+			expectHistogram:  expectedSampleHistogram,
+			streamChunks:     false,
 		},
 	}
 	for testName, testCfg := range tests {
 		t.Run(testName, func(t *testing.T) {
-			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
+			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, testCfg.streamChunks)
 		})
 	}
 }
 
-func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram, streamChunks bool) {
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = false
 
@@ -6622,6 +6635,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
+		cfg.StreamChunksWhenUsingBlocks = streamChunks
 		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", registry)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))

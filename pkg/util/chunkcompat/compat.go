@@ -102,13 +102,23 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 				Timestamp: model.Time(sam.TimestampMs),
 				Value:     model.SampleValue(sam.Value),
 			})
+		}
 
-			// Only used in tests. Add native histogram support later: https://github.com/grafana/mimir/issues/4378
+		var histograms []model.SampleHistogramPair
+		for _, h := range ser.Histograms {
+			if h.Timestamp < int64(from) || h.Timestamp > int64(through) {
+				continue
+			}
+			histograms = append(histograms, model.SampleHistogramPair{
+				Timestamp: model.Time(h.Timestamp),
+				Histogram: mimirpb.FromHistogramProtoToPromHistogram(&h),
+			})
 		}
 
 		result = append(result, &model.SampleStream{
-			Metric: metric,
-			Values: samples,
+			Metric:     metric,
+			Values:     samples,
+			Histograms: histograms,
 		})
 	}
 	return result, nil
