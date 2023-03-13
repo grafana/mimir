@@ -32,17 +32,17 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: graphite-enabled-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: graphite-web
           image: "docker.io/raintank/graphite-mt:8-7ebde4c60-v2"
           imagePullPolicy: IfNotPresent
-          securityContext:
-            fsGroup: 10001
-            runAsGroup: 10001
-            runAsNonRoot: true
-            runAsUser: 10001
-            seccompProfile:
-              type: RuntimeDefault
           env:
             - name: GRAPHITE_CLUSTER_SERVERS
               value: graphite-enabled-values-mimir-graphite.citestns.svc:8080/graphite
@@ -62,6 +62,12 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
       nodeSelector:
         {}
       affinity:
@@ -74,12 +80,6 @@ spec:
                 values:
                 - graphite-web
             topologyKey: kubernetes.io/hostname
-      securityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-          - ALL
-        readOnlyRootFilesystem: true
       tolerations:
         []
       terminationGracePeriodSeconds: 30

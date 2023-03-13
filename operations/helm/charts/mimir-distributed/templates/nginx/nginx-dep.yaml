@@ -45,7 +45,7 @@ spec:
       priorityClassName: {{ .Values.nginx.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.nginx.podSecurityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "nginx") | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
       containers:
         - name: nginx

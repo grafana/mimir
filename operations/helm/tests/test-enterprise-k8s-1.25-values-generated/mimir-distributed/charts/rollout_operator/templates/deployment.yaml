@@ -29,11 +29,20 @@ spec:
     spec:
       serviceAccountName: test-enterprise-k8s-1.25-values-rollout-operator
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rollout-operator
           securityContext:
-            {}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
           image: "grafana/rollout-operator:v0.2.0"
           imagePullPolicy: IfNotPresent
           args:

@@ -95,6 +95,7 @@ The following features are currently experimental:
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
+  - `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
@@ -126,3 +127,8 @@ The following features are currently deprecated and will be **removed in Mimir 2
   - `-blocks-storage.bucket-store.consistency-delay`
 - Ingester
   - `-ingester.ring.readiness-check-ring-health`
+
+The following features are currently deprecated and will be **removed in Mimir 2.10**:
+
+- Ingester
+  - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`

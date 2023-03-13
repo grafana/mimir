@@ -36,10 +36,10 @@ spec:
     spec:
       serviceAccountName: small-values-mimir
       securityContext:
-        fsGroup: 11211
-        runAsGroup: 11211
+        fsGroup: 10001
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 11211
+        runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
       initContainers:

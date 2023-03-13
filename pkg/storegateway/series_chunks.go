@@ -447,6 +447,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	if c.cache != nil {
 		c.storeRangesInCache(nextUnloaded.series, nextSet.series, cachedRanges)
 	}
+	c.recordProcessedChunks(nextSet.series)
 
 	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
 	// range of chunks. After storing the chunks in the cache, we should throw away the chunks that are outside
@@ -612,17 +613,29 @@ func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesC
 }
 
 func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEntry) {
-	returnedChunksBytes := 0
-	returnedChunks := 0
-	for _, s := range series {
-		returnedChunksBytes += chunksSizeInSegmentFile(s.chks)
-		returnedChunks += len(s.chks)
-	}
+	returnedChunks, returnedChunksBytes := chunkStats(series)
 
 	c.stats.update(func(stats *queryStats) {
 		stats.chunksReturned += returnedChunks
 		stats.chunksReturnedSizeSum += returnedChunksBytes
 	})
+}
+
+func (c *loadingSeriesChunksSetIterator) recordProcessedChunks(series []seriesEntry) {
+	processedChunks, processedChunksBytes := chunkStats(series)
+
+	c.stats.update(func(stats *queryStats) {
+		stats.chunksProcessed += processedChunks
+		stats.chunksProcessedSizeSum += processedChunksBytes
+	})
+}
+
+func chunkStats(series []seriesEntry) (numChunks, totalSize int) {
+	for _, s := range series {
+		numChunks += len(s.chks)
+		totalSize += chunksSizeInSegmentFile(s.chks)
+	}
+	return
 }
 
 // chunksSizeInSegmentFile "reverse" calculates the size of chunks in the segment file. This was the size we returned from the

@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -624,25 +623,6 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 	l.seriesMx.Unlock()
 }
 
-// unsafeLoadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
-// time selection.
-// unsafeLoadSeriesForTime also populates chunk metas slices if skipChunks is set to false. Chunks are also limited by the given time selection.
-// unsafeLoadSeriesForTime returns false, when there are no series data for given time range.
-//
-// Error is returned on decoding error or if the reference does not resolve to a known series.
-//
-// It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64, stats *queryStats) (ok bool, err error) {
-	b, ok := l.series[ref]
-	if !ok {
-		return false, errors.Errorf("series %d not found", ref)
-	}
-
-	stats.seriesTouched++
-	stats.seriesTouchedSizeSum += len(b)
-	return decodeSeriesForTime(b, lset, chks, skipChunks, mint, maxt)
-}
-
 // unsafeLoadSeries populates the given symbolized labels for the series identified by the reference the series has at least one chunk in the block.
 // unsafeLoadSeries also populates the given chunk metas slice if skipChunks is set to false. The returned chunkMetas will be in the same
 // order as in the index, which at this point is ordered by minTime and by their ref. The returned chunk metas are all the chunk for the series.
@@ -658,5 +638,5 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	}
 	stats.seriesTouched++
 	stats.seriesTouchedSizeSum += len(b)
-	return decodeSeriesForTime(b, lset, chks, skipChunks, math.MinInt64, math.MaxInt64)
+	return decodeSeries(b, lset, chks, skipChunks)
 }
