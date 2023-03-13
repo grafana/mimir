@@ -914,7 +914,7 @@ The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by usi
 If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 
 The block-upload feature is disabled by default.
-To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload.md" >}}).
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../../configure/configure-tsdb-block-upload.md" >}}).
 If block upload is not enabled for the user, `mimirtool backfill` will fail.
 
 ##### Example

@@ -77,7 +77,7 @@ You can use the following settings to override AWS S3 SSE for each tenant:
 **To configure AWS S3 SSE for a specific tenant**:
 
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
-   For more information about supported runtime configuration parameters, refer to [Runtime configuration]({{< relref "../configure/about-runtime-configuration.md" >}}).
+   For more information about supported runtime configuration parameters, refer to [Runtime configuration]({{< relref "../../configure/about-runtime-configuration.md" >}}).
 1. In the runtime configuration file, apply the `overrides.<TENANT>` SSE settings.
 
    A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" appears as follows:

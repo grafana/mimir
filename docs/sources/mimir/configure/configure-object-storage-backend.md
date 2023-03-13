@@ -15,17 +15,17 @@ The supported backends are:
 - [Azure Blob Storage](https://azure.microsoft.com/es-es/services/storage/blobs/)
 - [Swift (OpenStack Object Storage)](https://wiki.openstack.org/wiki/Swift)
 
-Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../../references/configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation.
+Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../references/configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation.
 
-[Ruler and alertmanager support a `local` implementation]({{< relref "../architecture/components/ruler/index.md#local-storage" >}}),
+[Ruler and alertmanager support a `local` implementation]({{< relref "../operators-guide/architecture/components/ruler/index.md#local-storage" >}}),
 which is similar to `filesystem` in the way that it uses the local file system,
 but it is a read-only data source and can be used to provision state into those components.
 
 ## Common configuration
 
-To avoid repetition, you can use the [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) and fill the [`common`]({{< relref "../../references/configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
+To avoid repetition, you can use the [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) and fill the [`common`]({{< relref "../references/configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../../references/configuration-parameters/index.md#blocks_storage" >}}) use either a:
+> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../references/configuration-parameters/index.md#blocks_storage" >}}) use either a:
 
 - different bucket, overriding the common bucket name
 - storage prefix

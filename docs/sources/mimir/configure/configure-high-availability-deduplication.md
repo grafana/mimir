@@ -30,7 +30,7 @@ timeout ensures that too much data is not dropped before failover to the other r
 
 ## Distributor high-availability (HA) tracker
 
-The [distributor]({{< relref "../architecture/components/distributor.md" >}}) includes a high-availability (HA) tracker.
+The [distributor]({{< relref "../operators-guide/architecture/components/distributor.md" >}}) includes a high-availability (HA) tracker.
 
 The HA tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
@@ -134,4 +134,4 @@ distributor:
       [consul | etcd: <config>]
 ```
 
-For more information, see [distributor]({{< relref "../../references/configuration-parameters/index.md#distributor" >}}). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.
+For more information, see [distributor]({{< relref "../references/configuration-parameters/index.md#distributor" >}}). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.

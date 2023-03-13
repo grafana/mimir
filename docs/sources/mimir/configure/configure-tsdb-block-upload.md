@@ -10,7 +10,7 @@ weight: 120
 Grafana Mimir supports uploading of historic TSDB blocks, sourced from Prometheus, Cortex, or even other
 Grafana Mimir installations. Upload from Thanos is currently not supported; for more information, see [Known limitations of TSDB block upload]({{< relref "#known-limitations-of-tsdb-block-upload" >}}).
 
-To make performing block upload simple, we've built support for it into Mimir's CLI tool, [mimirtool]({{< relref "../tools/mimirtool.md" >}}). For more information, see [mimirtool backfill]({{< relref "../tools/mimirtool.md#backfill" >}}).
+To make performing block upload simple, we've built support for it into Mimir's CLI tool, [mimirtool]({{< relref "../operators-guide/tools/mimirtool.md" >}}). For more information, see [mimirtool backfill]({{< relref "../operators-guide/tools/mimirtool.md#backfill" >}}).
 
 Block upload is still considered experimental and is therefore disabled by default. You can enable it via the `-compactor.block-upload-enabled`
 CLI flag, or via the corresponding `limits.compactor_block_upload_enabled` configuration parameter:
@@ -43,7 +43,7 @@ overrides:
 Because Thanos blocks contain unsupported labels among their metadata, they cannot be uploaded.
 
 For information about limitations that relate to importing blocks from Thanos as well as existing workarounds, see
-[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../../migrate/migrate-from-thanos-or-prometheus.md" >}}).
+[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../migrate/migrate-from-thanos-or-prometheus.md" >}}).
 
 ### No validation on imported blocks
 

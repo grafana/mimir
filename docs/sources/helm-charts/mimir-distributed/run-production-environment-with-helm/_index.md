@@ -98,7 +98,7 @@ configure the Helm chart to deploy Grafana Mimir with zone-aware replication.
 
 ### New installations
 
-Grafana Mimir supports [replication across availability zones](/docs/mimir/v2.6.x/operators-guide/configure/configure-zone-aware-replication/)
+Grafana Mimir supports [replication across availability zones](/docs/mimir/v2.6.x/configure/configure-zone-aware-replication/)
 within your Kubernetes cluster.
 This further increases fault tolerance of the Mimir cluster. Even if you
 do not currently have multiple zones across your Kubernetes cluster, you
@@ -153,7 +153,7 @@ zone-aware replication.
 ## Configure Mimir to use object storage
 
 For the different object storage types that Mimir supports, and examples,
-see [Configure Grafana Mimir object storage backend](/docs/mimir/v2.6.x/operators-guide/configure/configure-object-storage-backend).
+see [Configure Grafana Mimir object storage backend](/docs/mimir/v2.6.x/configure/configure-object-storage-backend).
 
 1. Add the following YAML to your values file, if you are not using the sizing
    plans that are mentioned in [Plan capacity](#plan-capacity):
@@ -280,4 +280,4 @@ If you need redundancy on the write path before it reaches Mimir, then you
 can set up redundant instances of Prometheus or Grafana Agent to
 write metrics to Mimir.
 
-For more information, see [Configure high-availability deduplication with Consul](/docs/mimir/v2.6.x/operators-guide/configure/configure-helm-ha-deduplication-consul/).
+For more information, see [Configure high-availability deduplication with Consul](/docs/mimir/v2.6.x/configure/configure-helm-ha-deduplication-consul/).

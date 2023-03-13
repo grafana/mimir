@@ -4,7 +4,7 @@ aliases:
 description: This section provides links to Grafana Mimir configuration topics.
 keywords:
   - Mimir configuration
-menuTitle: Configuration
+menuTitle: Configure
 title: Configure Grafana Mimir
 weight: 30
 ---
