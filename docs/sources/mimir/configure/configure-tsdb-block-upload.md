@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/configure/configure-tsdb-block-upload/
 title: "Configure TSDB block upload"
 menuTitle: "TSDB block upload"
 description: "Learn how to configure Grafana Mimir to enable TSDB block upload"

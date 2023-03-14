@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/configure/configure-otel-collector/
 description: Learn how to write metrics from OpenTelemetry Collector into Mimir
 menuTitle: OTel Collector
 title: Configure the OpenTelemetry Collector to write metrics into Mimir

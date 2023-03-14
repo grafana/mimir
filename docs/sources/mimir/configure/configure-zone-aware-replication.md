@@ -2,6 +2,7 @@
 aliases:
   - ../configuring/configuring-zone-aware-replication/
   - configuring-zone-aware-replication/
+  - ../operators-guide/configure/configure-zone-aware-replication/
 description: Learn how to replicate data across failure domains.
 menuTitle: Zone-aware replication
 title: Configure Grafana Mimir zone-aware replication
