@@ -264,6 +264,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
+	if err := c.Vault.Validate(); err != nil {
+		return errors.Wrap(err, "invalid vault config")
+	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")

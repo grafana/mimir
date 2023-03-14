@@ -20,6 +20,26 @@ type Config struct {
 	MountPath string `yaml:"mount_path" category:"experimental"`
 }
 
+func (cfg *Config) Validate() error {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.URL == "" {
+		return errors.New("empty vault URL supplied")
+	}
+
+	if cfg.Token == "" {
+		return errors.New("empty vault authentication token supplied")
+	}
+
+	if cfg.MountPath == "" {
+		return errors.New("empty vault mount path supplied")
+	}
+
+	return nil
+}
+
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "vault.enabled", false, "Enables fetching of keys and certificates from Vault")
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
@@ -36,10 +56,6 @@ type Vault struct {
 }
 
 func NewVault(cfg Config) (*Vault, error) {
-	if err := validateVaultConfig(cfg); err != nil {
-		return nil, err
-	}
-
 	config := hashivault.DefaultConfig()
 	config.Address = cfg.URL
 
@@ -56,22 +72,6 @@ func NewVault(cfg Config) (*Vault, error) {
 	return vault, nil
 }
 
-func validateVaultConfig(cfg Config) error {
-	if cfg.URL == "" {
-		return errors.New("empty vault URL supplied")
-	}
-
-	if cfg.Token == "" {
-		return errors.New("empty vault authentication token supplied")
-	}
-
-	if cfg.MountPath == "" {
-		return errors.New("empty vault mount path supplied")
-	}
-
-	return nil
-}
-
 func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	secret, err := v.KVStore.Get(context.Background(), path)
 
@@ -85,7 +85,7 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 
 	data, ok := secret.Data["value"].(string)
 	if !ok {
-		return nil, fmt.Errorf("secret data type is not string, found %#v", secret.Data["value"])
+		return nil, fmt.Errorf("secret data type is not string, found %T value: %#v", secret.Data["value"], secret.Data["value"])
 	}
 
 	return []byte(data), nil
