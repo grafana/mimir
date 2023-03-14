@@ -504,6 +504,17 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}
 
+	// check that the blocks doesn't contain down-sampled data
+	if blockMetadata.Thanos.Downsample.Resolution > 0 {
+		return errors.New("block contains down-sampled data")
+	}
+	// validate index
+	indexFile := filepath.Join(blockDir, block.IndexFilename)
+	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
+	if err != nil {
+		return errors.Wrap(err, "error validating block")
+	}
+
 	return nil
 }
 
