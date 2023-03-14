@@ -196,6 +196,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
 	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
