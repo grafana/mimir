@@ -341,7 +341,8 @@ type BucketStoreConfig struct {
 	// Controls experimental options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
 
-	StreamingBatchSize int `yaml:"streaming_series_batch_size" category:"advanced"`
+	StreamingBatchSize   int `yaml:"streaming_series_batch_size" category:"advanced"`
+	ChunkRangesPerSeries int `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -371,6 +372,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
+	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
 }
 
 // Validate the config.

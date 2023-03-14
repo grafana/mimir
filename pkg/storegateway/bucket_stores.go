@@ -478,6 +478,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore.StreamingBatchSize,
+		u.cfg.BucketStore.ChunkRangesPerSeries,
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
 		}),

@@ -52,7 +52,7 @@
 
     // storage_backend will be used for all components that use block storage.
     // Each component can override this by specific CLI flags.
-    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/about-configurations/#common-configurations
+    // See https://grafana.com/docs/mimir/latest/configure/about-configurations/#common-configurations
     storage_backend: error 'should specify storage backend',  // Available options are 'gcs', 's3', 'azure'.
 
     // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
@@ -119,7 +119,7 @@
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
-    // https://grafana.com/docs/mimir/latest/operators-guide/configure/about-anonymous-usage-statistics-reporting/
+    // https://grafana.com/docs/mimir/latest/configure/about-anonymous-usage-statistics-reporting/
     usage_stats_enabled: true,
     usageStatsConfig: if !$._config.usage_stats_enabled then {} else {
       'usage-stats.installation-mode': 'jsonnet',

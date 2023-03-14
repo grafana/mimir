@@ -1,7 +1,7 @@
 ---
 aliases:
   - operators-guide/configuring/references/configuration-parameters/
-  - operators-guide/configure/references/configuration-parameters/
+  - configure/references/configuration-parameters/
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
@@ -3195,6 +3195,14 @@ bucket_store:
   # batch size must be greater than 0.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
+
+  # (experimental) This option controls into how many ranges the chunks of each
+  # series from each block are split. This value is effectively the number of
+  # chunks cache items per series per block when
+  # -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
+  # is enabled.
+  # CLI flag: -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series
+  [fine_grained_chunks_caching_ranges_per_series: <int> | default = 1]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is

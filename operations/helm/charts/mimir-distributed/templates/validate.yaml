@@ -244,3 +244,19 @@
 {{- fail "You have enabled gateway.autoscaling.targetMemoryUtilizationPercentage, you must also set gateway.resources.requests.memory." -}}
 {{- end -}}
 {{- end -}}
+
+{{- if eq .Values.rbac.type "scc" -}}
+{{- with .Values.rbac.podSecurityContext -}}
+{{- if or (hasKey . "fsGroup") (hasKey . "runAsGroup") (hasKey . "runAsUser") -}}
+{{- fail "You have selected rbac.type=scc, you must set the values fsGroup, runAsGroup, runAsUser to null in rbac.podSecurityContext" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if eq .Values.rbac.type "scc" -}}
+{{- with .Values.rollout_operator.podSecurityContext -}}
+{{- if or (hasKey . "fsGroup") (hasKey . "runAsGroup") (hasKey . "runAsUser") -}}
+{{- fail "You have selected rbac.type=scc, you must set the values fsGroup, runAsGroup, runAsUser to null in rollout_operator.podSecurityContext" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

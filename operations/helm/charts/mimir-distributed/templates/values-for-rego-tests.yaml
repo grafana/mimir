@@ -1,0 +1,6 @@
+{{- if .Values.regoTestGenerateValues }}
+apiVersion: v1
+kind: Values
+spec:
+  {{- .Values | toYaml | nindent 2 }}
+{{- end }}
