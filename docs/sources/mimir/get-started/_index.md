@@ -101,7 +101,7 @@ store_gateway:
 
 > **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
 > If possible and to help us understand more about how the open source community runs Mimir, we kindly ask you to keep the usage reporting feature enabled.
-> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../operators-guide/configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
+> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
 
 ## Run Grafana Mimir
 

@@ -38,7 +38,7 @@ Compaction can be tuned for clusters with large tenants. Configuration specifies
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
-  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding/index.md" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
+  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../../configure/configure-shuffle-sharding/index.md" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
 
 ## Compaction algorithm
 
@@ -75,7 +75,7 @@ Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded
 
 Compactor sharding uses a [hash ring]({{< relref "../../hash-ring/index.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and to compact blocks for each tenant whose hash matches the token ranges assigned to the instance itself within the hash ring.
 
-To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
+To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings.md" >}}).
 
 ### Waiting for a stable hash ring at startup
 
@@ -120,7 +120,7 @@ The soft delete mechanism gives queriers, rulers, and store-gateways time to dis
 The compactor is responsible for enforcing the storage retention, deleting the blocks that contain samples that are older than the configured retention period from the long-term storage.
 The storage retention is disabled by default, and no data will be deleted from the long-term storage unless you explicitly configure the retention period.
 
-For more information, refer to [Configure metrics storage retention]({{< relref "../../../configure/configure-metrics-storage-retention.md" >}}).
+For more information, refer to [Configure metrics storage retention]({{< relref "../../../../configure/configure-metrics-storage-retention.md" >}}).
 
 ## Compactor disk utilization
 

@@ -153,7 +153,7 @@ zone-aware replication.
 ## Configure Mimir to use object storage
 
 For the different object storage types that Mimir supports, and examples,
-see [Configure Grafana Mimir object storage backend](/docs/mimir/v2.6.x/operators-guide/configure/configure-object-storage-backend).
+see [Configure Grafana Mimir object storage backend](/docs/mimir/v2.6.x/configure/configure-object-storage-backend).
 
 1. Add the following YAML to your values file, if you are not using the sizing
    plans that are mentioned in [Plan capacity](#plan-capacity):

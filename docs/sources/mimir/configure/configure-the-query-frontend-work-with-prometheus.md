@@ -2,8 +2,9 @@
 aliases:
   - ../configuring/configuring-the-query-frontend-work-with-prometheus/
   - configuring-the-query-frontend-work-with-prometheus/
+  - ../operators-guide/configure/configure-the-query-frontend-work-with-prometheus/
 description: Learn how to configure the query-frontend to work with Prometheus.
-menuTitle: Configure the query-frontend to work with Prometheus
+menuTitle: Query-frontend to work with Prometheus
 title: Configure the Grafana Mimir query-frontend to work with Prometheus
 weight: 90
 ---
@@ -15,7 +16,7 @@ service, including Prometheus and Thanos. Use this configuration file to
 benefit from query parallelization and caching.
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../../configurations/prometheus-frontend.yml)
+[embedmd]:# (../../../configurations/prometheus-frontend.yml)
 ```yml
 # You can use the Mimir query frontend with any Prometheus-API compatible
 # service, including Prometheus and Thanos.  Use this config file to get
