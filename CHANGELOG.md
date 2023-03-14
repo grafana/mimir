@@ -69,6 +69,7 @@
 
 ### Documentation
 
+* [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
 * [FEATURE] Add instructions about how to configure native histograms. #4527
 
 ### Tools
