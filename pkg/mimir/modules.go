@@ -192,6 +192,11 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
+	// Update Configs - Redis Clients
+	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader = t.Vault
+
 	// Update Configs - GRPC Clients
 	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
