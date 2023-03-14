@@ -50,7 +50,7 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag. This flag supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../configure/about-dns-service-discovery.md" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../../configure/about-dns-service-discovery.md" >}}).
 
 If you're using [Mimir's Alertmanager]({{< relref "../alertmanager.md" >}}), point the address to Alertmanager's API.
 You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
@@ -103,7 +103,7 @@ The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
 Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" >}}) stored in the [KV store]({{< relref "../../key-value-store.md" >}}) to divide the work of the executing rules.
 
-To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings.md" >}}).
 
 ## Manage alerting and recording rules
 

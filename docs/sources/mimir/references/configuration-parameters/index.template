@@ -1,7 +1,7 @@
 ---
 aliases:
   - operators-guide/configuring/references/configuration-parameters/
-  - operators-guide/configure/references/configuration-parameters/
+  - configure/references/configuration-parameters/
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters

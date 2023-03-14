@@ -2,6 +2,7 @@
 aliases:
   - ../configuring/mirroring-requests-to-a-second-cluster/
   - mirroring-requests-to-a-second-cluster/
+  - ../operators-guide/configure/mirror-requests-to-a-second-cluster/
 description:
   Learn how to set up a testing cluster that receives the same series of
   the primary cluster.
@@ -21,7 +22,7 @@ If you have control over the Prometheus remote write configuration, we recommend
 ## Mirroring with Envoy proxy
 
 You can use [Envoy proxy](https://www.envoyproxy.io/) to mirror HTTP requests to a secondary upstream cluster.
-From a network path perspective, run Envoy in front of both clusters' [distributors]({{< relref "../../architecture/components/distributor.md" >}}).
+From a network path perspective, run Envoy in front of both clusters' [distributors]({{< relref "../../operators-guide/architecture/components/distributor.md" >}}).
 
 This approach enables the Envoy proxy to make requests to the primary Grafana Mimir cluster and then in the background, Envoy mirrors the requests to the secondary cluster.
 
@@ -41,7 +42,7 @@ The following diagram illustrates a simplified network structure.
 The following Envoy configuration shows an example that includes two Grafana Mimir clusters. Envoy listens on port `9900` and proxies all requests to `mimir-primary:8080`, while also mirroring them to `mimir-secondary:8080`.
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../../../configurations/requests-mirroring-envoy.yaml)
+[embedmd]:# (../../../../configurations/requests-mirroring-envoy.yaml)
 ```yaml
 admin:
   # No access logs.
