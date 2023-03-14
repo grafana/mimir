@@ -40,6 +40,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Add http port in distributor headless service. Fixes parity with jsonnet. #4392
 * [BUGFIX] Generate the pod security context on the pod level in graphite web deployment, instead of on container level. #4272
 * [BUGFIX] Fix kube-state-metrics metricRelabelings dropping pods and deployments. #4485
+* [BUGFIX] Allow for single extraArg flags in templated memcached args. #4407
 
 ## 4.2.0
 
