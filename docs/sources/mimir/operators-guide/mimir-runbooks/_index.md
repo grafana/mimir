@@ -1667,43 +1667,6 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
-### err-mimir-histogram-spans-buckets-mismatch
-
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose either negative or positive spans specify
-a different number of buckets than there are provided.
-
-> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
-
-### err-mimir-histogram-span-negative-offset
-
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram which has a span whose offset is negative, making it overlap with the previous span.
-
-> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
-
-### err-mimir-histogram-negative-bucket-count
-
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram which has a bucket whose observation count is negative.
-
-> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
-
-### err-mimir-histogram-count-not-big-enough
-
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose overall observation count is lower than the number of observations found in the buckets.
-
-> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
-
-### err-mimir-ephemeral-storage-not-enabled-for-user
-
-Ingester returns this error when a write request contains ephemeral series, but ephemeral storage is disabled for user.
-
-Ephemeral storage is disabled when `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) is set to 0 for given tenant.
-
-How to **fix** it:
-
-- Disable support for ephemeral series in distributor by setting `-distributor.ephemeral-series-enabled` to `false`.
-- Remove rules for marking incoming series as ephemeral for given tenant by removing `-distributor.ephemeral-series-matchers` (or `ephemeral_series_matchers` in runtime configuration).
-- Enable ephemeral storage for tenant by setting the `-ingester.max-ephemeral-series-per-user` (or corresponding `max_ephemeral_series_per_user` limit in runtime configuration) to positive number.
-
 ## Mimir routes by path
 
 **Write path**:
