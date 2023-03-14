@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshift-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: openshift-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openshift-values-mimir
+subjects:
+- kind: ServiceAccount
+  name: openshift-values-mimir
+- kind: ServiceAccount
+  name: openshift-values-mimir-distributed

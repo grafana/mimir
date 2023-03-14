@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.graphite.write_proxy.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.graphite.write_proxy.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "graphite-write-proxy") | nindent 8 }}
       initContainers:
         {{- with .Values.graphite.write_proxy.initContainers }}
         {{- toYaml . | nindent 8 }}

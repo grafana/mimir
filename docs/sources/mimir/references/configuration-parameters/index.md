@@ -1,7 +1,7 @@
 ---
 aliases:
   - operators-guide/configuring/references/configuration-parameters/
-  - operators-guide/configure/references/configuration-parameters/
+  - configure/references/configuration-parameters/
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
@@ -3196,6 +3196,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
+  # (experimental) This option controls into how many ranges the chunks of each
+  # series from each block are split. This value is effectively the number of
+  # chunks cache items per series per block when
+  # -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
+  # is enabled.
+  # CLI flag: -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series
+  [fine_grained_chunks_caching_ranges_per_series: <int> | default = 1]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -3267,6 +3275,14 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.wal-segment-size-bytes
   [wal_segment_size_bytes: <int> | default = 134217728]
 
+  # (advanced) Maximum number of CPUs that can simultaneously processes WAL
+  # replay. If it is set to 0, then each TSDB is replayed with a concurrency
+  # equal to the number of CPU cores available on the machine. If set to a
+  # positive value it overrides the deprecated
+  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
+  # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
+  [wal_replay_concurrency: <int> | default = 0]
+
   # (advanced) True to flush blocks to storage on shutdown. If false, incomplete
   # blocks will be reused after restart.
   # CLI flag: -blocks-storage.tsdb.flush-blocks-on-shutdown
@@ -3299,7 +3315,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) limit the number of concurrently opening TSDB's on startup
+  # (deprecated) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 

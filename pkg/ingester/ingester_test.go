@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -424,7 +426,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdbutil.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -478,7 +480,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdb.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdbutil.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -1176,19 +1178,19 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		numSeriesPerRequest  int
 		numConcurrentClients int
 	}{
-		"no concurrency": {
+		"no walReplayConcurrency": {
 			numSeriesPerRequest:  500,
 			numConcurrentClients: 1,
 		},
-		"low concurrency": {
+		"low walReplayConcurrency": {
 			numSeriesPerRequest:  500,
 			numConcurrentClients: 100,
 		},
-		"high concurrency": {
+		"high walReplayConcurrency": {
 			numSeriesPerRequest:  500,
 			numConcurrentClients: 1000,
 		},
-		"low number of series per request and very high concurrency": {
+		"low number of series per request and very high walReplayConcurrency": {
 			numSeriesPerRequest:  100,
 			numConcurrentClients: 2500,
 		},
@@ -3146,13 +3148,14 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		concurrency int
-		setup       func(*testing.T, string)
-		check       func(*testing.T, *Ingester)
-		expectedErr string
+		walReplayConcurrency                         int
+		deprecatedMaxTSDBOpeningConcurrencyOnStartup int
+		setup                                        func(*testing.T, string)
+		check                                        func(*testing.T, *Ingester)
+		expectedErr                                  string
 	}{
 		"should not load TSDB if the user directory is empty": {
-			concurrency: 10,
+			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
 				require.NoError(t, os.Mkdir(filepath.Join(dir, "user0"), 0700))
 			},
@@ -3161,14 +3164,14 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			},
 		},
 		"should not load any TSDB if the root directory is empty": {
-			concurrency: 10,
-			setup:       func(t *testing.T, dir string) {},
+			walReplayConcurrency: 10,
+			setup:                func(t *testing.T, dir string) {},
 			check: func(t *testing.T, i *Ingester) {
 				require.Zero(t, len(i.tsdbs))
 			},
 		},
 		"should not load any TSDB is the root directory is missing": {
-			concurrency: 10,
+			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
 				require.NoError(t, os.Remove(dir))
 			},
@@ -3177,39 +3180,71 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			},
 		},
 		"should load TSDB for any non-empty user directory": {
-			concurrency: 10,
+			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 				require.NoError(t, os.Mkdir(filepath.Join(dir, "user2"), 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 2, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.NotNil(t, i.getTSDB(userID))
+				}
 				require.Nil(t, i.getTSDB("user2"))
 			},
 		},
-		"should load all TSDBs on concurrency < number of TSDBs": {
-			concurrency: 2,
+		"should load all TSDBs on walReplayConcurrency < number of TSDBs": {
+			walReplayConcurrency: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 5, len(i.tsdbs))
-				require.NotNil(t, i.getTSDB("user0"))
-				require.NotNil(t, i.getTSDB("user1"))
-				require.NotNil(t, i.getTSDB("user2"))
-				require.NotNil(t, i.getTSDB("user3"))
-				require.NotNil(t, i.getTSDB("user4"))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 2, walReplayConcurrency)
+				}
 			},
 		},
-		"should fail and rollback if an error occur while loading a TSDB on concurrency > number of TSDBs": {
-			concurrency: 10,
+		"should load all TSDBs on walReplayConcurrency > number of TSDBs": {
+			walReplayConcurrency: 10,
+			setup: func(t *testing.T, dir string) {
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
+			},
+			check: func(t *testing.T, i *Ingester) {
+				require.Equal(t, 5, len(i.tsdbs))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 10, walReplayConcurrency)
+				}
+			},
+		},
+		"should load all TSDBs on number of TSDBs > maxTSDBOpenWithoutConcurrency": {
+			walReplayConcurrency: 2,
+			setup: func(t *testing.T, dir string) {
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8", "user9", "user10"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
+			},
+			check: func(t *testing.T, i *Ingester) {
+				require.Equal(t, 11, len(i.tsdbs))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8", "user9", "user10"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.Equal(t, 1, walReplayConcurrency)
+				}
+			},
+		},
+		"should fail and rollback if an error occur while loading a TSDB on walReplayConcurrency > number of TSDBs": {
+			walReplayConcurrency: 10,
 			setup: func(t *testing.T, dir string) {
 				// Create a fake TSDB on disk with an empty chunks head segment file (it's invalid unless
 				// it's the last one and opening TSDB should fail).
@@ -3222,18 +3257,18 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 0, len(i.tsdbs))
-				require.Nil(t, i.getTSDB("user0"))
-				require.Nil(t, i.getTSDB("user1"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.Nil(t, i.getTSDB(userID))
+				}
 			},
 			expectedErr: "unable to open TSDB for user user0",
 		},
-		"should fail and rollback if an error occur while loading a TSDB on concurrency < number of TSDBs": {
-			concurrency: 2,
+		"should fail and rollback if an error occur while loading a TSDB on walReplayConcurrency < number of TSDBs": {
+			walReplayConcurrency: 2,
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user3", "dummy"), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
+				for _, userID := range []string{"user0", "user1", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
 
 				// Create a fake TSDB on disk with an empty chunks head segment file (it's invalid unless
 				// it's the last one and opening TSDB should fail).
@@ -3243,14 +3278,28 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 0, len(i.tsdbs))
-				require.Nil(t, i.getTSDB("user0"))
-				require.Nil(t, i.getTSDB("user1"))
-				require.Nil(t, i.getTSDB("user2"))
-				require.Nil(t, i.getTSDB("user3"))
-				require.Nil(t, i.getTSDB("user4"))
+				for _, userID := range []string{"user0", "user1"} {
+					require.Nil(t, i.getTSDB(userID))
+				}
 			},
 			expectedErr: "unable to open TSDB for user user2",
+		},
+		"should load all TSDBs and honor DeprecatedMaxTSDBOpeningConcurrencyOnStartup when walReplayConcurrency = 0": {
+			walReplayConcurrency:                         0,
+			deprecatedMaxTSDBOpeningConcurrencyOnStartup: 2,
+			setup: func(t *testing.T, dir string) {
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NoError(t, os.MkdirAll(filepath.Join(dir, userID, "dummy"), 0700))
+				}
+			},
+			check: func(t *testing.T, i *Ingester) {
+				require.Equal(t, 5, len(i.tsdbs))
+				for _, userID := range []string{"user0", "user1", "user2", "user3", "user4"} {
+					require.NotNil(t, i.getTSDB(userID))
+					walReplayConcurrency := getWALReplayConcurrencyFromTSDBHeadOptions(i.getTSDB(userID))
+					require.NotEqual(t, 0, walReplayConcurrency)
+				}
+			},
 		},
 	}
 
@@ -3268,7 +3317,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 
 			ingesterCfg := defaultIngesterTestConfig(t)
 			ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
-			ingesterCfg.BlocksStorageConfig.TSDB.MaxTSDBOpeningConcurrencyOnStartup = testData.concurrency
+			ingesterCfg.BlocksStorageConfig.TSDB.WALReplayConcurrency = testData.walReplayConcurrency
 			ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
 			ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 
@@ -3290,6 +3339,13 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			testData.check(t, ingester)
 		})
 	}
+}
+
+func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
+	head := reflect.ValueOf(userTSDB.db.Head()).Elem()
+	opts := head.FieldByName("opts").Elem()
+	walReplayConcurrency := opts.FieldByName("WALReplayConcurrency")
+	return int(walReplayConcurrency.Int())
 }
 
 func TestIngester_shipBlocks(t *testing.T) {
@@ -6450,18 +6506,18 @@ func TestNewIngestErrMsgs(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
-	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdb.GenerateTestFloatHistogram(0)))
+	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdbutil.GenerateTestFloatHistogram(0)))
 
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdb.GenerateTestHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdbutil.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdb.GenerateTestFloatHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdbutil.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}
@@ -6606,4 +6662,47 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	setNativeHistogramsIngestionEnabled(false)
 
 	testResult(expectedMatrix, "Result should contain the histogram even when not accepting histograms")
+}
+
+func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
+	tests := map[string]struct {
+		walReplayConcurrency               int
+		maxTSDBOpeningConcurrencyOnStartup int
+		tenantCount                        int
+		expectedTSDBOpenConcurrency        int
+		expectedTSDBWALReplayConcurrency   int
+	}{
+		"if -blocks-storage.tsdb.wal-replay-concurrency is 0, -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup is used": {
+			walReplayConcurrency:               0,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        5,
+			expectedTSDBOpenConcurrency:        10,
+			expectedTSDBWALReplayConcurrency:   0,
+		},
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are <= 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize WAL replay on sequential openings": {
+			walReplayConcurrency:               3,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        5,
+			expectedTSDBOpenConcurrency:        1,
+			expectedTSDBWALReplayConcurrency:   3,
+		},
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize openings with single WAL replay": {
+			walReplayConcurrency:               3,
+			maxTSDBOpeningConcurrencyOnStartup: 10,
+			tenantCount:                        15,
+			expectedTSDBOpenConcurrency:        3,
+			expectedTSDBWALReplayConcurrency:   1,
+		},
+	}
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tsdbConfig := mimir_tsdb.TSDBConfig{
+				WALReplayConcurrency:                         testData.walReplayConcurrency,
+				DeprecatedMaxTSDBOpeningConcurrencyOnStartup: testData.maxTSDBOpeningConcurrencyOnStartup,
+			}
+			tsdbOpenConcurrency, tsdbWALReplayConcurrency := getOpenTSDBsConcurrencyConfig(tsdbConfig, testData.tenantCount)
+			require.Equal(t, testData.expectedTSDBOpenConcurrency, tsdbOpenConcurrency)
+			require.Equal(t, testData.expectedTSDBWALReplayConcurrency, tsdbWALReplayConcurrency)
+		})
+	}
 }

@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.overrides_exporter.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}

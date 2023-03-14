@@ -417,7 +417,7 @@ func TestConfigValidation(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.getTestConfig().Validate(nil)
+			err := tc.getTestConfig().Validate(log.NewNopLogger())
 			if tc.expectAnyError {
 				require.Error(t, err)
 			} else if tc.expectedError != nil {

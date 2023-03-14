@@ -39,5 +39,6 @@ remote_write:
     send_exemplars: true
 
 rule_files:
-  - '/etc/alerts/alerts.yaml'
+  - '/etc/mixin/mimir-alerts.yaml'
+  - '/etc/mixin/mimir-rules.yaml'
 
