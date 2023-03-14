@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230307154039-ee798e84baf0
+	github.com/grafana/dskit v0.0.0-20230317135621-727cbc22c1fe
 	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
@@ -159,7 +159,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20230221082510-6cde04bf2270 // indirect
+	github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9 // indirect
 	github.com/hashicorp/consul/api v1.20.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
