@@ -32,10 +32,8 @@ var (
 	generateFloatSeries     = e2e.GenerateSeries
 	generateNFloatSeries    = e2e.GenerateNSeries
 	generateHistogramSeries = GenerateHistogramSeries
-	// generateNHistogramSeries = e2e.GenerateNHistogramSeries
 
-	generateTestHistogram = test.GenerateTestHistogram
-	// generateTestFloatHistogram = test.GenerateTestFloatHistogram
+	generateTestHistogram       = test.GenerateTestHistogram
 	generateTestSampleHistogram = test.GenerateTestSampleHistogram
 
 	// These are the earliest and latest possible timestamps supported by the Prometheus API -
