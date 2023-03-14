@@ -120,6 +120,9 @@ The following features are currently experimental:
 
 ## Deprecated features
 
+Deprecated features are usable until the release which indicates their removal.
+For more details about what "deprecated" means see [Parameter lifecycle]({{ relref "../references/configuration-parameters#parameter-lifecycle" }}).
+
 The following features are currently deprecated and will be **removed in Mimir 2.9**:
 
 - Compactor
