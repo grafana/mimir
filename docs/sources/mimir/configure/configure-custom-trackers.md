@@ -2,6 +2,7 @@
 aliases:
   - ../configuring/configuring-custom-trackers/
   - configuring-custom-trackers/
+  - ../operators-guide/configure/configure-custom-trackers/
 description: Use the custom tracker to count the number of active series on an ingester.
 menuTitle: Custom active series trackers
 title: Configure custom active series trackers

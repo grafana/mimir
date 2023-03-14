@@ -2,6 +2,7 @@
 aliases:
   - ../configuring/configuring-hash-rings/
   - configuring-hash-rings/
+  - ../operators-guide/configure/configure-hash-rings/
 description: Learn how to configure Grafana Mimir hash rings.
 menuTitle: Hash rings
 title: Configure Grafana Mimir hash rings

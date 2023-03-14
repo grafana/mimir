@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/configure/configure-object-storage-backend/
 title: "Configure Grafana Mimir object storage backend"
 menuTitle: "Object storage"
 description: "Learn how to configure Grafana Mimir to use different object storage backend implementations."

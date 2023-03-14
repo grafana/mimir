@@ -2,6 +2,7 @@
 aliases:
   - ../configuring/configuring-high-availability-deduplication/
   - configuring-high-availability-deduplication/
+  - ../operators-guide/configure/configure-high-availability-deduplication/
 description: Learn how to configure Grafana Mimir to handle HA Prometheus server deduplication.
 menuTitle: High-availability deduplication
 title: Configure Grafana Mimir high-availability deduplication
