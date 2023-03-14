@@ -502,15 +502,12 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
-	var servs []services.Service
-
 	q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize querier: %v", err)
 	}
 
 	t.StoreQueryable = q
-	servs = append(servs, q)
 	return q, nil
 }
 
