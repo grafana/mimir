@@ -98,4 +98,4 @@ Grafana Mimir requires any of the following object stores for the block files:
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - Local Filesystem (single node only)
 
-For more information, refer to [configure object storage]({{< relref "../../configure/configure-object-storage-backend.md" >}}) and [configure metrics storage retention]({{< relref "../../configure/configure-metrics-storage-retention.md" >}}).
+For more information, refer to [configure object storage]({{< relref "../../../configure/configure-object-storage-backend.md" >}}) and [configure metrics storage retention]({{< relref "../../../configure/configure-metrics-storage-retention.md" >}}).

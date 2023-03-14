@@ -664,33 +664,3 @@ loop:
 
 	return numLabels, true
 }
-
-type GenericSamplePair interface {
-	Sample | Histogram | FloatHistogramPair
-	GetTimestampVal() int64
-	GetBaseVal() float64
-}
-
-func (s Sample) GetTimestampVal() int64 {
-	return s.TimestampMs
-}
-
-func (m Histogram) GetTimestampVal() int64 {
-	return m.Timestamp
-}
-
-func (p FloatHistogramPair) GetTimestampVal() int64 {
-	return p.TimestampMs
-}
-
-func (s Sample) GetBaseVal() float64 {
-	return s.Value
-}
-
-func (m Histogram) GetBaseVal() float64 {
-	return m.Sum
-}
-
-func (p FloatHistogramPair) GetBaseVal() float64 {
-	return p.Histogram.Sum
-}

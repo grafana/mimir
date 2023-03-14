@@ -8,30 +8,29 @@ package querier
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/stretchr/testify/mock"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
-
 	"github.com/grafana/dskit/flagext"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -42,11 +41,13 @@ const (
 )
 
 type query struct {
-	query    string
-	labels   labels.Labels
-	samples  func(from, through time.Time, step time.Duration) int
-	expected func(t int64) (int64, float64)
-	step     time.Duration
+	query   string
+	labels  labels.Labels
+	samples func(from, through time.Time, step time.Duration) int
+	step    time.Duration
+
+	valueType   func(ts model.Time) chunkenc.ValueType
+	assertPoint func(t testing.TB, ts int64, point promql.Point)
 }
 
 func TestQuerier(t *testing.T) {
@@ -54,69 +55,154 @@ func TestQuerier(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	const chunks = 24
+	secondChunkStart := model.Time(0).Add(chunkOffset)
 
-	queries := []query{
+	queries := map[string]query{
 		// Windowed rates with small step;  This will cause BufferedIterator to read
 		// all the samples.
-		{
+		"float: windowed rates with small step": {
 			query:  "rate(foo[1m])",
 			step:   sampleRate * 4,
 			labels: labels.Labels{},
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
-			expected: func(t int64) (int64, float64) {
-				return t + int64((sampleRate*4)/time.Millisecond), 1000.0
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts + int64((sampleRate*4)/time.Millisecond),
+					V: 1000.0,
+				}, point)
 			},
 		},
 
 		// Very simple single-point gets, with low step.  Performance should be
 		// similar to above.
-		{
+		"float: single point gets with low step": {
 			query:  "foo",
 			step:   sampleRate * 4,
 			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
-			expected: func(t int64) (int64, float64) {
-				return t, float64(t)
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
 			},
 		},
 
 		// Rates with large step; excersise everything.
-		{
+		"float: rate with large step": {
 			query:  "rate(foo[1m])",
 			step:   sampleRate * 4 * 10,
 			labels: labels.Labels{},
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from) / step)
 			},
-			expected: func(t int64) (int64, float64) {
-				return t + int64((sampleRate*4)/time.Millisecond)*10, 1000.0
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
+					V: 1000.0,
+				}, point)
 			},
 		},
 
 		// Single points gets with large step; excersise Seek performance.
-		{
+		"float: single point gets with large step": {
 			query:  "foo",
 			step:   sampleRate * 4 * 10,
 			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
-			expected: func(t int64) (int64, float64) {
-				return t, float64(t)
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
+			},
+		},
+
+		"integer histogram: single point gets with low step": {
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
+			},
+		},
+
+		"float histogram: single point gets with low step": {
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+			},
+		},
+
+		"float histogram: with large step": {
+			query:  "foo",
+			step:   sampleRate * 4 * 10,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+			},
+		},
+
+		"float to histogram: check transition with low steps": {
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from)/step) + 1
+			},
+			valueType: func(ts model.Time) chunkenc.ValueType {
+				if ts.After(secondChunkStart) { // New type starts new chunk anyway, so use the chunkoffset
+					return chunkenc.ValFloatHistogram
+				}
+				return chunkenc.ValFloat
+			},
+			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+				if ts > int64(secondChunkStart) {
+					require.Equal(t, ts, point.T)
+					test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
+					return
+				}
+				require.Equal(t, promql.Point{
+					T: ts,
+					V: float64(ts),
+				}, point)
 			},
 		},
 	}
 
-	// Generate TSDB head used to simulate querying the long-term storage.
-	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
-
 	for _, query := range queries {
 		for _, iterators := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				// Generate TSDB head used to simulate querying the long-term storage.
+				db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), query.valueType)
+
 				cfg.Iterators = iterators
 
 				// No samples returned by ingesters.
@@ -157,38 +243,38 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				// Series with data points only before queryStart.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
 					}),
 				},
 				// Series with data points before and after queryStart, but before queryEnd.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
-						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
-						{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
-						{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
-						{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
-						{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
-						{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
-						{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
-						{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
-						{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
-						{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+						mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
 					}),
 				},
 				// Series with data points after queryEnd.
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []mimirpb.Sample{
-						{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
-						{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
-						{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
-						{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+					Chunks: convertToChunks(t, []interface{}{
+						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
 					}),
 				},
 			},
@@ -224,10 +310,89 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	}, m[0].Points)
 }
 
-func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) (storage.Queryable, model.Time) {
+// TestBatchMergeChunks is a regression test to catch one particular case
+// when the Batch merger iterator was corrupting memory by not copying
+// Batches by value because the Batch itself was not possible to copy
+// by value.
+func TestBatchMergeChunks(t *testing.T) {
+	var (
+		logger     = log.NewNopLogger()
+		queryStart = mustParseTime("2021-11-01T06:00:00Z")
+		queryEnd   = mustParseTime("2021-11-01T06:01:00Z")
+		queryStep  = time.Second
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	cfg.BatchIterators = true    // Always use the Batch iterator - regression test
+
+	s1 := []mimirpb.Sample{}
+	s2 := []mimirpb.Sample{}
+
+	for i := 0; i < 12; i++ {
+		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		if i != 9 { // let series 3 miss a point
+			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		}
+	}
+
+	c1 := convertToChunks(t, samplesToInterface(s1))
+	c2 := convertToChunks(t, samplesToInterface(s2))
+	chunks12 := []client.Chunk{}
+	chunks12 = append(chunks12, c1...)
+	chunks12 = append(chunks12, c2...)
+
+	chunks21 := []client.Chunk{}
+	chunks21 = append(chunks21, c2...)
+	chunks21 = append(chunks21, c1...)
+
+	// Mock distributor to return chunks that need merging.
+	distributor := &mockDistributor{}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&client.QueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				// Series with chunks in the 1,2 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+					Chunks: chunks12,
+				},
+				// Series with chunks in the 2,1 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+					Chunks: chunks21,
+				},
+			},
+		},
+		nil)
+
+	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	require.NoError(t, err)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     logger,
+		MaxSamples: 1e6,
+		Timeout:    1 * time.Minute,
+	})
+
+	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	query, err := engine.NewRangeQuery(queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	r := query.Exec(ctx)
+	m, err := r.Matrix()
+	require.NoError(t, err)
+
+	require.Equal(t, 2, m.Len())
+	require.ElementsMatch(t, m[0].Points, m[1].Points)
+}
+
+func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
+	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
@@ -244,8 +409,21 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	chunkStartTs := mint
 	ts := chunkStartTs
 	for i := 0; i < samples; i++ {
-		_, err := app.Append(0, l, int64(ts), float64(ts))
-		require.NoError(t, err)
+		valType := valueType(ts)
+		switch valType {
+		case chunkenc.ValFloat:
+			_, err := app.Append(0, l, int64(ts), float64(ts))
+			require.NoError(t, err)
+		case chunkenc.ValHistogram:
+			_, err := app.AppendHistogram(0, l, int64(ts), test.GenerateTestHistogram(int(ts)), nil)
+			require.NoError(t, err)
+		case chunkenc.ValFloatHistogram:
+			_, err := app.AppendHistogram(0, l, int64(ts), nil, test.GenerateTestFloatHistogram(int(ts)))
+			require.NoError(t, err)
+		default:
+			t.Errorf("Unknown chunk type %v", valType)
+		}
+
 		cnt++
 
 		ts = ts.Add(step)
@@ -818,10 +996,8 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 	require.Equal(t, q.labels, series.Metric)
 	require.Equal(t, q.samples(from, through, step), len(series.Points))
 	var ts int64
-	for i, point := range series.Points {
-		expectedTime, expectedValue := q.expected(ts)
-		require.Equal(t, expectedTime, point.T, strconv.Itoa(i))
-		require.Equal(t, expectedValue, point.V, strconv.Itoa(i))
+	for _, point := range series.Points {
+		q.assertPoint(t, ts, point)
 		ts += int64(step / time.Millisecond)
 	}
 	return r

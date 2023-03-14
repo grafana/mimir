@@ -39,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Apply `clusterLabel` to ServiceMonitors for kube-state-metrics, kubelet, and cadvisor. #4126
 * [BUGFIX] Add http port in distributor headless service. Fixes parity with jsonnet. #4392
 * [BUGFIX] Generate the pod security context on the pod level in graphite web deployment, instead of on container level. #4272
+* [BUGFIX] Fix kube-state-metrics metricRelabelings dropping pods and deployments. #4485
 
 ## 4.2.0
 
@@ -70,7 +71,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
   [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
-* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
+* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
   - If you are **upgrading** an existing installation:
     - Turn off zone-aware replication, by setting the following values:
       ```yaml
