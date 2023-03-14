@@ -28,11 +28,14 @@ import (
 var (
 	// Expose some utilities from the framework so that we don't have to prefix them
 	// with the package name in tests.
-	mergeFlags              = e2e.MergeFlags
-	generateFloatSeries     = e2e.GenerateSeries
-	generateNFloatSeries    = e2e.GenerateNSeries
-	generateHistogramSeries = GenerateHistogramSeries
+	mergeFlags = e2e.MergeFlags
 
+	generateFloatSeries  = e2e.GenerateSeries
+	generateNFloatSeries = e2e.GenerateNSeries
+
+	// These are local, because e2e is used by non metric products that do not have native histograms
+	generateHistogramSeries     = GenerateHistogramSeries
+	generateNHistogramSeries    = GenerateNHistogramSeries
 	generateTestHistogram       = test.GenerateTestHistogram
 	generateTestSampleHistogram = test.GenerateTestSampleHistogram
 
@@ -49,7 +52,7 @@ var (
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
 
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
-// type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
+type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
 
 func getMimirProjectDir() string {
 	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
