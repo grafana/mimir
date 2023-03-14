@@ -1,6 +1,6 @@
 ---
 title: "Configure Grafana Mimir metrics storage retention"
-menuTitle: "Configure metrics storage retention"
+menuTitle: "Metrics storage retention"
 description: "Learn how to configure Grafana Mimir metrics storage retention."
 weight: 70
 ---

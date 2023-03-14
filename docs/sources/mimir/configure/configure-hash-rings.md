@@ -3,7 +3,7 @@ aliases:
   - ../configuring/configuring-hash-rings/
   - configuring-hash-rings/
 description: Learn how to configure Grafana Mimir hash rings.
-menuTitle: Configure hash rings
+menuTitle: Hash rings
 title: Configure Grafana Mimir hash rings
 weight: 60
 ---

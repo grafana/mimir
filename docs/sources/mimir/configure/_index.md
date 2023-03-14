@@ -1,6 +1,7 @@
 ---
 aliases:
   - configuring/
+  - ../operators-guide/
 description: This section provides links to Grafana Mimir configuration topics.
 keywords:
   - Mimir configuration
