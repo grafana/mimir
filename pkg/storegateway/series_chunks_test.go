@@ -70,7 +70,6 @@ func TestSeriesChunksSet(t *testing.T) {
 				require.Zero(t, set.series[i])
 
 				set.series[i].lset = labels.FromStrings(labels.MetricName, "metric")
-				set.series[i].refs = []chunks.ChunkRef{1, 2, 3}
 				set.series[i].chks = set.newSeriesAggrChunkSlice(numChunksPerSeries)
 			}
 
@@ -307,7 +306,6 @@ func TestPreloadingSetIterator(t *testing.T) {
 		set := newSeriesChunksSet(1, false)
 		set.series = append(set.series, seriesEntry{
 			lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-			refs: []chunks.ChunkRef{chunks.ChunkRef(i)},
 		})
 
 		sets = append(sets, set)
@@ -449,7 +447,13 @@ func TestPreloadingSetIterator_Concurrency(t *testing.T) {
 
 type testBlock struct {
 	ulid   ulid.ULID
-	series []seriesEntry
+	series []testBlockSeries
+}
+
+type testBlockSeries struct {
+	lset labels.Labels
+	refs []chunks.ChunkRef
+	chks []storepb.AggrChunk
 }
 
 func (b testBlock) toSeriesChunksOverlapping(seriesIdx int, minT, maxT int64) seriesEntry {
@@ -461,8 +465,18 @@ func (b testBlock) toSeriesChunksOverlapping(seriesIdx int, minT, maxT int64) se
 		}
 		filtered = append(filtered, c)
 	}
-	s.chks = filtered
-	return s
+
+	return seriesEntry{
+		lset: s.lset,
+		chks: filtered,
+	}
+}
+
+func (b testBlock) seriesEntry(seriesIdx int) seriesEntry {
+	return seriesEntry{
+		lset: b.series[seriesIdx].lset,
+		chks: b.series[seriesIdx].chks,
+	}
 }
 
 func (b testBlock) toSeriesChunkRefsWithNRanges(seriesIndex, numRanges int) seriesChunkRefs {
@@ -532,7 +546,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 		t.Helper()
 		require.Zero(t, len(b.series)%totalParts, "cannot divide block into uneven parts")
 
-		series := make([]seriesEntry, len(b.series))
+		series := make([]testBlockSeries, len(b.series))
 		copy(series, block1.series)
 		chunksPerPart := len(b.series[0].refs) / totalParts
 		for sIdx, s := range series {
@@ -567,7 +581,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block1.toSeriesChunkRefs(1)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(1)}},
 				},
 			},
 		},
@@ -578,7 +592,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 10), block1.toSeriesChunkRefsWithNRanges(1, 10)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(1)}},
 				},
 			},
 		},
@@ -603,8 +617,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(2), block1.toSeriesChunkRefs(3)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[1]}},
-					{series: []seriesEntry{block1.series[2], block1.series[3]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(1)}},
+					{series: []seriesEntry{block1.seriesEntry(2), block1.seriesEntry(3)}},
 				},
 			},
 		},
@@ -615,7 +629,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block2.toSeriesChunkRefs(1)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block2.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block2.seriesEntry(1)}},
 				},
 			},
 		},
@@ -627,8 +641,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block2.toSeriesChunkRefs(0), block2.toSeriesChunkRefs(1)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[1]}},
-					{series: []seriesEntry{block2.series[0], block2.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(1)}},
+					{series: []seriesEntry{block2.seriesEntry(0), block2.seriesEntry(1)}},
 				},
 			},
 		},
@@ -640,8 +654,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block2.toSeriesChunkRefsWithNRanges(0, 4), block2.toSeriesChunkRefsWithNRanges(1, 4)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[1]}},
-					{series: []seriesEntry{block2.series[0], block2.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(1)}},
+					{series: []seriesEntry{block2.seriesEntry(0), block2.seriesEntry(1)}},
 				},
 			},
 		},
@@ -653,8 +667,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(1), block2.toSeriesChunkRefs(1)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block2.series[0]}},
-					{series: []seriesEntry{block1.series[1], block2.series[1]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block2.seriesEntry(0)}},
+					{series: []seriesEntry{block1.seriesEntry(1), block2.seriesEntry(1)}},
 				},
 			},
 		},
@@ -670,8 +684,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				},
 				expectedSets: []seriesChunksSet{
 					{series: func() []seriesEntry {
-						entry := block1.series[0]
-						entry.chks = append(entry.chks, block2.series[0].chks...)
+						entry := block1.seriesEntry(0)
+						entry.chks = append(entry.chks, block2.seriesEntry(0).chks...)
 						return []seriesEntry{entry}
 					}()},
 				},
@@ -689,8 +703,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				},
 				expectedSets: []seriesChunksSet{
 					{series: func() []seriesEntry {
-						entry := block1.series[0]
-						entry.chks = append(entry.chks, block2.series[0].chks...)
+						entry := block1.seriesEntry(0)
+						entry.chks = append(entry.chks, block2.seriesEntry(0).chks...)
 						return []seriesEntry{entry}
 					}()},
 				},
@@ -750,8 +764,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block2.toSeriesChunkRefs(0), block2.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
-					{series: []seriesEntry{block2.series[0], block2.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
+					{series: []seriesEntry{block2.seriesEntry(0), block2.seriesEntry(2)}},
 				},
 			},
 			// Next load a different set of series (1 and 3)
@@ -762,8 +776,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block2.toSeriesChunkRefs(1), block2.toSeriesChunkRefs(3)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[1], block1.series[3]}},
-					{series: []seriesEntry{block2.series[1], block2.series[3]}},
+					{series: []seriesEntry{block1.seriesEntry(1), block1.seriesEntry(3)}},
+					{series: []seriesEntry{block2.seriesEntry(1), block2.seriesEntry(3)}},
 				},
 			},
 		},
@@ -775,7 +789,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 2), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
 				},
 			},
 			// Issue a request where the first series has its chunks in 12 ranges; it shouldn't interfere with the cache item from last request
@@ -785,7 +799,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 12), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
 				},
 			},
 		},
@@ -797,7 +811,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 1), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
 				},
 			},
 			// Issue the same request; this time with an empty storage
@@ -807,7 +821,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
 				},
 			},
 		},
@@ -819,7 +833,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefs(0), block1.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
 				},
 			},
 			// Next query from block1 and block2 with only block2 available in the storage; chunks for block1 should be already cached
@@ -830,8 +844,8 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block2.toSeriesChunkRefsWithNRanges(0, 1), block2.toSeriesChunkRefs(2)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0], block1.series[2]}},
-					{series: []seriesEntry{block2.series[0], block2.series[2]}},
+					{series: []seriesEntry{block1.seriesEntry(0), block1.seriesEntry(2)}},
+					{series: []seriesEntry{block2.seriesEntry(0), block2.seriesEntry(2)}},
 				},
 			},
 		},
@@ -859,7 +873,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 5)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0]}},
+					{series: []seriesEntry{block1.seriesEntry(0)}},
 				},
 			},
 		},
@@ -899,7 +913,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 5)}},
 				},
 				expectedSets: []seriesChunksSet{
-					{series: []seriesEntry{block1.series[0]}},
+					{series: []seriesEntry{block1.seriesEntry(0)}},
 				},
 			},
 		},
@@ -1071,7 +1085,7 @@ type chunkReaderMock struct {
 	toLoad map[chunks.ChunkRef]loadIdx
 }
 
-func newChunkReaderMockWithSeries(series []seriesEntry, addLoadErr, loadErr error) *chunkReaderMock {
+func newChunkReaderMockWithSeries(series []testBlockSeries, addLoadErr, loadErr error) *chunkReaderMock {
 	chks := map[chunks.ChunkRef]storepb.AggrChunk{}
 	for _, s := range series {
 		for i := range s.chks {
@@ -1117,17 +1131,17 @@ func (f *chunkReaderMock) reset() {
 }
 
 // generateSeriesEntriesWithChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
-func generateSeriesEntriesWithChunks(t testing.TB, numSeries, numChunksPerSeries int) []seriesEntry {
+func generateSeriesEntriesWithChunks(t testing.TB, numSeries, numChunksPerSeries int) []testBlockSeries {
 	return generateSeriesEntriesWithChunksSize(t, numSeries, numChunksPerSeries, 256)
 }
 
-func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSeries, chunkDataLenBytes int) []seriesEntry {
+func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSeries, chunkDataLenBytes int) []testBlockSeries {
 
-	out := make([]seriesEntry, 0, numSeries)
+	out := make([]testBlockSeries, 0, numSeries)
 	labels := generateSeries([]int{numSeries})
 
 	for i := 0; i < numSeries; i++ {
-		entry := seriesEntry{
+		entry := testBlockSeries{
 			lset: labels[i],
 			refs: make([]chunks.ChunkRef, 0, numChunksPerSeries),
 			chks: make([]storepb.AggrChunk, 0, numChunksPerSeries),
@@ -1152,7 +1166,7 @@ func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSe
 }
 
 // generateSeriesEntries generates seriesEntries with 50 chunks. Each chunk is a random byte slice.
-func generateSeriesEntries(t testing.TB, numSeries int) []seriesEntry {
+func generateSeriesEntries(t testing.TB, numSeries int) []testBlockSeries {
 	return generateSeriesEntriesWithChunks(t, numSeries, 50)
 }
 
