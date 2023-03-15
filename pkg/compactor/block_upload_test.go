@@ -1417,8 +1417,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		name             string
 		lbls             func() []labels.Labels
 		metaInject       func(meta *metadata.Meta)
-		indexInject      func(fname string) error
-		chunkInject      func(dir string) error
+		indexInject      func(fname string) string
+		chunkInject      func(fname string) string
 		populateFileList bool
 		missing          Missing
 		expectError      bool
@@ -1471,7 +1471,32 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectedMsg: "block contains down-sampled data",
 		},
 		{
-			name: "out of order series",
+			name: "empty index file",
+			lbls: validLabels,
+			indexInject: func(fname string) string {
+				require.NoError(t, os.Truncate(fname, 0))
+				return fname
+			},
+			expectError: true,
+			expectedMsg: "error validating block index: open index file: mmap, size 0: invalid argument",
+		},
+		{
+			name: "index file invalid magic number",
+			lbls: validLabels,
+			indexInject: func(fname string) string {
+				fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
+				require.NoError(t, err)
+				defer fd.Close()
+				b, err := fd.WriteAt([]byte("test"), 0)
+				require.Equal(t, b, 4)
+				require.NoError(t, err)
+				return fname
+			},
+			expectError: true,
+			expectedMsg: "error validating block index: open index file: invalid magic number 74657374",
+		},
+		{
+			name: "out of order labels",
 			lbls: func() []labels.Labels {
 				oooLabels := []labels.Labels{
 					labels.FromStrings("a", "1", "d", "4"),
@@ -1484,6 +1509,31 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectError: true,
 			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
 		},
+		//{
+		//	name: "empty segment file",
+		//	lbls: validLabels,
+		//	chunkInject: func(fname string) string {
+		//		require.NoError(t, os.Truncate(fname, 0))
+		//		return fname
+		//	},
+		//	expectError: true,
+		//	expectedMsg: "error validating block chunks: open chunk file: mmap, size 0: invalid argument",
+		//},
+		//{
+		//	name: "segment file invalid magic number",
+		//	lbls: validLabels,
+		//	chunkInject: func(fname string) string {
+		//		fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
+		//		require.NoError(t, err)
+		//		defer fd.Close()
+		//		b, err := fd.WriteAt([]byte("test"), 0)
+		//		require.Equal(t, b, 4)
+		//		require.NoError(t, err)
+		//		return fname
+		//	},
+		//	expectError: true,
+		//	expectedMsg: "error validating block chunks: open chunk file: invalid magic number 74657374",
+		//},
 	}
 
 	for _, tc := range testCases {
@@ -1498,23 +1548,6 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				populateMetaFileList(t, testDir, meta)
 			}
 
-			// handle meta file
-			if tc.metaInject != nil {
-				tc.metaInject(meta)
-			}
-			var metaBody bytes.Buffer
-			require.NoError(t, meta.Write(&metaBody))
-
-			// handle index file
-			if tc.indexInject != nil {
-				require.NoError(t, tc.indexInject(path.Join(testDir, block.IndexFilename)))
-			}
-
-			// handle chunk file(s)
-			if tc.chunkInject != nil {
-				require.NoError(t, tc.chunkInject(path.Join(testDir, block.ChunksDirname)))
-			}
-
 			// create a compactor
 			cfgProvider := newMockConfigProvider()
 			c := &MultitenantCompactor{
@@ -1525,7 +1558,39 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// upload the block
 			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))
+			// remove meta.json as we will be uploading a new one with the uploading meta name
 			require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.MetaFilename)))
+			exists, err := bkt.Exists(ctx, path.Join(blockID.String(), block.ChunksDirname, "000001"))
+			require.NoError(t, err)
+			require.True(t, exists)
+
+			// handle meta file
+			if tc.metaInject != nil {
+				tc.metaInject(meta)
+			}
+			var metaBody bytes.Buffer
+			require.NoError(t, meta.Write(&metaBody))
+
+			// replace index file
+			if tc.indexInject != nil {
+				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.IndexFilename)))
+				newIndexFile := tc.indexInject(path.Join(testDir, block.IndexFilename))
+				fd, err := os.Open(newIndexFile)
+				defer fd.Close()
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), block.IndexFilename), fd))
+			}
+
+			// replace segment file
+			if tc.chunkInject != nil {
+				segmentFile := path.Join(block.ChunksDirname, "000001")
+				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), segmentFile)))
+				newSegmentFile := tc.chunkInject(path.Join(testDir, segmentFile))
+				fd, err := os.Open(newSegmentFile)
+				defer fd.Close()
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), segmentFile), fd))
+			}
 
 			// delete any files that should be missing
 			if tc.missing&MissingIndex != 0 {

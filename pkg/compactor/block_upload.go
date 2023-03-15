@@ -515,6 +515,25 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		return errors.Wrap(err, "error validating block index")
 	}
 
+	// validate segment files
+	err = filepath.Walk(filepath.Join(blockDir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		if err := validateSegmentFile(c.logger, path); err != nil {
+			return errors.Wrapf(err, "error validating segment file %s", path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "error validating segment files")
+	}
+
 	return nil
 }
 
@@ -753,5 +772,10 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 	if err := bkt.Upload(ctx, pth, bytes.NewReader(buf)); err != nil {
 		return err
 	}
+	return nil
+}
+
+func validateSegmentFile(logger log.Logger, path string) error {
+	// still in draft mode
 	return nil
 }
