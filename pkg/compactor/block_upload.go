@@ -5,10 +5,14 @@ package compactor
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"hash/crc32"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -41,10 +45,6 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 )
-
-type timesMinMax struct {
-	Min, Max int64
-}
 
 type BlockUploadConfig struct {
 	BlockValidationEnabled bool `yaml:"block_validation_enabled" category:"experimental"`
@@ -520,14 +520,6 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		return errors.Wrap(err, "error validating block index")
 	}
 
-	// Now that we have verified the index, we build a map of chunkrefs to min/max time
-	// to use when validating the chunks.
-	chunkRefToMinMaxTime := buildChunkRefMap(filepath.Join(blockDir, block.IndexFilename))
-
-	if len(chunkRefToMinMaxTime) == 0 {
-		return errors.New("no chunks found in index")
-	}
-
 	// validate segment files
 	err = filepath.Walk(filepath.Join(blockDir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -537,7 +529,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 			return nil
 		}
 
-		if err := validateSegmentFile(path, &chunkRefToMinMaxTime); err != nil {
+		if err := validateSegmentFile(path, blockMetadata.MinTime, blockMetadata.MaxTime); err != nil {
 			return errors.Wrapf(err, "error validating segment file %s", path)
 		}
 
@@ -788,13 +780,125 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 	return nil
 }
 
-func buildChunkRefMap(path string) map[chunks.ChunkRef]timesMinMax {
-	var result map[chunks.ChunkRef]timesMinMax
-	// still in draft
-	return result
+func validateSegmentFile(path string, minTS int64, maxTS int64) error {
+	// This is adapted from the tools/tsdb-chunks/main.go
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	table := crc32.MakeTable(crc32.Castagnoli)
+	header := make([]byte, 8)
+	n, err := io.ReadFull(file, header)
+	if err != nil {
+		return fmt.Errorf("failed to read header: %w", err)
+	}
+	if n != 8 {
+		return fmt.Errorf("failed to read header: %d bytes read only", n)
+	}
+
+	if binary.BigEndian.Uint32(header) != chunks.MagicChunks {
+		return fmt.Errorf("file doesn't start with magic prefix")
+	}
+	if header[4] != 0x01 {
+		return fmt.Errorf("invalid version: 0x%02x", header[4])
+	}
+
+	if !bytes.Equal(header[5:], []byte{0, 0, 0}) {
+		return fmt.Errorf("invalid padding")
+	}
+
+	tsIsValid := func(ts int64, last int64) (bool, error) {
+		if ts < minTS {
+			return false, fmt.Errorf("timestamp %d is before minTime %d", ts, minTS)
+		}
+		if ts > maxTS {
+			return false, fmt.Errorf("timestamp %d is after maxTime %d", ts, maxTS)
+		}
+		if ts < last {
+			return false, fmt.Errorf("timestamp %d is before previous timestamp %d", ts, last)
+		}
+		return true, nil
+	}
+
+	cix := 0
+	for c, err := nextChunk(file, table); err == nil; c, err = nextChunk(file, table) {
+		var lastTS int64
+		it := c.Iterator(nil)
+		six := 0
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			ts := it.AtT()
+			if ok, err := tsIsValid(ts, lastTS); !ok {
+				return err
+			}
+			lastTS = ts
+			six++
+		}
+		if e := it.Err(); e != nil {
+			return fmt.Errorf("Chunk #%d: error: %v\n", cix, e)
+		}
+		cix++
+	}
+
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return nil
 }
 
-func validateSegmentFile(path string, refMap *map[chunks.ChunkRef]timesMinMax) error {
-	// still in draft
-	return nil
+func nextChunk(file *os.File, table *crc32.Table) (chunkenc.Chunk, error) {
+	// This is adapted from the tools/tsdb-chunks/main.go
+	_, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file position: %w", err)
+	}
+
+	buf := make([]byte, binary.MaxVarintLen64)
+	_, err = io.ReadFull(file, buf)
+	if err != nil {
+		return nil, fmt.Errorf("reading chunk length: %w", err)
+	}
+
+	length, n := binary.Uvarint(buf)
+	if n <= 0 {
+		return nil, fmt.Errorf("invalid varint length")
+	}
+
+	if n == len(buf) {
+		// we could handle this, but it can only happen if chunk length was too big --
+		// which it cannot really be, since chunk lengths are < 2^32
+		return nil, fmt.Errorf("unable to read encoding, no bytes left in buffer")
+	}
+
+	enc := chunkenc.Encoding(buf[n])
+	n++
+
+	// seek after Data part of chunk
+	chunkData := make([]byte, int(length))
+
+	// Copy remaining data from our buffer
+	copy(chunkData, buf[n:])
+	_, err = io.ReadFull(file, chunkData[len(buf)-n:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to skip data: %w", err)
+	}
+
+	_, err = io.ReadFull(file, buf[0:4])
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CRC32: %w", err)
+	}
+
+	// verify checksum
+	crc := crc32.Checksum(chunkData, table)
+	if crc != binary.BigEndian.Uint32(buf[0:4]) {
+		return nil, fmt.Errorf("CRC32 mismatch")
+	}
+
+	chunk, err := chunkenc.FromData(enc, chunkData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode chunk: %w", err)
+	}
+
+	return chunk, nil
 }

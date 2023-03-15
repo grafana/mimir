@@ -7,10 +7,10 @@ package tsdb
 
 import (
 	"crypto/rand"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"testing"
 
 	"github.com/oklog/ulid"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 )
 

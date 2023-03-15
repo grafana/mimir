@@ -1425,8 +1425,9 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		expectedMsg      string
 	}{
 		{
-			name: "valid block",
-			lbls: validLabels,
+			name:             "valid block",
+			lbls:             validLabels,
+			populateFileList: true,
 		},
 		{
 			name:        "missing meta file",
@@ -1509,31 +1510,31 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectError: true,
 			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
 		},
-		//{
-		//	name: "empty segment file",
-		//	lbls: validLabels,
-		//	chunkInject: func(fname string) string {
-		//		require.NoError(t, os.Truncate(fname, 0))
-		//		return fname
-		//	},
-		//	expectError: true,
-		//	expectedMsg: "error validating block chunks: open chunk file: mmap, size 0: invalid argument",
-		//},
-		//{
-		//	name: "segment file invalid magic number",
-		//	lbls: validLabels,
-		//	chunkInject: func(fname string) string {
-		//		fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
-		//		require.NoError(t, err)
-		//		defer fd.Close()
-		//		b, err := fd.WriteAt([]byte("test"), 0)
-		//		require.Equal(t, b, 4)
-		//		require.NoError(t, err)
-		//		return fname
-		//	},
-		//	expectError: true,
-		//	expectedMsg: "error validating block chunks: open chunk file: invalid magic number 74657374",
-		//},
+		{
+			name: "empty segment file",
+			lbls: validLabels,
+			chunkInject: func(fname string) string {
+				require.NoError(t, os.Truncate(fname, 0))
+				return fname
+			},
+			expectError: true,
+			expectedMsg: "failed to read header: EOF",
+		},
+		{
+			name: "segment file invalid magic number",
+			lbls: validLabels,
+			chunkInject: func(fname string) string {
+				fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
+				require.NoError(t, err)
+				defer fd.Close()
+				b, err := fd.WriteAt([]byte("test"), 0)
+				require.Equal(t, b, 4)
+				require.NoError(t, err)
+				return fname
+			},
+			expectError: true,
+			expectedMsg: "file doesn't start with magic prefix",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1613,7 +1614,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, blockID, bkt, nil)
+			err = c.validateBlock(ctx, blockID, bkt)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)
