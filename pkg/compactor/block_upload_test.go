@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
-	"github.com/prometheus/prometheus/model/labels"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +24,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -37,6 +36,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta metadata.Meta) {
@@ -1449,6 +1449,17 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			missing:          MissingChunks,
 			expectError:      true,
 			expectedMsg:      "failed to stat chunks/",
+		},
+		{
+			name: "file size mismatch",
+			lbls: validLabels,
+			metaInject: func(meta *metadata.Meta) {
+				require.Greater(t, len(meta.Thanos.Files), 0)
+				meta.Thanos.Files[0].SizeBytes += 10
+			},
+			populateFileList: true,
+			expectError:      true,
+			expectedMsg:      "file size mismatch",
 		},
 		{
 			name: "downsampled series",
