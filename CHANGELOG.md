@@ -19,19 +19,19 @@
   * `-querier.store-gateway-client.*`
   * `-ingester.client.*`
   * `-ingester.ring.etcd.*`
-  * `-querier.frontend-client.*` 
-  * `-query-frontend.grpc-client-config.*` 
-  * `-query-frontend.results-cache.redis.*` 
+  * `-querier.frontend-client.*`
+  * `-query-frontend.grpc-client-config.*`
+  * `-query-frontend.results-cache.redis.*`
   * `-blocks-storage.bucket-store.index-cache.redis.*`
   * `-blocks-storage.bucket-store.chunks-cache.redis.*`
-  * `-blocks-storage.bucket-store.metadata-cache.redis.*` 
+  * `-blocks-storage.bucket-store.metadata-cache.redis.*`
   * `-compactor.ring.etcd.*`
   * `-store-gateway.sharding-ring.etcd.*`
   * `-ruler.client.*`
   * `-ruler.alertmanager-client.*`
   * `-ruler.ring.etcd.*`
   * `-ruler.query-frontend.grpc-client-config.*`
-  * `-alertmanager.sharding-ring.etcd.*` 
+  * `-alertmanager.sharding-ring.etcd.*`
   * `-alertmanager.alertmanager-client.*`
   * `-memberlist.*`
   * `-query-scheduler.grpc-client-config.*`
