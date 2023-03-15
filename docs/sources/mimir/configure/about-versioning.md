@@ -116,6 +116,7 @@ The following features are currently experimental:
   - `-query-frontend.query-result-response-format=protobuf`
   - `-ruler.query-frontend.query-result-response-format=protobuf`
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
+- Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 
 ## Deprecated features
 

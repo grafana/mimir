@@ -8440,6 +8440,60 @@
     },
     {
       "kind": "block",
+      "name": "vault",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "Enables fetching of keys and certificates from Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "vault.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "url",
+          "required": false,
+          "desc": "Location of the Vault server",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.url",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "token",
+          "required": false,
+          "desc": "Token used to authenticate with Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.token",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "mount_path",
+          "required": false,
+          "desc": "Location of secrets engine within Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.mount-path",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
       "name": "ruler",
       "required": false,
       "desc": "",

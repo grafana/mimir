@@ -202,6 +202,23 @@ activity_tracker:
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
+vault:
+  # (experimental) Enables fetching of keys and certificates from Vault
+  # CLI flag: -vault.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Location of the Vault server
+  # CLI flag: -vault.url
+  [url: <string> | default = ""]
+
+  # (experimental) Token used to authenticate with Vault
+  # CLI flag: -vault.token
+  [token: <string> | default = ""]
+
+  # (experimental) Location of secrets engine within Vault
+  # CLI flag: -vault.mount-path
+  [mount_path: <string> | default = ""]
+
 # The ruler block configures the ruler.
 [ruler: <ruler>]
 
