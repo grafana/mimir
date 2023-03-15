@@ -512,7 +512,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 	indexFile := filepath.Join(blockDir, block.IndexFilename)
 	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
 	if err != nil {
-		return errors.Wrap(err, "error validating block")
+		return errors.Wrap(err, "error validating block index")
 	}
 
 	return nil

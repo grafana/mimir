@@ -7,11 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
+	"github.com/prometheus/prometheus/model/labels"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -1389,6 +1393,161 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 	}
 }
 
+func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	bkt := objstore.NewInMemBucket()
+
+	type Missing uint8
+	const (
+		MissingMeta Missing = 1 << iota
+		MissingIndex
+		MissingChunks
+	)
+
+	validLabels := func() []labels.Labels {
+		return []labels.Labels{
+			labels.FromStrings("a", "1"),
+			labels.FromStrings("b", "2"),
+			labels.FromStrings("c", "3"),
+		}
+	}
+
+	testCases := []struct {
+		name             string
+		lbls             func() []labels.Labels
+		metaInject       func(meta *metadata.Meta)
+		indexInject      func(fname string) error
+		chunkInject      func(dir string) error
+		populateFileList bool
+		missing          Missing
+		expectError      bool
+		expectedMsg      string
+	}{
+		{
+			name: "valid block",
+			lbls: validLabels,
+		},
+		{
+			name:        "missing meta file",
+			lbls:        validLabels,
+			missing:     MissingMeta,
+			expectError: true,
+			expectedMsg: "failed renaming while preparing block for validation",
+		},
+		{
+			name:        "missing index file",
+			lbls:        validLabels,
+			missing:     MissingIndex,
+			expectError: true,
+			expectedMsg: "error validating block index: open index file:",
+		},
+		{
+			name:             "missing chunks file",
+			lbls:             validLabels,
+			populateFileList: true,
+			missing:          MissingChunks,
+			expectError:      true,
+			expectedMsg:      "failed to stat chunks/",
+		},
+		{
+			name: "downsampled series",
+			lbls: validLabels,
+			metaInject: func(meta *metadata.Meta) {
+				meta.Thanos.Downsample.Resolution = 1000
+			},
+			expectError: true,
+			expectedMsg: "block contains down-sampled data",
+		},
+		{
+			name: "out of order series",
+			lbls: func() []labels.Labels {
+				oooLabels := []labels.Labels{
+					labels.FromStrings("a", "1", "d", "4"),
+					labels.FromStrings("b", "2"),
+					labels.FromStrings("c", "3"),
+				}
+				oooLabels[0].Swap(0, 1)
+				return oooLabels
+			},
+			expectError: true,
+			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// create a test block
+			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, 0, 1000, nil)
+			require.NoError(t, err)
+			testDir := path.Join(tmpDir, blockID.String())
+			meta, err := metadata.ReadFromDir(testDir)
+			require.NoError(t, err)
+			if tc.populateFileList {
+				populateMetaFileList(t, testDir, meta)
+			}
+
+			// handle meta file
+			if tc.metaInject != nil {
+				tc.metaInject(meta)
+			}
+			var metaBody bytes.Buffer
+			require.NoError(t, meta.Write(&metaBody))
+
+			// handle index file
+			if tc.indexInject != nil {
+				require.NoError(t, tc.indexInject(path.Join(testDir, block.IndexFilename)))
+			}
+
+			// handle chunk file(s)
+			if tc.chunkInject != nil {
+				require.NoError(t, tc.chunkInject(path.Join(testDir, block.ChunksDirname)))
+			}
+
+			// create a compactor
+			cfgProvider := newMockConfigProvider()
+			c := &MultitenantCompactor{
+				logger:       log.NewNopLogger(),
+				bucketClient: bkt,
+				cfgProvider:  cfgProvider,
+			}
+
+			// upload the block
+			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))
+			require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.MetaFilename)))
+
+			// delete any files that should be missing
+			if tc.missing&MissingIndex != 0 {
+				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.IndexFilename)))
+			}
+
+			if tc.missing&MissingChunks != 0 {
+				chunkDir := path.Join(blockID.String(), block.ChunksDirname)
+				err := bkt.Iter(ctx, chunkDir, func(name string) error {
+					require.NoError(t, bkt.Delete(ctx, name))
+					return nil
+				})
+				require.NoError(t, err)
+			}
+
+			// only upload renamed meta file if it is not meant to be missing
+			if tc.missing&MissingMeta == 0 {
+				// rename to uploading meta file as that is what validateBlock expects
+				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), uploadingMetaFilename), &metaBody))
+			}
+
+			// validate the block
+			err = c.validateBlock(ctx, blockID, bkt, nil)
+			if tc.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
@@ -1490,13 +1649,6 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 	}
 }
 
-// marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
-func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
-	t.Helper()
-	err := marshalAndUploadToBucket(context.Background(), bkt, pth, val)
-	require.NoError(t, err)
-}
-
 func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 	const (
 		tenantID = "tenant"
@@ -1590,4 +1742,44 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
 		})
 	}
+}
+
+// marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
+func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
+	t.Helper()
+	err := marshalAndUploadToBucket(context.Background(), bkt, pth, val)
+	require.NoError(t, err)
+}
+
+// populateMetaFileList populates the thanos files list in the meta file based on files in a block directory.
+func populateMetaFileList(t *testing.T, dir string, meta *metadata.Meta) {
+	t.Helper()
+	var files []metadata.File
+	// segment files
+	_, err := os.Stat(filepath.Join(dir, block.ChunksDirname))
+	require.NoError(t, err)
+	err = filepath.Walk(filepath.Join(dir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
+		require.NoError(t, err)
+		if info.IsDir() {
+			return nil
+		}
+		files = append(files, metadata.File{
+			RelPath:   filepath.Join(block.ChunksDirname, info.Name()),
+			SizeBytes: info.Size(),
+		})
+		return nil
+	})
+	require.NoError(t, err)
+	// index file
+	stat, err := os.Stat(filepath.Join(dir, block.IndexFilename))
+	require.NoError(t, err)
+	files = append(files, metadata.File{
+		RelPath:   stat.Name(),
+		SizeBytes: stat.Size(),
+	})
+	// meta file
+	files = append(files, metadata.File{
+		RelPath: block.MetaFilename,
+	})
+	meta.Thanos.Files = files
 }
