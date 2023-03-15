@@ -30,7 +30,7 @@ Before deploying Grafana Mimir in a production environment, read:
 
 1. [An overview of Grafana Mimir’s architecture](https://grafana.com/docs/mimir/latest/operators-guide/architecture/)
 1. [Configure Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configure/)
-3. [Run Grafana Mimir in production](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/)
+1. [Run Grafana Mimir in production](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/)
 
 ## Documentation
 
