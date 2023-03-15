@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"net/http"
 	"os"
 	"path"
@@ -40,6 +41,10 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 )
+
+type timesMinMax struct {
+	Min, Max int64
+}
 
 type BlockUploadConfig struct {
 	BlockValidationEnabled bool `yaml:"block_validation_enabled" category:"experimental"`
@@ -119,7 +124,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
-			return c.validateBlock(ctx, blockID, userBkt, m)
+			return c.validateBlock(ctx, blockID, userBkt)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -476,7 +481,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, meta *metadata.Meta) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket) error {
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -515,6 +520,14 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		return errors.Wrap(err, "error validating block index")
 	}
 
+	// Now that we have verified the index, we build a map of chunkrefs to min/max time
+	// to use when validating the chunks.
+	chunkRefToMinMaxTime := buildChunkRefMap(filepath.Join(blockDir, block.IndexFilename))
+
+	if len(chunkRefToMinMaxTime) == 0 {
+		return errors.New("no chunks found in index")
+	}
+
 	// validate segment files
 	err = filepath.Walk(filepath.Join(blockDir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -524,7 +537,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 			return nil
 		}
 
-		if err := validateSegmentFile(c.logger, path); err != nil {
+		if err := validateSegmentFile(path, &chunkRefToMinMaxTime); err != nil {
 			return errors.Wrapf(err, "error validating segment file %s", path)
 		}
 
@@ -775,7 +788,13 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 	return nil
 }
 
-func validateSegmentFile(logger log.Logger, path string) error {
-	// still in draft mode
+func buildChunkRefMap(path string) map[chunks.ChunkRef]timesMinMax {
+	var result map[chunks.ChunkRef]timesMinMax
+	// still in draft
+	return result
+}
+
+func validateSegmentFile(path string, refMap *map[chunks.ChunkRef]timesMinMax) error {
+	// still in draft
 	return nil
 }
