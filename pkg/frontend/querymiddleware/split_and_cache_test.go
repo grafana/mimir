@@ -841,6 +841,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 	const userID = "user-1"
 
+	now := time.Now().UnixMilli()
 	tests := map[string]struct {
 		req                    Request
 		cachedExtents          []Extent
@@ -854,42 +855,42 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  5,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(110, 150, 5),
-				mkExtentWithStep(160, 165, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now),
+				mkExtentWithStepAndQueryTime(100, 105, 5, now), // dropped
+				mkExtentWithStepAndQueryTime(110, 150, 5, now),
+				mkExtentWithStepAndQueryTime(160, 165, 5, now),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 150, 5),
-				mkExtentWithStep(160, 165, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now),
+				mkExtentWithStepAndQueryTime(100, 150, 5, now),
+				mkExtentWithStepAndQueryTime(160, 165, 5, now),
 			},
 		},
-		"Should replace tiny extents that are cover by bigger request": {
+		"Should replace tiny extents that are covered by bigger request": {
 			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   200,
 				Step:  5,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(110, 115, 5),
-				mkExtentWithStep(120, 125, 5),
-				mkExtentWithStep(220, 225, 5),
-				mkExtentWithStep(240, 250, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now-10),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now-20),
+				mkExtentWithStepAndQueryTime(100, 105, 5, now-30),
+				mkExtentWithStepAndQueryTime(110, 115, 5, now-40),
+				mkExtentWithStepAndQueryTime(120, 125, 5, now-50),
+				mkExtentWithStepAndQueryTime(220, 225, 5, now-60),
+				mkExtentWithStepAndQueryTime(240, 250, 5, now-70),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 200, 5),
-				mkExtentWithStep(220, 225, 5),
-				mkExtentWithStep(240, 250, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now-10),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now-20),
+				mkExtentWithStepAndQueryTime(100, 200, 5, now-50),
+				mkExtentWithStepAndQueryTime(220, 225, 5, now-60),
+				mkExtentWithStepAndQueryTime(240, 250, 5, now-70),
 			},
 		},
 		"Should not drop tiny extent that completely overlaps with tiny request": {
@@ -899,19 +900,19 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  5,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(160, 165, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now),
+				mkExtentWithStepAndQueryTime(100, 105, 5, now),
+				mkExtentWithStepAndQueryTime(160, 165, 5, now),
 			},
 			// No cache update need, request fulfilled using cache
 			expectedUpdatedExtents: false,
 			// We expect the same extents in the cache (no changes).
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(160, 165, 5),
+				mkExtentWithStepAndQueryTime(0, 50, 5, now),
+				mkExtentWithStepAndQueryTime(60, 65, 5, now),
+				mkExtentWithStepAndQueryTime(100, 105, 5, now),
+				mkExtentWithStepAndQueryTime(160, 165, 5, now),
 			},
 		},
 		"Should not drop tiny extent that partially center-overlaps with tiny request": {
@@ -921,17 +922,17 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  2,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(104, 110, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(104, 110, 2, now),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 			// No cache update need, request fulfilled using cache
 			expectedUpdatedExtents: false,
 			// We expect the same extents in the cache (no changes).
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(104, 110, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(104, 110, 2, now),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 		},
 		"Should not drop tiny extent that partially left-overlaps with tiny request": {
@@ -941,15 +942,15 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  2,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(104, 110, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(104, 110, 2, now-100),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(100, 110, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(100, 110, 2, now-100),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 		},
 		"Should not drop tiny extent that partially right-overlaps with tiny request": {
@@ -959,15 +960,15 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  2,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(98, 102, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(98, 102, 2, now-100),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(98, 106, 2),
-				mkExtentWithStep(160, 166, 2),
+				mkExtentWithStepAndQueryTime(60, 64, 2, now),
+				mkExtentWithStepAndQueryTime(98, 106, 2, now-100),
+				mkExtentWithStepAndQueryTime(160, 166, 2, now),
 			},
 		},
 		"Should merge fragmented extents if request fills the hole": {
@@ -977,12 +978,12 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  20,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(0, 20, 20),
-				mkExtentWithStep(80, 100, 20),
+				mkExtentWithStepAndQueryTime(0, 20, 20, now-100),
+				mkExtentWithStepAndQueryTime(80, 100, 20, now-200),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(0, 100, 20),
+				mkExtentWithStepAndQueryTime(0, 100, 20, now-200),
 			},
 		},
 		"Should left-extend extent if request starts earlier than extent in cache": {
@@ -992,11 +993,40 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  20,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(60, 160, 20),
+				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(40, 160, 20),
+				mkExtentWithStepAndQueryTime(40, 160, 20, now-100),
+			},
+		},
+		"Should left-extend extent if request starts earlier than extent in cache, but keep oldest time": {
+			req: &PrometheusRangeQueryRequest{
+				Start: 40,
+				End:   80,
+				Step:  20,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 160, 20, now+100),
+			},
+			expectedUpdatedExtents: true,
+			expectedCachedExtents: []Extent{
+				// "now" is also used as query time during the test, and this is lower than "now+100"
+				mkExtentWithStepAndQueryTime(40, 160, 20, now),
+			},
+		},
+		"Should left-extend extent with zero query timestamp if request starts earlier than extent in cache and use recent query timestamp": {
+			req: &PrometheusRangeQueryRequest{
+				Start: 40,
+				End:   80,
+				Step:  20,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
+			},
+			expectedUpdatedExtents: true,
+			expectedCachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(40, 160, 20, now),
 			},
 		},
 		"Should right-extend extent if request ends later than extent in cache": {
@@ -1006,11 +1036,25 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				Step:  20,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithStep(60, 160, 20),
+				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(60, 180, 20),
+				mkExtentWithStepAndQueryTime(60, 180, 20, now-100),
+			},
+		},
+		"Should right-extend extent with zero query timestamp if request ends later than extent in cache": {
+			req: &PrometheusRangeQueryRequest{
+				Start: 100,
+				End:   180,
+				Step:  20,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 160, 20, 0),
+			},
+			expectedUpdatedExtents: true,
+			expectedCachedExtents: []Extent{
+				mkExtentWithStepAndQueryTime(60, 180, 20, now),
 			},
 		},
 		"Should not throw error if complete-overlapped smaller Extent is erroneous": {
@@ -1031,11 +1075,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 					// this bad Extent should be dropped. The good Extent below can be used instead.
 					Response: nil,
 				},
-				mkExtentWithStep(60, 160, 20),
+				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
 			},
 			expectedUpdatedExtents: true,
 			expectedCachedExtents: []Extent{
-				mkExtentWithStep(60, 180, 20),
+				mkExtentWithStepAndQueryTime(60, 180, 20, now-100),
 			},
 		},
 	}
@@ -1062,6 +1106,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			).Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				return mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep()), nil
 			})).(*splitAndCacheMiddleware)
+			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
 
 			// Store all extents fixtures in the cache.
 			cacheKey := cacheSplitter.GenerateCacheKey(ctx, userID, testData.req)
@@ -1075,7 +1120,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			assert.Equal(t, expectedResponse, actualRes)
 
 			// Check the updated cached extents.
-			actualExtents := mw.fetchCacheExtents(ctx, []string{cacheKey})
+			actualExtents := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{userID}, []string{cacheKey})
 			require.Len(t, actualExtents, 1)
 			assert.Equal(t, testData.expectedCachedExtents, actualExtents[0])
 
@@ -1096,7 +1141,11 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		true,
 		24*time.Hour,
 		false,
-		mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		mockLimits{
+			resultsCacheTTL:                 1 * time.Hour,
+			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
+			outOfOrderTimeWindow:            30 * time.Minute,
+		},
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -1109,7 +1158,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys but empty extents on cache miss", func(t *testing.T) {
-		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
+		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, nil}
 		assert.Equal(t, expected, actual)
 	})
@@ -1118,7 +1167,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		mw.storeCacheExtents("key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
 		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
-		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
+		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
 		assert.Equal(t, expected, actual)
 	})
@@ -1131,8 +1180,43 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 
 		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
-		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
+		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
+		assert.Equal(t, expected, actual)
+	})
+
+	t.Run("fetchCacheExtents() should filter out extents that are outside of configured TTL", func(t *testing.T) {
+		now := time.Now().UnixMilli()
+
+		// Query time outside of TTL (1h), extent ends outside of OOO window (30m) -- will be filtered out.
+		e1 := mkExtentWithStepAndQueryTime(10, 20, 10, now-3*time.Hour.Milliseconds())
+		mw.storeCacheExtents("key-1", []string{"tenant"}, []Extent{e1})
+
+		// Query time inside of TTL (1h), extent ends outside of OOO window (30m) -- will be used.
+		e2 := mkExtentWithStepAndQueryTime(20, 30, 10, now-45*time.Minute.Milliseconds())
+		mw.storeCacheExtents("key-2", []string{"tenant"}, []Extent{e2})
+
+		// Query time outside of (short) TTL (10m), extent ends inside of OOO window (30min)
+		extentEnd := now - 25*time.Minute.Milliseconds()
+		e3 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-15*time.Minute.Milliseconds())
+		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{e3})
+
+		// Query time inside of (short) TTL (10m), extent ends inside of OOO window (30min)
+		e4 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-5*time.Minute.Milliseconds())
+		mw.storeCacheExtents("key-4", []string{"tenant"}, []Extent{e4})
+
+		// No query time, extent ends inside of OOO window (30min). This will be used.
+		e5 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, 0)
+		mw.storeCacheExtents("key-5", []string{"tenant"}, []Extent{e5})
+
+		actual := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{"tenant"}, []string{"key-1", "key-2", "key-3", "key-4", "key-5"})
+		expected := [][]Extent{
+			nil,
+			{e2},
+			nil,
+			{e4},
+			{e5},
+		}
 		assert.Equal(t, expected, actual)
 	})
 }

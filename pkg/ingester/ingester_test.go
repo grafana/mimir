@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -67,6 +66,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -175,6 +175,72 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 			`,
+		},
+		"should succeed on valid series with histograms and metadata": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
+				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
+					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				}, mimirpb.API).AddHistogramSeries([]labels.Labels{metricLabels},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1))},
+					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(2))},
+				}},
+			},
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
+				{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
+			},
+			additionalMetrics: []string{
+				// Metadata.
+				"cortex_ingester_memory_metadata",
+				"cortex_ingester_memory_metadata_created_total",
+				"cortex_ingester_ingested_metadata_total",
+				"cortex_ingester_ingested_metadata_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_metadata_failures_total The total number of metadata that errored on ingestion.
+				# TYPE cortex_ingester_ingested_metadata_failures_total counter
+				cortex_ingester_ingested_metadata_failures_total 0
+				# HELP cortex_ingester_ingested_metadata_total The total number of metadata ingested.
+				# TYPE cortex_ingester_ingested_metadata_total counter
+				cortex_ingester_ingested_metadata_total 2
+				# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+				# TYPE cortex_ingester_memory_metadata gauge
+				cortex_ingester_memory_metadata 2
+				# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+				# TYPE cortex_ingester_memory_metadata_created_total counter
+				cortex_ingester_memory_metadata_created_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			nativeHistograms: true,
 		},
 		"should succeed on valid series with exemplars": {
 			maxExemplars: 2,
@@ -426,7 +492,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdbutil.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -480,7 +546,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), tsdbutil.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -6506,29 +6572,31 @@ func TestNewIngestErrMsgs(t *testing.T) {
 }
 
 func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
-	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(tsdbutil.GenerateTestFloatHistogram(0)))
+	expectedSampleHistogram := mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(0)))
 
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, tsdbutil.GenerateTestHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, tsdbutil.GenerateTestFloatHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}
 	for testName, testCfg := range tests {
-		t.Run(testName, func(t *testing.T) {
-			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram)
-		})
+		for _, streamChunks := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/streamChunks=%v", testName, streamChunks), func(t *testing.T) {
+				testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, streamChunks)
+			})
+		}
 	}
 }
 
-func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram) {
+func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHistograms []mimirpb.Histogram, expectHistogram *model.SampleHistogram, streamChunks bool) {
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = false
 
@@ -6556,6 +6624,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
+		cfg.StreamChunksWhenUsingBlocks = streamChunks
 		ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", registry)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -6654,6 +6723,10 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		Values: []model.SamplePair{{
 			Timestamp: 0,
 			Value:     1,
+		}},
+		Histograms: []model.SampleHistogramPair{{
+			Timestamp: 2,
+			Histogram: expectHistogram,
 		}},
 	}}
 
