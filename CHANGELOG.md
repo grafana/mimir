@@ -5,7 +5,6 @@
 ### Grafana Mimir
 
 * [FEATURE] Add capability to configure the S3 storage class. #3438
-
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
     * `cortex_bucket_store_series_get_all_duration_seconds`
