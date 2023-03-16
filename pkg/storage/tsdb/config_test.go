@@ -57,7 +57,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"should fail on invalid opening concurrency": {
 			setup: func(cfg *BlocksStorageConfig) {
-				cfg.TSDB.MaxTSDBOpeningConcurrencyOnStartup = 0
+				cfg.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup = 0
 			},
 			expectedErr: errInvalidOpeningConcurrency,
 		},

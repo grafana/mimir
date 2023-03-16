@@ -1,7 +1,7 @@
 ---
 aliases:
   - operators-guide/configuring/references/configuration-parameters/
-  - operators-guide/configure/references/configuration-parameters/
+  - configure/references/configuration-parameters/
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
@@ -201,6 +201,23 @@ activity_tracker:
   # size the file in advance. Additional activities are ignored.
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
+
+vault:
+  # (experimental) Enables fetching of keys and certificates from Vault
+  # CLI flag: -vault.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Location of the Vault server
+  # CLI flag: -vault.url
+  [url: <string> | default = ""]
+
+  # (experimental) Token used to authenticate with Vault
+  # CLI flag: -vault.token
+  [token: <string> | default = ""]
+
+  # (experimental) Location of secrets engine within Vault
+  # CLI flag: -vault.mount-path
+  [mount_path: <string> | default = ""]
 
 # The ruler block configures the ruler.
 [ruler: <ruler>]
@@ -880,7 +897,7 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (advanced) When enabled the readiness probe succeeds only after all
+  # (deprecated) When enabled the readiness probe succeeds only after all
   # instances are ACTIVE and healthy in the ring, otherwise only the instance
   # itself is checked. This option should be disabled if in your cluster
   # multiple instances can be rolled out simultaneously, otherwise rolling
@@ -2596,16 +2613,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 # samples that are within the time window in relation to the TSDB's maximum
 # time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will
 # need more memory as a factor of rate of out-of-order samples being ingested
-# and the number of series that are getting out-of-order samples. A lower TTL of
-# 10 minutes will be set for the query cache entries that overlap with this
-# window.
+# and the number of series that are getting out-of-order samples. If query falls
+# into this window, cached results will use value from
+# -query-frontend.results-cache-ttl-for-out-of-order-time-window option to
+# specify TTL for resulting cache entry.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
 # (experimental) Whether the shipper should label out-of-order blocks with an
 # external label before uploading them. Setting this label will compact
 # out-of-order blocks separately from non-out-of-order blocks
-# CLI flag: -out-of-order-blocks-external-label-enabled
+# CLI flag: -ingester.out-of-order-blocks-external-label-enabled
 [out_of_order_blocks_external_label_enabled: <boolean> | default = false]
 
 # (experimental) Label used to define the group label for metrics separation.
@@ -2700,6 +2718,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # -store.max-query-length if set to 0.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
+
+# (experimental) Time to live duration for cached query results. If query falls
+# into out-of-order time window,
+# -query-frontend.results-cache-ttl-for-out-of-order-time-window is used
+# instead.
+# CLI flag: -query-frontend.results-cache-ttl
+[results_cache_ttl: <duration> | default = 1w]
+
+# (experimental) Time to live duration for cached query results if query falls
+# into out-of-order time window. This is lower than
+# -query-frontend.results-cache-ttl so that incoming out-of-order samples are
+# returned in the query results sooner.
+# CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
+[results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -3181,6 +3213,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
+  # (experimental) This option controls into how many ranges the chunks of each
+  # series from each block are split. This value is effectively the number of
+  # chunks cache items per series per block when
+  # -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
+  # is enabled.
+  # CLI flag: -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series
+  [fine_grained_chunks_caching_ranges_per_series: <int> | default = 1]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -3252,6 +3292,14 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.wal-segment-size-bytes
   [wal_segment_size_bytes: <int> | default = 134217728]
 
+  # (advanced) Maximum number of CPUs that can simultaneously processes WAL
+  # replay. If it is set to 0, then each TSDB is replayed with a concurrency
+  # equal to the number of CPU cores available on the machine. If set to a
+  # positive value it overrides the deprecated
+  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
+  # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
+  [wal_replay_concurrency: <int> | default = 0]
+
   # (advanced) True to flush blocks to storage on shutdown. If false, incomplete
   # blocks will be reused after restart.
   # CLI flag: -blocks-storage.tsdb.flush-blocks-on-shutdown
@@ -3284,7 +3332,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) limit the number of concurrently opening TSDB's on startup
+  # (deprecated) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 

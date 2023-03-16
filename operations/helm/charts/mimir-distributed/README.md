@@ -11,7 +11,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 4.3.0-weekly.228](https://img.shields.io/badge/Version-4.3.0--weekly.228-informational?style=flat-square) ![AppVersion: r228](https://img.shields.io/badge/AppVersion-r228-informational?style=flat-square)
+![Version: 4.3.0-weekly.229](https://img.shields.io/badge/Version-4.3.0--weekly.229-informational?style=flat-square) ![AppVersion: r229](https://img.shields.io/badge/AppVersion-r229-informational?style=flat-square)
 
 Grafana Mimir
 

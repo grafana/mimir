@@ -289,6 +289,34 @@ alertmanager_config: |
 			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should NOT return error if global HTTP proxy_url is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      proxy_url: http://example.com
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: nil,
+		},
+		{
+			name: "Should NOT return error if global HTTP proxy_from_environment is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      proxy_from_environment: true
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: nil,
+		},
+		{
 			name: "Should return error if global OAuth2 client_secret_file is set",
 			cfg: `
 alertmanager_config: |
@@ -323,6 +351,24 @@ alertmanager_config: |
     - name: default-receiver
 `,
 			err: errors.Wrap(errProxyURLNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if global OAuth2 proxy_from_environment is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      oauth2:
+        client_id: test
+        client_secret: xxx
+        token_url: http://example.com
+        proxy_from_environment: true
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: errors.Wrap(errProxyFromEnvironmentURLNotAllowed, "error validating Alertmanager config"),
 		},
 		{
 			name: "Should return error if global OAuth2 TLS key_file is set",
@@ -395,6 +441,36 @@ alertmanager_config: |
 			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should NOT return error if receiver's HTTP proxy_url is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+            proxy_url: http://example.com
+  route:
+    receiver: 'default-receiver'
+`,
+			err: nil,
+		},
+		{
+			name: "Should NOT return error if receiver's HTTP proxy_from_environment is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+            proxy_from_environment: true
+  route:
+    receiver: 'default-receiver'
+`,
+			err: nil,
+		},
+		{
 			name: "Should return error if receiver's OAuth2 client_secret_file is set",
 			cfg: `
 alertmanager_config: |
@@ -431,6 +507,25 @@ alertmanager_config: |
     receiver: 'default-receiver'
 `,
 			err: errors.Wrap(errProxyURLNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if receiver's OAuth2 proxy_from_environment is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+            oauth2:
+              client_id: test
+              token_url: http://example.com
+              client_secret: xxx
+              proxy_from_environment: true
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errProxyFromEnvironmentURLNotAllowed, "error validating Alertmanager config"),
 		},
 		{
 			name: "Should return error if global slack_api_url_file is set",

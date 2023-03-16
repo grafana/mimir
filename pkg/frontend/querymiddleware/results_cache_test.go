@@ -103,19 +103,20 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 }
 
 func mkExtent(start, end int64) Extent {
-	return mkExtentWithStep(start, end, 10)
+	return mkExtentWithStepAndQueryTime(start, end, 10, time.Now().UnixMilli())
 }
 
-func mkExtentWithStep(start, end, step int64) Extent {
+func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	res := mkAPIResponse(start, end, step)
 	any, err := types.MarshalAny(res)
 	if err != nil {
 		panic(err)
 	}
 	return Extent{
-		Start:    start,
-		End:      end,
-		Response: any,
+		Start:            start,
+		End:              end,
+		Response:         any,
+		QueryTimestampMs: queryTime,
 	}
 }
 
@@ -515,7 +516,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				// 486 is equal to input.Start + N * input.Step (for integer N)
 				// 625 is not equal to input.Start + N * input.Step for any integer N.
-				mkExtentWithStep(486, 625, 33),
+				mkExtentWithStepAndQueryTime(486, 625, 33, time.Now().UnixMilli()),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(486, 625, 33),

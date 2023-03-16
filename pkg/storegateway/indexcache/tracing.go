@@ -91,28 +91,6 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreSeries(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	t.c.StoreSeries(userID, blockID, matchersKey, shard, v)
-}
-
-func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
-	t0 := time.Now()
-	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard)
-
-	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "IndexCache.FetchSeries",
-		"requested key", matchersKey,
-		"shard", shardKey(shard),
-		"found", found,
-		"time elapsed", time.Since(t0),
-		"returned bytes", len(data),
-		"user_id", userID,
-	)
-
-	return data, found
-}
-
 func (t *TracingIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
 	t.c.StoreSeriesForPostings(userID, blockID, shard, postingsKey, v)
 }

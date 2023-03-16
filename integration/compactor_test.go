@@ -20,7 +20,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -74,16 +73,16 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{10, 0, tsdb.GenerateTestHistogram(1), nil},
-					sample{20, 0, tsdb.GenerateTestHistogram(2), nil},
+					sample{10, 0, tsdbutil.GenerateTestHistogram(1), nil},
+					sample{20, 0, tsdbutil.GenerateTestHistogram(2), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{30, 0, tsdb.GenerateTestHistogram(3), nil},
-					sample{40, 0, tsdb.GenerateTestHistogram(4), nil},
+					sample{30, 0, tsdbutil.GenerateTestHistogram(3), nil},
+					sample{40, 0, tsdbutil.GenerateTestHistogram(4), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{50, 0, tsdb.GenerateTestHistogram(5), nil},
-					sample{2*time.Hour.Milliseconds() - 1, 0, tsdb.GenerateTestHistogram(6), nil},
+					sample{50, 0, tsdbutil.GenerateTestHistogram(5), nil},
+					sample{2*time.Hour.Milliseconds() - 1, 0, tsdbutil.GenerateTestHistogram(6), nil},
 				}),
 			},
 		}

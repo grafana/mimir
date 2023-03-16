@@ -2658,7 +2658,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.readiness-check-ring-health",
               "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             }
           ],
           "fieldValue": null,
@@ -3078,7 +3078,7 @@
           "kind": "field",
           "name": "out_of_order_time_window",
           "required": false,
-          "desc": "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.",
+          "desc": "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.out-of-order-time-window",
@@ -3092,7 +3092,7 @@
           "desc": "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "out-of-order-blocks-external-label-enabled",
+          "fieldFlag": "ingester.out-of-order-blocks-external-label-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -3238,6 +3238,28 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl",
+          "required": false,
+          "desc": "Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead.",
+          "fieldValue": null,
+          "fieldDefaultValue": 604800000000000,
+          "fieldFlag": "query-frontend.results-cache-ttl",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_out_of_order_time_window",
+          "required": false,
+          "desc": "Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-out-of-order-time-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -6926,6 +6948,17 @@
               "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "fine_grained_chunks_caching_ranges_per_series",
+              "required": false,
+              "desc": "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7069,6 +7102,17 @@
             },
             {
               "kind": "field",
+              "name": "wal_replay_concurrency",
+              "required": false,
+              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.wal-replay-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "flush_blocks_on_shutdown",
               "required": false,
               "desc": "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.",
@@ -7131,7 +7175,7 @@
               "fieldDefaultValue": 10,
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -8389,6 +8433,60 @@
           "fieldFlag": "activity-tracker.max-entries",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "vault",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "Enables fetching of keys and certificates from Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "vault.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "url",
+          "required": false,
+          "desc": "Location of the Vault server",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.url",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "token",
+          "required": false,
+          "desc": "Token used to authenticate with Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.token",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "mount_path",
+          "required": false,
+          "desc": "Location of secrets engine within Vault",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "vault.mount-path",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

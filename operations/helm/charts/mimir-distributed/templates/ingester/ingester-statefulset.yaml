@@ -63,7 +63,7 @@ spec:
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.ingester.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ingester.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

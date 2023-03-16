@@ -64,7 +64,7 @@ for FILEPATH in $TESTS; do
 
   echo ""
   echo "Templating $TEST_NAME"
-  ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns")
+  ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns" "--set-string" "regoTestGenerateValues=true")
 
   echo "Checking for kubeVersionOverride inside tests' values.yaml ..."
   if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then
@@ -78,6 +78,7 @@ for FILEPATH in $TESTS; do
 
   echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
+  rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
   find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
 
 done

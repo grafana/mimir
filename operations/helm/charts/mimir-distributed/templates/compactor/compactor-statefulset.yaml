@@ -53,7 +53,7 @@ spec:
       priorityClassName: {{ .Values.compactor.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.compactor.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "compactor") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.compactor.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
