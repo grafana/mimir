@@ -7,6 +7,7 @@
 package integration
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -26,71 +27,33 @@ import (
 type querierShardingTestConfig struct {
 	shuffleShardingEnabled bool
 	querySchedulerEnabled  bool
-	sendHistogramsInstead  bool
+	sendHistograms         bool
+	querierResponseFormat  string
 }
 
-func TestQuerierShuffleShardingWithoutQueryScheduler(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: true,
-		querySchedulerEnabled:  false,
-		sendHistogramsInstead:  false,
-	})
-}
-
-func TestQuerierShuffleShardingWithQueryScheduler(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: true,
-		querySchedulerEnabled:  true,
-		sendHistogramsInstead:  false,
-	})
-}
-
-func TestQuerierNoShardingWithoutQueryScheduler(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: false,
-		querySchedulerEnabled:  false,
-		sendHistogramsInstead:  false,
-	})
-}
-
-func TestQuerierNoShardingWithQueryScheduler(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: false,
-		querySchedulerEnabled:  true,
-		sendHistogramsInstead:  false,
-	})
-}
-
-func TestQuerierShuffleShardingWithoutQuerySchedulerHistogram(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: true,
-		querySchedulerEnabled:  false,
-		sendHistogramsInstead:  true,
-	})
-}
-
-func TestQuerierShuffleShardingWithQuerySchedulerHistogram(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: true,
-		querySchedulerEnabled:  true,
-		sendHistogramsInstead:  true,
-	})
-}
-
-func TestQuerierNoShardingWithoutQuerySchedulerHistogram(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: false,
-		querySchedulerEnabled:  false,
-		sendHistogramsInstead:  true,
-	})
-}
-
-func TestQuerierNoShardingWithQuerySchedulerHistogram(t *testing.T) {
-	runQuerierShardingTest(t, querierShardingTestConfig{
-		shuffleShardingEnabled: false,
-		querySchedulerEnabled:  true,
-		sendHistogramsInstead:  true,
-	})
+func TestQuerySharding(t *testing.T) {
+	for _, shuffleShardingEnabled := range []bool{false, true} {
+		for _, querySchedulerEnabled := range []bool{false, true} {
+			for _, sendHistograms := range []bool{false, true} {
+				for _, querierResponseFormat := range []string{"json", "protobuf"} {
+					if sendHistograms && querierResponseFormat == "json" {
+						// histograms over json are not supported
+						continue
+					}
+					testName := fmt.Sprintf("shuffle shard=%v/query scheduler=%v/histograms=%v/format=%v",
+						shuffleShardingEnabled, querySchedulerEnabled, sendHistograms, querierResponseFormat,
+					)
+					cfg := querierShardingTestConfig{
+						shuffleShardingEnabled: shuffleShardingEnabled,
+						querySchedulerEnabled:  querySchedulerEnabled,
+						sendHistograms:         sendHistograms,
+						querierResponseFormat:  querierResponseFormat,
+					}
+					t.Run(testName, func(t *testing.T) { runQuerierShardingTest(t, cfg) })
+				}
+			}
+		}
+	}
 }
 
 func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
@@ -113,9 +76,9 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 	})
 
-	if cfg.sendHistogramsInstead {
+	if cfg.sendHistograms {
 		flags = mergeFlags(flags, map[string]string{
-			"-query-frontend.query-result-response-format": "protobuf",
+			"-query-frontend.query-result-response-format": cfg.querierResponseFormat,
 		})
 	}
 
@@ -167,7 +130,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 
 	var series []prompb.TimeSeries
 	var genSeries generateSeriesFunc
-	if !cfg.sendHistogramsInstead {
+	if !cfg.sendHistograms {
 		genSeries = generateFloatSeries
 	} else {
 		genSeries = generateHistogramSeries
