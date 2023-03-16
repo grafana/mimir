@@ -49,11 +49,9 @@ const (
 	IsSecondaryRWReplicaHeader = "X-Prometheus-Secondary-Remote-Write-Replica"
 )
 
-var (
-	NoOpHaShorcutRequestCheckerFunc = func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
-		return false
-	}
-)
+func NoOpHaShorcutRequestCheckerFunc(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
+	return false
+}
 
 type haTrackerLimits interface {
 	// MaxHAClusters returns max number of clusters that HA tracker should track for a user.
