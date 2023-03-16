@@ -26,12 +26,14 @@ import (
 type querierShardingTestConfig struct {
 	shuffleShardingEnabled bool
 	querySchedulerEnabled  bool
+	sendHistogramsInstead  bool
 }
 
 func TestQuerierShuffleShardingWithoutQueryScheduler(t *testing.T) {
 	runQuerierShardingTest(t, querierShardingTestConfig{
 		shuffleShardingEnabled: true,
 		querySchedulerEnabled:  false,
+		sendHistogramsInstead:  false,
 	})
 }
 
@@ -39,6 +41,7 @@ func TestQuerierShuffleShardingWithQueryScheduler(t *testing.T) {
 	runQuerierShardingTest(t, querierShardingTestConfig{
 		shuffleShardingEnabled: true,
 		querySchedulerEnabled:  true,
+		sendHistogramsInstead:  false,
 	})
 }
 
@@ -46,6 +49,7 @@ func TestQuerierNoShardingWithoutQueryScheduler(t *testing.T) {
 	runQuerierShardingTest(t, querierShardingTestConfig{
 		shuffleShardingEnabled: false,
 		querySchedulerEnabled:  false,
+		sendHistogramsInstead:  false,
 	})
 }
 
@@ -53,6 +57,39 @@ func TestQuerierNoShardingWithQueryScheduler(t *testing.T) {
 	runQuerierShardingTest(t, querierShardingTestConfig{
 		shuffleShardingEnabled: false,
 		querySchedulerEnabled:  true,
+		sendHistogramsInstead:  false,
+	})
+}
+
+func TestQuerierShuffleShardingWithoutQuerySchedulerHistogram(t *testing.T) {
+	runQuerierShardingTest(t, querierShardingTestConfig{
+		shuffleShardingEnabled: true,
+		querySchedulerEnabled:  false,
+		sendHistogramsInstead:  true,
+	})
+}
+
+func TestQuerierShuffleShardingWithQuerySchedulerHistogram(t *testing.T) {
+	runQuerierShardingTest(t, querierShardingTestConfig{
+		shuffleShardingEnabled: true,
+		querySchedulerEnabled:  true,
+		sendHistogramsInstead:  true,
+	})
+}
+
+func TestQuerierNoShardingWithoutQuerySchedulerHistogram(t *testing.T) {
+	runQuerierShardingTest(t, querierShardingTestConfig{
+		shuffleShardingEnabled: false,
+		querySchedulerEnabled:  false,
+		sendHistogramsInstead:  true,
+	})
+}
+
+func TestQuerierNoShardingWithQuerySchedulerHistogram(t *testing.T) {
+	runQuerierShardingTest(t, querierShardingTestConfig{
+		shuffleShardingEnabled: false,
+		querySchedulerEnabled:  true,
+		sendHistogramsInstead:  true,
 	})
 }
 
@@ -75,6 +112,12 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		"-query-frontend.results-cache.compression":         "snappy",
 		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 	})
+
+	if cfg.sendHistogramsInstead {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.query-result-response-format": "protobuf",
+		})
+	}
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
@@ -123,7 +166,13 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, err)
 
 	var series []prompb.TimeSeries
-	series, expectedVector, _ := generateSeries("series_1", now)
+	var genSeries generateSeriesFunc
+	if !cfg.sendHistogramsInstead {
+		genSeries = generateFloatSeries
+	} else {
+		genSeries = generateHistogramSeries
+	}
+	series, expectedVector, _ := genSeries("series_1", now)
 
 	res, err := distClient.Push(series)
 	require.NoError(t, err)

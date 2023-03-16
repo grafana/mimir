@@ -259,11 +259,6 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		return 1
 	}
 
-	// TODO: Remove when https://github.com/grafana/mimir/issues/3992 is solved. Also remove EnabledByAnyTenant (unless used elsewhere)
-	if validation.EnabledByAnyTenant(tenantIDs, s.limit.NativeHistogramsIngestionEnabled) {
-		return 1
-	}
-
 	// Check the default number of shards configured for the given tenant.
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
