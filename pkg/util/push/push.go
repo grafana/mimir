@@ -79,7 +79,7 @@ func handler(maxRecvMsgSize int,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if haReplicaChecker(ctx, w, r) {
+		if shortcut != nil && shortcut(ctx, w, r) {
 			return
 		}
 
