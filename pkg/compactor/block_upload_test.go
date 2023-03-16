@@ -1469,7 +1469,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				meta.Thanos.Downsample.Resolution = 1000
 			},
 			expectError: true,
-			expectedMsg: "block contains down-sampled data",
+			expectedMsg: "block contains downsampled data",
 		},
 		{
 			name: "empty index file",
