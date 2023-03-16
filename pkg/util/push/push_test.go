@@ -387,14 +387,6 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createRequestWithHeaderAndCtx(t testing.TB, protobuf []byte, additionalHeaders map[string]string, ctx context.Context) *http.Request {
-	req := createRequest(t, protobuf)
-	for k, v := range additionalHeaders {
-		req.Header.Set(k, v)
-	}
-	return req.WithContext(ctx)
-}
-
 func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.ExportRequest, compress bool) *http.Request {
 	t.Helper()
 
