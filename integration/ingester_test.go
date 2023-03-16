@@ -40,7 +40,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 					Labels: []prompb.Label{
 						{
 							Name:  "__name__",
-							Value: query,
+							Value: "foobar",
 						},
 					},
 					Samples: []prompb.Sample{
@@ -103,13 +103,13 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 				},
 			},
 		},
-		"native histogram series": {
+		"integer histogram series": {
 			inSeries: []prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
 						{
 							Name:  "__name__",
-							Value: query,
+							Value: "foobar",
 						},
 					},
 					Histograms: []prompb.Histogram{
@@ -154,13 +154,64 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 				},
 			},
 		},
-		"series switching from float to native histograms at timestamp": {
+		"float histogram series": {
 			inSeries: []prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
 						{
 							Name:  "__name__",
-							Value: query,
+							Value: "foobar",
+						},
+					},
+					Histograms: []prompb.Histogram{
+						remote.FloatHistogramToHistogramProto(queryStart.UnixMilli(), test.GenerateTestFloatHistogram(1)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestFloatHistogram(2)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestFloatHistogram(3)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestFloatHistogram(4)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
+					},
+				},
+			},
+			expected: model.Matrix{
+				{
+					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Histograms: []model.SampleHistogramPair{
+						{
+							Timestamp: model.Time(queryStart.UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(1),
+						},
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(2),
+						},
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep * 2).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(3),
+						},
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep * 3).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(4),
+						},
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep * 4).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(5),
+						},
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep * 5).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(6),
+						},
+					},
+				},
+			},
+		},
+		"series switching from float to integer histogram to float histogram": {
+			inSeries: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{
+							Name:  "__name__",
+							Value: "foobar",
 						},
 					},
 					Samples: []prompb.Sample{
@@ -172,15 +223,12 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 							Timestamp: queryStart.Add(queryStep).UnixMilli(),
 							Value:     110,
 						},
-						{
-							Timestamp: queryStart.Add(queryStep * 2).UnixMilli(),
-							Value:     120,
-						},
 					},
 					Histograms: []prompb.Histogram{
+						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
 						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
 					},
 				},
 			},
@@ -196,12 +244,12 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 							Timestamp: model.Time(queryStart.Add(queryStep).UnixMilli()),
 							Value:     model.SampleValue(110),
 						},
-						{
-							Timestamp: model.Time(queryStart.Add(queryStep * 2).UnixMilli()),
-							Value:     model.SampleValue(120),
-						},
 					},
 					Histograms: []model.SampleHistogramPair{
+						{
+							Timestamp: model.Time(queryStart.Add(queryStep * 2).UnixMilli()),
+							Histogram: test.GenerateTestSampleHistogram(3),
+						},
 						{
 							Timestamp: model.Time(queryStart.Add(queryStep * 3).UnixMilli()),
 							Histogram: test.GenerateTestSampleHistogram(4),
@@ -224,7 +272,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 					Labels: []prompb.Label{
 						{
 							Name:  "__name__",
-							Value: query,
+							Value: "foobar",
 						},
 					},
 					Samples: []prompb.Sample{
