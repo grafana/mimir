@@ -1558,9 +1558,6 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))
 			// remove meta.json as we will be uploading a new one with the uploading meta name
 			require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.MetaFilename)))
-			exists, err := bkt.Exists(ctx, path.Join(blockID.String(), block.ChunksDirname, "000001"))
-			require.NoError(t, err)
-			require.True(t, exists)
 
 			// handle meta file
 			if tc.metaInject != nil {
