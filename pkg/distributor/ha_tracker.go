@@ -39,19 +39,11 @@ var (
 	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
 )
 
-// HaShortcutRequestCheckerFunc defines how a request should be shortcut if it comes
-// from duplicated HA sample.
-type HaShortcutRequestCheckerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool)
-
 const (
 	ReplicaHeader              = "X-Prometheus-HA-Replica"
 	ClusterHeader              = "X-Prometheus-HA-Cluster"
 	IsSecondaryRWReplicaHeader = "X-Prometheus-Secondary-Remote-Write-Replica"
 )
-
-func NoOpHaShorcutRequestCheckerFunc(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
-	return false
-}
 
 type haTrackerLimits interface {
 	// MaxHAClusters returns max number of clusters that HA tracker should track for a user.
@@ -425,7 +417,7 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 
 // HaShortcutRequestChecker will check whether the sample in the request must be parsed
 // in the next step or can be shortcut avoiding unneeded request parsing.
-func (h *haTracker) HaShortcutRequestChecker() HaShortcutRequestCheckerFunc {
+func (h *haTracker) HaShortcutRequestChecker() func(ctx context.Context, w http.ResponseWriter, r *http.Request) bool {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
 		cluster, replica := r.Header.Get(ClusterHeader), r.Header.Get(ReplicaHeader)
 		if cluster == "" || replica == "" {

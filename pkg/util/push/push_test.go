@@ -29,14 +29,13 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, false, verifyWritePushFunc(t, mimirpb.API), distributor.NoOpHaShorcutRequestCheckerFunc)
+	handler := Handler(100000, nil, false, verifyWritePushFunc(t, mimirpb.API), nil)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -225,7 +224,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, verifyWritePushFunc(t, mimirpb.RULE), distributor.NoOpHaShorcutRequestCheckerFunc)
+	handler := Handler(100000, sourceIPs, false, verifyWritePushFunc(t, mimirpb.RULE), nil)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -237,7 +236,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	handler := Handler(100000, sourceIPs, false, func(_ context.Context, req *Request) (*mimirpb.WriteResponse, error) {
 		defer req.CleanUp()
 		return nil, fmt.Errorf("the request failed: %w", context.Canceled)
-	}, distributor.NoOpHaShorcutRequestCheckerFunc)
+	}, nil)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 499, resp.Code)
 }
@@ -343,7 +342,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler, distributor.NoOpHaShorcutRequestCheckerFunc)
+			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler, nil)
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -501,7 +500,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handler := Handler(100000, nil, false, pushFunc, distributor.NoOpHaShorcutRequestCheckerFunc)
+	handler := Handler(100000, nil, false, pushFunc, nil)
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -555,7 +554,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return nil, err
 			}
 
-			h := handler(10, nil, false, pushFunc, parserFunc, distributor.NoOpHaShorcutRequestCheckerFunc)
+			h := handler(10, nil, false, pushFunc, parserFunc, nil)
 
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))

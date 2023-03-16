@@ -16,7 +16,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -47,7 +46,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	push Func,
-	shortcut func(context.Context, http.ResponseWriter, *http.Request) bool,
+	haRequestShortcuter func(context.Context, http.ResponseWriter, *http.Request) bool,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
@@ -55,7 +54,7 @@ func Handler(
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
 		return res, err
-	}, replicaChecker)
+	}, haRequestShortcuter)
 }
 
 type distributorMaxWriteMessageSizeErr struct {
@@ -75,11 +74,11 @@ func handler(maxRecvMsgSize int,
 	allowSkipLabelNameValidation bool,
 	push Func,
 	parser parserFunc,
-	haReplicaChecker distributor.HaShortcutRequestCheckerFunc,
+	haRequestShortcuter func(context.Context, http.ResponseWriter, *http.Request) bool,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if shortcut != nil && shortcut(ctx, w, r) {
+		if haRequestShortcuter != nil && haRequestShortcuter(ctx, w, r) {
 			return
 		}
 
