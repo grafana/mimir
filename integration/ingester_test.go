@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/ingester_sharding_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
 
 package integration
@@ -19,9 +16,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util/test"
-
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
@@ -73,7 +69,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 			},
 			expected: model.Matrix{
 				{
-					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Metric: model.Metric{"__name__": "foobar"},
 					Values: []model.SamplePair{
 						{
 							Timestamp: model.Time(queryStart.UnixMilli()),
@@ -124,7 +120,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 			},
 			expected: model.Matrix{
 				{
-					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Metric: model.Metric{"__name__": "foobar"},
 					Histograms: []model.SampleHistogramPair{
 						{
 							Timestamp: model.Time(queryStart.UnixMilli()),
@@ -175,7 +171,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 			},
 			expected: model.Matrix{
 				{
-					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Metric: model.Metric{"__name__": "foobar"},
 					Histograms: []model.SampleHistogramPair{
 						{
 							Timestamp: model.Time(queryStart.UnixMilli()),
@@ -234,7 +230,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 			},
 			expected: model.Matrix{
 				{
-					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Metric: model.Metric{"__name__": "foobar"},
 					Values: []model.SamplePair{
 						{
 							Timestamp: model.Time(queryStart.UnixMilli()),
@@ -300,7 +296,7 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 			},
 			expected: model.Matrix{
 				{
-					Metric: model.Metric(map[model.LabelName]model.LabelValue{"__name__": "foobar"}),
+					Metric: model.Metric{"__name__": "foobar"},
 					Values: []model.SamplePair{
 						{
 							Timestamp: model.Time(queryStart.UnixMilli()),
