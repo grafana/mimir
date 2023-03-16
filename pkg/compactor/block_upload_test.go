@@ -1417,8 +1417,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		name             string
 		lbls             func() []labels.Labels
 		metaInject       func(meta *metadata.Meta)
-		indexInject      func(fname string) string
-		chunkInject      func(fname string) string
+		indexInject      func(fname string)
+		chunkInject      func(fname string)
 		populateFileList bool
 		missing          Missing
 		expectError      bool
@@ -1474,9 +1474,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name: "empty index file",
 			lbls: validLabels,
-			indexInject: func(fname string) string {
+			indexInject: func(fname string) {
 				require.NoError(t, os.Truncate(fname, 0))
-				return fname
 			},
 			expectError: true,
 			expectedMsg: "error validating block index: open index file: mmap, size 0: invalid argument",
@@ -1484,17 +1483,11 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name: "index file invalid magic number",
 			lbls: validLabels,
-			indexInject: func(fname string) string {
-				fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
-				require.NoError(t, err)
-				defer fd.Close()
-				b, err := fd.WriteAt([]byte("test"), 0)
-				require.Equal(t, b, 4)
-				require.NoError(t, err)
-				return fname
+			indexInject: func(fname string) {
+				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
 			},
 			expectError: true,
-			expectedMsg: "error validating block index: open index file: invalid magic number 74657374",
+			expectedMsg: "error validating block index: open index file: invalid magic number",
 		},
 		{
 			name: "out of order labels",
@@ -1513,9 +1506,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name: "empty segment file",
 			lbls: validLabels,
-			chunkInject: func(fname string) string {
+			chunkInject: func(fname string) {
 				require.NoError(t, os.Truncate(fname, 0))
-				return fname
 			},
 			expectError: true,
 			expectedMsg: "failed to read header: EOF",
@@ -1523,24 +1515,29 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name: "segment file invalid magic number",
 			lbls: validLabels,
-			chunkInject: func(fname string) string {
-				fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
-				require.NoError(t, err)
-				defer fd.Close()
-				b, err := fd.WriteAt([]byte("test"), 0)
-				require.Equal(t, b, 4)
-				require.NoError(t, err)
-				return fname
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
 			},
 			expectError: true,
 			expectedMsg: "file doesn't start with magic prefix",
+		},
+		{
+			name: "segment file invalid checksum",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 12) // guaranteed to be a data byte
+			},
+			populateFileList: true,
+			expectError:      true,
+			expectedMsg:      "error: CRC32 mismatch",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// create a test block
-			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, 0, 1000, nil)
+			now := time.Now()
+			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), nil)
 			require.NoError(t, err)
 			testDir := path.Join(tmpDir, blockID.String())
 			meta, err := metadata.ReadFromDir(testDir)
@@ -1574,23 +1571,33 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// replace index file
 			if tc.indexInject != nil {
-				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.IndexFilename)))
-				newIndexFile := tc.indexInject(path.Join(testDir, block.IndexFilename))
-				fd, err := os.Open(newIndexFile)
-				defer fd.Close()
+				fsIndexFile := path.Join(testDir, block.IndexFilename)
+				bktIndexFile := path.Join(blockID.String(), block.IndexFilename)
+				require.NoError(t, bkt.Delete(ctx, bktIndexFile))
+				tc.indexInject(fsIndexFile)
+				fd, err := os.Open(fsIndexFile)
+				defer func(fd *os.File) {
+					err := fd.Close()
+					require.NoError(t, err)
+				}(fd)
 				require.NoError(t, err)
-				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), block.IndexFilename), fd))
+				require.NoError(t, bkt.Upload(ctx, bktIndexFile, fd))
 			}
 
 			// replace segment file
 			if tc.chunkInject != nil {
 				segmentFile := path.Join(block.ChunksDirname, "000001")
-				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), segmentFile)))
-				newSegmentFile := tc.chunkInject(path.Join(testDir, segmentFile))
-				fd, err := os.Open(newSegmentFile)
-				defer fd.Close()
+				fsSegmentFile := path.Join(testDir, segmentFile)
+				bktSegmentFile := path.Join(blockID.String(), segmentFile)
+				require.NoError(t, bkt.Delete(ctx, bktSegmentFile))
+				tc.chunkInject(fsSegmentFile)
+				fd, err := os.Open(fsSegmentFile)
+				defer func(fd *os.File) {
+					err := fd.Close()
+					require.NoError(t, err)
+				}(fd)
 				require.NoError(t, err)
-				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), segmentFile), fd))
+				require.NoError(t, bkt.Upload(ctx, bktSegmentFile, fd))
 			}
 
 			// delete any files that should be missing
@@ -1859,4 +1866,25 @@ func populateMetaFileList(t *testing.T, dir string, meta *metadata.Meta) {
 		RelPath: block.MetaFilename,
 	})
 	meta.Thanos.Files = files
+}
+
+// flipByteAt flips a byte at a given offset in a file.
+func flipByteAt(t *testing.T, fname string, offset int64) {
+	t.Helper()
+	fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
+	defer func(fd *os.File) {
+		err := fd.Close()
+		require.NoError(t, err)
+	}(fd)
+	require.NoError(t, err)
+	info, err := fd.Stat()
+	require.NoError(t, err)
+	require.Greater(t, info.Size(), offset)
+	var b [1]byte
+	_, err = fd.ReadAt(b[:], offset)
+	require.NoError(t, err)
+	// alter the byte
+	b[0] = 0xff - b[0]
+	_, err = fd.WriteAt(b[:], offset)
+	require.NoError(t, err)
 }

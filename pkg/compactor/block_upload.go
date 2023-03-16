@@ -519,7 +519,6 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 	if err != nil {
 		return errors.Wrap(err, "error validating block index")
 	}
-
 	// validate segment files
 	err = filepath.Walk(filepath.Join(blockDir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -528,11 +527,9 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		if info.IsDir() {
 			return nil
 		}
-
 		if err := validateSegmentFile(path, blockMetadata.MinTime, blockMetadata.MaxTime); err != nil {
 			return errors.Wrapf(err, "error validating segment file %s", path)
 		}
-
 		return nil
 	})
 	if err != nil {
@@ -780,6 +777,7 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 	return nil
 }
 
+// validateSegmentFile validates the segment file at the given path given the min and max timestamp of the block.
 func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 	// This is adapted from the tools/tsdb-chunks/main.go
 	file, err := os.Open(path)
@@ -788,6 +786,7 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 	}
 	defer file.Close()
 
+	// for validating checksums for each chunk
 	table := crc32.MakeTable(crc32.Castagnoli)
 	header := make([]byte, 8)
 	n, err := io.ReadFull(file, header)
@@ -809,6 +808,7 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 		return fmt.Errorf("invalid padding")
 	}
 
+	// checks that a timestamp is greater than the previous one and within the block's min and max time.
 	tsIsValid := func(ts int64, last int64) (bool, error) {
 		if ts < minTS {
 			return false, fmt.Errorf("timestamp %d is before minTime %d", ts, minTS)
@@ -823,7 +823,10 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 	}
 
 	cix := 0
-	for c, err := nextChunk(file, table); err == nil; c, err = nextChunk(file, table) {
+	for c, err := nextChunk(file, table); c == nil; c, err = nextChunk(file, table) {
+		if err != nil {
+			return fmt.Errorf("chunk #%d: error: %v)", cix, err)
+		}
 		var lastTS int64
 		it := c.Iterator(nil)
 		six := 0
@@ -836,7 +839,7 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 			six++
 		}
 		if e := it.Err(); e != nil {
-			return fmt.Errorf("Chunk #%d: error: %v\n", cix, e)
+			return fmt.Errorf("chunk #%d: error: %v\n", cix, e)
 		}
 		cix++
 	}
@@ -847,6 +850,7 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 	return nil
 }
 
+// nextChunk iterates through one chunk in a segment file.
 func nextChunk(file *os.File, table *crc32.Table) (chunkenc.Chunk, error) {
 	// This is adapted from the tools/tsdb-chunks/main.go
 	_, err := file.Seek(0, io.SeekCurrent)
@@ -884,15 +888,20 @@ func nextChunk(file *os.File, table *crc32.Table) (chunkenc.Chunk, error) {
 		return nil, fmt.Errorf("failed to skip data: %w", err)
 	}
 
-	_, err = io.ReadFull(file, buf[0:4])
+	// read CRC32
+	crc := make([]byte, 4)
+	_, err = io.ReadFull(file, crc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CRC32: %w", err)
 	}
 
 	// verify checksum
-	crc := crc32.Checksum(chunkData, table)
-	if crc != binary.BigEndian.Uint32(buf[0:4]) {
-		return nil, fmt.Errorf("CRC32 mismatch")
+	crcData := []byte{byte(enc)}
+	crcData = append(crcData, chunkData...)
+	crcCalc := crc32.Checksum(crcData, table)
+	crcChunk := binary.BigEndian.Uint32(crc)
+	if crcCalc != crcChunk {
+		return nil, fmt.Errorf("CRC32 mismatch, expected %x, got %x", crcCalc, crcChunk)
 	}
 
 	chunk, err := chunkenc.FromData(enc, chunkData)
