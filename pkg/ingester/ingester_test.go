@@ -6577,33 +6577,22 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 	tests := map[string]struct {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
-		streamChunks     bool
 	}{
-		"integer histogram stream chunks": {
+		"integer histogram": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
-			streamChunks:     true,
 		},
-		"float histogram stream chunks": {
+		"float histogram": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
-			streamChunks:     true,
-		},
-		"integer histogram stream samples": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
-			expectHistogram:  expectedSampleHistogram,
-			streamChunks:     false,
-		},
-		"float histogram stream samples": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
-			expectHistogram:  expectedSampleHistogram,
-			streamChunks:     false,
 		},
 	}
 	for testName, testCfg := range tests {
-		t.Run(testName, func(t *testing.T) {
-			testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, testCfg.streamChunks)
-		})
+		for _, streamChunks := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/streamChunks=%v", testName, streamChunks), func(t *testing.T) {
+				testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, streamChunks)
+			})
+		}
 	}
 }
 
