@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"hash/crc32"
 	"io"
 	"net/http"
@@ -25,6 +23,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/dskit/tenant"
@@ -839,7 +839,7 @@ func validateSegmentFile(path string, minTS int64, maxTS int64) error {
 			six++
 		}
 		if e := it.Err(); e != nil {
-			return fmt.Errorf("chunk #%d: error: %v\n", cix, e)
+			return fmt.Errorf("chunk #%d: error: %v", cix, e)
 		}
 		cix++
 	}
