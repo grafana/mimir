@@ -168,11 +168,11 @@ func cacheConfig(backend string, service *e2e.ConcreteService) map[string]string
 func generateExpectedFloats(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, expectedVector model.Vector, seriesName string) model.Matrix {
 	val := expectedVector[0].Value
 
-	const loopbackPeriod = 5 * time.Minute
+	const lookbackPeriod = 5 * time.Minute
 
 	values := []model.SamplePair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(loopbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
 			continue
 		}
 		values = append(values, model.SamplePair{
@@ -193,11 +193,11 @@ func generateExpectedFloats(start time.Time, end time.Time, step time.Duration, 
 func generateExpectedHistograms(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, expectedVector model.Vector, seriesName string) model.Matrix {
 	hist := expectedVector[0].Histogram
 
-	const loopbackPeriod = 5 * time.Minute
+	const lookbackPeriod = 5 * time.Minute
 
 	histograms := []model.SampleHistogramPair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(loopbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
 			continue
 		}
 		histograms = append(histograms, model.SampleHistogramPair{
