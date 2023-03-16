@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 // The various modules that make up Mimir.
@@ -87,6 +88,7 @@ const (
 	StoreGateway               string = "store-gateway"
 	MemberlistKV               string = "memberlist-kv"
 	QueryScheduler             string = "query-scheduler"
+	Vault                      string = "vault"
 	TenantFederation           string = "tenant-federation"
 	UsageStats                 string = "usage-stats"
 	All                        string = "all"
@@ -165,6 +167,48 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) initVault() (services.Service, error) {
+	if !t.Cfg.Vault.Enabled {
+		return nil, nil
+	}
+
+	vault, err := vault.NewVault(t.Cfg.Vault)
+	if err != nil {
+		return nil, err
+	}
+	t.Vault = vault
+
+	// Update Configs - KVStore
+	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
+	t.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+
+	// Update Configs - Redis Clients
+	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader = t.Vault
+
+	// Update Configs - GRPC Clients
+	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
+	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
+	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+
+	return nil, nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
@@ -867,6 +911,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
@@ -876,27 +921,27 @@ func (t *Mimir) setupModuleManager() error {
 	deps := map[string][]string{
 		Server:                   {ActivityTracker, SanityCheck, UsageStats},
 		API:                      {Server},
-		MemberlistKV:             {API},
+		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},
-		Ring:                     {API, RuntimeConfig, MemberlistKV},
+		Ring:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides, MemberlistKV},
-		Distributor:              {DistributorService, API, ActiveGroupsCleanupService},
-		DistributorService:       {Ring, Overrides},
-		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService},
+		OverridesExporter:        {Overrides, MemberlistKV, Vault},
+		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:       {Ring, Overrides, Vault},
+		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
 		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
-		Querier:                  {TenantFederation},
+		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
-		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV},
-		QueryScheduler:           {API, Overrides, MemberlistKV},
-		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
+		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
+		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
 		RulerStorage:             {Overrides},
-		AlertManager:             {API, MemberlistKV, Overrides},
-		Compactor:                {API, MemberlistKV, Overrides},
-		StoreGateway:             {API, Overrides, MemberlistKV},
+		AlertManager:             {API, MemberlistKV, Overrides, Vault},
+		Compactor:                {API, MemberlistKV, Overrides, Vault},
+		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:         {Queryable},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},

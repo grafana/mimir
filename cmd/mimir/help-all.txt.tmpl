@@ -2289,5 +2289,13 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
+  -vault.enabled
+    	[experimental] Enables fetching of keys and certificates from Vault
+  -vault.mount-path string
+    	[experimental] Location of secrets engine within Vault
+  -vault.token string
+    	[experimental] Token used to authenticate with Vault
+  -vault.url string
+    	[experimental] Location of the Vault server
   -version
     	Print application version and exit.

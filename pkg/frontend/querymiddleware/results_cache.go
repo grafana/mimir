@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -337,6 +338,15 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 			return nil, err
 		}
 		accumulator.Response = merged
+
+		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
+			// Keep older (minimum) timestamp.
+			accumulator.QueryTimestampMs = math.Min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		} else {
+			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
+			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
+			accumulator.QueryTimestampMs = math.Max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		}
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -353,10 +363,11 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:    acc.Extent.Start,
-		End:      acc.Extent.End,
-		Response: any,
-		TraceId:  acc.Extent.TraceId,
+		Start:            acc.Extent.Start,
+		End:              acc.Extent.End,
+		Response:         any,
+		TraceId:          acc.Extent.TraceId,
+		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }
 
@@ -371,16 +382,17 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
+func toExtent(ctx context.Context, req Request, res Response, queryTime time.Time) (Extent, error) {
 	any, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 	return Extent{
-		Start:    req.GetStart(),
-		End:      req.GetEnd(),
-		Response: any,
-		TraceId:  jaegerTraceID(ctx),
+		Start:            req.GetStart(),
+		End:              req.GetEnd(),
+		Response:         any,
+		TraceId:          jaegerTraceID(ctx),
+		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
 

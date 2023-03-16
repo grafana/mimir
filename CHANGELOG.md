@@ -10,8 +10,34 @@
     * `cortex_bucket_store_series_merge_duration_seconds`
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
+* [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
 * [CHANGE] Ingester: the `cortex_ingester_tsdb_wal_replay_duration_seconds` metrics has been removed. #4465
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
+* [FEATURE] Vault: Introduce experimental integration with Vault to fetch secrets used to configure TLS for clients. Server TLS secrets will still be read from a file. `tls-ca-path`, `tls-cert-path` and `tls-key-path` will denote the path in Vault for the following CLI flags when `-vault.enabled` is true: #4446.
+  * `-distributor.ha-tracker.etcd.*`
+  * `-distributor.ring.etcd.*`
+  * `-distributor.forwarding.grpc-client.*`
+  * `-querier.store-gateway-client.*`
+  * `-ingester.client.*`
+  * `-ingester.ring.etcd.*`
+  * `-querier.frontend-client.*`
+  * `-query-frontend.grpc-client-config.*`
+  * `-query-frontend.results-cache.redis.*`
+  * `-blocks-storage.bucket-store.index-cache.redis.*`
+  * `-blocks-storage.bucket-store.chunks-cache.redis.*`
+  * `-blocks-storage.bucket-store.metadata-cache.redis.*`
+  * `-compactor.ring.etcd.*`
+  * `-store-gateway.sharding-ring.etcd.*`
+  * `-ruler.client.*`
+  * `-ruler.alertmanager-client.*`
+  * `-ruler.ring.etcd.*`
+  * `-ruler.query-frontend.grpc-client-config.*`
+  * `-alertmanager.sharding-ring.etcd.*`
+  * `-alertmanager.alertmanager-client.*`
+  * `-memberlist.*`
+  * `-query-scheduler.grpc-client-config.*`
+  * `-query-scheduler.ring.etcd.*`
+  * `-overrides-exporter.ring.etcd.*`
 * [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
 * [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4304 #4318 #4375
 * [ENHANCEMENT] Compactor: added experimental configuration parameter `-compactor.first-level-compaction-wait-period`, to configure how long the compactor should wait before compacting 1st level blocks (uploaded by ingesters). This configuration option allows to reduce the chances compactor begins compacting blocks before all ingesters have uploaded their blocks to the storage. #4401
@@ -41,6 +67,8 @@
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
 ## 2.7.0-rc.0
 

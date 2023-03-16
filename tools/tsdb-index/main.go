@@ -69,8 +69,18 @@ func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Match
 	defer idx.Close()
 
 	k, v := index.AllPostingsKey()
-	p, err := idx.Postings(k, v)
 
+	// If there is any "equal" matcher, we can use it for getting postings instead,
+	// it can massively speed up iteration over the index, especially for large blocks.
+	for _, m := range matchers {
+		if m.Type == labels.MatchEqual {
+			k = m.Name
+			v = m.Value
+			break
+		}
+	}
+
+	p, err := idx.Postings(k, v)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to get postings", "err", err)
 		return
