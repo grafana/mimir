@@ -94,74 +94,34 @@ func handler(maxRecvMsgSize int,
 				logger = log.WithSourceIPs(source, logger)
 			}
 		}
-		// TODO move this to middleware
+
+		// TODO: move this to middleware or better place
 		cluster, replica := r.Header.Get(ClusterHeader), r.Header.Get(ReplicaHeader)
-		if cluster == "my-cluster" {
-			level.Info(logger).Log("msg", "xxx Header checkers.....",
-				"clusterHeader", cluster,
-				"replicaHeader", replica,
-			)
-		}
 		userID, err := tenant.TenantID(ctx)
-		if cluster == "my-cluster" {
-			level.Info(logger).Log("msg", "xxx Header checkers.....",
-				"userID", userID,
-				"clusterHeader", cluster,
-				"replicaHeader", replica,
-			)
-		}
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		if replica != "" && cluster != "" {
+			// replicaChecker should prefill distributor haTracker.clusters
 			err = replicaChecker(ctx, userID, cluster, replica, time.Now())
 			if err != nil {
-				if cluster == "my-cluster" {
-					level.Info(logger).Log("msg", "xxx replica check is failed", "err", err.Error(),
-						"userID", userID,
-						"clusterHeader", cluster,
-						"replicaHeader", replica,
-					)
-				}
 				// TODO add metrics on success or failure in HA replica check
-				// TODO make sure the errrr is replica not match
-				// if errors.Is(err, replicasNotMatchError{}) {
-				if true {
-					// TODO: the header is secondary replica
-					// we stop this
+				if errors.Is(err, util.ReplicasNotMatchError{}) {
+					// This sample is coming from secondary replica
+					//// we mark as accepted and send response header
 					w.WriteHeader(http.StatusAccepted)
 					w.Header().Set(IsSecondaryRWReplicaHeader, "true")
+				} else {
+					// TODO: is the only thing todo for any other errors?
+					w.WriteHeader(http.StatusBadRequest)
 				}
 				return
-			}
-			if cluster == "my-cluster" {
-				level.Info(logger).Log("msg", "xxx replica check run successfully",
-					"userID", userID,
-					"clusterHeader", cluster,
-					"replicaHeader", replica,
-				)
-			}
-			// propagate HA check
-		} else {
-			if cluster == "my-cluster" {
-				level.Info(logger).Log("msg", "xxx no ha header found",
-					"userID", userID,
-					"clusterHeader", cluster,
-					"replicaHeader", replica,
-				)
 			}
 		}
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			if cluster == "my-cluster" {
-				level.Info(logger).Log("msg", "xxx parsing request...",
-					"userID", userID,
-					"clusterHeader", cluster,
-					"replicaHeader", replica,
-				)
-			}
 			bufHolder := bufferPool.Get().(*bufHolder)
 			var req mimirpb.PreallocWriteRequest
 			buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req)

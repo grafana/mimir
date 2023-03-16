@@ -130,6 +130,7 @@ type haTracker struct {
 	replicasMarkedForDeletion prometheus.Counter
 	deletedReplicas           prometheus.Counter
 	markingForDeletionsFailed prometheus.Counter
+	haPushRequestSkipParse    prometheus.Counter
 }
 
 // For one cluster, the information we need to do ha-tracking.
@@ -188,6 +189,10 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		markingForDeletionsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_replicas_cleanup_delete_failed_total",
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
+		}),
+		haPushRequestSkipParse: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_push_request_skip_parse_total",
+			Help: "Number HA Push Request that doesn't need to be parsed because of HA header check.",
 		}),
 	}
 
@@ -402,14 +407,20 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 	}
 }
 
+// ReplicaChecker expose checkReplica private method and add counter to track how many push request that is not coming
+// from elected replica.
 func (h *haTracker) ReplicaChecker() func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	return func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
-		return h.checkReplica(ctx, userID, cluster, replica, now)
+		err := h.checkReplica(ctx, userID, cluster, replica, now)
+		if err != nil && errors.Is(err, util.ReplicasNotMatchError{}) {
+			h.haPushRequestSkipParse.Inc()
+		}
+		return err
 	}
 }
 
 // checkReplica checks the cluster and replica against the local cache to see
-// if we should accept the incoming sample. It will return replicasNotMatchError
+// if we should accept the incoming sample. It will return ReplicasNotMatchError
 // if we shouldn't store this sample but are accepting samples from another
 // replica for the cluster.
 // Updates to and from the KV store are handled in the background, except
@@ -423,10 +434,6 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 
 	h.electedLock.Lock()
 	if entry := h.clusters[userID][cluster]; entry != nil {
-		if cluster == "my-cluster" {
-			level.Info(h.logger).Log("msg", "xxx yoohooo get entry of ha tracker", "userID", userID, "cluster", cluster,
-				"replica", replica)
-		}
 		var err error
 		if entry.elected.Replica == replica {
 			// Sample received is from elected replica: update timestamp and carry on.
@@ -435,15 +442,10 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
-			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
-			level.Info(h.logger).Log("msg", "xxx sample is from secondary replica, we will reject this",
-				"userID", userID, "cluster", cluster, "replica", replica)
+			err = util.NewReplicasNotMatchError(replica, entry.elected.Replica)
 		}
 		h.electedLock.Unlock()
 		return err
-	} else {
-		level.Info(h.logger).Log("msg", "xxx can't find entry....",
-			"userID", userID, "cluster", cluster, "replica", replica)
 	}
 
 	// We don't know about this cluster yet.
@@ -454,8 +456,6 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 		return tooManyClustersError{limit: limit}
 	}
 
-	level.Info(h.logger).Log("msg", "xxx Going to call kv store.....",
-		"userID", userID, "cluster", cluster, "replica", replica)
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
@@ -520,26 +520,6 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		h.electedLock.Unlock()
 	}
 	return err
-}
-
-type replicasNotMatchError struct {
-	replica, elected string
-}
-
-func (e replicasNotMatchError) Error() string {
-	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
-}
-
-// Needed for errors.Is to work properly.
-func (e replicasNotMatchError) Is(err error) bool {
-	_, ok1 := err.(replicasNotMatchError)
-	_, ok2 := err.(*replicasNotMatchError)
-	return ok1 || ok2
-}
-
-// IsOperationAborted returns whether the error has been caused by an operation intentionally aborted.
-func (e replicasNotMatchError) IsOperationAborted() bool {
-	return true
 }
 
 type tooManyClustersError struct {

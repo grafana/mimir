@@ -772,7 +772,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			if errors.Is(err, replicasNotMatchError{}) {
+			if errors.Is(err, util.ReplicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())

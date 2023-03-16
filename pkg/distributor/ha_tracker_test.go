@@ -30,6 +30,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -659,23 +660,23 @@ func TestTooManyClustersError(t *testing.T) {
 	assert.True(t, errors.Is(err, tooManyClustersError{}))
 	assert.True(t, errors.Is(err, &tooManyClustersError{}))
 
-	err = replicasNotMatchError{replica: "a", elected: "b"}
+	err = util.NewReplicasNotMatchError("a", "b")
 	assert.False(t, errors.Is(err, tooManyClustersError{}))
 	assert.False(t, errors.Is(err, &tooManyClustersError{}))
 }
 
 func TestReplicasNotMatchError(t *testing.T) {
-	var err error = replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
+	var err error = util.NewReplicasNotMatchError("a", "b")
+	assert.True(t, errors.Is(err, util.ReplicasNotMatchError{}))
+	assert.True(t, errors.Is(err, &util.ReplicasNotMatchError{}))
 
-	err = &replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
+	err = util.NewReplicasNotMatchError("a", "b")
+	assert.True(t, errors.Is(err, util.ReplicasNotMatchError{}))
+	assert.True(t, errors.Is(err, &util.ReplicasNotMatchError{}))
 
 	err = tooManyClustersError{limit: 10}
-	assert.False(t, errors.Is(err, replicasNotMatchError{}))
-	assert.False(t, errors.Is(err, &replicasNotMatchError{}))
+	assert.False(t, errors.Is(err, util.ReplicasNotMatchError{}))
+	assert.False(t, errors.Is(err, &util.ReplicasNotMatchError{}))
 }
 
 type trackerLimits struct {
