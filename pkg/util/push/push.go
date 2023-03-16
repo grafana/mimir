@@ -11,23 +11,16 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
-)
-
-const (
-	ReplicaHeader              = "X-Prometheus-HA-Replica"
-	ClusterHeader              = "X-Prometheus-HA-Cluster"
-	IsSecondaryRWReplicaHeader = "X-Prometheus-Secondary-Remote-Write-Replica"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
@@ -54,7 +47,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	push Func,
-	replicaChecker func(ctx context.Context, userID, cluster, replica string, now time.Time) error,
+	replicaChecker distributor.HaShortcutRequestCheckerFunc,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
@@ -82,42 +75,20 @@ func handler(maxRecvMsgSize int,
 	allowSkipLabelNameValidation bool,
 	push Func,
 	parser parserFunc,
-	replicaChecker func(ctx context.Context, userID, cluster, replica string, now time.Time) error,
+	haReplicaChecker distributor.HaShortcutRequestCheckerFunc,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		if haReplicaChecker(ctx, w, r) {
+			return
+		}
+
 		logger := log.WithContext(ctx, log.Logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
 				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
 				logger = log.WithSourceIPs(source, logger)
-			}
-		}
-
-		// TODO: move this to middleware or better place
-		cluster, replica := r.Header.Get(ClusterHeader), r.Header.Get(ReplicaHeader)
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		if replica != "" && cluster != "" {
-			// replicaChecker should prefill distributor haTracker.clusters
-			err = replicaChecker(ctx, userID, cluster, replica, time.Now())
-			if err != nil {
-				// TODO add metrics on success or failure in HA replica check
-				if errors.Is(err, util.ReplicasNotMatchError{}) {
-					// This sample is coming from secondary replica
-					//// we mark as accepted and send response header
-					w.WriteHeader(http.StatusAccepted)
-					w.Header().Set(IsSecondaryRWReplicaHeader, "true")
-				} else {
-					// TODO: is the only thing todo for any other errors?
-					w.WriteHeader(http.StatusBadRequest)
-				}
-				return
 			}
 		}
 

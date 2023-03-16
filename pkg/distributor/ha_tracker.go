@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -35,6 +37,22 @@ var (
 	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
+)
+
+// HaShortcutRequestCheckerFunc defines how a request should be shortcut if it comes
+// from duplicated HA sample.
+type HaShortcutRequestCheckerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool)
+
+const (
+	ReplicaHeader              = "X-Prometheus-HA-Replica"
+	ClusterHeader              = "X-Prometheus-HA-Cluster"
+	IsSecondaryRWReplicaHeader = "X-Prometheus-Secondary-Remote-Write-Replica"
+)
+
+var (
+	NoOpHaShorcutRequestCheckerFunc = func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
+		return false
+	}
 )
 
 type haTrackerLimits interface {
@@ -407,20 +425,36 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 	}
 }
 
-// ReplicaChecker expose checkReplica private method and add counter to track how many push request that is not coming
-// from elected replica.
-func (h *haTracker) ReplicaChecker() func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
-	return func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
-		err := h.checkReplica(ctx, userID, cluster, replica, now)
-		if err != nil && errors.Is(err, util.ReplicasNotMatchError{}) {
-			h.haPushRequestSkipParse.Inc()
+// HaShortcutRequestChecker will check whether the sample in the request must be parsed
+// in the next step or can be shortcut avoiding unneeded request parsing.
+func (h *haTracker) HaShortcutRequestChecker() HaShortcutRequestCheckerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) (finished bool) {
+		cluster, replica := r.Header.Get(ClusterHeader), r.Header.Get(ReplicaHeader)
+		if cluster == "" || replica == "" {
+			return false
 		}
-		return err
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return false
+		}
+
+		// replicaChecker should prefill distributor haTracker.clusters
+		err = h.checkReplica(ctx, userID, cluster, replica, time.Now())
+		if errors.As(err, &replicasNotMatchError{}) {
+			h.haPushRequestSkipParse.Inc()
+			// This sample is coming from secondary replica
+			//// we mark as accepted and send response header
+			w.WriteHeader(http.StatusAccepted)
+			w.Header().Set(IsSecondaryRWReplicaHeader, "true")
+			return true
+		}
+		return false
 	}
 }
 
 // checkReplica checks the cluster and replica against the local cache to see
-// if we should accept the incoming sample. It will return ReplicasNotMatchError
+// if we should accept the incoming sample. It will return replicasNotMatchError
 // if we shouldn't store this sample but are accepting samples from another
 // replica for the cluster.
 // Updates to and from the KV store are handled in the background, except
@@ -442,7 +476,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
-			err = util.NewReplicasNotMatchError(replica, entry.elected.Replica)
+			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
 		}
 		h.electedLock.Unlock()
 		return err
@@ -520,6 +554,26 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		h.electedLock.Unlock()
 	}
 	return err
+}
+
+type replicasNotMatchError struct {
+	replica, elected string
+}
+
+func (e replicasNotMatchError) Error() string {
+	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
+}
+
+// Needed for errors.Is to work properly.
+func (e replicasNotMatchError) Is(err error) bool {
+	_, ok1 := err.(replicasNotMatchError)
+	_, ok2 := err.(*replicasNotMatchError)
+	return ok1 || ok2
+}
+
+// IsOperationAborted returns whether the error has been caused by an operation intentionally aborted.
+func (e replicasNotMatchError) IsOperationAborted() bool {
+	return true
 }
 
 type tooManyClustersError struct {
