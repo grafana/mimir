@@ -47,7 +47,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	push Func,
-	replicaChecker distributor.HaShortcutRequestCheckerFunc,
+	shortcut func(context.Context, http.ResponseWriter, *http.Request) bool,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
