@@ -17,7 +17,6 @@ import (
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -128,7 +127,6 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	distClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
 
-	var series []prompb.TimeSeries
 	var genSeries generateSeriesFunc
 	if !cfg.sendHistograms {
 		genSeries = generateFloatSeries
