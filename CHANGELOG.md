@@ -42,7 +42,7 @@
 
 ### Tools
 
-* [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied.
+* [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
 ## 2.7.0-rc.0
 
