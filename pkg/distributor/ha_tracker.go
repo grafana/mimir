@@ -192,7 +192,7 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		}),
 		haPushRequestSkipParse: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_push_request_skip_parse_total",
-			Help: "Number HA Push Request that doesn't need to be parsed because of HA header check.",
+			Help: "Number HA Push Requests that don't need to be parsed because of HA header check.",
 		}),
 	}
 
