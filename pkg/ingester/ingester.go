@@ -1473,9 +1473,11 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 				t, v := it.At()
 				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 			case chunkenc.ValHistogram:
-				// ignore
+				t, v := it.AtHistogram()
+				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
 			case chunkenc.ValFloatHistogram:
-				// ignore
+				t, v := it.AtFloatHistogram()
+				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			default:
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
@@ -1578,9 +1580,9 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 			case chunkenc.EncXOR:
 				ch.Encoding = int32(chunk.PrometheusXorChunk)
 			case chunkenc.EncHistogram:
-				continue // ignore
+				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
 			case chunkenc.EncFloatHistogram:
-				continue // ignore
+				ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
 			default:
 				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 			}
