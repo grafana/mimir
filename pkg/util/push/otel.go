@@ -121,7 +121,7 @@ func OTLPHandler(
 
 		req.Timeseries = metrics
 		return body, nil
-	})
+	}, util.NoOpReplicaChecker)
 }
 
 func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {

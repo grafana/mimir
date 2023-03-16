@@ -402,6 +402,12 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 	}
 }
 
+func (h *haTracker) ReplicaChecker() func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+	return func(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+		return h.checkReplica(ctx, userID, cluster, replica, now)
+	}
+}
+
 // checkReplica checks the cluster and replica against the local cache to see
 // if we should accept the incoming sample. It will return replicasNotMatchError
 // if we shouldn't store this sample but are accepting samples from another
@@ -417,6 +423,10 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 
 	h.electedLock.Lock()
 	if entry := h.clusters[userID][cluster]; entry != nil {
+		if cluster == "my-cluster" {
+			level.Info(h.logger).Log("msg", "xxx yoohooo get entry of ha tracker", "userID", userID, "cluster", cluster,
+				"replica", replica)
+		}
 		var err error
 		if entry.elected.Replica == replica {
 			// Sample received is from elected replica: update timestamp and carry on.
@@ -426,9 +436,14 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
 			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
+			level.Info(h.logger).Log("msg", "xxx sample is from secondary replica, we will reject this",
+				"userID", userID, "cluster", cluster, "replica", replica)
 		}
 		h.electedLock.Unlock()
 		return err
+	} else {
+		level.Info(h.logger).Log("msg", "xxx can't find entry....",
+			"userID", userID, "cluster", cluster, "replica", replica)
 	}
 
 	// We don't know about this cluster yet.
@@ -439,6 +454,8 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 		return tooManyClustersError{limit: limit}
 	}
 
+	level.Info(h.logger).Log("msg", "xxx Going to call kv store.....",
+		"userID", userID, "cluster", cluster, "replica", replica)
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)

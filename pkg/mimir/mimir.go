@@ -789,7 +789,7 @@ func (t *Mimir) Run() error {
 	))
 
 	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
+	healthy := func() { level.Info(util_log.Logger).Log("msg", "jjjjjj Application started... xxxohoooo") }
 	stopped := func() { level.Info(util_log.Logger).Log("msg", "Application stopped") }
 	serviceFailed := func(service services.Service) {
 		// if any service fails, stop entire Mimir

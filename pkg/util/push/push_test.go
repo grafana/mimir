@@ -25,9 +25,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
+	"github.com/weaveworks/common/user"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -35,7 +38,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, false, verifyWritePushFunc(t, mimirpb.API))
+	handler := Handler(100000, nil, false, verifyWritePushFunc(t, mimirpb.API), util.NoOpReplicaChecker)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -221,10 +224,17 @@ func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
-	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
+	//req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
+	userID := "user"
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createRequestWithHeaderAndCtx(t, createMimirWriteRequestProtobuf(t, false), map[string]string{
+		user.OrgIDHeaderName: "0",
+		ReplicaHeader:        "replica",
+		ClusterHeader:        "cluster1",
+	}, ctx)
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, verifyWritePushFunc(t, mimirpb.RULE))
+	handler := Handler(100000, sourceIPs, false, verifyWritePushFunc(t, mimirpb.RULE), util.NoOpReplicaChecker)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -236,7 +246,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	handler := Handler(100000, sourceIPs, false, func(_ context.Context, req *Request) (*mimirpb.WriteResponse, error) {
 		defer req.CleanUp()
 		return nil, fmt.Errorf("the request failed: %w", context.Canceled)
-	})
+	}, util.NoOpReplicaChecker)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 499, resp.Code)
 }
@@ -342,7 +352,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler)
+			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler, util.NoOpReplicaChecker)
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -384,6 +394,14 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	return req
+}
+
+func createRequestWithHeaderAndCtx(t testing.TB, protobuf []byte, additionalHeaders map[string]string, ctx context.Context) *http.Request {
+	req := createRequest(t, protobuf)
+	for k, v := range additionalHeaders {
+		req.Header.Set(k, v)
+	}
+	return req.WithContext(ctx)
 }
 
 func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.ExportRequest, compress bool) *http.Request {
@@ -500,7 +518,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handler := Handler(100000, nil, false, pushFunc)
+	handler := Handler(100000, nil, false, pushFunc, util.NoOpReplicaChecker)
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -554,7 +572,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return nil, err
 			}
 
-			h := handler(10, nil, false, pushFunc, parserFunc)
+			h := handler(10, nil, false, pushFunc, parserFunc, util.NoOpReplicaChecker)
 
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
