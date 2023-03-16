@@ -6578,19 +6578,11 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		sampleHistograms []mimirpb.Histogram
 		expectHistogram  *model.SampleHistogram
 	}{
-		"integer histogram stream chunks": {
+		"integer histogram": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
-		"float histogram stream chunks": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
-			expectHistogram:  expectedSampleHistogram,
-		},
-		"integer histogram stream samples": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
-			expectHistogram:  expectedSampleHistogram,
-		},
-		"float histogram stream samples": {
+		"float histogram": {
 			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
