@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
@@ -25,7 +27,12 @@ import (
 )
 
 type indexTOC struct {
-	SeriesOffset, LabelIndex1 int64
+	SeriesOffset, LabelIndex1, LabelOffsetTable, PostingsOffsetTable, PostingLists int64
+}
+
+type postingList struct {
+	LabelName, LabelVal string
+	SizeBytes           uint64
 }
 
 func main() {
@@ -38,21 +45,130 @@ func main() {
 	bkt := createBucketClient(bucketName)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	go listenForSignals(cancel)
 
 	indexFileObjectSize, err := objectSize(bkt, indexFileObjectPath)
 	noErr(err)
 	indexFileTOC, err := readIndexTOC(bkt, indexFileObjectPath, indexFileObjectSize)
 	noErr(err)
 
-	indexReader, err := bkt.GetRange(ctx, indexFileObjectPath, indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
+	seriesReader, err := bkt.GetRange(ctx, indexFileObjectPath, indexFileTOC.SeriesOffset, indexFileTOC.LabelIndex1-indexFileTOC.SeriesOffset)
 	noErr(err)
-	defer indexReader.Close()
+	defer seriesReader.Close()
 
 	seriesCh := make(chan series)
-	go readChunkRefs(indexReader, seriesCh)
-	go listenForSignals(cancel)
+	go readChunkRefs(seriesReader, seriesCh)
 
-	doChunkRangeStats(seriesCh)
+	postingsOffsetTableReader, err := bkt.GetRange(ctx, indexFileObjectPath, indexFileTOC.PostingsOffsetTable, indexFileObjectSize-TOCSize-indexFileTOC.PostingsOffsetTable)
+	noErr(err)
+	defer postingsOffsetTableReader.Close()
+
+	postingListsChan := make(chan postingList)
+	go readPostingsOffsetTable(ctx, postingsOffsetTableReader, postingListsChan)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	defer wg.Wait()
+
+	go func() {
+		defer wg.Done()
+		//doChunkRangeStats(seriesCh)
+	}()
+	go func() {
+		defer wg.Done()
+		doPstingListsStats(postingListsChan)
+	}()
+}
+
+func doPstingListsStats(listsChan <-chan postingList) {
+	for list := range listsChan {
+		if list.LabelName == "" && list.LabelVal == "" {
+			fmt.Printf("%d ALL ALL\n", list.SizeBytes)
+		} else {
+			fmt.Printf("%d %s %s\n", list.SizeBytes, list.LabelName, list.LabelVal)
+		}
+	}
+}
+
+func readPostingsOffsetTable(ctx context.Context, r io.ReadCloser, listsChan chan<- postingList) {
+	defer close(listsChan)
+
+	reader := &trackedReader{r: bufio.NewReader(r)}
+	fourBytes := make([]byte, 4)
+
+	n, err := io.ReadFull(reader, fourBytes)
+	noErr(err)
+	if n != len(fourBytes) {
+		panic("couldn't read the length of the posting offset table")
+	}
+
+	//fmt.Println("postings offset table length ", binary.BigEndian.Uint32(fourBytes))
+
+	n, err = io.ReadFull(reader, fourBytes)
+	noErr(err)
+	if n != len(fourBytes) {
+		panic("couldn't read the number of lists in the posting offset table")
+	}
+
+	numEntries := binary.BigEndian.Uint32(fourBytes)
+	//fmt.Println("postings offset table entries ", numEntries)
+	buf := &bytes.Buffer{}
+
+	var (
+		prevOffset          uint64
+		prevLName, prevLval string
+	)
+
+	for i := uint32(0); i < numEntries; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		two, err := reader.ReadByte()
+		noErr(err)
+		if two != 2 {
+			panic("expecting to have two values")
+		}
+
+		lNameLen, err := binary.ReadUvarint(reader)
+		noErr(err)
+
+		buf.Reset()
+		n, err := io.CopyN(buf, reader, int64(lNameLen))
+		noErr(err)
+		if n != int64(lNameLen) {
+			panic("didn't read expected label name")
+		}
+		lName := buf.String()
+
+		lValLen, err := binary.ReadUvarint(reader)
+		noErr(err)
+
+		buf.Reset()
+		n, err = io.CopyN(buf, reader, int64(lValLen))
+		noErr(err)
+		if n != int64(lValLen) {
+			panic("didn't read expected label name")
+		}
+		lVal := buf.String()
+
+		offset, err := binary.ReadUvarint(reader)
+		noErr(err)
+
+		if prevOffset != 0 {
+			listsChan <- postingList{
+				LabelName: prevLName,
+				LabelVal:  prevLval,
+				SizeBytes: offset - prevOffset,
+			}
+		}
+
+		prevOffset = offset
+		prevLName = lName
+		prevLval = lVal
+	}
+
 }
 
 func listenForSignals(cancel context.CancelFunc) {
@@ -258,8 +374,9 @@ func createBucketClient(bucketName string) objstore.BucketReader {
 	return bkt
 }
 
+const TOCSize = 52
+
 func readIndexTOC(bkt objstore.BucketReader, path string, size int64) (indexTOC, error) {
-	const TOCSize = 52
 	r, err := bkt.GetRange(context.Background(), path, size-TOCSize, TOCSize)
 	if err != nil {
 		return indexTOC{}, errors.Wrap(err, "reading index file TOC")
@@ -276,10 +393,12 @@ func readIndexTOC(bkt objstore.BucketReader, path string, size int64) (indexTOC,
 	}
 
 	decoder := encoding.NewDecbufRaw(realByteSlice(TOCSlice), len(TOCSlice))
-	symbolsOffset := decoder.Be64() // Symbols table offset
-	seriesOffset := decoder.Be64()
-	labelIndex1Offset := decoder.Be64()
-
+	symbolsOffset := decoder.Be64()       // Symbols table offset
+	seriesOffset := decoder.Be64()        // seriesOffset
+	labelIndex1Offset := decoder.Be64()   // labelIndex1Offset
+	labelOffsetTable := decoder.Be64()    // labelOffsetTable
+	postingLists := decoder.Be64()        // postings 1
+	postingsOffsetTable := decoder.Be64() // postingsOffsetTable
 	if symbolsOffset == 0 || seriesOffset == 0 || labelIndex1Offset == 0 {
 		panic("seriesOffset, labelIndex1Offset, or symbolsOffset is zero")
 	}
@@ -290,8 +409,11 @@ func readIndexTOC(bkt objstore.BucketReader, path string, size int64) (indexTOC,
 	}
 
 	return indexTOC{
-		SeriesOffset: int64(seriesOffset),
-		LabelIndex1:  int64(labelIndex1Offset),
+		SeriesOffset:        int64(seriesOffset),
+		LabelIndex1:         int64(labelIndex1Offset),
+		LabelOffsetTable:    int64(labelOffsetTable),
+		PostingsOffsetTable: int64(postingsOffsetTable),
+		PostingLists:        int64(postingLists),
 	}, nil
 }
 
