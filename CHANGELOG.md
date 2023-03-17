@@ -67,7 +67,7 @@
 
 ### Documentation
 
-* [FEATURE] Add instructions on how to configure native histograms. #4527
+* [FEATURE] Add instructions about how to configure native histograms. #4527
 
 ### Tools
 
