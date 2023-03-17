@@ -103,7 +103,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 }
 
 func mkExtent(start, end int64) Extent {
-	return mkExtentWithStepAndQueryTime(start, end, 10, time.Now().UnixMilli())
+	return mkExtentWithStepAndQueryTime(start, end, 10, 0)
 }
 
 func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
