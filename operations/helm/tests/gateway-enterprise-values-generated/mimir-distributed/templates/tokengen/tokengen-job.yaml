@@ -24,6 +24,7 @@ spec:
         app.kubernetes.io/instance: gateway-enterprise-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
+      annotations:
       namespace: "citestns"
     spec:
       serviceAccountName: gateway-enterprise-values-mimir

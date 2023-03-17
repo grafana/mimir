@@ -24,6 +24,8 @@ spec:
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
+      annotations:
+        minio-secret-version: "42"
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir

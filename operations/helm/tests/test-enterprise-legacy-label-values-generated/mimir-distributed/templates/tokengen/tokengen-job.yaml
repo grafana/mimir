@@ -23,6 +23,7 @@ spec:
         name: tokengen
         target: tokengen
         release: test-enterprise-legacy-label-values
+      annotations:
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
