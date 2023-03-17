@@ -2590,8 +2590,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
-# (experimental) Enable ingestion of native histogram samples. If false, native
-# histogram samples are ignored without an error.
+# (experimental) Enable ingestion of native histogram samples. If true,
+# -query-frontend.query-result-response-format must be set to 'protobuf'
+# otherwise query sharding will fail. If false, native histogram samples are
+# ignored without an error.
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = false]
 
