@@ -1,6 +1,6 @@
 ---
 aliases:
-  - operators-guide/reference-http-api/
+  - ../operators-guide/reference-http-api/
 title: "Grafana Mimir HTTP API"
 menuTitle: "HTTP API"
 description: "Use the HTTP API to write and query time-series data, and to operate a Grafana Mimir cluster."

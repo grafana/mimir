@@ -147,9 +147,14 @@ func NewFromSelector(ss ServerSelector) *Client {
 type Client struct {
 	// DialTimeout specifies a custom dialer used to dial new connections to a server.
 	DialTimeout func(network, address string, timeout time.Duration) (net.Conn, error)
+
 	// Timeout specifies the socket read/write timeout.
 	// If zero, DefaultTimeout is used.
 	Timeout time.Duration
+
+	// ConnectTimeout specifies the timeout for new connections.
+	// If zero, DefaultTimeout is used.
+	ConnectTimeout time.Duration
 
 	// MinIdleConnsHeadroomPercentage specifies the percentage of minimum number of idle connections
 	// that should be kept open, compared to the number of free but recently used connections.
@@ -280,6 +285,13 @@ func (c *Client) netTimeout() time.Duration {
 	return DefaultTimeout
 }
 
+func (c *Client) connectTimeout() time.Duration {
+	if c.ConnectTimeout != 0 {
+		return c.ConnectTimeout
+	}
+	return DefaultTimeout
+}
+
 func (c *Client) maxIdleConns() int {
 	if c.MaxIdleConns > 0 {
 		return c.MaxIdleConns
@@ -374,7 +386,7 @@ func (c *Client) dial(addr net.Addr) (net.Conn, error) {
 	if dialTimeout == nil {
 		dialTimeout = net.DialTimeout
 	}
-	nc, err := dialTimeout(addr.Network(), addr.String(), c.netTimeout())
+	nc, err := dialTimeout(addr.Network(), addr.String(), c.connectTimeout())
 	if err == nil {
 		return nc, nil
 	}
