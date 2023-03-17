@@ -70,7 +70,9 @@
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
-## 2.7.0-rc.0
+## 2.7.1
+
+**Note**: During the release process, version 2.7.0 was tagged too early, before completing the release checklist and production testing. Release 2.7.1 doesn't include any code changes since 2.7.0, but now has proper release notes, published documentation, and has been fully tested in our production environment.
 
 ### Grafana Mimir
 
