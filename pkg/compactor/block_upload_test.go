@@ -1532,7 +1532,10 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			meta, err := metadata.ReadFromDir(testDir)
 			require.NoError(t, err)
 			if tc.populateFileList {
-				populateMetaFileList(t, testDir, meta)
+				//populateMetaFileList(t, testDir, meta)
+				stats, err := block.GatherFileStats(testDir)
+				require.NoError(t, err)
+				meta.Thanos.Files = stats
 			}
 
 			// create a compactor
@@ -1557,33 +1560,21 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// replace index file
 			if tc.indexInject != nil {
-				fsIndexFile := path.Join(testDir, block.IndexFilename)
-				bktIndexFile := path.Join(blockID.String(), block.IndexFilename)
-				require.NoError(t, bkt.Delete(ctx, bktIndexFile))
-				tc.indexInject(fsIndexFile)
-				fd, err := os.Open(fsIndexFile)
-				defer func(fd *os.File) {
-					err := fd.Close()
-					require.NoError(t, err)
-				}(fd)
-				require.NoError(t, err)
-				require.NoError(t, bkt.Upload(ctx, bktIndexFile, fd))
+				indexFile := filepath.Join(testDir, block.IndexFilename)
+				indexObject := path.Join(blockID.String(), block.IndexFilename)
+				require.NoError(t, bkt.Delete(ctx, indexObject))
+				tc.indexInject(indexFile)
+				uploadLocalFileToBucket(t, ctx, bkt, indexFile, indexObject)
 			}
 
 			// replace segment file
 			if tc.chunkInject != nil {
-				segmentFile := path.Join(block.ChunksDirname, "000001")
-				fsSegmentFile := path.Join(testDir, segmentFile)
-				bktSegmentFile := path.Join(blockID.String(), segmentFile)
-				require.NoError(t, bkt.Delete(ctx, bktSegmentFile))
-				tc.chunkInject(fsSegmentFile)
-				fd, err := os.Open(fsSegmentFile)
-				defer func(fd *os.File) {
-					err := fd.Close()
-					require.NoError(t, err)
-				}(fd)
-				require.NoError(t, err)
-				require.NoError(t, bkt.Upload(ctx, bktSegmentFile, fd))
+				segmentPath := path.Join(block.ChunksDirname, "000001")
+				segmentFile := filepath.Join(testDir, segmentPath)
+				segmentObject := path.Join(blockID.String(), segmentPath)
+				require.NoError(t, bkt.Delete(ctx, segmentObject))
+				tc.chunkInject(segmentFile)
+				uploadLocalFileToBucket(t, ctx, bkt, segmentFile, segmentObject)
 			}
 
 			// delete any files that should be missing
@@ -1821,51 +1812,25 @@ func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val int
 	require.NoError(t, err)
 }
 
-// populateMetaFileList populates the thanos files list in the meta file based on files in a block directory.
-func populateMetaFileList(t *testing.T, dir string, meta *metadata.Meta) {
+func uploadLocalFileToBucket(t *testing.T, ctx context.Context, bkt objstore.Bucket, src, dst string) {
 	t.Helper()
-	var files []metadata.File
-	// segment files
-	_, err := os.Stat(filepath.Join(dir, block.ChunksDirname))
-	require.NoError(t, err)
-	err = filepath.Walk(filepath.Join(dir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
-		require.NoError(t, err)
-		if info.IsDir() {
-			return nil
-		}
-		files = append(files, metadata.File{
-			RelPath:   filepath.Join(block.ChunksDirname, info.Name()),
-			SizeBytes: info.Size(),
-		})
-		return nil
-	})
-	require.NoError(t, err)
-	// index file
-	stat, err := os.Stat(filepath.Join(dir, block.IndexFilename))
-	require.NoError(t, err)
-	files = append(files, metadata.File{
-		RelPath:   stat.Name(),
-		SizeBytes: stat.Size(),
-	})
-	// meta file
-	files = append(files, metadata.File{
-		RelPath: block.MetaFilename,
-	})
-	meta.Thanos.Files = files
-}
-
-// flipByteAt flips a byte at a given offset in a file.
-func flipByteAt(t *testing.T, fname string, offset int64) {
-	t.Helper()
-	fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
+	fd, err := os.Open(src)
 	defer func(fd *os.File) {
 		err := fd.Close()
 		require.NoError(t, err)
 	}(fd)
 	require.NoError(t, err)
-	info, err := fd.Stat()
+	require.NoError(t, bkt.Upload(ctx, dst, fd))
+}
+
+// flipByteAt flips a byte at a given offset in a file.
+func flipByteAt(t *testing.T, fname string, offset int64) {
+	fd, err := os.OpenFile(fname, os.O_RDWR, 0644)
 	require.NoError(t, err)
-	require.Greater(t, info.Size(), offset)
+	defer func(fd *os.File) {
+		err := fd.Close()
+		require.NoError(t, err)
+	}(fd)
 	var b [1]byte
 	_, err = fd.ReadAt(b[:], offset)
 	require.NoError(t, err)
