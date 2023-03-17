@@ -4,7 +4,7 @@ keywords:
   - Mimir configuration
   - Helm chart
 menuTitle: Configure
-title: Configure Grafana Mimir Helm Chart
+title: Configure Grafana Mimir Helm chart
 weight: 30
 ---
 
