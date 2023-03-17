@@ -35,8 +35,8 @@ Either:
       - `enterprise.image.tag` (GEM) - note that unlike the other image tags, GEM image tags start with `v`, eg. `v2.6.0`, not `2.6.0`
       - `smoke_test.image.tag` (Smoke test, usually same as Mimir)
       - `continuous_test.image.tag` (Continuous test, usually same as Mimir)
-   1. Set the `version` to the desired chart version number in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
-   1. Set the `appVersion` to the included version of Mimir in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
+   1. Set the `version` to the desired chart version number in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml), e.g. 4.2.0, determined in the very first step.
+   1. Set the `appVersion` to the included version of Mimir in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml), e.g. 2.6.0, doesn't have to include non zero patch version.
    1. Update the `home` URL to point to the appropriate documentation version in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml). This should be the closest Mimir documentation version, not "latest" or "next" that change content.
    1. Run `make doc`, to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) from its template
    1. Open a PR.
