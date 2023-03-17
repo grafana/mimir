@@ -1564,7 +1564,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				indexObject := path.Join(blockID.String(), block.IndexFilename)
 				require.NoError(t, bkt.Delete(ctx, indexObject))
 				tc.indexInject(indexFile)
-				uploadLocalFileToBucket(t, ctx, bkt, indexFile, indexObject)
+				uploadLocalFileToBucket(ctx, t, bkt, indexFile, indexObject)
 			}
 
 			// replace segment file
@@ -1574,7 +1574,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				segmentObject := path.Join(blockID.String(), segmentPath)
 				require.NoError(t, bkt.Delete(ctx, segmentObject))
 				tc.chunkInject(segmentFile)
-				uploadLocalFileToBucket(t, ctx, bkt, segmentFile, segmentObject)
+				uploadLocalFileToBucket(ctx, t, bkt, segmentFile, segmentObject)
 			}
 
 			// delete any files that should be missing
@@ -1812,7 +1812,7 @@ func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val int
 	require.NoError(t, err)
 }
 
-func uploadLocalFileToBucket(t *testing.T, ctx context.Context, bkt objstore.Bucket, src, dst string) {
+func uploadLocalFileToBucket(ctx context.Context, t *testing.T, bkt objstore.Bucket, src, dst string) {
 	t.Helper()
 	fd, err := os.Open(src)
 	defer func(fd *os.File) {
