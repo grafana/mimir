@@ -176,6 +176,32 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expBadRequest: "file with invalid path: chunks/invalid-file",
 		},
 		{
+			name:            "contains downsampled data",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpPartialBlock,
+			meta: &metadata.Meta{
+				Thanos: metadata.Thanos{
+					Downsample: metadata.ThanosDownsample{
+						Resolution: 1000,
+					},
+					Files: []metadata.File{
+						{
+							RelPath: block.MetaFilename,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 1,
+						},
+						{
+							RelPath: "chunks/000001",
+						},
+					},
+				},
+			},
+			expBadRequest: "block contains downsampled data",
+		},
+		{
 			name:            "missing file size",
 			tenantID:        tenantID,
 			blockID:         blockID,
@@ -1463,15 +1489,6 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectedMsg:      "file size mismatch",
 		},
 		{
-			name: "downsampled series",
-			lbls: validLabels,
-			metaInject: func(meta *metadata.Meta) {
-				meta.Thanos.Downsample.Resolution = 1000
-			},
-			expectError: true,
-			expectedMsg: "block contains downsampled data",
-		},
-		{
 			name: "empty index file",
 			lbls: validLabels,
 			indexInject: func(fname string) {
@@ -1502,34 +1519,6 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			},
 			expectError: true,
 			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
-		},
-		{
-			name: "empty segment file",
-			lbls: validLabels,
-			chunkInject: func(fname string) {
-				require.NoError(t, os.Truncate(fname, 0))
-			},
-			expectError: true,
-			expectedMsg: "failed to read header: EOF",
-		},
-		{
-			name: "segment file invalid magic number",
-			lbls: validLabels,
-			chunkInject: func(fname string) {
-				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
-			},
-			expectError: true,
-			expectedMsg: "file doesn't start with magic prefix",
-		},
-		{
-			name: "segment file invalid checksum",
-			lbls: validLabels,
-			chunkInject: func(fname string) {
-				flipByteAt(t, fname, 12) // guaranteed to be a data byte
-			},
-			populateFileList: true,
-			expectError:      true,
-			expectedMsg:      "error: CRC32 mismatch",
 		},
 	}
 

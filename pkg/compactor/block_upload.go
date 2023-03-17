@@ -5,12 +5,9 @@ package compactor
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"hash/crc32"
-	"io"
 	"net/http"
 	"os"
 	"path"
@@ -23,8 +20,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/dskit/tenant"
@@ -355,6 +350,11 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
+	// check that the blocks doesn't contain down-sampled data
+	if meta.Thanos.Downsample.Resolution > 0 {
+		return "block contains downsampled data"
+	}
+
 	meta.ULID = blockID
 	for l, v := range meta.Thanos.Labels {
 		switch l {
@@ -509,31 +509,11 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}
 
-	// check that the blocks doesn't contain down-sampled data
-	if blockMetadata.Thanos.Downsample.Resolution > 0 {
-		return errors.New("block contains downsampled data")
-	}
 	// validate index
 	indexFile := filepath.Join(blockDir, block.IndexFilename)
 	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
 	if err != nil {
 		return errors.Wrap(err, "error validating block index")
-	}
-	// validate segment files
-	err = filepath.Walk(filepath.Join(blockDir, block.ChunksDirname), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if err := validateSegmentFile(path, blockMetadata.MinTime, blockMetadata.MaxTime); err != nil {
-			return errors.Wrapf(err, "error validating segment file %s", path)
-		}
-		return nil
-	})
-	if err != nil {
-		return errors.Wrap(err, "error validating segment files")
 	}
 
 	return nil
@@ -775,139 +755,4 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 		return err
 	}
 	return nil
-}
-
-// validateSegmentFile validates the segment file at the given path given the min and max timestamp of the block.
-func validateSegmentFile(path string, minTS int64, maxTS int64) error {
-	// This is adapted from the tools/tsdb-chunks/main.go
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// for validating checksums for each chunk
-	table := crc32.MakeTable(crc32.Castagnoli)
-	header := make([]byte, 8)
-	n, err := io.ReadFull(file, header)
-	if err != nil {
-		return fmt.Errorf("failed to read header: %w", err)
-	}
-	if n != 8 {
-		return fmt.Errorf("failed to read header: %d bytes read only", n)
-	}
-
-	if binary.BigEndian.Uint32(header) != chunks.MagicChunks {
-		return fmt.Errorf("file doesn't start with magic prefix")
-	}
-	if header[4] != 0x01 {
-		return fmt.Errorf("invalid version: 0x%02x", header[4])
-	}
-
-	if !bytes.Equal(header[5:], []byte{0, 0, 0}) {
-		return fmt.Errorf("invalid padding")
-	}
-
-	// checks that a timestamp is greater than the previous one and within the block's min and max time.
-	tsIsValid := func(ts int64, last int64) (bool, error) {
-		if ts < minTS {
-			return false, fmt.Errorf("timestamp %d is before minTime %d", ts, minTS)
-		}
-		if ts > maxTS {
-			return false, fmt.Errorf("timestamp %d is after maxTime %d", ts, maxTS)
-		}
-		if ts < last {
-			return false, fmt.Errorf("timestamp %d is before previous timestamp %d", ts, last)
-		}
-		return true, nil
-	}
-
-	cix := 0
-	for c, err := nextChunk(file, table); c == nil; c, err = nextChunk(file, table) {
-		if err != nil {
-			return fmt.Errorf("chunk #%d: error: %v)", cix, err)
-		}
-		var lastTS int64
-		it := c.Iterator(nil)
-		six := 0
-		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			ts := it.AtT()
-			if ok, err := tsIsValid(ts, lastTS); !ok {
-				return err
-			}
-			lastTS = ts
-			six++
-		}
-		if e := it.Err(); e != nil {
-			return fmt.Errorf("chunk #%d: error: %v", cix, e)
-		}
-		cix++
-	}
-
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-	return nil
-}
-
-// nextChunk iterates through one chunk in a segment file.
-func nextChunk(file *os.File, table *crc32.Table) (chunkenc.Chunk, error) {
-	// This is adapted from the tools/tsdb-chunks/main.go
-	_, err := file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get file position: %w", err)
-	}
-
-	buf := make([]byte, binary.MaxVarintLen64)
-	_, err = io.ReadFull(file, buf)
-	if err != nil {
-		return nil, fmt.Errorf("reading chunk length: %w", err)
-	}
-
-	length, n := binary.Uvarint(buf)
-	if n <= 0 {
-		return nil, fmt.Errorf("invalid varint length")
-	}
-
-	if n == len(buf) {
-		// we could handle this, but it can only happen if chunk length was too big --
-		// which it cannot really be, since chunk lengths are < 2^32
-		return nil, fmt.Errorf("unable to read encoding, no bytes left in buffer")
-	}
-
-	enc := chunkenc.Encoding(buf[n])
-	n++
-
-	// seek after Data part of chunk
-	chunkData := make([]byte, int(length))
-
-	// Copy remaining data from our buffer
-	copy(chunkData, buf[n:])
-	_, err = io.ReadFull(file, chunkData[len(buf)-n:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to skip data: %w", err)
-	}
-
-	// read CRC32
-	crc := make([]byte, 4)
-	_, err = io.ReadFull(file, crc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CRC32: %w", err)
-	}
-
-	// verify checksum
-	crcData := []byte{byte(enc)}
-	crcData = append(crcData, chunkData...)
-	crcCalc := crc32.Checksum(crcData, table)
-	crcChunk := binary.BigEndian.Uint32(crc)
-	if crcCalc != crcChunk {
-		return nil, fmt.Errorf("CRC32 mismatch, expected %x, got %x", crcCalc, crcChunk)
-	}
-
-	chunk, err := chunkenc.FromData(enc, chunkData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode chunk: %w", err)
-	}
-
-	return chunk, nil
 }
