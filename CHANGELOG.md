@@ -67,6 +67,8 @@
 
 ### Documentation
 
+* [FEATURE] Add instructions about how to configure native histograms. #4527
+
 ### Tools
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
