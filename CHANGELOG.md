@@ -4,8 +4,6 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] OTLP: Add support for converting OTel Exponential Histograms to Prometheus Native Histograms. #4063
-* [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
     * `cortex_bucket_store_series_get_all_duration_seconds`
@@ -64,9 +62,13 @@
 * [ENHANCEMENT] Compactor: validation of blocks uploaded via the TSDB block upload feature is now configurable on a per tenant basis: #4585
   * `-compactor.block-upload-validation-enabled` has been added, `compactor_block_upload_validation_enabled` can be used to override per tenant
   * `-compactor.block-upload.block-validation-enabled` was the previous global flag and has been removed
+* [ENHANCEMENT] OTLP: Add support for converting OTel exponential histograms to Prometheus native histograms. The ingestion of native histograms must be enabled, please set `-ingester.native-histograms-ingestion-enabled` to `true`. #4063
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
+* [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
+
+>>>>>>> a3d856723 (Address comments.)
 
 ### Mixin
 

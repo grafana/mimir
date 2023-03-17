@@ -541,6 +541,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
+	h := remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
@@ -549,9 +550,7 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool)
 			Samples: []mimirpb.Sample{
 				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 			},
-			Histograms: []mimirpb.Histogram{
-				promToMimirHistogram(remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))),
-			},
+			Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
 		},
 	}
 	input := mimirpb.WriteRequest{
