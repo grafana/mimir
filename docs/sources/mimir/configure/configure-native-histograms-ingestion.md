@@ -11,7 +11,7 @@ To enable support for ingesting Prometheus native histograms over the [remote wr
 
 To enable support for querying native histograms together with [Grafana Mimir query sharding]({{< relref "../operators-guide/architecture/query-sharding">}}), set the flag `-query-frontend.query-result-response-format=protobuf` on query frontends.
 
-**Note:** native histograms is an experimental feature of Grafana Mimir.
+> **Note:** Native histograms is an experimental feature of Grafana Mimir.
 
 ## Configure Prometheus to write native histograms to Grafana Mimir
 
