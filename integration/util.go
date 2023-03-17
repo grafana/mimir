@@ -65,6 +65,9 @@ func GenerateAllTypeSeries(i int, name string, ts time.Time, additionalLabels ..
 	return nil, nil, nil
 }
 
+// generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
+type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
 type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
 

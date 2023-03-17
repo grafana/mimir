@@ -889,15 +889,6 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 	return result
 }
 
-func EnabledByAnyTenant(tenantIDs []string, f func(string) bool) bool {
-	for _, tenantID := range tenantIDs {
-		if f(tenantID) {
-			return true
-		}
-	}
-	return false
-}
-
 // MustRegisterExtension registers the extensions type with given name
 // and returns a function to get the extensions value from a *Limits instance.
 //
