@@ -136,6 +136,7 @@ overrides:
 			Endpoint:        minio.HTTPEndpoint(),
 			Insecure:        true,
 			BucketName:      mimirBucketName,
+			StorageClass:	"STANDARD",
 			AccessKeyID:     e2edb.MinioAccessKey,
 			SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 		}, "test", log.NewNopLogger())
