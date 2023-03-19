@@ -56,7 +56,7 @@ func TestSSEBucketClient_Upload_ShouldInjectCustomSSEConfig(t *testing.T) {
 				Endpoint:        srv.Listener.Addr().String(),
 				Region:          "test",
 				BucketName:      "test-bucket",
-				StorageClass:	"STANDARD",
+				StorageClass:    "STANDARD",
 				SecretAccessKey: flagext.SecretWithValue("test"),
 				AccessKeyID:     "test",
 				Insecure:        true,

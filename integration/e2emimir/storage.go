@@ -46,7 +46,7 @@ func NewS3ClientForMinio(minio *e2e.HTTPService, bucketName string) (*S3Client, 
 	return NewS3Client(s3.Config{
 		Endpoint:        minio.HTTPEndpoint(),
 		BucketName:      bucketName,
-		StorageClass:	"STANDARD",
+		StorageClass:    "STANDARD",
 		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 		AccessKeyID:     e2edb.MinioAccessKey,
 		Insecure:        true,
