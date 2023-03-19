@@ -48,7 +48,7 @@ func TestS3Client(t *testing.T) {
 			cfg: s3.Config{
 				Endpoint:        minio.HTTPEndpoint(),
 				BucketName:      blocksBucketName,
-				StorageClass:	"STANDARD",
+				StorageClass:    "STANDARD",
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
@@ -59,7 +59,7 @@ func TestS3Client(t *testing.T) {
 			cfg: s3.Config{
 				Endpoint:        minio.HTTPEndpoint(),
 				BucketName:      blocksBucketName,
-				StorageClass:	"STANDARD",
+				StorageClass:    "STANDARD",
 				Insecure:        true,
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),

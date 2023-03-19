@@ -56,7 +56,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		Endpoint:        minio.HTTPEndpoint(),
 		Insecure:        true,
 		BucketName:      blocksBucketName,
-		StorageClass:	"STANDARD",
+		StorageClass:    "STANDARD",
 		AccessKeyID:     e2edb.MinioAccessKey,
 		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 	}, "test", log.NewNopLogger())
