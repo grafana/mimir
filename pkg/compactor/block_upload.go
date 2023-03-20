@@ -771,8 +771,6 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 }
 
 func verifyChunks(fn, chunkDir string, minTime, maxTime int64) error {
-	const checksumBytes = 4
-
 	var cr *chunks.Reader
 
 	cr, err := chunks.NewDirReader(chunkDir, nil)
