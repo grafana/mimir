@@ -62,7 +62,8 @@ func TestMimir(t *testing.T) {
 					StorageBackendConfig: bucket.StorageBackendConfig{
 						Backend: bucket.S3,
 						S3: s3.Config{
-							Endpoint: "localhost",
+							Endpoint:     "localhost",
+							StorageClass: "STANDARD",
 						},
 					},
 				},
@@ -80,7 +81,8 @@ func TestMimir(t *testing.T) {
 				StorageBackendConfig: bucket.StorageBackendConfig{
 					Backend: bucket.S3,
 					S3: s3.Config{
-						Endpoint: "localhost",
+						Endpoint:     "localhost",
+						StorageClass: "STANDARD",
 					},
 				},
 			},
@@ -397,6 +399,7 @@ func TestConfigValidation(t *testing.T) {
 
 				for _, bucketCfg := range []*bucket.Config{&cfg.RulerStorage.Config, &cfg.AlertmanagerStorage.Config} {
 					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.StorageClass = "STANDARD"
 					bucketCfg.S3.BucketName = "b1"
 					bucketCfg.S3.Region = "r1"
 				}

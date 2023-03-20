@@ -83,6 +83,7 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 
 				for i, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config, &cfg.RulerStorage.Config} {
 					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.StorageClass = "STANDARD"
 					bucketCfg.S3.Region = "us-east-1"
 					bucketCfg.S3.Endpoint = "s3.dualstack.us-east-1.amazonaws.com"
 					bucketCfg.S3.BucketName = "invalid"

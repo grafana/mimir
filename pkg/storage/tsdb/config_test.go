@@ -27,6 +27,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass on S3 backend": {
 			setup: func(cfg *BlocksStorageConfig) {
 				cfg.Bucket.Backend = "s3"
+				cfg.Bucket.S3.StorageClass = "STANDARD"
 			},
 			expectedErr: nil,
 		},

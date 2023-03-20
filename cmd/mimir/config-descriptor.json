@@ -4788,10 +4788,9 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "STANDARD",
-              "fieldFlag": "blocks-storage.s3.storage-class",
+              "fieldDefaultValue": "",
               "fieldType": "string"
             },
             {
@@ -9685,10 +9684,9 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "STANDARD",
-              "fieldFlag": "ruler-storage.s3.storage-class",
+              "fieldDefaultValue": "",
               "fieldType": "string"
             },
             {
@@ -11057,10 +11055,9 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "STANDARD",
-              "fieldFlag": "alertmanager-storage.s3.storage-class",
+              "fieldDefaultValue": "",
               "fieldType": "string"
             },
             {
@@ -13206,10 +13203,9 @@
                   "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
+                  "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": "STANDARD",
-                  "fieldFlag": "common.storage.s3.storage-class",
+                  "fieldDefaultValue": "",
                   "fieldType": "string"
                 },
                 {
