@@ -1528,11 +1528,10 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			now := time.Now()
 			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), nil)
 			require.NoError(t, err)
-			testDir := path.Join(tmpDir, blockID.String())
+			testDir := filepath.Join(tmpDir, blockID.String())
 			meta, err := metadata.ReadFromDir(testDir)
 			require.NoError(t, err)
 			if tc.populateFileList {
-				//populateMetaFileList(t, testDir, meta)
 				stats, err := block.GatherFileStats(testDir)
 				require.NoError(t, err)
 				meta.Thanos.Files = stats
@@ -1569,9 +1568,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// replace segment file
 			if tc.chunkInject != nil {
-				segmentPath := path.Join(block.ChunksDirname, "000001")
-				segmentFile := filepath.Join(testDir, segmentPath)
-				segmentObject := path.Join(blockID.String(), segmentPath)
+				segmentFile := filepath.Join(testDir, block.ChunksDirname, "000001")
+				segmentObject := path.Join(blockID.String(), block.ChunksDirname, "000001")
 				require.NoError(t, bkt.Delete(ctx, segmentObject))
 				tc.chunkInject(segmentFile)
 				uploadLocalFileToBucket(ctx, t, bkt, segmentFile, segmentObject)
@@ -1815,11 +1813,11 @@ func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val int
 func uploadLocalFileToBucket(ctx context.Context, t *testing.T, bkt objstore.Bucket, src, dst string) {
 	t.Helper()
 	fd, err := os.Open(src)
+	require.NoError(t, err)
 	defer func(fd *os.File) {
 		err := fd.Close()
 		require.NoError(t, err)
 	}(fd)
-	require.NoError(t, err)
 	require.NoError(t, bkt.Upload(ctx, dst, fd))
 }
 
