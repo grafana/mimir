@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
+
 ## 4.3.0
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
