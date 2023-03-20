@@ -28,6 +28,14 @@ import (
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
+	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateFloatSeries)
+}
+
+func TestQuerierWithBlocksStorageRunningInMicroservicesModeWithHistograms(t *testing.T) {
+	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateHistogramSeries)
+}
+
+func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
 	tests := map[string]struct {
 		tenantShardSize      int
 		indexCacheBackend    string
@@ -75,6 +83,9 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 		"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
 		"-blocks-storage.tsdb.ship-interval":       "1s",
 		"-blocks-storage.tsdb.retention-period":    "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start dependencies in common with all test cases.
@@ -96,10 +107,12 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
+	series1Name := "series_1"
+	series2Name := "series_2"
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := seriesGenerator(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+	series2, expectedVector2, _ := seriesGenerator(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
 
 	res, err := writeClient.Push(series1)
 	require.NoError(t, err)
@@ -118,8 +131,9 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
+	series3Name := "series_3"
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := seriesGenerator(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
 
 	res, err = writeClient.Push(series3)
 	require.NoError(t, err)
@@ -204,7 +218,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, err)
 			instantQueriesCount++
 
-			result, err := c.Query("series_1", series1Timestamp)
+			result, err := c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -212,7 +226,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 1, Postings: 1, Series: 1
 			instantQueriesCount++
 
-			result, err = c.Query("series_2", series2Timestamp)
+			result, err = c.Query(series2Name, series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
@@ -220,7 +234,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 2, Series: 2
 			instantQueriesCount++
 
-			result, err = c.Query("series_3", series3Timestamp)
+			result, err = c.Query(series3Name, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
@@ -240,7 +254,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
-			result, err = c.Query("series_1", series1Timestamp)
+			result, err = c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -373,6 +387,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
+
+				// Enable protobuf format so that we can use native histograms.
+				"-query-frontend.query-result-response-format": "protobuf",
 			})
 
 			// Start Mimir replicas.
@@ -395,10 +412,12 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, err)
 
 			// Push some series to Mimir.
+			series1Name := "series_1"
+			series2Name := "series_2"
 			series1Timestamp := time.Now()
 			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-			series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+			series1, expectedVector1, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+			series2, expectedVector2, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
 
 			res, err := c.Push(series1)
 			require.NoError(t, err)
@@ -417,8 +436,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Push another series to further compact another block and delete the first block
 			// due to expired retention.
+			series3Name := "series_3"
 			series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-			series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+			series3, expectedVector3, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
 
 			res, err = c.Push(series3)
 			require.NoError(t, err)
@@ -450,19 +470,19 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			//
 			// If the series does not exist in the block, then we return early after checking expanded postings and
 			// subsequently the index on disk.
-			result, err := c.Query("series_1", series1Timestamp)
+			result, err := c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
 			expectedCacheRequests += seriesReplicationFactor * 3 // expanded postings, postings, series
 
-			result, err = c.Query("series_2", series2Timestamp)
+			result, err = c.Query(series2Name, series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
 			expectedCacheRequests += seriesReplicationFactor*3 + seriesReplicationFactor // expanded postings, postings, series for 1 time range; only expaned postings for another
 
-			result, err = c.Query("series_3", series3Timestamp)
+			result, err = c.Query(series3Name, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
@@ -484,7 +504,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// It should get a hit on expanded postings; this means that it will not request individual postings for matchers.
 			// It should get a hit on series.
 			// We expect 3 cache requests and 3 cache hits.
-			result, err = c.Query("series_1", series1Timestamp)
+			result, err = c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -515,14 +535,25 @@ func testMetadataQueriesWithBlocksStorage(
 	firstSeriesInIngesterHead prompb.TimeSeries,
 	blockRangePeriod time.Duration,
 ) {
+	// This is hacky, don't use for anything serious
+	timeStampFromSeries := func(ts prompb.TimeSeries) time.Time {
+		if len(ts.Samples) > 0 {
+			return util.TimeFromMillis(ts.Samples[0].Timestamp)
+		}
+		if len(ts.Histograms) > 0 {
+			return util.TimeFromMillis(ts.Histograms[0].Timestamp)
+		}
+		panic("No samples or histograms")
+	}
+
 	var (
 		lastSeriesInIngesterBlocksName = getMetricName(lastSeriesInIngesterBlocks.Labels)
 		firstSeriesInIngesterHeadName  = getMetricName(firstSeriesInIngesterHead.Labels)
 		lastSeriesInStorageName        = getMetricName(lastSeriesInStorage.Labels)
 
-		lastSeriesInStorageTs        = util.TimeFromMillis(lastSeriesInStorage.Samples[0].Timestamp)
-		lastSeriesInIngesterBlocksTs = util.TimeFromMillis(lastSeriesInIngesterBlocks.Samples[0].Timestamp)
-		firstSeriesInIngesterHeadTs  = util.TimeFromMillis(firstSeriesInIngesterHead.Samples[0].Timestamp)
+		lastSeriesInStorageTs        = timeStampFromSeries(lastSeriesInStorage)
+		lastSeriesInIngesterBlocksTs = timeStampFromSeries(lastSeriesInIngesterBlocks)
+		firstSeriesInIngesterHeadTs  = timeStampFromSeries(firstSeriesInIngesterHead)
 	)
 
 	type seriesTest struct {
@@ -764,10 +795,12 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
+	series1Name := "series_1"
+	series2Name := "series_2"
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp)
-	series2, _, _ := generateSeries("series_2", series2Timestamp)
+	series1, expectedVector1, _ := generateFloatSeries(series1Name, series1Timestamp)
+	series2, expectedVector2, _ := generateHistogramSeries(series2Name, series2Timestamp)
 
 	res, err := c.Push(series1)
 	require.NoError(t, err)
@@ -778,7 +811,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Wait until the TSDB head is compacted and shipped to the storage.
-	// The shipped block contains the 1st series, while the 2ns series in in the head.
+	// The shipped block contains the 1st series, while the 2nd series in in the head.
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
@@ -809,10 +842,15 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	result, err := c.Query("series_1", series1Timestamp)
+	result, err := c.Query(series1Name, series1Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector1, result.(model.Vector))
+
+	result, err = c.Query(series2Name, series2Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector2, result.(model.Vector))
 
 	// Delete all blocks from the storage.
 	storage, err := e2emimir.NewS3ClientForMinio(minio, flags["-blocks-storage.s3.bucket-name"])
@@ -821,10 +859,16 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 
 	// Query back again the series. Now we do expect a 500 error because the blocks are
 	// missing from the storage.
-	_, err = c.Query("series_1", series1Timestamp)
+	_, err = c.Query(series1Name, series1Timestamp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 	assert.Contains(t, err.(*promv1.Error).Detail, "failed to fetch some blocks")
+
+	// We expect this to still be queryable as it was not in the cleared storage
+	_, err = c.Query(series2Name, series2Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector2, result.(model.Vector))
 }
 
 func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
@@ -866,15 +910,19 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	require.NoError(t, err)
 
 	// Push some series to Mimir.
+	series1Name := "series_1"
+	series2Name := "series_2"
+	series3Name := "series_3"
+	series4Name := "series_4"
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 	series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 	series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
 
-	series1, _, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, _, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
-	series3, _, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
-	series4, _, _ := generateSeries("series_4", series4Timestamp, prompb.Label{Name: "series_4", Value: "series_4"})
+	series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+	series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
+	series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
+	series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
 
 	res, err := c.Push(series1)
 	require.NoError(t, err)

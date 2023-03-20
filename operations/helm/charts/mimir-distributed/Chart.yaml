@@ -1,8 +1,8 @@
 apiVersion: v2
-version: 4.3.0-weekly.228
-appVersion: r228
+version: 4.4.0-weekly.230
+appVersion: r230
 description: "Grafana Mimir"
-home: https://grafana.com/docs/mimir/v2.6.x/
+home: https://grafana.com/docs/mimir/v2.7.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.20.0-0
 name: mimir-distributed
@@ -20,5 +20,5 @@ dependencies:
   - name: rollout-operator
     alias: rollout_operator
     repository: https://grafana.github.io/helm-charts
-    version: 0.2.0
+    version: 0.4.0
     condition: rollout_operator.enabled

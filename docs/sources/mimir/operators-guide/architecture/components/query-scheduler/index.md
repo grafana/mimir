@@ -54,7 +54,7 @@ To use the query-scheduler with DNS-based service discovery, configure the query
 
 To use the query-scheduler with ring-based service discovery, configure the query-schedulers to join their hash ring, and the query-frontends and queriers to discover query-scheduler instances via the ring:
 
-1. [Configure the hash ring]({{< relref "../../../configure/configure-hash-rings.md" >}}) for the query-scheduler.
+1. [Configure the hash ring]({{< relref "../../../../configure/configure-hash-rings.md" >}}) for the query-scheduler.
 1. Set `-query-scheduler.service-discovery-mode=ring` (or its respective YAML configuration parameter) to query-scheduler, query-frontend and querier.
 1. Set the `-query-scheduler.ring.*` flags (or their respective YAML configuration parameters) to query-scheduler, query-frontend and querier.
 

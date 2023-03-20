@@ -929,7 +929,7 @@ func assertSpanExists(t *testing.T,
 			return
 		}
 	}
-	require.FailNow(t, "can not find span matching params",
+	require.FailNowf(t, "can not find span matching params",
 		"expected span with name `%v` and with "+
 			"tags %v to be present but it was not. actual spans: %+v",
 		name, tag, extractNameWithTags(actualSpans))

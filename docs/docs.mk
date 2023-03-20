@@ -33,7 +33,7 @@ define docs_podman_run
 	@if [[ -z $${NON_INTERACTIVE} ]]; then \
 		read -p "Press a key to continue"; \
 	fi
-	@$(PODMAN) run -ti \
+	$(PODMAN) run --platform linux/amd64 -ti \
 		--init \
 		-v $(GIT_ROOT)/docs/sources/mimir:$(MIMIR_CONTENT_PATH)/$(MIMIR_VERSION):ro,z \
 		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:$(HELM_CONTENT_PATH)/$(HELM_CHARTS_VERSION):ro,z \

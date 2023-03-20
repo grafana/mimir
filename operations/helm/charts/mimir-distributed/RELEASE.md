@@ -19,13 +19,14 @@ Either:
 
    **Note**: the weekly and RC number must be separated with dot (.) for correct version ordering.
 
-1. For stable versions, create and push or reuse a branch based on `main` named `mimir-distributed-release-x.y` (eg. `mimir-distributed-release-4.2` for all `4.2.x` releases).
-
-   This branch will be used as the target branch for the PR you'll create in the next step.
-
 1. For stable versions, create and merge a PR targeting `main` updating the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md) and moving `## main / unreleased` items under the section for this release.
 
    - If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
+
+1. For stable versions, create and push or reuse a branch based on `main` named `mimir-distributed-release-x.y` (eg. `mimir-distributed-release-4.2` for all `4.2.x` releases).
+
+   - This branch will be used as the target branch for the PR you'll create in the next step.
+   - The new branch should start from the commit created by the previous step, so that the changelog is in the right state.
 
 1. Update Helm chart and documentation:
 
@@ -34,9 +35,10 @@ Either:
       - `enterprise.image.tag` (GEM) - note that unlike the other image tags, GEM image tags start with `v`, eg. `v2.6.0`, not `2.6.0`
       - `smoke_test.image.tag` (Smoke test, usually same as Mimir)
       - `continuous_test.image.tag` (Continuous test, usually same as Mimir)
-   1. Set the `version` to the desired chart version number in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
-   1. Set the `appVersion` to the included version of Mimir in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
+   1. Set the `version` to the desired chart version number in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml), e.g. 4.2.0, determined in the very first step.
+   1. Set the `appVersion` to the included version of Mimir in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml), e.g. 2.6.0, doesn't have to include non zero patch version.
    1. Update the `home` URL to point to the appropriate documentation version in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml). This should be the closest Mimir documentation version, not "latest" or "next" that change content.
+   1. For a new stable release, write release notes in [release notes](https://github.com/grafana/mimir/tree/mimir-distributed-release-4.2/docs/sources/helm-charts/mimir-distributed/release-notes). For a patch release to a stable release, update the release notes in question.
    1. Run `make doc`, to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) from its template
    1. Open a PR.
 

@@ -27,7 +27,7 @@ spec:
       priorityClassName: {{ .Values.distributor.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.distributor.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "distributor") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.distributor.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

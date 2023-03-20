@@ -38,6 +38,7 @@ type queryFrontendTestConfig struct {
 	querySchedulerDiscoveryMode string
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
+	withHistograms              bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -53,6 +54,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -69,6 +71,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -86,6 +89,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -107,6 +111,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "dns",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 
@@ -115,6 +120,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "ring",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 }
@@ -135,6 +141,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -148,6 +155,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 
 			return mimirConfigFile, e2e.EmptyFlags()
 		},
+		withHistograms: true,
 	})
 }
 
@@ -194,6 +202,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -207,9 +216,6 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 					flags = mergeFlags(
 						BlocksStorageFlags(),
 						BlocksStorageS3Flags(),
-						map[string]string{
-							"-query-frontend.query-result-response-format": format,
-						},
 					)
 
 					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -217,6 +223,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 
 					return "", flags
 				},
+				withHistograms: format == "protobuf",
 			})
 		})
 	}
@@ -242,6 +249,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
+
+	if cfg.withHistograms {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.query-result-response-format": "protobuf",
+		})
+	}
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
@@ -297,7 +310,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u], _ = generateSeries("series_1", now)
+		genSeries := generateFloatSeries
+		if cfg.withHistograms && u%2 > 0 {
+			genSeries = generateHistogramSeries
+		}
+		series, expectedVectors[u], _ = genSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -457,7 +474,7 @@ overrides:
 	require.NoError(t, err)
 
 	for i := 0; i < 50; i++ {
-		series, _, _ := generateSeries(
+		series, _, _ := generateFloatSeries(
 			"metric",
 			now,
 			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
@@ -765,7 +782,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateSeries("series_1", now)
+	series, _, _ = generateFloatSeries("series_1", now)
 
 	res, err := c.Push(series)
 	require.NoError(t, err)

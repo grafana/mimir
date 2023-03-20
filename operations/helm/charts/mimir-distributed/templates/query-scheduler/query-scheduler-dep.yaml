@@ -27,7 +27,7 @@ spec:
       priorityClassName: {{ .Values.query_scheduler.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.query_scheduler.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.query_scheduler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

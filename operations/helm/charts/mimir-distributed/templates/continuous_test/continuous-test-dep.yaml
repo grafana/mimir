@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.continuous_test.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.continuous_test.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.continuous_test.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

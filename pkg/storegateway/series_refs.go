@@ -661,18 +661,19 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
-	ctx                 context.Context
-	postingsSetIterator *postingsSetsIterator
-	indexr              *bucketIndexReader
-	indexCache          indexcache.IndexCache
-	stats               *safeQueryStats
-	blockID             ulid.ULID
-	shard               *sharding.ShardSelector
-	seriesHasher        seriesHasher
-	skipChunks          bool
-	minTime, maxTime    int64
-	tenantID            string
-	logger              log.Logger
+	ctx                  context.Context
+	postingsSetIterator  *postingsSetsIterator
+	indexr               *bucketIndexReader
+	indexCache           indexcache.IndexCache
+	stats                *safeQueryStats
+	blockID              ulid.ULID
+	shard                *sharding.ShardSelector
+	seriesHasher         seriesHasher
+	skipChunks           bool
+	minTime, maxTime     int64
+	tenantID             string
+	chunkRangesPerSeries int
+	logger               log.Logger
 
 	symbolizedLsetBuffer []symbolizedLabel
 	chunkMetasBuffer     []chunks.Meta
@@ -693,6 +694,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	seriesHasher seriesHasher,
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	chunkRangesPerSeries int,
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
@@ -718,6 +720,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		minTime,
 		maxTime,
 		tenantID,
+		chunkRangesPerSeries,
 		logger,
 	)
 
@@ -742,6 +745,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	minTime int64,
 	maxTime int64,
 	tenantID string,
+	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
 	if skipChunks {
@@ -749,19 +753,20 @@ func newLoadingSeriesChunkRefsSetIterator(
 	}
 
 	return &loadingSeriesChunkRefsSetIterator{
-		ctx:                 ctx,
-		postingsSetIterator: postingsSetIterator,
-		indexr:              indexr,
-		indexCache:          indexCache,
-		stats:               stats,
-		blockID:             blockMeta.ULID,
-		shard:               shard,
-		seriesHasher:        seriesHasher,
-		skipChunks:          skipChunks,
-		minTime:             minTime,
-		maxTime:             maxTime,
-		tenantID:            tenantID,
-		logger:              logger,
+		ctx:                  ctx,
+		postingsSetIterator:  postingsSetIterator,
+		indexr:               indexr,
+		indexCache:           indexCache,
+		stats:                stats,
+		blockID:              blockMeta.ULID,
+		shard:                shard,
+		seriesHasher:         seriesHasher,
+		skipChunks:           skipChunks,
+		minTime:              minTime,
+		maxTime:              maxTime,
+		tenantID:             tenantID,
+		logger:               logger,
+		chunkRangesPerSeries: chunkRangesPerSeries,
 	}
 }
 
@@ -832,7 +837,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		var ranges []seriesChunkRefsRange
 		if !s.skipChunks {
 			clampLastChunkLength(nextSet.series, metas)
-			ranges = metasToRanges(partitionChunks(metas, chunksRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
+			ranges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 			if len(ranges) == 0 {
 				// There are no chunks for this series in the requested time range; skip it
 				continue
@@ -891,8 +896,7 @@ func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunk
 }
 
 const (
-	chunksRangesPerSeries = 2
-	minChunksPerRange     = 10
+	minChunksPerRange = 10
 )
 
 // partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
