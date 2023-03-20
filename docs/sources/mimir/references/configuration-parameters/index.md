@@ -1,7 +1,7 @@
 ---
 aliases:
   - operators-guide/configuring/references/configuration-parameters/
-  - operators-guide/configure/references/configuration-parameters/
+  - configure/references/configuration-parameters/
   - references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
@@ -75,6 +75,8 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 **Experimental** parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either **basic** or **advanced**. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, or if upstream dependencies (e.g., Prometheus) of our code changes.
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
+A configuration parameter is in maintenance and usable as expected between its deprecation and removal.
+If you configure Mimir with a removed parameter, Mimir will fail to start.
 
 ![Parameter states](param-states.png)
 
@@ -201,6 +203,23 @@ activity_tracker:
   # size the file in advance. Additional activities are ignored.
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
+
+vault:
+  # (experimental) Enables fetching of keys and certificates from Vault
+  # CLI flag: -vault.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Location of the Vault server
+  # CLI flag: -vault.url
+  [url: <string> | default = ""]
+
+  # (experimental) Token used to authenticate with Vault
+  # CLI flag: -vault.token
+  [token: <string> | default = ""]
+
+  # (experimental) Location of secrets engine within Vault
+  # CLI flag: -vault.mount-path
+  [mount_path: <string> | default = ""]
 
 # The ruler block configures the ruler.
 [ruler: <ruler>]
@@ -2574,7 +2593,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_global_exemplars_per_user: <int> | default = 0]
 
 # (experimental) Enable ingestion of native histogram samples. If false, native
-# histogram samples are ignored without an error.
+# histogram samples are ignored without an error. To query native histograms
+# with query-sharding enabled make sure to set
+# -query-frontend.query-result-response-format to 'protobuf'.
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = false]
 
@@ -3196,6 +3217,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
+  # (experimental) This option controls into how many ranges the chunks of each
+  # series from each block are split. This value is effectively the number of
+  # chunks cache items per series per block when
+  # -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
+  # is enabled.
+  # CLI flag: -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series
+  [fine_grained_chunks_caching_ranges_per_series: <int> | default = 1]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -3267,6 +3296,14 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.wal-segment-size-bytes
   [wal_segment_size_bytes: <int> | default = 134217728]
 
+  # (advanced) Maximum number of CPUs that can simultaneously processes WAL
+  # replay. If it is set to 0, then each TSDB is replayed with a concurrency
+  # equal to the number of CPU cores available on the machine. If set to a
+  # positive value it overrides the deprecated
+  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
+  # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
+  [wal_replay_concurrency: <int> | default = 0]
+
   # (advanced) True to flush blocks to storage on shutdown. If false, incomplete
   # blocks will be reused after restart.
   # CLI flag: -blocks-storage.tsdb.flush-blocks-on-shutdown
@@ -3299,7 +3336,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) limit the number of concurrently opening TSDB's on startup
+  # (deprecated) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
@@ -3656,6 +3693,10 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]
 
+# The connection timeout.
+# CLI flag: -<prefix>.memcached.connect-timeout
+[connect_timeout: <duration> | default = 200ms]
+
 # (advanced) The minimum number of idle connections to keep open as a percentage
 # (0-100) of the number of recently used idle connections. If negative, idle
 # connections are kept open indefinitely.
@@ -3691,6 +3732,72 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # items are not stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.memcached.max-item-size
 [max_item_size: <int> | default = 1048576]
+
+# (advanced) Enable connecting to Memcached with TLS.
+# CLI flag: -<prefix>.memcached.tls-enabled
+[tls_enabled: <boolean> | default = false]
+
+# (advanced) Path to the client certificate, which will be used for
+# authenticating with the server. Also requires the key path to be configured.
+# CLI flag: -<prefix>.memcached.tls-cert-path
+[tls_cert_path: <string> | default = ""]
+
+# (advanced) Path to the key for the client certificate. Also requires the
+# client certificate to be configured.
+# CLI flag: -<prefix>.memcached.tls-key-path
+[tls_key_path: <string> | default = ""]
+
+# (advanced) Path to the CA certificates to validate server certificate against.
+# If not set, the host's root CA certificates are used.
+# CLI flag: -<prefix>.memcached.tls-ca-path
+[tls_ca_path: <string> | default = ""]
+
+# (advanced) Override the expected name on the server certificate.
+# CLI flag: -<prefix>.memcached.tls-server-name
+[tls_server_name: <string> | default = ""]
+
+# (advanced) Skip validating server certificate.
+# CLI flag: -<prefix>.memcached.tls-insecure-skip-verify
+[tls_insecure_skip_verify: <boolean> | default = false]
+
+# (advanced) Override the default cipher suite list (separated by commas).
+# Allowed values:
+#
+# Secure Ciphers:
+# - TLS_RSA_WITH_AES_128_CBC_SHA
+# - TLS_RSA_WITH_AES_256_CBC_SHA
+# - TLS_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_RSA_WITH_AES_256_GCM_SHA384
+# - TLS_AES_128_GCM_SHA256
+# - TLS_AES_256_GCM_SHA384
+# - TLS_CHACHA20_POLY1305_SHA256
+# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+# - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+# - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+# - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+# - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+# - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+# - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+#
+# Insecure Ciphers:
+# - TLS_RSA_WITH_RC4_128_SHA
+# - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_RSA_WITH_AES_128_CBC_SHA256
+# - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+# - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+# - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+# - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+# - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+# CLI flag: -<prefix>.memcached.tls-cipher-suites
+[tls_cipher_suites: <string> | default = ""]
+
+# (advanced) Override the default minimum TLS version. Allowed values:
+# VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+# CLI flag: -<prefix>.memcached.tls-min-version
+[tls_min_version: <string> | default = ""]
 ```
 
 ### redis

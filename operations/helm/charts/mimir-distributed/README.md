@@ -1,6 +1,6 @@
 # Grafana Mimir Helm chart
 
-Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.6.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.6.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.7.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.6.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
 See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/).
 
@@ -11,7 +11,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 4.3.0-weekly.228](https://img.shields.io/badge/Version-4.3.0--weekly.228-informational?style=flat-square) ![AppVersion: r228](https://img.shields.io/badge/AppVersion-r228-informational?style=flat-square)
+![Version: 4.4.0-weekly.230](https://img.shields.io/badge/Version-4.4.0--weekly.230-informational?style=flat-square) ![AppVersion: r230](https://img.shields.io/badge/AppVersion-r230-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -23,7 +23,7 @@ Kubernetes: `^1.20.0-0`
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.0.4 |
 | https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.2.8 |
-| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.2.0 |
+| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.4.0 |
 
 ## Dependencies
 
@@ -32,7 +32,7 @@ Kubernetes: `^1.20.0-0`
 Grafana Mimir and Grafana Enterprise Metrics require an object storage backend to store metrics and indexes.
 
 The default chart values will deploy [Minio](https://min.io) for initial set up. Production deployments should use a separately deployed object store.
-See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.6.x/) for details on storage types and documentation.
+See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.7.x/) for details on storage types and documentation.
 
 ### Grafana Enterprise Metrics license
 

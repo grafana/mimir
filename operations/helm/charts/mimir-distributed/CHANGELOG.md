@@ -28,15 +28,24 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
+
+## 4.3.0
+
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
 * [FEATURE] Add cache support for GEM's admin bucket. The cache will be enabled by default when you use the
   small.yaml, large.yaml, capped-small.yaml or capped-large.yaml Helm values file. #3740
   > **Note:** For more information, refer to the [Grafana Enterprise Metrics configuration](https://grafana.com/docs/enterprise-metrics/latest/config).
+* [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.7.0. #4533
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling starting with Kubernetes 1.23. #4285
+* [ENHANCEMENT] Set default pod security context under `rbac.podSecurityContext` for easier install on OpenShift. #4272
 * [BUGFIX] Allow override of Kubernetes version for nginx HPA. #4299
 * [BUGFIX] Do not generate query-frontend-headless service if query scheduler is enabled. Fixes parity with jsonnet. #4353
 * [BUGFIX] Apply `clusterLabel` to ServiceMonitors for kube-state-metrics, kubelet, and cadvisor. #4126
 * [BUGFIX] Add http port in distributor headless service. Fixes parity with jsonnet. #4392
+* [BUGFIX] Generate the pod security context on the pod level in graphite web deployment, instead of on container level. #4272
+* [BUGFIX] Fix kube-state-metrics metricRelabelings dropping pods and deployments. #4485
+* [BUGFIX] Allow for single extraArg flags in templated memcached args. #4407
 
 ## 4.2.0
 
@@ -68,7 +77,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
   [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
-* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
+* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
   - If you are **upgrading** an existing installation:
     - Turn off zone-aware replication, by setting the following values:
       ```yaml

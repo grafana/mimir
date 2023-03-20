@@ -647,27 +647,6 @@ metric_relabel_configs:
 	})
 }
 
-func TestEnabledByAnyTenant(t *testing.T) {
-	tenantLimits := map[string]*Limits{
-		"tenant1": {
-			NativeHistogramsIngestionEnabled: false,
-		},
-		"tenant2": {
-			NativeHistogramsIngestionEnabled: true,
-		},
-	}
-
-	defaults := Limits{
-		NativeHistogramsIngestionEnabled: false,
-	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
-
-	require.False(t, EnabledByAnyTenant([]string{"tenant1", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
-
-	require.True(t, EnabledByAnyTenant([]string{"tenant1", "tenant2", "tenant3"}, ov.NativeHistogramsIngestionEnabled))
-}
-
 type structExtension struct {
 	Foo int `yaml:"foo"`
 }

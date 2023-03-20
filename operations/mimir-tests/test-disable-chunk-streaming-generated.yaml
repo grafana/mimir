@@ -396,7 +396,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -489,7 +489,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -563,7 +563,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -634,7 +634,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -717,7 +717,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -794,7 +794,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -890,7 +890,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -993,7 +993,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1322,7 +1322,7 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.6.0
+        image: grafana/mimir:2.7.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

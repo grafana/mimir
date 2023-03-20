@@ -1284,6 +1284,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				testCase.minT,
 				testCase.maxT,
 				"t1",
+				1,
 				log.NewNopLogger(),
 			)
 
@@ -1612,6 +1613,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				testCase.skipChunks,
 				minT,
 				maxT,
+				2,
 				newSafeQueryStats(),
 				nil,
 			)
@@ -2158,6 +2160,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						true,
 						b.meta.MinTime,
 						b.meta.MaxTime,
+						1,
 						statsColdCache,
 						log.NewNopLogger(),
 					)
@@ -2188,6 +2191,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						true,
 						b.meta.MinTime,
 						b.meta.MaxTime,
+						1,
 						statsWarnCache,
 						log.NewNopLogger(),
 					)
@@ -2200,17 +2204,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 			}
 		})
 	}
-}
-
-type forbiddenFetchMultiSeriesForRefsIndexCache struct {
-	indexcache.IndexCache
-
-	t *testing.T
-}
-
-func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
-	assert.Fail(c.t, "index cache FetchMultiSeriesForRefs should not be called")
-	return nil, nil
 }
 
 type forbiddenFetchMultiPostingsIndexCache struct {

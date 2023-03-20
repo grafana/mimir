@@ -10,7 +10,36 @@
     * `cortex_bucket_store_series_get_all_duration_seconds`
     * `cortex_bucket_store_series_merge_duration_seconds`
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
+* [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
+* [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
+* [CHANGE] Ingester: the `cortex_ingester_tsdb_wal_replay_duration_seconds` metrics has been removed. #4465
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
+* [FEATURE] Vault: Introduce experimental integration with Vault to fetch secrets used to configure TLS for clients. Server TLS secrets will still be read from a file. `tls-ca-path`, `tls-cert-path` and `tls-key-path` will denote the path in Vault for the following CLI flags when `-vault.enabled` is true: #4446.
+  * `-distributor.ha-tracker.etcd.*`
+  * `-distributor.ring.etcd.*`
+  * `-distributor.forwarding.grpc-client.*`
+  * `-querier.store-gateway-client.*`
+  * `-ingester.client.*`
+  * `-ingester.ring.etcd.*`
+  * `-querier.frontend-client.*`
+  * `-query-frontend.grpc-client-config.*`
+  * `-query-frontend.results-cache.redis.*`
+  * `-blocks-storage.bucket-store.index-cache.redis.*`
+  * `-blocks-storage.bucket-store.chunks-cache.redis.*`
+  * `-blocks-storage.bucket-store.metadata-cache.redis.*`
+  * `-compactor.ring.etcd.*`
+  * `-store-gateway.sharding-ring.etcd.*`
+  * `-ruler.client.*`
+  * `-ruler.alertmanager-client.*`
+  * `-ruler.ring.etcd.*`
+  * `-ruler.query-frontend.grpc-client-config.*`
+  * `-alertmanager.sharding-ring.etcd.*`
+  * `-alertmanager.alertmanager-client.*`
+  * `-memberlist.*`
+  * `-query-scheduler.grpc-client-config.*`
+  * `-query-scheduler.ring.etcd.*`
+  * `-overrides-exporter.ring.etcd.*`
+* [FEATURE] Distributor, ingester, querier, query-frontend, store-gateway: add experimental support for native histograms. Requires that the experimental protobuf query result response format is enabled by `-query-frontend.query-result-response-format=protobuf` on the query frontend. #4286 #4352 #4354 #4376 #4377 #4387 #4396 #4425 #4442 #4494 #4512 #4513 #4526
 * [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
 * [ENHANCEMENT] Querier and query-frontend: add experimental, more performant protobuf query result response format enabled with `-query-frontend.query-result-response-format=protobuf`. #4304 #4318 #4375
 * [ENHANCEMENT] Compactor: added experimental configuration parameter `-compactor.first-level-compaction-wait-period`, to configure how long the compactor should wait before compacting 1st level blocks (uploaded by ingesters). This configuration option allows to reduce the chances compactor begins compacting blocks before all ingesters have uploaded their blocks to the storage. #4401
@@ -19,7 +48,13 @@
 * [ENHANCEMENT] Ruler: increased tolerance for missed iterations on alerts, reducing the chances of flapping firing alerts during ruler restarts. #4432
 * [ENHANCEMENT] Querier and store-gateway: optimized `.*` and `.+` regular expression label matchers. #4432
 * [ENHANCEMENT] Query-frontend: results cache TTL is now configurable by using `-query-frontend.results-cache-ttl` and `-query-frontend.results-cache-ttl-for-out-of-order-time-window` options. These values can also be specified per tenant. Default values are unchanged (7 days and 10 minutes respectively). #4385
+* [ENHANCEMENT] Ingester: added advanced configuration parameter `-blocks-storage.tsdb.wal-replay-concurrency` representing the maximum number of CPUs used during WAL replay. #4445
+* [ENHANCEMENT] Ingester: added metrics `cortex_ingester_tsdb_open_duration_seconds_total` to measure the total time it takes to open all existing TSDBs. The time tracked by this metric also includes the TSDBs WAL replay duration. #4465
+* [ENHANCEMENT] Store-gateway: use streaming implementation for LabelNames RPC. The batch size for streaming is controlled by `-blocks-storage.bucket-store.batch-series-size`. #4464
+* [ENHANCEMENT] Memcached: Add support for TLS or mTLS connections to cache servers. #4535
+* [ENHANCEMENT] Compactor: blocks index files are now validated for correctness for blocks uploaded via the TSDB block upload feature. #4503
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
+* [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 
 ### Mixin
 
@@ -27,6 +62,7 @@
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
+* [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
@@ -35,9 +71,16 @@
 
 ### Documentation
 
+* [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
+* [FEATURE] Add instructions about how to configure native histograms. #4527
+
 ### Tools
 
-## 2.7.0-rc.0
+* [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
+
+## 2.7.1
+
+**Note**: During the release process, version 2.7.0 was tagged too early, before completing the release checklist and production testing. Release 2.7.1 doesn't include any code changes since 2.7.0, but now has proper release notes, published documentation, and has been fully tested in our production environment.
 
 ### Grafana Mimir
 

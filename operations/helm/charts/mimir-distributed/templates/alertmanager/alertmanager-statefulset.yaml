@@ -67,7 +67,7 @@ spec:
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

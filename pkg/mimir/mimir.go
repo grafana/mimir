@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 var errInvalidBucketConfig = errors.New("invalid bucket config")
@@ -118,6 +119,7 @@ type Config struct {
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
+	Vault            vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -169,6 +171,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f, logger)
+	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f, logger)
 	c.RuntimeConfig.RegisterFlags(f)
@@ -260,6 +263,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
+	}
+	if err := c.Vault.Validate(); err != nil {
+		return errors.Wrap(err, "invalid vault config")
 	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
@@ -669,6 +675,7 @@ type Mimir struct {
 	StoreGateway             *storegateway.StoreGateway
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
+	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 

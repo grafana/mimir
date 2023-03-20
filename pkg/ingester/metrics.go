@@ -49,10 +49,12 @@ type ingesterMetrics struct {
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
 	compactionsFailed      prometheus.Counter
-	walReplayTime          prometheus.Histogram
 	appenderAddDuration    prometheus.Histogram
 	appenderCommitDuration prometheus.Histogram
 	idleTsdbChecks         *prometheus.CounterVec
+
+	// Open all existing TSDBs metrics
+	openExistingTSDB prometheus.Counter
 
 	discarded *discardedMetrics
 
@@ -251,11 +253,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_tsdb_compactions_failed_total",
 			Help: "Total number of compactions that failed.",
 		}),
-		walReplayTime: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_wal_replay_duration_seconds",
-			Help:    "The total time it takes to open and replay a TSDB WAL.",
-			Buckets: prometheus.DefBuckets,
-		}),
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
 			Help:    "The total time it takes for a push request to add samples to the TSDB appender.",
@@ -268,6 +265,11 @@ func newIngesterMetrics(
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
+
+		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
+			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
+		}),
 
 		discarded: newDiscardedMetrics(r),
 

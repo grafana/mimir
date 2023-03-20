@@ -5,32 +5,32 @@ package test
 import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 )
 
 func GenerateTestHistograms(i int) []*histogram.Histogram {
-	return tsdb.GenerateTestHistograms(i)
+	return tsdbutil.GenerateTestHistograms(i)
 }
 
 func GenerateTestFloatHistograms(i int) []*histogram.FloatHistogram {
-	return tsdb.GenerateTestFloatHistograms(i)
+	return tsdbutil.GenerateTestFloatHistograms(i)
 }
 
 func GenerateTestHistogram(i int) *histogram.Histogram {
-	return tsdb.GenerateTestHistogram(i)
+	return tsdbutil.GenerateTestHistogram(i)
 }
 
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdb.GenerateTestFloatHistogram(i)
+	return tsdbutil.GenerateTestFloatHistogram(i)
 }
 
 func GenerateTestGaugeHistogram(i int) *histogram.Histogram {
-	return tsdb.GenerateTestGaugeHistogram(i)
+	return tsdbutil.GenerateTestGaugeHistogram(i)
 }
 
 func GenerateTestGaugeFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdb.GenerateTestGaugeFloatHistogram(i)
+	return tsdbutil.GenerateTestGaugeFloatHistogram(i)
 }
 
 // explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram

@@ -27,7 +27,7 @@ spec:
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.query_frontend.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

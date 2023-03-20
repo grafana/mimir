@@ -512,7 +512,7 @@ func sanitizeChunkSequence(chks []chunks.Meta, mint, maxt int64, ignoreChkFns []
 OUTER:
 	// This compares the current chunk to the chunk from the last iteration
 	// by pointers.  If we use "i, c := range chks" the variable c is a new
-	// variable who's address doesn't change through the entire loop.
+	// variable whose address doesn't change through the entire loop.
 	// The current element of the chks slice is copied into it. We must take
 	// the address of the indexed slice instead.
 	for i := range chks {

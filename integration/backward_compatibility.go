@@ -26,4 +26,5 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"grafana/mimir:2.4.0": e2emimir.RemoveFlagMapper([]string{"-ingester.native-histograms-ingestion-enabled"}),
 	"grafana/mimir:2.5.0": e2emimir.RemoveFlagMapper([]string{"-ingester.native-histograms-ingestion-enabled"}),
 	"grafana/mimir:2.6.0": e2emimir.RemoveFlagMapper([]string{"-ingester.native-histograms-ingestion-enabled"}),
+	"grafana/mimir:2.7.1": e2emimir.NoopFlagMapper,
 }
