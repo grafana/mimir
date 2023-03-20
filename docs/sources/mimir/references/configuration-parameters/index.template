@@ -75,6 +75,8 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 **Experimental** parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either **basic** or **advanced**. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, or if upstream dependencies (e.g., Prometheus) of our code changes.
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
+A configuration parameter is in maintenance and usable as expected between its deprecation and removal.
+If you configure Mimir with a removed parameter, Mimir will fail to start.
 
 ![Parameter states](param-states.png)
 
