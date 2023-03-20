@@ -24,6 +24,7 @@ type Reader interface {
 	IndexVersion() (int, error)
 
 	// PostingsOffset returns start and end offsets of postings for given name and value.
+	// The start is inclusive and the end is exclusive.
 	// The end offset might be bigger than the actual posting ending, but not larger than the whole index file.
 	// NotFoundRangeErr is returned when no index can be found for given name and value.
 	// TODO(bwplotka): Move to PostingsOffsets(name string, value ...string) []index.Range and benchmark.

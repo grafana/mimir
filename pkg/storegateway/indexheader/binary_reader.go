@@ -80,7 +80,7 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
 
-	if err := bw.AddIndexMeta(indexVersion, ir.toc.PostingsTable); err != nil {
+	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
 		return errors.Wrap(err, "add index meta")
 	}
 
@@ -363,10 +363,10 @@ func (fw *FileWriter) Remove() error {
 	return os.Remove(fw.name)
 }
 
-func (w *binaryWriter) AddIndexMeta(indexVersion int, indexPostingOffsetTable uint64) error {
+func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLabelOffsetTableOffset uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
-	w.buf.PutBE64(indexPostingOffsetTable)
+	w.buf.PutBE64(indexLabelOffsetTableOffset)
 	return w.f.Write(w.buf.Get())
 }
 

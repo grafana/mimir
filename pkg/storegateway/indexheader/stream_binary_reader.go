@@ -100,7 +100,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 
 	r.version = int(d.Byte())
 	r.indexVersion = int(d.Byte())
-	indexLastPostingEnd := d.Be64()
+	indexLabelOffsetTableOffset := d.Be64()
 
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot read version and index version: %w", err)
@@ -120,7 +120,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLabelOffsetTableOffset, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
