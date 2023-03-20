@@ -1520,6 +1520,33 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectError: true,
 			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
 		},
+		{
+			name: "segment file invalid magic number",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
+			},
+			expectError: true,
+			expectedMsg: "invalid magic number",
+		},
+		{
+			name: "segment file invalid checksum",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 12) // guaranteed to be a data byte
+			},
+			populateFileList: true,
+			expectError:      true,
+			expectedMsg:      "checksum mismatch",
+		},
+		{
+			name: "empty segment file",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				require.NoError(t, os.Truncate(fname, 0))
+			}, expectError: true,
+			expectedMsg: "size 0: invalid argument",
+		},
 	}
 
 	for _, tc := range testCases {
