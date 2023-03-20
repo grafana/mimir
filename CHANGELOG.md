@@ -51,6 +51,7 @@
 * [ENHANCEMENT] Ingester: added metrics `cortex_ingester_tsdb_open_duration_seconds_total` to measure the total time it takes to open all existing TSDBs. The time tracked by this metric also includes the TSDBs WAL replay duration. #4465
 * [ENHANCEMENT] Store-gateway: use streaming implementation for LabelNames RPC. The batch size for streaming is controlled by `-blocks-storage.bucket-store.batch-series-size`. #4464
 * [ENHANCEMENT] Memcached: Add support for TLS or mTLS connections to cache servers. #4535
+* [ENHANCEMENT] Compactor: blocks index files are now validated for correctness for blocks uploaded via the TSDB block upload feature. #4503
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 
@@ -60,6 +61,7 @@
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
+* [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
@@ -68,6 +70,7 @@
 
 ### Documentation
 
+* [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
 * [FEATURE] Add instructions about how to configure native histograms. #4527
 
 ### Tools

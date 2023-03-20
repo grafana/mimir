@@ -119,7 +119,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
-			return c.validateBlock(ctx, blockID, userBkt, m)
+			return c.validateBlock(ctx, blockID, userBkt)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -350,6 +350,11 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
+	// check that the blocks doesn't contain down-sampled data
+	if meta.Thanos.Downsample.Resolution > 0 {
+		return "block contains downsampled data"
+	}
+
 	meta.ULID = blockID
 	for l, v := range meta.Thanos.Labels {
 		switch l {
@@ -476,7 +481,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, meta *metadata.Meta) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket) error {
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -502,6 +507,13 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
 			return errors.Errorf("file size mismatch for %s", f.RelPath)
 		}
+	}
+
+	// validate index
+	indexFile := filepath.Join(blockDir, block.IndexFilename)
+	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
+	if err != nil {
+		return errors.Wrap(err, "error validating block index")
 	}
 
 	return nil
