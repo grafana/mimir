@@ -160,7 +160,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobSelector(job)::
     if $._config.singleBinary
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re($._config.per_job_label, '$job')]
-    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '($namespace)/(%s)' % job)],
+    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '($namespace)/(%s)' % formatJobForQuery(job))],
 
   recordingRulePrefix(selectors)::
     std.join('_', [matcher.label for matcher in selectors]),
