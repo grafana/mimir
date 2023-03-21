@@ -57,6 +57,8 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492
+
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
