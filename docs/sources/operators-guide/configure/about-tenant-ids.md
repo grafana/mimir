@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/about-tenant-ids/
+  - ../configuring/about-tenant-ids/
 description: Learn about tenant ID restrictions.
 menuTitle: About tenant IDs
 title: About Grafana Mimir tenant IDs

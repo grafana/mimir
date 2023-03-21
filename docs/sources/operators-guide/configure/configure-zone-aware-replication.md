@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-zone-aware-replication/
-  - /docs/mimir/latest/operators-guide/configure/configuring-zone-aware-replication/
+  - ../configuring/configuring-zone-aware-replication/
+  - configuring-zone-aware-replication/
 description: Learn how to replicate data across failure domains.
 menuTitle: Configure zone-aware replication
 title: Configure Grafana Mimir zone-aware replication

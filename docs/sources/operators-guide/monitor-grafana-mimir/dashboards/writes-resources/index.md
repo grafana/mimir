@@ -1,7 +1,7 @@
 ---
 aliases:
+  - ../../monitoring-grafana-mimir/dashboards/writes-resources/
   - ../../visualizing-metrics/dashboards/writes-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/writes-resources/
 description: View an example Writes resources dashboard.
 menuTitle: Writes resources
 title: Grafana Mimir Writes resources dashboard

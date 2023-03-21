@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/about-dns-service-discovery/
+  - ../configuring/about-dns-service-discovery/
 description:
   DNS service discovery finds addresses of backend services to which Grafana
   Mimir connects.

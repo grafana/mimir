@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/jsonnet/configuring-ruler/
-  - /docs/mimir/latest/operators-guide/deploy-grafana-mimir/jsonnet/configuring-ruler/
+  - ../../deploying-grafana-mimir/jsonnet/configuring-ruler/
+  - configuring-ruler/
 description: Learn how to configure the Grafana Mimir ruler when using Jsonnet.
 menuTitle: Configure ruler
 title: Configure the Grafana Mimir ruler with Jsonnet

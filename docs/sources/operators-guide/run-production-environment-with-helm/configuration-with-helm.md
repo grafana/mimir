@@ -1,11 +1,13 @@
 ---
-title: "Manage the configuration of Grafana Mimir with Helm"
-menuTitle: "Manage the configuration of Grafana Mimir with Helm"
-description: "Learn how to customize, secure and update the Grafana Mimir configuration using the Helm chart."
-weight: 80
 aliases:
-  - docs/mimir/latest/operators-guide/run-production-environment-with-helm/configuration-with-helm
-  - docs/mimir/latest/operators-guide/running-production-environment-with-helm/configuration-with-helm
+  - ../running-production-environment-with-helm/configuration-with-helm/
+  - ./
+description:
+  Learn how to customize, secure and update the Grafana Mimir configuration
+  using the Helm chart.
+menuTitle: Manage the configuration of Grafana Mimir with Helm
+title: Manage the configuration of Grafana Mimir with Helm
+weight: 80
 ---
 
 # Manage the configuration of Grafana Mimir with Helm
