@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/getting-started-helm-charts/
+  - ../deploying-grafana-mimir/getting-started-helm-charts/
 description: Learn how to get started with Grafana Mimir using the Helm chart.
 menuTitle: Getting started using the Helm chart
 title: Getting started with Grafana Mimir using the Helm chart

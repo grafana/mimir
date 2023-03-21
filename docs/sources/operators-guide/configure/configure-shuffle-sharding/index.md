@@ -1,7 +1,7 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-shuffle-sharding/
-  - /docs/mimir/latest/operators-guide/configure/configuring-shuffle-sharding/
+  - ../configuring/configuring-shuffle-sharding/
+  - configuring-shuffle-sharding/
 description: Learn how to configure shuffle sharding.
 menuTitle: Configure shuffle sharding
 title: Configure Grafana Mimir shuffle sharding
