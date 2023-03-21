@@ -59,6 +59,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
@@ -595,6 +597,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
@@ -735,6 +739,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.swift.auth-url string
@@ -1855,6 +1861,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
