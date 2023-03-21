@@ -36,8 +36,20 @@
   querier_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
   querier_deployment: overrideSuperIfExists('querier_deployment', client_deployment),
 
+  ruler_querier_container+:: if !$._config.ruler_remote_evaluation_enabled then {} else client_container,
+  ruler_querier_deployment: overrideSuperIfExists(
+    'ruler_querier_deployment',
+    if !$._config.ruler_remote_evaluation_enabled then {} else client_deployment,
+  ),
+
   query_frontend_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
   query_frontend_deployment: overrideSuperIfExists('query_frontend_deployment', client_deployment),
+
+  ruler_query_frontend_container+:: if !$._config.ruler_remote_evaluation_enabled then {} else client_container,
+  ruler_query_frontend_deployment: overrideSuperIfExists(
+    'ruler_query_frontend_deployment',
+    if !$._config.ruler_remote_evaluation_enabled then {} else client_deployment,
+  ),
 
   store_gateway_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
   store_gateway_statefulset: overrideSuperIfExists('store_gateway_statefulset', client_statefulset),

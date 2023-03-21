@@ -25,7 +25,7 @@ memcached {
   },
 
   // Optionally configure Memcached to use mTLS for authenticating clients
-  mtls:: {
+  memcached_mtls:: {
     // CA and server credentials
     statefulSet+: statefulSet.mixin.spec.template.spec.withVolumesMixin([
       volume.fromSecret($._config.memcached_mtls_ca_cert_secret, $._config.memcached_mtls_ca_cert_secret),
@@ -54,8 +54,8 @@ memcached {
     $.memcached {
       name: 'memcached-frontend',
       max_item_size: '%dm' % [$._config.memcached_frontend_max_item_size_mb],
-      //connection_limit: 16384,
-    } + if $._config.memcached_frontend_mtls_enabled then $.mtls else {}
+      connection_limit: 16384,
+    } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
   else {},
 
   // Dedicated memcached instance used to temporarily cache index lookups.
@@ -64,7 +64,7 @@ memcached {
       name: 'memcached-index-queries',
       max_item_size: '%dm' % [$._config.memcached_index_queries_max_item_size_mb],
       connection_limit: 16384,
-    } + if $._config.memcached_index_queries_mtls_enabled then $.mtls else {}
+    } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
   else {},
 
   // Memcached instance used to cache chunks.
@@ -77,7 +77,7 @@ memcached {
       memory_limit_mb: 6 * 1024,
       overprovision_factor: 1.05,
       connection_limit: 16384,
-    } + if $._config.memcached_chunks_mtls_enabled then $.mtls else {}
+    } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
   else {},
 
   // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
@@ -92,6 +92,6 @@ memcached {
 
       statefulSet+:
         statefulSet.mixin.spec.withReplicas(1),
-    } + if $._config.memcached_metadata_mtls_enabled then $.mtls else {}
+    } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
   else {},
 }

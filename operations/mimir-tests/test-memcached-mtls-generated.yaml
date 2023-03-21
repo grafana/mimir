@@ -579,6 +579,7 @@ spec:
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11212
         - -query-frontend.results-cache.memcached.connect-timeout=1s
+        - -query-frontend.results-cache.memcached.max-item-size=5242880
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.results-cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -query-frontend.results-cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
@@ -1198,7 +1199,7 @@ spec:
       - args:
         - -m 1024
         - -I 5m
-        - -c 1024
+        - -c 16384
         - -v
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl

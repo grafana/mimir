@@ -36,4 +36,4 @@
 (import 'read-write-deployment/main.libsonnet') +
 
 // mTLS client configuration for Memcached
-(import 'memcached-client.libsonnet')
+(import 'memcached-client-mtls.libsonnet')

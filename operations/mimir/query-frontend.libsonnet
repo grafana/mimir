@@ -5,7 +5,7 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
-    $.frontend_caching_config +
+    $.query_frontend_caching_config +
     {
       target: 'query-frontend',
 
