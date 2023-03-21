@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/mirroring-requests-to-a-second-cluster/
+  - ../configuring/mirroring-requests-to-a-second-cluster/
 description:
   Learn how to set up a testing cluster that receives the same series of
   the primary cluster.

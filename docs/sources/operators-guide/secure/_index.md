@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/securing/
+  - securing/
 description: Learn how to secure Grafana Mimir data and communication paths.
 keywords:
   - Mimir security

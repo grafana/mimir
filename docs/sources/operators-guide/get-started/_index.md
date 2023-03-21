@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/getting-started/
+  - getting-started/
 description: Learn how to get started with Grafana Mimir.
 menuTitle: Get started
 title: Get started with Grafana Mimir
