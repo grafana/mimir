@@ -89,11 +89,17 @@ const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
  * @constant {number}
  */
 const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
+/**
+ * Allow for this script to write to a specific tenant in the Mimir cluster.
+ * By default, no tenant is specified requiring the cluster to have multi-tenancy disabled.
+ * @constant {string}
+*/
+const TENANT_NAME = __ENV.K6_TENANT_NAME || '';
 
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s' });
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_NAME });
 
 const query_client = new Httpx({
     baseURL: `${SCHEME}://${READ_HOSTNAME}/prometheus/api/v1`,
