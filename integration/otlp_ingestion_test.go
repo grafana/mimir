@@ -83,11 +83,11 @@ func TestOTLPIngestion(t *testing.T) {
 	result, err = c.Query("series", now)
 	require.NoError(t, err)
 
-	// TODO: TimeseriesToOTLPRequest implement bucket layout translation
-	// in the testing framework, then the queried histogra can be asserted with
-	// assert.ElementsMatch(t, expectedVector, result.(model.Vector))
 	want := expectedVector[0]
 	got := result.(model.Vector)[0]
 	assert.Equal(t, want.Histogram.Sum, got.Histogram.Sum)
 	assert.Equal(t, want.Histogram.Count, got.Histogram.Count)
+	// it is not possible to assert with assert.ElementsMatch(t, expectedVector, result.(model.Vector))
+	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
+	// to test setup logic
 }

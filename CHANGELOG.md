@@ -68,8 +68,6 @@
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
 * [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
 
->>>>>>> a3d856723 (Address comments.)
-
 ### Mixin
 
 * [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492

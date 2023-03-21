@@ -267,7 +267,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric.SetEmptyGauge()
 			for _, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
-				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
+				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetDoubleValue(sample.Value)
 				attributes.CopyTo(datapoint.Attributes())
 			}
@@ -280,9 +280,18 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for _, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
-				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(histogram.Timestamp)*1000000)))
+				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)
 				datapoint.SetCount(histogram.GetCountInt())
+
+				offset, counts := translateBucketsLayout(histogram.PositiveSpans, histogram.PositiveDeltas)
+				datapoint.Positive().SetOffset(offset)
+				datapoint.Positive().BucketCounts().FromRaw(counts)
+
+				offset, counts = translateBucketsLayout(histogram.NegativeSpans, histogram.NegativeDeltas)
+				datapoint.Negative().SetOffset(offset)
+				datapoint.Negative().BucketCounts().FromRaw(counts)
+
 				datapoint.SetSum(histogram.GetSum())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
@@ -291,4 +300,38 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 	}
 
 	return pmetricotlp.NewExportRequestFromMetrics(d)
+}
+
+// translateBucketLayout the test function that translates the Prometheus native histograms buckets
+// layout to the OTel exponential histograms sparse buckets layout. It is the inverse function to
+// https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/47471382940a0d794a387b06c99413520f0a68f8/pkg/translator/prometheusremotewrite/histograms.go#L118
+func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, []uint64) {
+	if len(spans) == 0 {
+		return 0, []uint64{}
+	}
+
+	firstSpan := spans[0]
+	bucketsCount := int(firstSpan.Length)
+	for i := 1; i < len(spans); i++ {
+		bucketsCount += int(spans[i].Offset) + int(spans[i].Length)
+	}
+	buckets := make([]uint64, bucketsCount)
+
+	bucketIdx := 0
+	deltaIdx := 0
+	currCount := int64(0)
+
+	// set offset of the first span to 0 to simplify translation
+	spans[0].Offset = 0
+	for _, span := range spans {
+		bucketIdx += int(span.Offset)
+		for i := 0; i < int(span.GetLength()); i++ {
+			currCount += deltas[deltaIdx]
+			buckets[bucketIdx] = uint64(currCount)
+			deltaIdx++
+			bucketIdx++
+		}
+	}
+
+	return firstSpan.Offset - 1, buckets
 }
