@@ -72,8 +72,8 @@
       ingester: '(ingester.*|cortex|mimir|mimir-write.*)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir|mimir-write.*)',
       querier: '(querier.*|cortex|mimir|mimir-read.*)',  // Match also custom querier deployments.
-      ruler_querier: '(ruler-querier.*)',  // Match also custom querier deployments.
-      ruler: '(ruler|cortex|mimir|mimir-backend.*)',
+      ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
+      ruler: ['ruler', 'cortex', 'mimir', 'mimir-backend.*'],
       query_frontend: '(query-frontend.*|cortex|mimir|mimir-read.*)',  // Match also custom query-frontend deployments.
       ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
       query_scheduler: '(query-scheduler.*|mimir-backend.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.

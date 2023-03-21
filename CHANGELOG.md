@@ -59,6 +59,7 @@
 
 * [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492
 * [BUGFIX] Ruler dashboard: show data for reads from ingesters. #4543
+* [ENHANCEMENT] `_confg.job_names.<job>` values can now be arrays of regular expressions in addition to a single string. Strings are still supported and behave as before. #4543
 
 ### Jsonnet
 
