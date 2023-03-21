@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/using-exemplars/storing-exemplars/
+  - ../using-exemplars/storing-exemplars/
 description: Learn how to store exemplars in Grafana Mimir.
 menuTitle: Storing exemplars
 title: Storing exemplars in Grafana Mimir

@@ -1,7 +1,7 @@
 ---
 aliases:
+  - ../../monitoring-grafana-mimir/dashboards/config/
   - ../../visualizing-metrics/dashboards/config/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/config/
 description: View an example Config dashboard.
 menuTitle: Config
 title: Grafana Mimir Config dashboard
