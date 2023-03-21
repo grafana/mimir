@@ -39,13 +39,13 @@ memcached {
       mount.new($._config.memcached_mtls_server_cert_secret, $._config.memcached_server_cert_path, true),
       mount.new($._config.memcached_mtls_server_key_secret, $._config.memcached_server_key_path, true),
     ]) + container.withArgsMixin([
-      '--listen=notls:127.0.0.1:11211,0.0.0.0:11212', // No TLS on the local interface for the exporter and debugging
+      '--listen=notls:127.0.0.1:11211,0.0.0.0:11212',  // No TLS on the local interface for the exporter and debugging
       '--enable-ssl',
       '--extended=' +
       'ssl_ca_cert=' + $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem,' +
       'ssl_chain_cert=' + $._config.memcached_server_cert_path + $._config.memcached_mtls_server_cert_secret + '.pem,' +
       'ssl_key=' + $._config.memcached_server_key_path + $._config.memcached_mtls_server_key_secret + '.pem,' +
-      'ssl_kernel_tls,ssl_verify_mode=2', // "2" means "require client cert"
+      'ssl_kernel_tls,ssl_verify_mode=2',  // "2" means "require client cert"
     ]),
   },
 
