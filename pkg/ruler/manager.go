@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -54,7 +55,7 @@ type DefaultMultiTenantManager struct {
 	registry                      prometheus.Registerer
 	logger                        log.Logger
 
-	rulerIsRunning bool
+	rulerIsRunning atomic.Bool
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
@@ -154,7 +155,7 @@ func (r *DefaultMultiTenantManager) Start() {
 	defer r.userManagerMtx.Unlock()
 
 	// Skip starting the user managers if the ruler is already running.
-	if r.rulerIsRunning {
+	if r.rulerIsRunning.Load() {
 		return
 	}
 
@@ -162,7 +163,7 @@ func (r *DefaultMultiTenantManager) Start() {
 		go mngr.Run()
 	}
 	// set rulerIsRunning to true once user managers are started.
-	r.rulerIsRunning = true
+	r.rulerIsRunning.Store(true)
 }
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
@@ -236,7 +237,7 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user
 	// manager.Run() starts running the manager and blocks until Stop() is called.
 	// Hence run it as another goroutine.
 	// We only start the rule manager if the ruler is in running state.
-	if r.rulerIsRunning {
+	if r.rulerIsRunning.Load() {
 		go manager.Run()
 	}
 
