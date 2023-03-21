@@ -101,13 +101,18 @@ console.debug("Remote write URL:", remote_write_url)
 
 const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_NAME });
 
+const query_client_headers = {
+    'User-Agent': 'k6-load-test',
+    "Content-Type": 'application/x-www-form-urlencoded',
+}
+
+get_read_authentication_headers().forEach((value, key) => {
+    query_client_headers[key] = value
+})
+
 const query_client = new Httpx({
     baseURL: `${SCHEME}://${READ_HOSTNAME}/prometheus/api/v1`,
-    headers: {
-        'User-Agent': 'k6-load-test',
-        "Content-Type": 'application/x-www-form-urlencoded',
-        "Authorization": get_read_authentication_header()
-    },
+    headers: query_client_headers,
     timeout: 120e3 // 120s timeout.
 });
 
@@ -487,14 +492,21 @@ function get_remote_write_url() {
 
 /**
  * Returns the HTTP Authentication header to use on the read path.
- * @returns {string}
+ * @returns {map}
  */
-function get_read_authentication_header() {
+function get_read_authentication_headers() {
+    let auth_headers = new Map();
+    
     if (USERNAME !== '' || READ_TOKEN !== '') {
-        return `Basic ${encoding.b64encode(`${USERNAME}:${READ_TOKEN}`)}`;
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${READ_TOKEN}`)}`)
     }
+    
+    if (TENANT_NAME !== '') {
+        auth_headers.set('X-Scope-OrgID', TENANT_NAME)
 
-    return '';
+    }
+    
+    return auth_headers;
 }
 
 /**
