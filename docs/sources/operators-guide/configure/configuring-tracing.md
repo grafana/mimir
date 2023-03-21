@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-tracing/
+  - ../configuring/configuring-tracing/
 description: Learn how to configure Grafana Mimir to send traces to Jaeger.
 menuTitle: Configuring tracing
 title: Configuring Grafana Mimir tracing
