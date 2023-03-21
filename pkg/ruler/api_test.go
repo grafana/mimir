@@ -376,13 +376,14 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 }
 
 func TestRuler_Create(t *testing.T) {
-	cfg := defaultRulerConfig(t)
+	defaultCfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	cfgWithTenantFederation := defaultRulerConfig(t)
+	cfgWithTenantFederation.TenantFederation.Enabled = true
 
 	tc := []struct {
 		name   string
+		cfg    Config
 		input  string
 		output string
 		err    error
@@ -390,12 +391,14 @@ func TestRuler_Create(t *testing.T) {
 	}{
 		{
 			name:   "with an empty payload",
+			cfg:    defaultCfg,
 			input:  "",
 			status: 400,
 			err:    errors.New("invalid rules config: rule group name must not be empty"),
 		},
 		{
 			name: "with no rule group name",
+			cfg:  defaultCfg,
 			input: `
 interval: 15s
 rules:
@@ -407,6 +410,7 @@ rules:
 		},
 		{
 			name: "with no rules",
+			cfg:  defaultCfg,
 			input: `
 name: rg_name
 interval: 15s
@@ -415,11 +419,14 @@ interval: 15s
 			err:    errors.New("invalid rules config: rule group 'rg_name' has no rules"),
 		},
 		{
-			name:   "with a a valid rules file",
-			status: 202,
+
+			name:   "with federated rules without enabled federation",
+			cfg:    defaultCfg,
+			status: 400,
 			input: `
 name: test
 interval: 15s
+source_tenants: [t1, t2]
 rules:
 - record: up_rule
   expr: up{}
@@ -431,12 +438,36 @@ rules:
   labels:
     test: test
 `,
-			output: "name: test\ninterval: 15s\nrules:\n    - record: up_rule\n      expr: up{}\n    - alert: up_alert\n      expr: sum(up{}) > 1\n      for: 30s\n      labels:\n        test: test\n      annotations:\n        test: test\n",
+			err: errors.New("invalid rules config: rule group 'test' is a federated rule group but rules federation is disabled. To enable it, set -ruler.tenant-federation.enabled=true as a CLI argument or ruler.tenant_federation.enabled: true in YAML or contact your service administrator"),
+		},
+		{
+			name:   "with valid rules with enabled federation",
+			cfg:    cfgWithTenantFederation,
+			status: 202,
+			input: `
+name: test
+interval: 15s
+source_tenants: [t1, t2]
+rules:
+- record: up_rule
+  expr: up{}
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "name: test\ninterval: 15s\nsource_tenants: [t1, t2]\nrules:\n    - record: up_rule\n      expr: up{}\n    - alert: up_alert\n      expr: sum(up{}) > 1\n      for: 30s\n      labels:\n        test: test\n      annotations:\n        test: test\n",
 		},
 	}
 
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
+			r := prepareRuler(t, tt.cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
+			a := NewAPI(r, r.store, log.NewNopLogger())
+
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 			router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods("GET").HandlerFunc(a.GetRuleGroup)
@@ -454,7 +485,7 @@ rules:
 
 				router.ServeHTTP(w, req)
 				require.Equal(t, 200, w.Code)
-				require.Equal(t, tt.output, w.Body.String())
+				require.YAMLEq(t, tt.output, w.Body.String())
 			} else {
 				require.Equal(t, tt.err.Error()+"\n", w.Body.String())
 			}

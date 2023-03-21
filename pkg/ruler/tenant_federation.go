@@ -7,6 +7,8 @@ import (
 	"flag"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
@@ -55,11 +57,12 @@ func TenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryF
 	}
 }
 
-func RemoveFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
+func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList, logger log.Logger) {
 	for userID, groupList := range groups {
 		amended := make(rulespb.RuleGroupList, 0, len(groupList))
 		for _, group := range groupList {
 			if len(group.GetSourceTenants()) > 0 {
+				level.Info(logger).Log("msg", "skipping federated rule group because rule federation is disabled", "namespace", group.Namespace, "group_name", group.Name, "user", userID)
 				continue
 			}
 			amended = append(amended, group)
