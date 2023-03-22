@@ -656,6 +656,8 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 
 The following command validates that the object store bucket works correctly.
 
+> **Note:** This process reads and writes data to the object store bucket, please make sure this bucket does not already contain data.
+
 ```bash
 mimirtool bucket-validation
 ```
