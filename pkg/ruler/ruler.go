@@ -350,7 +350,7 @@ func (r *Ruler) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
-	// Sync the rule when the ruler JOINING the ring,
+	// Sync the rule when the ruler is JOINING the ring.
 	// Activate the rule evaluation after the ruler is ACTIVE in the ring.
 	// This is to make sure that the ruler is ready to evaluate alert rules once it is ACTIVE in the ring.
 	level.Info(r.logger).Log("msg", "waiting until ruler is JOINING in the ring")
