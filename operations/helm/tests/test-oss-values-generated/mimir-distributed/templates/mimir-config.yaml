@@ -72,7 +72,7 @@ data:
         backend: memcached
         memcached:
           addresses: dns+test-oss-values-mimir-results-cache.citestns.svc:11211
-          max_item_size: 1048576
+          max_item_size: 5242880
           timeout: 500ms
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
