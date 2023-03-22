@@ -53,6 +53,10 @@
 * [ENHANCEMENT] Store-gateway: use streaming implementation for LabelNames RPC. The batch size for streaming is controlled by `-blocks-storage.bucket-store.batch-series-size`. #4464
 * [ENHANCEMENT] Memcached: Add support for TLS or mTLS connections to cache servers. #4535
 * [ENHANCEMENT] Compactor: blocks index files are now validated for correctness for blocks uploaded via the TSDB block upload feature. #4503
+* [ENHANCEMENT] Ingester: added configuration options to configure the "postings for matchers" cache of each compacted block queried from ingesters: #4561
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 
