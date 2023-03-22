@@ -16,6 +16,9 @@ type QueryStat struct {
 	Step      time.Duration
 	Query     string
 	OrgID     string
+
+	RequestPath string
+	Match       string
 }
 
 func parseTime(str string) (time.Time, error) {
@@ -49,11 +52,14 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 
 	var d struct {
 		Labels struct {
-			Query string `json:"param_query"`
-			Start string `json:"param_start"`
-			Step  string `json:"param_step"`
-			End   string `json:"param_end"`
-			OrgID string `json:"org_id"`
+			Query       string `json:"param_query"`
+			Start       string `json:"param_start"`
+			Step        string `json:"param_step"`
+			End         string `json:"param_end"`
+			Match       string `json:"param_match"`
+			MatchSeries string `json:"param_match__"`
+			OrgID       string `json:"org_id"`
+			Path        string `json:"path"`
 		} `json:"labels"`
 		Timestamp string `json:"timestamp"`
 	}
@@ -65,15 +71,15 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 	qs.OrgID = d.Labels.OrgID
 
 	var err error
-	qs.Start, err = parseTime(d.Labels.Start)
-	if err != nil {
-		return err
-	}
-
-	qs.End, err = parseTime(d.Labels.End)
-	if err != nil {
-		return err
-	}
+	//qs.Start, err = parseTime(d.Labels.Start)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//qs.End, err = parseTime(d.Labels.End)
+	//if err != nil {
+	//	return err
+	//}
 
 	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
 	if err != nil {
@@ -81,11 +87,19 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 	}
 	qs.Timestamp = timestamp
 
-	step, err := parseDuration(d.Labels.Step)
-	if err != nil {
-		return err
+	if d.Labels.Step != "" {
+		step, err := parseDuration(d.Labels.Step)
+		if err != nil {
+			return err
+		}
+		qs.Step = step
 	}
-	qs.Step = step
+
+	qs.Match = d.Labels.Match
+	if d.Labels.MatchSeries != "" {
+		qs.Match = d.Labels.MatchSeries
+	}
+	qs.RequestPath = d.Labels.Path
 
 	return nil
 }
