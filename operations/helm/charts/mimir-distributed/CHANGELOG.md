@@ -28,9 +28,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
-* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 
 ## 4.3.0
 
