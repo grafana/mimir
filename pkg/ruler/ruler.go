@@ -352,14 +352,14 @@ func (r *Ruler) starting(ctx context.Context) error {
 
 	// Sync the rule when the ruler is JOINING the ring.
 	// Activate the rule evaluation after the ruler is ACTIVE in the ring.
-	// This is to make sure that the ruler is ready to evaluate alert rules once it is ACTIVE in the ring.
+	// This is to make sure that the ruler is ready to evaluate rules immediately after it is ACTIVE in the ring.
 	level.Info(r.logger).Log("msg", "waiting until ruler is JOINING in the ring")
 	if err := ring.WaitInstanceState(ctx, r.ring, r.lifecycler.GetInstanceID(), ring.JOINING); err != nil {
 		return err
 	}
 	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
 
-	// here during joining, we can start to download rules from object storage and sync them to the local rule manager
+	// Here during joining, we can download rules from object storage and sync them to the local rule manager
 	r.syncRules(ctx, rulerSyncReasonInitial)
 
 	if err = r.lifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {

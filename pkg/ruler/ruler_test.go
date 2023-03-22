@@ -818,10 +818,10 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
-				// ruler1, group2 should have been owned by ruler2, but ruler2 is in JOINING state. So, it would be owned by ruler1.
+				// user1, group2 should have been owned by ruler2, but ruler2 is in JOINING state. So, it would be owned by ruler1.
 				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now())
 				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 0) + 1}), ring.JOINING, time.Now())
-				// user2, user3 should been owned by ruler2 or ruler3, but ruler2 is in JOINING state. So, it would be owned by ruler3.
+				// user2, user3 should have been owned by ruler2 or ruler3, but ruler2 is in JOINING state. So, it would be owned by ruler3.
 				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
 			},
 
