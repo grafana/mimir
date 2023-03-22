@@ -363,10 +363,10 @@ func (fw *FileWriter) Remove() error {
 	return os.Remove(fw.name)
 }
 
-func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLabelOffsetTableOffset uint64) error {
+func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEnd uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
-	w.buf.PutBE64(indexLabelOffsetTableOffset)
+	w.buf.PutBE64(indexLastPostingListEnd)
 	return w.f.Write(w.buf.Get())
 }
 

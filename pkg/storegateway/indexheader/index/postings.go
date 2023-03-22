@@ -39,17 +39,17 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLabelOffsetTableOffset uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
-		return newV1PostingOffsetTable(factory, tableOffset, indexLabelOffsetTableOffset)
+		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEnd)
 	} else if indexVersion == index.FormatV2 {
-		return newV2PostingOffsetTable(factory, tableOffset, indexLabelOffsetTableOffset, postingOffsetsInMemSampling)
+		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEnd, postingOffsetsInMemSampling)
 	}
 
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLabelOffsetTableOffset uint64) (*PostingOffsetTableV1, error) {
+func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEnd uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -82,14 +82,14 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
 		// The last posting list ends before the label offset table.
 		// In worst case we will overfetch a few bytes.
-		prevRng.End = int64(indexLabelOffsetTableOffset) - crc32.Size
+		prevRng.End = int64(indexLastPostingListEnd) - crc32.Size
 		t.postings[lastKey][lastValue] = prevRng
 	}
 
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLabelOffsetTableOffset uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEnd uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -183,7 +183,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
 		// The last posting list ends before the label offset table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[currentName].lastValOffset = int64(indexLabelOffsetTableOffset) - crc32.Size
+		t.postings[currentName].lastValOffset = int64(indexLastPostingListEnd) - crc32.Size
 	}
 
 	// Trim any extra space in the slices.
