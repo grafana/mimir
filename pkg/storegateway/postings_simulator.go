@@ -6,21 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/tools/query-step-alignment-analysis/query_stat"
@@ -29,8 +36,9 @@ import (
 const (
 	bucketLocation      = "/users/dimitar/proba/postings-shortcut/thanos-bucket"
 	indexHeaderLocation = "/users/dimitar/proba/postings-shortcut/local"
-	queriesDump         = "/users/dimitar/proba/postings-shortcut/thanos-bucket/ops-21-mar-2023-query-dump.json"
-	tenantId            = "10428"
+	queriesDump         = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
+	tenantID            = "10428"
+	concurrency         = 8
 )
 
 var (
@@ -44,10 +52,28 @@ var (
 	metadataPath     = `/prometheus/api/v1/metadata`
 )
 
+type stats struct {
+	fetchedRegularPostings, fetchedShortcutPostings *atomic.Uint64
+}
+
+func (s stats) String() string {
+	return fmt.Sprintf("regular %d shortcut %d", s.fetchedRegularPostings.Load(), s.fetchedShortcutPostings.Load())
+}
+
+func (s stats) reset() {
+	s.fetchedRegularPostings.Store(0)
+	s.fetchedShortcutPostings.Store(0)
+}
+
 func RunPostingsSimulator() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go listenForSignals(ctx, cancel)
+
+	go func() {
+		// expose pprof
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	logger := log.NewLogfmtLogger(os.Stdout)
 	reg := prometheus.NewRegistry()
@@ -62,25 +88,84 @@ func RunPostingsSimulator() {
 	noErr(err)
 	defer queriesStream.Close()
 
+	queries := make(chan query_stat.QueryStat)
+	defer close(queries)
+	go processQueries(queries, indexReader)
+
 	queryDecoder := json.NewDecoder(queriesStream)
 
 	q := &query_stat.QueryStat{}
-	for i := 0; ; i++ {
+	for {
+		*q = query_stat.QueryStat{}
 		if ctx.Err() != nil {
 			break
 		}
-		fmt.Println("at ", i)
 		err = queryDecoder.Decode(q)
 		if errors.Is(err, io.EOF) {
 			break
 		}
 
+		timeWouldSkipStoreGateways := func(t time.Time) bool {
+			return t.After(q.Timestamp.Add(-12 * time.Hour))
+		}
+
+		if !q.InstantQueryTime.IsZero() && timeWouldSkipStoreGateways(q.InstantQueryTime) {
+			//fmt.Printf("skipping instant %#v\n", q)
+			continue // this was an instant query which would have only touched ingesters, skip
+		}
+
+		if (!q.Start.IsZero() && timeWouldSkipStoreGateways(q.Start)) &&
+			(!q.End.IsZero() && timeWouldSkipStoreGateways(q.End)) {
+			//fmt.Printf("skipping range %#v\n", q)
+			continue // this was a range query that doesn't
+		}
+
+		queries <- *q
+	}
+}
+
+func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader) {
+	var (
+		i                int
+		currentMinute    int64
+		statistics       = stats{atomic.NewUint64(0), atomic.NewUint64(0)}
+		wg               = &sync.WaitGroup{}
+		fannedOutQueries = make(chan query_stat.QueryStat)
+		ctx, cancel      = context.WithCancel(context.Background())
+	)
+	defer cancel()
+
+	for q := range queries {
+		if q.Timestamp.UnixNano()/int64(time.Minute) != currentMinute {
+			close(fannedOutQueries)
+			wg.Wait()
+			fmt.Println("at ", i, q.Timestamp.UTC().String(), statistics)
+			statistics.reset()
+
+			wg.Add(concurrency)
+			fannedOutQueries = make(chan query_stat.QueryStat)
+			for i := 0; i < concurrency; i++ {
+				go processQueriesSingle(ctx, wg, fannedOutQueries, indexr, statistics)
+			}
+			currentMinute = q.Timestamp.UnixNano() / int64(time.Minute)
+		}
+
+		fannedOutQueries <- q
+		i++
+	}
+}
+
+func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQueries <-chan query_stat.QueryStat, indexr *bucketIndexReader, statistics stats) {
+	defer wg.Done()
+	for q := range fannedOutQueries {
 		vectorSelectors := parseQuery(q)
-
 		for _, selector := range vectorSelectors {
-			//expandedPostings, expandedExtraPostings, postingsStats :=
-			postings(ctx, selector, indexReader)
-
+			matchers := selector.LabelMatchers
+			if selector.Name != "" {
+				matchers = append(matchers, parser.MustLabelMatcher(labels.MatchEqual, labels.MetricName, selector.Name))
+			}
+			_, _, postingsStats := postings(ctx, matchers, indexr)
+			statistics.fetchedRegularPostings.Add(uint64(postingsStats.postingsTouchedSizeSum))
 		}
 	}
 }
@@ -96,16 +181,14 @@ func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
 	}
 }
 
-type postingStats struct {
-	fetchedRegularPostingsBytes  int
-	fetchedShortcutPostingsBytes int
+func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (expandedPostings []storage.SeriesRef, expandedPostingsWithShortcut []storage.SeriesRef, stats *queryStats) {
+	safeStats := newSafeQueryStats()
+	expanded, err := indexr.expandedPostings(ctx, matchers, safeStats)
+	noErr(err)
+	return expanded, nil, safeStats.export()
 }
 
-func postings(ctx context.Context, selector *parser.VectorSelector, indexr *bucketIndexReader) (expandedPostings index.Postings, expandedPostingsWithShortcut index.Postings, stats postingStats) {
-	return
-}
-
-func parseQuery(q *query_stat.QueryStat) []*parser.VectorSelector {
+func parseQuery(q query_stat.QueryStat) []*parser.VectorSelector {
 	switch labelValsSubMatch := labelValuesRegex.FindStringSubmatch(q.RequestPath); {
 	case q.RequestPath == metadataPath:
 		return nil
@@ -134,7 +217,6 @@ func parseQueryStr(q string) []*parser.VectorSelector {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			selectors = append(selectors, n)
-			//fmt.Println(n.String())
 		}
 		return nil
 	})
@@ -146,7 +228,7 @@ func setupBlock(ctx context.Context, logger log.Logger, reg *prometheus.Registry
 	completeBucket, err := filesystem.NewBucket(bucketLocation)
 	noErr(err)
 
-	userBucket := objstore.NewPrefixedBucket(completeBucket, tenantId)
+	userBucket := objstore.NewPrefixedBucket(completeBucket, tenantID)
 	indexHeaderReader, err := indexheader.NewStreamBinaryReader(
 		ctx,
 		logger,
@@ -165,15 +247,21 @@ func setupBlock(ctx context.Context, logger log.Logger, reg *prometheus.Registry
 	for _, err = range errs {
 		noErr(err)
 	}
+
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, reg, indexcache.InMemoryIndexCacheConfig{
+		MaxSize:     1024 * 1024 * 1024,
+		MaxItemSize: 125 * 1024 * 1024,
+	})
+	noErr(err)
 	block, err := newBucketBlock(
 		ctx,
-		tenantId,
+		tenantID,
 		logger,
 		NewBucketStoreMetrics(reg),
 		blockMetas[blockULID],
 		userBucket,
 		indexHeaderLocation+"/"+blockULID.String(),
-		noopCache{},
+		indexCache,
 		pool.NoopBytes{},
 		indexHeaderReader,
 		newGapBasedPartitioners(tsdb.DefaultPartitionerMaxGapSize, reg),

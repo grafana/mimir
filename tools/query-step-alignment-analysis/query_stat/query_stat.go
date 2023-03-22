@@ -17,8 +17,9 @@ type QueryStat struct {
 	Query     string
 	OrgID     string
 
-	RequestPath string
-	Match       string
+	RequestPath      string
+	Match            string
+	InstantQueryTime time.Time
 }
 
 func parseTime(str string) (time.Time, error) {
@@ -58,6 +59,7 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 			End         string `json:"param_end"`
 			Match       string `json:"param_match"`
 			MatchSeries string `json:"param_match__"`
+			Time        string `json:"param_time"`
 			OrgID       string `json:"org_id"`
 			Path        string `json:"path"`
 		} `json:"labels"`
@@ -71,15 +73,26 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 	qs.OrgID = d.Labels.OrgID
 
 	var err error
-	//qs.Start, err = parseTime(d.Labels.Start)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//qs.End, err = parseTime(d.Labels.End)
-	//if err != nil {
-	//	return err
-	//}
+	if d.Labels.Start != "" {
+		qs.Start, err = parseTime(d.Labels.Start)
+		if err != nil {
+			return err
+		}
+	}
+
+	if d.Labels.End != "" {
+		qs.End, err = parseTime(d.Labels.End)
+		if err != nil {
+			return err
+		}
+	}
+
+	if d.Labels.Time != "" {
+		qs.InstantQueryTime, err = parseTime(d.Labels.Time)
+		if err != nil {
+			return err
+		}
+	}
 
 	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
 	if err != nil {
