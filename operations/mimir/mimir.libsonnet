@@ -33,4 +33,7 @@
 (import 'autoscaling.libsonnet') +
 
 // Read-write deployment mode.
-(import 'read-write-deployment/main.libsonnet')
+(import 'read-write-deployment/main.libsonnet') +
+
+// mTLS client configuration for Memcached
+(import 'memcached-client-mtls.libsonnet')

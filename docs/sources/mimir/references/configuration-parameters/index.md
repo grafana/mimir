@@ -1,8 +1,8 @@
 ---
 aliases:
-  - operators-guide/configuring/references/configuration-parameters/
-  - configure/references/configuration-parameters/
-  - references/configuration-parameters/
+  - ../operators-guide/configure/reference-configuration-parameters/
+  - ../operators-guide/configuring/reference-configuration-parameters/
+  - ../reference-configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -1223,10 +1223,10 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
-# (experimental) Format to use when retrieving query results from queriers.
-# Supported values: json, protobuf
+# Format to use when retrieving query results from queriers. Supported values:
+# json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
-[query_result_response_format: <string> | default = "json"]
+[query_result_response_format: <string> | default = "protobuf"]
 
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
@@ -3351,7 +3351,7 @@ tsdb:
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
   # (experimental) Maximum number of entries in the cache for postings for
-  # matchers in the Head and OOOHead when ttl > 0.
+  # matchers in the Head and OOOHead when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
@@ -3359,6 +3359,22 @@ tsdb:
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
+
+  # (experimental) How long to cache postings for matchers in each compacted
+  # block queried from the ingester. 0 disables the cache and just deduplicates
+  # the in-flight calls.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
+  [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in each compacted block when TTL is greater than 0.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
+  [block_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in
+  # compacted blocks, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
+  [block_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 
 ### compactor
