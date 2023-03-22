@@ -2,12 +2,12 @@
 aliases:
   - ../configuring/about-ip-address-logging/
 description: Troubleshoot errors by logging IP addresses of reverse proxies.
-menuTitle: About IP address logging of a reverse proxy
-title: About Grafana Mimir IP address logging of a reverse proxy
+menuTitle: IP address logging of a reverse proxy
+title: Grafana Mimir IP address logging of a reverse proxy
 weight: 30
 ---
 
-# About Grafana Mimir IP address logging of a reverse proxy
+# Grafana Mimir IP address logging of a reverse proxy
 
 If a reverse proxy is used in front of Mimir, it might be difficult to troubleshoot errors.
 You can use the following settings to log the IP address passed along by the reverse proxy in headers such as `X-Forwarded-For`.

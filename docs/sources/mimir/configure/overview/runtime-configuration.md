@@ -4,12 +4,12 @@ aliases:
 description:
   Runtime configuration enables you to change a subset of configurations
   without restarting Grafana Mimir.
-menuTitle: About runtime configuration
-title: About Grafana Mimir runtime configuration
+menuTitle: Runtime configuration
+title: Grafana Mimir runtime configuration
 weight: 40
 ---
 
-# About Grafana Mimir runtime configuration
+# Grafana Mimir runtime configuration
 
 A runtime configuration file is a file that contains configuration parameters, which is periodically reloaded while Mimir is running.
 It allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
@@ -51,7 +51,7 @@ overrides:
 
 As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to send 75,000 SPS, while maintaining a 25,000 SPS rate limit on all other tenants.
 
-- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "../references/configuration-parameters/index.md#limits" >}}) block within the runtime configuration file.
+- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "../../references/configuration-parameters/index.md#limits" >}}) block within the runtime configuration file.
 - For each tenant, you can override different limits.
 - For any tenant or limit that is not overridden in the runtime configuration file, you can inherit the limit values that are specified in the `limits` block.
 
@@ -62,7 +62,7 @@ Ingester limits ensure individual ingesters are not overwhelmed, regardless of a
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-Everything under the `instance_limits` section within the [`ingester`]({{< relref "../references/configuration-parameters/index.md#ingester" >}}) block can be overridden via runtime configuration.
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "../../references/configuration-parameters/index.md#ingester" >}}) block can be overridden via runtime configuration.
 The following example shows a portion of the runtime configuration that changes the ingester limits:
 
 ```yaml

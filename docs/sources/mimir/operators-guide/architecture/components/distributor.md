@@ -33,7 +33,7 @@ The distributor validation includes the following checks:
 - Each exemplar has a timestamp and at least one non-empty label name and value pair.
 - Each exemplar has no more than 128 labels.
 
-> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../../../configure/about-runtime-configuration.md" >}}).
+> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../../../configure/overview/runtime-configuration.md" >}}).
 
 ## Rate limiting
 

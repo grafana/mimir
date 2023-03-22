@@ -1,11 +1,13 @@
 ---
+aliases:
+  - ../about-anonymous-usage-statistics-reporting/
 description: Learn about Grafana Mimir anonymous usage statistics reporting
-menuTitle: About anonymous usage statistics reporting
-title: About Grafana Mimir anonymous usage statistics reporting
+menuTitle: Anonymous usage statistics reporting
+title: Grafana Mimir anonymous usage statistics reporting
 weight: 30
 ---
 
-# About Grafana Mimir anonymous usage statistics reporting
+# Grafana Mimir anonymous usage statistics reporting
 
 Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
 Mimir maintainers use this anonymous information to learn more about how the open source community runs Mimir and what the Mimir team should focus on when working on the next features and documentation improvements.

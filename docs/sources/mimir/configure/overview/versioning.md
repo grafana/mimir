@@ -2,12 +2,12 @@
 aliases:
   - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
-menuTitle: About versioning
-title: About Grafana Mimir versioning
+menuTitle: Versioning
+title: Grafana Mimir versioning
 weight: 50
 ---
 
-# About Grafana Mimir versioning
+# Grafana Mimir versioning
 
 This topic describes our guarantees for this Grafana Mimir major release.
 
@@ -121,7 +121,7 @@ The following features are currently experimental:
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
 
 The following features are currently deprecated and will be **removed in Mimir 2.9**:
 

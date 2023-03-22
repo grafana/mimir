@@ -164,14 +164,14 @@ For example, if you're running Memcached in Kubernetes, you might:
 
 1. Deploy your Memcached cluster using a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 1. Create a [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) for Memcached StatefulSet.
-1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../../configure/about-dns-service-discovery.md" >}}).
+1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../../configure/overview/dns-service-discovery.md" >}}).
 
 **To configure the Memcached backend**:
 
 1. Use `-blocks-storage.bucket-store.index-cache.backend=memcached`.
 1. Use the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag to set the address of the Memcached service.
 
-[DNS service discovery]({{< relref "../../../configure/about-dns-service-discovery.md" >}}) resolves the addresses of the Memcached servers.
+[DNS service discovery]({{< relref "../../../configure/overview/dns-service-discovery.md" >}}) resolves the addresses of the Memcached servers.
 
 ### Chunks cache
 

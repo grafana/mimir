@@ -50,7 +50,7 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag. This flag supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../../configure/about-dns-service-discovery.md" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../../configure/overview/dns-service-discovery.md" >}}).
 
 If you're using [Mimir's Alertmanager]({{< relref "../alertmanager.md" >}}), point the address to Alertmanager's API.
 You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
