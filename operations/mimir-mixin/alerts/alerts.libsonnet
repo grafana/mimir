@@ -224,7 +224,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
             process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
-          ||| % { job_regex: $.jobMatcher('(%s|%s)' % [$._config.job_names.ingester, $._config.job_names.store_gateway]) },
+          ||| % { job_regex: $.jobMatcher($._config.job_names.ingester + $._config.job_names.store_gateway) },
           'for': '5m',
           labels: {
             severity: 'critical',
@@ -304,8 +304,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",job=~"(.*/)?%(job)s"}))
-              != sum by(%(alert_aggregation_labels)s) (up{job=~"(.*/)?%(job)s"})
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",%(job_regex)s}))
+              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s})
             )
             and
             (
@@ -315,7 +315,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
             component: component_job[0],
-            job: component_job[1],
+            job_regex: $.jobMatcher(component_job[1]),
           },
           'for': '15m',
           labels: {
