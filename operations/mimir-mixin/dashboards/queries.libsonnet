@@ -255,7 +255,7 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Series request average latency') +
+        $.panel('Series request average latency (streaming enabled)') +
         $.queryPanel(
           |||
             sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
