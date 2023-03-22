@@ -2091,7 +2091,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(data_type) (\n  # non-streaming store-gateway will not have the stage label on any fetched metrics\n  rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component=\"store-gateway\", stage=\"\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n  or\n  # streaming store-gateway with new caching will have overlapping metrics for fetched chunks data; we select only the most narrow one - \"fetched\"\n  rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component=\"store-gateway\", data_type=\"chunks\", stage=\"fetched\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(data_type) (\n  # Exclude \"chunks refetched\".\n  rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component=\"store-gateway\", stage!=\"refetched\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{data_type}}",
@@ -2167,7 +2167,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(data_type) (\n  # non-streaming store-gateway will not have the stage label on any touched metrics\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage=\"\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n  or\n  # streaming store-gateway with new caching will have overlapping metrics for touched chunks data; we select only the most narrow one - \"returned\"\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", data_type=\"chunks\", stage=\"returned\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(data_type) (\n  # Exclude \"chunks processed\" to only count \"chunks processed\", other than postings and series.\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage!=\"processed\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{data_type}}",
@@ -2266,7 +2266,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Series request average latency (streaming enabled)",
+                  "title": "Series request average latency",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2342,7 +2342,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Series request 99th percentile latency (streaming enabled)",
+                  "title": "Series request 99th percentile latency",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2419,7 +2419,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Series batch preloading efficiency (streaming enabled)",
+                  "title": "Series batch preloading efficiency",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
