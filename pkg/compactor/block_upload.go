@@ -20,14 +20,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 
@@ -515,18 +509,17 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}
 
-	// validate index
-	indexFile := filepath.Join(blockDir, block.IndexFilename)
-	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
-	if err != nil {
-		return errors.Wrap(err, "error validating block index")
-	}
-
-	// validate chunks
-	chunkDir := filepath.Join(blockDir, block.ChunksDirname)
-	err = verifyChunks(indexFile, chunkDir, blockMetadata.MinTime, blockMetadata.MaxTime)
-	if err != nil {
-		return errors.Wrap(err, "error validating block chunks")
+	// validate block
+	if c.compactorCfg.BlockUpload.BlockValidationEnabled { // validate index and chunks
+		err = block.VerifyBlock(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime)
+		if err != nil {
+			return errors.Wrap(err, "error validating block")
+		}
+	} else { // validate index only
+		err = block.VerifyIndex(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime)
+		if err != nil {
+			return errors.Wrap(err, "error validating index")
+		}
 	}
 
 	return nil
@@ -768,96 +761,4 @@ func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth stri
 		return err
 	}
 	return nil
-}
-
-func verifyChunks(fn, chunkDir string, minTime, maxTime int64) error {
-	var cr *chunks.Reader
-
-	cr, err := chunks.NewDirReader(chunkDir, nil)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open chunk dir %s", chunkDir)
-	}
-	defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
-
-	r, err := index.NewFileReader(fn)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open index file %s", fn)
-	}
-	defer runutil.CloseWithErrCapture(&err, r, "closing index reader")
-
-	p, err := r.Postings(index.AllPostingsKey())
-	var (
-		builder labels.ScratchBuilder
-		chks    []chunks.Meta
-	)
-
-	// Per series
-	for p.Next() {
-		id := p.At()
-		if err := r.Series(id, &builder, &chks); err != nil {
-			return errors.Wrap(err, "read series")
-		}
-		if len(chks) == 0 {
-			return errors.Errorf("empty chunks for series %d", id)
-		}
-
-		// Per chunk in series
-		for _, cm := range chks {
-			ch, err := cr.Chunk(cm)
-			if err != nil {
-				return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
-			}
-
-			cb := ch.Bytes()
-			if len(cb) == 0 {
-				return errors.Errorf("empty chunk %d", cm.Ref)
-			}
-
-			samples := 0
-			firstSample := true
-			prevTs := int64(-1)
-
-			it := ch.Iterator(nil)
-			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-				samples++
-
-				var ts int64
-				switch valType {
-				case chunkenc.ValFloat:
-					ts, _ = it.At()
-				case chunkenc.ValHistogram:
-					ts, _ = it.AtHistogram()
-				case chunkenc.ValFloatHistogram:
-					ts, _ = it.AtFloatHistogram()
-				default:
-					return errors.Errorf("unsupported value type %v in chunk %d", valType, cm.Ref)
-				}
-
-				if firstSample {
-					firstSample = false
-					if ts != cm.MinTime {
-						return errors.Errorf("first sample doesn't match chunk MinTime, chunk: %d, chunk MinTime: %s, sample timestamp: %s", cm.Ref, formatTimestamp(cm.MinTime), formatTimestamp(ts))
-					}
-				} else if ts <= prevTs {
-					return errors.Errorf("out of order sample timestamps, chunk %d, previous timestamp: %s, sample timestamp: %s", cm.Ref, formatTimestamp(prevTs), formatTimestamp(ts))
-				}
-
-				prevTs = ts
-			}
-
-			if e := it.Err(); e != nil {
-				return errors.Wrapf(e, "failed to iterate over chunk samples, chunk %d", cm.Ref)
-			} else if samples == 0 {
-				return errors.Errorf("no samples found in chunk %d", cm.Ref)
-			} else if prevTs != cm.MaxTime {
-				return errors.Errorf("last sample doesn't match chunk MaxTime, chunk: %d, chunk MaxTime: %s, sample timestamp: %s", cm.Ref, formatTimestamp(cm.MaxTime), formatTimestamp(prevTs))
-			}
-		}
-	}
-
-	return nil
-}
-
-func formatTimestamp(ts int64) string {
-	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }

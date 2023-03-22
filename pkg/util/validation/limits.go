@@ -153,6 +153,7 @@ type Limits struct {
 	CompactorTenantShardSize           int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
 	CompactorPartialBlockDeletionDelay model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
 	CompactorBlockUploadEnabled        bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorVerifyChunks              bool           `yaml:"compactor_verify_chunks" json:"compactor_verify_chunks"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -630,6 +631,11 @@ func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) (delay tim
 // CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
 func (o *Overrides) CompactorBlockUploadEnabled(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).CompactorBlockUploadEnabled
+}
+
+// CompactorVerifyChunks returns whether compaction chunk verification is enabled for a certain tenant.
+func (o *Overrides) CompactorVerifyChunks(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorVerifyChunks
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"path"
 	"testing"
 
@@ -52,7 +53,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
-	stats, err := GatherIndexHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
+	stats, err := block.GatherBlockHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), stats.TotalSeries)
