@@ -2822,6 +2822,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]
 
+[compactor_verify_chunks: <boolean> | default = ]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -3456,6 +3458,10 @@ The `compactor` block configures the compactor component.
 # discovery of blocks more often. 0 = disabled.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
+
+# (advanced) Verify chunks data for correctness during compaction.
+# CLI flag: -compactor.compaction-verify-chunks
+[compaction_verify_chunks: <boolean> | default = true]
 
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
