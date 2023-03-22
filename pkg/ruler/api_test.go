@@ -438,7 +438,7 @@ rules:
   labels:
     test: test
 `,
-			err: errors.New("invalid rules config: rule group 'test' is a federated rule group, but rules federation is disabled. To enable the feature, configure the Mimir or GEM ruler instance with the following parameter or contact your service administrator: -ruler.tenant-federation.enabled=true as a CLI argument, ruler.tenant_federation.enabled: true in YAML"),
+			err: errors.New("invalid rules config: rule group 'test' is a federated rule group, but rules federation is disabled. To enable the feature, configure the Mimir or GEM ruler instance with the following parameter or contact your service administrator: set -ruler.tenant-federation.enabled=true as a CLI argument, ruler.tenant_federation.enabled: true in YAML"),
 		},
 		{
 			name:   "with valid rules with enabled federation",
