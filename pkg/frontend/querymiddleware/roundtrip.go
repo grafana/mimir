@@ -47,7 +47,7 @@ type Config struct {
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
 	CacheSplitter CacheSplitter `yaml:"-"`
 
-	QueryResultResponseFormat string `yaml:"query_result_response_format" category:"experimental"`
+	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -59,7 +59,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
-	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 

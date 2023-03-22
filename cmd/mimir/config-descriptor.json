@@ -4768,10 +4768,9 @@
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
           "fieldValue": null,
-          "fieldDefaultValue": "json",
+          "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
