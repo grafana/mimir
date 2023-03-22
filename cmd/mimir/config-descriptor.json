@@ -3425,6 +3425,15 @@
         },
         {
           "kind": "field",
+          "name": "compactor_verify_chunks",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",
@@ -7778,6 +7787,17 @@
           "fieldDefaultValue": 3600000000000,
           "fieldFlag": "compactor.max-compaction-time",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "compaction_verify_chunks",
+          "required": false,
+          "desc": "Verify chunks data for correctness during compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.compaction-verify-chunks",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {

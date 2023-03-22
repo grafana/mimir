@@ -3,9 +3,10 @@
 package main
 
 import (
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"path"
 	"testing"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
