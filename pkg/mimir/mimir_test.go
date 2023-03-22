@@ -399,7 +399,6 @@ func TestConfigValidation(t *testing.T) {
 
 				for _, bucketCfg := range []*bucket.Config{&cfg.RulerStorage.Config, &cfg.AlertmanagerStorage.Config} {
 					bucketCfg.Backend = bucket.S3
-					bucketCfg.S3.StorageClass = "STANDARD"
 					bucketCfg.S3.BucketName = "b1"
 					bucketCfg.S3.Region = "r1"
 				}
