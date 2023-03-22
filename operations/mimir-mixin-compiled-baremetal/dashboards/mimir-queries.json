@@ -2266,7 +2266,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Series request average latency",
+                  "title": "Series request average latency (streaming enabled)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
