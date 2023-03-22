@@ -1779,7 +1779,7 @@ results-cache:
   allocatedMemory: 512
 
   # -- Maximum item results-cache for memcached (in MB).
-  maxItemMemory: 1
+  maxItemMemory: 5
 
   # -- Extra init containers for results-cache pods
   initContainers: []
