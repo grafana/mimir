@@ -242,10 +242,10 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		return s.export()
 	}
 
-	//shortcutStats := doPostings(indexr.expandedPostingsShortcut)
-	regularStats := doPostings(indexr.expandedPostings)
+	shortcutStats := doPostings(indexr.expandedPostingsShortcut)
+	//regularStats := doPostings(indexr.expandedPostings)
 
-	return regularStats, newSafeQueryStats().export()
+	return newSafeQueryStats().export(), shortcutStats
 }
 
 func extractVectorSelectors(q query_stat.QueryStat) []*parser.VectorSelector {
