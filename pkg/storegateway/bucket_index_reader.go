@@ -229,6 +229,8 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 		return nil, nil
 	}
 
+	postingGroups, keys = restrictPostingLists(postingGroups)
+
 	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
@@ -274,6 +276,54 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 	}
 
 	return ps, nil
+}
+
+const (
+	postingsPerByteInPostingList = 1.25
+	bytesPerSeries               = 512
+
+	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+)
+
+func restrictPostingLists(groups []postingGroup) ([]postingGroup, []labels.Label) {
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int
+	for _, g := range groups {
+		if !g.isSubtract {
+			minGroupSize = g.totalSize
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all postings group. all postings is requested only when there is no
+		// additive group.
+		return groups, flattenKeys(groups)
+	}
+
+	var (
+		selectedSize                  int
+		maxPossibleSelectedSeriesSize = int(float64(minGroupSize) * seriesBytesPerPostingByte)
+	)
+	for i, g := range groups {
+		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
+			selectedSize += g.totalSize
+		} else {
+			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
+			return groups[:i], flattenKeys(groups[:i])
+		}
+	}
+	return groups, flattenKeys(groups)
+}
+
+func flattenKeys(groups []postingGroup) (out []labels.Label) {
+	for _, g := range groups {
+		out = append(out, g.keys...)
+	}
+	return
 }
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that

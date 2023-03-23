@@ -34,48 +34,57 @@ type rawPostingGroup struct {
 	isLazy      bool
 	lazyMatcher func(string) bool
 	prefix      string
+
+	originalMatcher *labels.Matcher
 }
 
-func newRawIntersectingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+func newRawIntersectingPostingGroup(labelName string, keys []labels.Label, originalMatcher *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract: false,
-		labelName:  labelName,
-		keys:       keys,
+		originalMatcher: originalMatcher,
+		isSubtract:      false,
+		labelName:       labelName,
+		keys:            keys,
 	}
 }
 
-func newRawSubtractingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+func newRawSubtractingPostingGroup(labelName string, keys []labels.Label, originalMatcher *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract: true,
-		labelName:  labelName,
-		keys:       keys,
+		originalMatcher: originalMatcher,
+		isSubtract:      true,
+		labelName:       labelName,
+		keys:            keys,
 	}
 }
 
-func newLazyIntersectingPostingGroup(labelName string, prefix string, matcher func(string) bool) rawPostingGroup {
+func newLazyIntersectingPostingGroup(labelName string, prefix string, matcher func(string) bool, originalMatcher *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isLazy:      true,
-		isSubtract:  false,
-		labelName:   labelName,
-		lazyMatcher: matcher,
-		prefix:      prefix,
+		originalMatcher: originalMatcher,
+		isLazy:          true,
+		isSubtract:      false,
+		labelName:       labelName,
+		lazyMatcher:     matcher,
+		prefix:          prefix,
 	}
 }
 
-func newLazySubtractingPostingGroup(labelName string, prefix string, matcher func(string) bool) rawPostingGroup {
+func newLazySubtractingPostingGroup(labelName string, prefix string, matcher func(string) bool, originalMatcher *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isLazy:      true,
-		isSubtract:  true,
-		labelName:   labelName,
-		lazyMatcher: matcher,
-		prefix:      prefix,
+		originalMatcher: originalMatcher,
+		isLazy:          true,
+		isSubtract:      true,
+		labelName:       labelName,
+		lazyMatcher:     matcher,
+		prefix:          prefix,
 	}
 }
 
 // toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
 func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
-	var keys []labels.Label
+	var (
+		keys      []labels.Label
+		totalSize int
+	)
 	if g.isLazy {
 		vals, err := r.LabelValues(g.labelName, g.prefix, g.lazyMatcher)
 		if err != nil {
@@ -84,38 +93,50 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		keys = make([]labels.Label, len(vals))
 		for i := range vals {
 			keys[i] = labels.Label{Name: g.labelName, Value: vals[i]}
+
+			// TODO dimitarvdimitrov this will double the disk reads & we're creating a new decbuf each time, but meh, may be ok
+			off, err := r.PostingsOffset(g.labelName, vals[i])
+			if err != nil {
+				return postingGroup{}, err
+			}
+			totalSize += int(off.End - off.Start)
 		}
 	} else {
 		var err error
-		keys, err = g.filterNonExistingKeys(r)
+		keys, totalSize, err = g.filterNonExistingKeys(r)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
 	}
 
 	return postingGroup{
-		isSubtract: g.isSubtract,
-		keys:       keys,
+		isSubtract:      g.isSubtract,
+		keys:            keys,
+		totalSize:       totalSize,
+		originalMatcher: g.originalMatcher,
 	}, nil
 }
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
 // modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, error) {
+func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, int, error) {
 	writeIdx := 0
+	totalSize := 0
 	for _, l := range g.keys {
-		if _, err := r.PostingsOffset(l.Name, l.Value); errors.Is(err, indexheader.NotFoundRangeErr) {
+		off, err := r.PostingsOffset(l.Name, l.Value)
+		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
 			// Try with the rest of the set matchers, maybe they can match some series.
 			// Continue so we overwrite it next time there's an existing value.
 			continue
 		} else if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		totalSize += int(off.End - off.Start)
 		g.keys[writeIdx] = l
 		writeIdx++
 	}
-	return g.keys[:writeIdx], nil
+	return g.keys[:writeIdx], totalSize, nil
 }
 
 func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
@@ -125,16 +146,16 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newRawSubtractingPostingGroup(m.Name, keys)
+			return newRawSubtractingPostingGroup(m.Name, keys, m)
 		}
-		return newRawIntersectingPostingGroup(m.Name, keys)
+		return newRawIntersectingPostingGroup(m.Name, keys, m)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newRawIntersectingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawIntersectingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}}, m)
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -142,7 +163,7 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newRawSubtractingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawSubtractingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}}, m)
 		}
 	}
 
@@ -153,12 +174,12 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		return newLazySubtractingPostingGroup(m.Name, m.Prefix(), not(m.Matches))
+		return newLazySubtractingPostingGroup(m.Name, m.Prefix(), not(m.Matches), m)
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	return newLazyIntersectingPostingGroup(m.Name, m.Prefix(), m.Matches)
+	return newLazyIntersectingPostingGroup(m.Name, m.Prefix(), m.Matches, m)
 }
 
 func not(filter func(string) bool) func(string) bool {
@@ -171,8 +192,10 @@ func not(filter func(string) bool) func(string) bool {
 // All the labels in keys should have a corresponding postings list in the index.
 // This computation happens in expandedPostings.
 type postingGroup struct {
-	isSubtract bool
-	keys       []labels.Label
+	isSubtract      bool
+	keys            []labels.Label
+	totalSize       int
+	originalMatcher *labels.Matcher
 }
 
 type postingPtr struct {
