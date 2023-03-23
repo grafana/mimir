@@ -972,6 +972,7 @@ type mockConfigProvider struct {
 	instancesShardSize           map[string]int
 	splitGroups                  map[string]int
 	blockUploadEnabled           map[string]bool
+	blockUploadValidationEnabled map[string]bool
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
@@ -983,6 +984,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		splitAndMergeShards:          make(map[string]int),
 		splitGroups:                  make(map[string]int),
 		blockUploadEnabled:           make(map[string]bool),
+		blockUploadValidationEnabled: make(map[string]bool),
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
@@ -1019,6 +1021,10 @@ func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
 
 func (m *mockConfigProvider) CompactorBlockUploadEnabled(tenantID string) bool {
 	return m.blockUploadEnabled[tenantID]
+}
+
+func (m *mockConfigProvider) CompactorBlockUploadValidationEnabled(tenantID string) bool {
+	return m.blockUploadValidationEnabled[tenantID]
 }
 
 func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) (time.Duration, bool) {
