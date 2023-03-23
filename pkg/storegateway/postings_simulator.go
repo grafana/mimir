@@ -172,7 +172,7 @@ func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexRead
 func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQueries <-chan query_stat.QueryStat, indexr *bucketIndexReader, statistics stats) {
 	defer wg.Done()
 	for q := range fannedOutQueries {
-		vectorSelectors := parseQuery(q)
+		vectorSelectors := extractVectorSelectors(q)
 		for _, selector := range vectorSelectors {
 			matchers := selector.LabelMatchers
 			if selector.Name != "" {
@@ -229,7 +229,7 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 	return expandedPostings, expandedPostingsWithShortcut, safeStats.export(), shortcutStats.export()
 }
 
-func parseQuery(q query_stat.QueryStat) []*parser.VectorSelector {
+func extractVectorSelectors(q query_stat.QueryStat) []*parser.VectorSelector {
 	switch labelValsSubMatch := labelValuesRegex.FindStringSubmatch(q.RequestPath); {
 	case q.RequestPath == metadataPath:
 		return nil
@@ -238,18 +238,18 @@ func parseQuery(q query_stat.QueryStat) []*parser.VectorSelector {
 	case len(labelValsSubMatch) > 0:
 		return nil // TODO dimitarvdimitrov implement this too to predict what we can do if we also optimize label values calls
 	case strings.HasPrefix(q.RequestPath, queryPathPrefix):
-		return parseQueryStr(q.Query)
+		return extractVectorSelectorsStr(q.Query)
 	case q.RequestPath == labelNamesPath || q.RequestPath == seriesPath:
 		if q.Match == "" {
 			return nil
 		}
-		return parseQueryStr(q.Match)
+		return extractVectorSelectorsStr(q.Match)
 	default:
 		panic("cannot classify path " + q.RequestPath + fmt.Sprintf(" %#v", q))
 	}
 }
 
-func parseQueryStr(q string) []*parser.VectorSelector {
+func extractVectorSelectorsStr(q string) []*parser.VectorSelector {
 	expr, err := parser.ParseExpr(q)
 	if err != nil {
 		return nil // some queries will be invalid, so we skip them
