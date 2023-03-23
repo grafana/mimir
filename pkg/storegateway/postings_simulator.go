@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
+	"github.com/guptarohit/asciigraph"
+	_ "github.com/guptarohit/asciigraph"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -57,6 +59,10 @@ type stats struct {
 	fetchedRegularPostings, fetchedShortcutPostings *atomic.Uint64
 }
 
+func newStats() stats {
+	return stats{atomic.NewUint64(0), atomic.NewUint64(0)}
+}
+
 func (s stats) String() string {
 	return fmt.Sprintf("regular %d shortcut %d", s.fetchedRegularPostings.Load(), s.fetchedShortcutPostings.Load())
 }
@@ -95,7 +101,9 @@ func RunPostingsSimulator() {
 
 	queriesChan := make(chan query_stat.QueryStat)
 	defer close(queriesChan)
-	go processQueries(queriesChan, indexReader, io.MultiWriter(resultsFile, os.Stdout))
+	resultSink := &resultConsumer{out: io.MultiWriter(resultsFile, os.Stdout)}
+	defer resultSink.print()
+	go processQueries(queriesChan, indexReader, resultSink)
 
 	queryDecoder := json.NewDecoder(queriesFile)
 
@@ -131,11 +139,11 @@ func RunPostingsSimulator() {
 	}
 }
 
-func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader, resultsDest io.Writer) {
+func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader, resultsDest *resultConsumer) {
 	var (
 		i                int
 		currentMinute    int64
-		statistics       = stats{atomic.NewUint64(0), atomic.NewUint64(0)}
+		statistics       = newStats()
 		wg               = &sync.WaitGroup{}
 		fannedOutQueries = make(chan query_stat.QueryStat)
 		ctx, cancel      = context.WithCancel(context.Background())
@@ -146,10 +154,10 @@ func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexRead
 		if q.Timestamp.UnixNano()/int64(time.Minute) != currentMinute {
 			close(fannedOutQueries)
 			wg.Wait()
-			fmt.Fprintln(resultsDest, "at ", i, q.Timestamp.UTC().String(), statistics)
-			statistics.reset()
+			resultsDest.record(q, statistics)
 
 			wg.Add(concurrency)
+			statistics = newStats()
 			fannedOutQueries = make(chan query_stat.QueryStat)
 			for i := 0; i < concurrency; i++ {
 				go processQueriesSingle(ctx, wg, fannedOutQueries, indexr, statistics)
@@ -175,6 +183,27 @@ func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQuer
 			statistics.fetchedRegularPostings.Add(uint64(postingsStats.postingsTouchedSizeSum))
 		}
 	}
+}
+
+type resultConsumer struct {
+	out      io.Writer
+	allStats []stats
+}
+
+func (c *resultConsumer) record(q query_stat.QueryStat, s stats) {
+	fmt.Fprintln(c.out, "at ", q.Timestamp.UTC().String(), s)
+	c.allStats = append(c.allStats, s)
+}
+
+func (c *resultConsumer) print() {
+	var curves [2][]float64 // two fields in each stat
+	for _, s := range c.allStats {
+		curves[0] = append(curves[0], float64(s.fetchedRegularPostings.Load()))
+		curves[1] = append(curves[1], float64(s.fetchedShortcutPostings.Load()))
+	}
+
+	_, err := io.WriteString(c.out, asciigraph.PlotMany(curves[:], asciigraph.SeriesColors(asciigraph.Blue, asciigraph.DarkOrange), asciigraph.Width(465), asciigraph.Height(60)))
+	noErr(err)
 }
 
 func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
