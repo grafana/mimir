@@ -65,7 +65,7 @@ func newStats() stats {
 }
 
 func (s stats) String() string {
-	return fmt.Sprintf("regular %d %d shortcut %d %d", s.fetchedRegularPostings.Load(), s.fetchedRegularSeries.Load(), s.fetchedShortcutPostings.Load(), s.fetchedShortcutSeries.Load())
+	return fmt.Sprintf("\t%d\t%d\t%d\t%d", s.fetchedRegularPostings.Load(), s.fetchedRegularSeries.Load(), s.fetchedShortcutPostings.Load(), s.fetchedShortcutSeries.Load())
 }
 
 func RunPostingsSimulator() {
@@ -189,7 +189,10 @@ type resultConsumer struct {
 }
 
 func (c *resultConsumer) record(q query_stat.QueryStat, s stats) {
-	fmt.Fprintln(c.out, "at ", q.Timestamp.UTC().String(), s)
+	if len(c.allStats) == 0 {
+		fmt.Fprintf(c.out, "T\tfetched postings regular\tfetched series regular\tfetched postings shortcut\tfetched series shortcut\n")
+	}
+	fmt.Fprintln(c.out, q.Timestamp.UTC().Format(time.RFC3339), s)
 	c.allStats = append(c.allStats, s)
 }
 
