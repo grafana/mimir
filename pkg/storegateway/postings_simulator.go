@@ -123,15 +123,14 @@ func RunPostingsSimulator() {
 		}
 
 		timeWouldSkipStoreGateways := func(t time.Time) bool {
-			return t.After(q.Timestamp.Add(-12 * time.Hour))
+			return !t.IsZero() && t.After(q.Timestamp.Add(-12*time.Hour))
 		}
 
-		if !q.InstantQueryTime.IsZero() && timeWouldSkipStoreGateways(q.InstantQueryTime) {
+		if timeWouldSkipStoreGateways(q.InstantQueryTime) {
 			continue // this was an instant query which would have only touched ingesters, skip
 		}
 
-		if (!q.Start.IsZero() && timeWouldSkipStoreGateways(q.Start)) &&
-			(!q.End.IsZero() && timeWouldSkipStoreGateways(q.End)) {
+		if timeWouldSkipStoreGateways(q.Start) && timeWouldSkipStoreGateways(q.End) {
 			continue // this was a range query that doesn't
 		}
 
