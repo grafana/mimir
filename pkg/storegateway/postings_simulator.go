@@ -41,7 +41,7 @@ const (
 	queriesDump         = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
 	resultsLocation     = "/users/dimitar/proba/postings-shortcut/results.txt"
 	tenantID            = "10428"
-	concurrency         = 8
+	concurrency         = 16
 )
 
 var (
@@ -239,8 +239,8 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		return s.export()
 	}
 
-	regularStats := doPostings(indexr.expandedPostings)
 	shortcutStats := doPostings(indexr.expandedPostingsShortcut)
+	regularStats := doPostings(indexr.expandedPostings)
 
 	return regularStats, shortcutStats
 }
