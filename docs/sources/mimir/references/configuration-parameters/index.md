@@ -2822,6 +2822,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]
 
+# Enable block upload validation for the tenant.
+# CLI flag: -compactor.block-upload-validation-enabled
+[compactor_block_upload_validation_enabled: <boolean> | default = true]
+
 # Verify chunks when uploading blocks via the upload API for the tenant.
 # CLI flag: -compactor.block-upload-verify-chunks
 [compactor_block_upload_verify_chunks: <boolean> | default = true]
@@ -3571,11 +3575,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-block_upload:
-  # (experimental) Validate blocks before finalizing a block upload
-  # CLI flag: -compactor.block-upload.block-validation-enabled
-  [block_validation_enabled: <boolean> | default = true]
 ```
 
 ### store_gateway
