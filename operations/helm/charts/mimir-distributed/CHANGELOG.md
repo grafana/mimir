@@ -34,6 +34,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+* [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 
 ## 4.3.0
 

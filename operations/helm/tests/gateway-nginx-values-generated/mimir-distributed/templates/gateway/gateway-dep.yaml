@@ -79,14 +79,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: gateway-nginx-values
-              app.kubernetes.io/component: gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: gateway-nginx-values
+            app.kubernetes.io/component: gateway
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

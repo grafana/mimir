@@ -75,8 +75,7 @@ spec:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
