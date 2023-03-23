@@ -843,6 +843,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-verify-chunks
+    	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.block-upload.block-validation-enabled
     	[experimental] Validate blocks before finalizing a block upload (default true)
   -compactor.blocks-retention-period duration
@@ -859,8 +861,6 @@ Usage of ./cmd/mimir/mimir:
     	The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: smallest-range-oldest-blocks-first, newest-blocks-first. (default "smallest-range-oldest-blocks-first")
   -compactor.compaction-retries int
     	How many times to retry a failed compaction within a single compaction run. (default 3)
-  -compactor.compaction-verify-chunks
-    	Verify chunks data for correctness during compaction. (default true)
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.consistency-delay duration

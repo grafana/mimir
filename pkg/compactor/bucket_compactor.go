@@ -314,7 +314,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure all input blocks are valid.
-		stats, err := block.GatherBlockHealthStats(jobLogger, bdir, meta.MinTime, meta.MaxTime, c.verifyChunks)
+		stats, err := block.GatherBlockHealthStats(jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
 		if err != nil {
 			return errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
@@ -410,14 +410,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure the output block is valid.
-		if c.verifyChunks {
-			if err := block.VerifyBlock(jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
-				return errors.Wrapf(err, "invalid result block %s", bdir)
-			}
-		} else {
-			if err := block.VerifyIndex(jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
-				return errors.Wrapf(err, "invalid result block %s", bdir)
-			}
+		if err := block.VerifyBlock(jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
+			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
 		begin := time.Now()
@@ -551,7 +545,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	// Verify repaired id before uploading it.
-	if err := block.VerifyIndex(logger, filepath.Join(tmpdir, resid.String()), meta.MinTime, meta.MaxTime); err != nil {
+	if err := block.VerifyBlock(logger, filepath.Join(tmpdir, resid.String()), meta.MinTime, meta.MaxTime, false); err != nil {
 		return errors.Wrapf(err, "repaired block is invalid %s", resid)
 	}
 
@@ -655,7 +649,6 @@ type BucketCompactor struct {
 	waitPeriod                     time.Duration
 	blockSyncConcurrency           int
 	metrics                        *BucketCompactorMetrics
-	verifyChunks                   bool
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -674,7 +667,6 @@ func NewBucketCompactor(
 	waitPeriod time.Duration,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
-	verifyChunks bool,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
@@ -694,7 +686,6 @@ func NewBucketCompactor(
 		waitPeriod:                     waitPeriod,
 		blockSyncConcurrency:           blockSyncConcurrency,
 		metrics:                        metrics,
-		verifyChunks:                   verifyChunks,
 	}, nil
 }
 

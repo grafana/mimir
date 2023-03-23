@@ -3425,11 +3425,12 @@
         },
         {
           "kind": "field",
-          "name": "compactor_verify_chunks",
+          "name": "compactor_block_upload_verify_chunks",
           "required": false,
-          "desc": "",
+          "desc": "Verify chunks when uploading blocks via the upload API for the tenant.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.block-upload-verify-chunks",
           "fieldType": "boolean"
         },
         {
@@ -7819,17 +7820,6 @@
           "fieldDefaultValue": 3600000000000,
           "fieldFlag": "compactor.max-compaction-time",
           "fieldType": "duration",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "compaction_verify_chunks",
-          "required": false,
-          "desc": "Verify chunks data for correctness during compaction.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "compactor.compaction-verify-chunks",
-          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {

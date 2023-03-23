@@ -33,19 +33,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
-// VerifyIndex does a full run over a block index and verifies that it fulfills the order invariants.
-func VerifyIndex(logger log.Logger, blockDir string, minTime, maxTime int64) error {
-	stats, err := GatherBlockHealthStats(logger, blockDir, minTime, maxTime, false)
-	if err != nil {
-		return err
-	}
-
-	return stats.AnyErr()
-}
-
 // VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
-func VerifyBlock(logger log.Logger, blockDir string, minTime, maxTime int64) error {
-	stats, err := GatherBlockHealthStats(logger, blockDir, minTime, maxTime, true)
+func VerifyBlock(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error {
+	stats, err := GatherBlockHealthStats(logger, blockDir, minTime, maxTime, checkChunks)
 	if err != nil {
 		return err
 	}
@@ -233,12 +223,6 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 		return stats, errors.Wrap(err, "open index file")
 	}
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
-	// chunk reader
-	cr, err := chunks.NewDirReader(chunkDir, nil)
-	if err != nil {
-		return stats, errors.Wrapf(err, "failed to open chunk dir %s", chunkDir)
-	}
-	defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
 
 	p, err := r.Postings(index.AllPostingsKey())
 	if err != nil {
@@ -249,6 +233,7 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 		lset     labels.Labels
 		builder  labels.ScratchBuilder
 		chks     []chunks.Meta
+		cr       *chunks.Reader
 
 		seriesLifeDuration                          = newMinMaxSumInt64()
 		seriesLifeDurationWithoutSingleSampleSeries = newMinMaxSumInt64()
@@ -256,6 +241,15 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 		chunkDuration                               = newMinMaxSumInt64()
 		chunkSize                                   = newMinMaxSumInt64()
 	)
+
+	// chunk reader
+	if checkChunkData {
+		cr, err = chunks.NewDirReader(chunkDir, nil)
+		if err != nil {
+			return stats, errors.Wrapf(err, "failed to open chunk dir %s", chunkDir)
+		}
+		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
+	}
 
 	lnames, err := r.LabelNames()
 	if err != nil {

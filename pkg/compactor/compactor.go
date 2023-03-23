@@ -96,7 +96,6 @@ type Config struct {
 	DeletionDelay              time.Duration           `yaml:"deletion_delay" category:"advanced"`
 	TenantCleanupDelay         time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
 	MaxCompactionTime          time.Duration           `yaml:"max_compaction_time" category:"advanced"`
-	CompactionVerifyChunks     bool                    `yaml:"compaction_verify_chunks" category:"advanced"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency" category:"advanced"` // Number of goroutines opening blocks before compaction.
@@ -150,7 +149,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant.")
-	f.BoolVar(&cfg.CompactionVerifyChunks, "compactor.compaction-verify-chunks", true, "Verify chunks data for correctness during compaction.")
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.")
@@ -212,8 +210,8 @@ type ConfigProvider interface {
 	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
 	CompactorBlockUploadEnabled(tenantID string) bool
 
-	// CompactorVerifyChunks returns whether chunk verification is enabled for a given tenant.
-	CompactorVerifyChunks(tenantID string) bool
+	// CompactorBlockUploadVerifyChunks returns whether chunk verification is enabled for a given tenant.
+	CompactorBlockUploadVerifyChunks(tenantID string) bool
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.
@@ -754,7 +752,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
-		c.cfgProvider.CompactorVerifyChunks(userID),
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")

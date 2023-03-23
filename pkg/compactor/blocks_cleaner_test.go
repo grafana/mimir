@@ -1025,7 +1025,7 @@ func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) (ti
 	return m.userPartialBlockDelay[user], !m.userPartialBlockDelayInvalid[user]
 }
 
-func (m *mockConfigProvider) CompactorVerifyChunks(tenantID string) bool {
+func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) bool {
 	return m.verifyChunks[tenantID]
 }
 
