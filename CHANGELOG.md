@@ -73,6 +73,7 @@
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Add support for mTLS connections to Memcached servers. #4553
+* [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
@@ -301,7 +302,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [ENHANCEMENT] Update memcached image from `memcached:1.6.16-alpine` to `memcached:1.6.17-alpine`. #3914
 * [ENHANCEMENT] Allow configuring the ring for overrides-exporter. #3995
-* [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [BUGFIX] Apply ingesters and store-gateways per-zone CLI flags overrides to read-write deployment mode too. #3766
 * [BUGFIX] Apply overrides-exporter CLI flags to mimir-backend when running Mimir in read-write deployment mode. #3790
 * [BUGFIX] Fixed `mimir-write` and `mimir-read` Kubernetes service to correctly balance requests among pods. #3855 #3864 #3906
