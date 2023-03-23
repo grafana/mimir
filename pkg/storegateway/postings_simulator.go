@@ -57,19 +57,15 @@ var (
 
 type stats struct {
 	fetchedRegularPostings, fetchedShortcutPostings *atomic.Uint64
+	fetchedRegularSeries, fetchedShortcutSeries     *atomic.Uint64
 }
 
 func newStats() stats {
-	return stats{atomic.NewUint64(0), atomic.NewUint64(0)}
+	return stats{atomic.NewUint64(0), atomic.NewUint64(0), atomic.NewUint64(0), atomic.NewUint64(0)}
 }
 
 func (s stats) String() string {
-	return fmt.Sprintf("regular %d shortcut %d", s.fetchedRegularPostings.Load(), s.fetchedShortcutPostings.Load())
-}
-
-func (s stats) reset() {
-	s.fetchedRegularPostings.Store(0)
-	s.fetchedShortcutPostings.Store(0)
+	return fmt.Sprintf("regular %d %d shortcut %d %d", s.fetchedRegularPostings.Load(), s.fetchedRegularSeries.Load(), s.fetchedShortcutPostings.Load(), s.fetchedShortcutSeries.Load())
 }
 
 func RunPostingsSimulator() {
@@ -178,9 +174,11 @@ func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQuer
 			if selector.Name != "" {
 				matchers = append(matchers, parser.MustLabelMatcher(labels.MatchEqual, labels.MetricName, selector.Name))
 			}
-			_, _, postingsStats, postingsWithShortcutStats := postings(ctx, matchers, indexr)
+			postingsStats, postingsWithShortcutStats := postings(ctx, matchers, indexr)
 			statistics.fetchedRegularPostings.Add(uint64(postingsStats.postingsTouchedSizeSum))
 			statistics.fetchedShortcutPostings.Add(uint64(postingsWithShortcutStats.postingsTouchedSizeSum))
+			statistics.fetchedRegularSeries.Add(uint64(postingsStats.seriesTouchedSizeSum))
+			statistics.fetchedShortcutSeries.Add(uint64(postingsWithShortcutStats.seriesTouchedSizeSum))
 		}
 	}
 }
@@ -196,13 +194,20 @@ func (c *resultConsumer) record(q query_stat.QueryStat, s stats) {
 }
 
 func (c *resultConsumer) print() {
-	var curves [2][]float64 // two fields in each stat
+	var curves [4][]float64 // two fields in each stat
 	for _, s := range c.allStats {
 		curves[0] = append(curves[0], float64(s.fetchedRegularPostings.Load()))
 		curves[1] = append(curves[1], float64(s.fetchedShortcutPostings.Load()))
 	}
+	_, err := io.WriteString(c.out, asciigraph.PlotMany(curves[:], asciigraph.SeriesColors(asciigraph.Blue, asciigraph.DarkOrange), asciigraph.Width(465), asciigraph.Height(60), asciigraph.Caption("fetched postings")))
 
-	_, err := io.WriteString(c.out, asciigraph.PlotMany(curves[:], asciigraph.SeriesColors(asciigraph.Blue, asciigraph.DarkOrange), asciigraph.Width(465), asciigraph.Height(60)))
+	curves = [4][]float64{} // two fields in each stat
+	for _, s := range c.allStats {
+		curves[0] = append(curves[0], float64(s.fetchedRegularSeries.Load()))
+		curves[1] = append(curves[1], float64(s.fetchedShortcutSeries.Load()))
+	}
+
+	_, err = io.WriteString(c.out, asciigraph.PlotMany(curves[:], asciigraph.SeriesColors(asciigraph.Blue, asciigraph.DarkOrange), asciigraph.Width(465), asciigraph.Height(60), asciigraph.Caption("fetched series")))
 	noErr(err)
 }
 
@@ -217,16 +222,27 @@ func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
 	}
 }
 
-func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (expandedPostings, expandedPostingsWithShortcut []storage.SeriesRef, stats, statsWithShortcut *queryStats) {
-	safeStats := newSafeQueryStats()
-	expandedPostings, err := indexr.expandedPostings(ctx, matchers, safeStats)
-	noErr(err)
+func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (stats, statsWithShortcut *queryStats) {
+	doPostings := func(resolvePostings func(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error)) *queryStats {
+		s := newSafeQueryStats()
+		p, err := resolvePostings(ctx, matchers, s)
+		noErr(err)
 
-	shortcutStats := newSafeQueryStats()
-	expandedPostingsWithShortcut, err = indexr.expandedPostingsShortcut(ctx, matchers, shortcutStats)
-	noErr(err)
+		// Assume that all series that were fetched will be touched
+		loadedRegularSeries, err := indexr.preloadSeries(ctx, p, s)
+		noErr(err)
+		s.update(func(stats *queryStats) {
+			for _, b := range loadedRegularSeries.series {
+				stats.seriesTouchedSizeSum += len(b)
+			}
+		})
+		return s.export()
+	}
 
-	return expandedPostings, expandedPostingsWithShortcut, safeStats.export(), shortcutStats.export()
+	regularStats := doPostings(indexr.expandedPostings)
+	shortcutStats := doPostings(indexr.expandedPostingsShortcut)
+
+	return regularStats, shortcutStats
 }
 
 func extractVectorSelectors(q query_stat.QueryStat) []*parser.VectorSelector {
