@@ -843,6 +843,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-verify-chunks
+    	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.block-upload.block-validation-enabled
     	[experimental] Validate blocks before finalizing a block upload (default true)
   -compactor.blocks-retention-period duration

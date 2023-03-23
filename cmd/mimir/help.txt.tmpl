@@ -289,6 +289,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-verify-chunks
+    	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.compactor-tenant-shard-size int

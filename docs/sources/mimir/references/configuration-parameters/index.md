@@ -2822,6 +2822,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]
 
+# Verify chunks when uploading blocks via the upload API for the tenant.
+# CLI flag: -compactor.block-upload-verify-chunks
+[compactor_block_upload_verify_chunks: <boolean> | default = true]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.

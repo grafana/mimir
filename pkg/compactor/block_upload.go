@@ -119,7 +119,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
-			return c.validateBlock(ctx, blockID, userBkt)
+			return c.validateBlock(ctx, blockID, userBkt, tenantID)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -481,7 +481,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, userID string) error {
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -509,11 +509,11 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}
 
-	// validate index
-	indexFile := filepath.Join(blockDir, block.IndexFilename)
-	err = block.VerifyIndex(c.logger, indexFile, blockMetadata.MinTime, blockMetadata.MaxTime)
+	// validate block
+	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
+	err = block.VerifyBlock(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
 	if err != nil {
-		return errors.Wrap(err, "error validating block index")
+		return errors.Wrap(err, "error validating block")
 	}
 
 	return nil

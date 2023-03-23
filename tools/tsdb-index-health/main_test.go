@@ -6,6 +6,8 @@ import (
 	"path"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -52,7 +54,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
-	stats, err := GatherIndexHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
+	stats, err := block.GatherBlockHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), stats.TotalSeries)
