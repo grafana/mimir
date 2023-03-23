@@ -1420,6 +1420,7 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 }
 
 func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
+	const tenantID = "test"
 	ctx := context.Background()
 	tmpDir := t.TempDir()
 	bkt := objstore.NewInMemBucket()
@@ -1446,6 +1447,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		indexInject      func(fname string)
 		chunkInject      func(fname string)
 		populateFileList bool
+		verifyChunks     bool
 		missing          Missing
 		expectError      bool
 		expectedMsg      string
@@ -1467,7 +1469,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			lbls:        validLabels,
 			missing:     MissingIndex,
 			expectError: true,
-			expectedMsg: "error validating block index: open index file:",
+			expectedMsg: "error validating block: open index file:",
 		},
 		{
 			name:             "missing chunks file",
@@ -1495,7 +1497,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				require.NoError(t, os.Truncate(fname, 0))
 			},
 			expectError: true,
-			expectedMsg: "error validating block index: open index file: mmap, size 0: invalid argument",
+			expectedMsg: "error validating block: open index file: mmap, size 0: invalid argument",
 		},
 		{
 			name: "index file invalid magic number",
@@ -1504,7 +1506,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
 			},
 			expectError: true,
-			expectedMsg: "error validating block index: open index file: invalid magic number",
+			expectedMsg: "error validating block: open index file: invalid magic number",
 		},
 		{
 			name: "out of order labels",
@@ -1518,7 +1520,38 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 				return oooLabels
 			},
 			expectError: true,
-			expectedMsg: "error validating block index: index contains 1 postings with out of order labels",
+			expectedMsg: "error validating block: index contains 1 postings with out of order labels",
+		},
+		{
+			name: "segment file invalid magic number",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 0) // guaranteed to be a magic number byte
+			},
+			verifyChunks: true,
+			expectError:  true,
+			expectedMsg:  "invalid magic number",
+		},
+		{
+			name: "segment file invalid checksum",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				flipByteAt(t, fname, 12) // guaranteed to be a data byte
+			},
+			populateFileList: true,
+			verifyChunks:     true,
+			expectError:      true,
+			expectedMsg:      "checksum mismatch",
+		},
+		{
+			name: "empty segment file",
+			lbls: validLabels,
+			chunkInject: func(fname string) {
+				require.NoError(t, os.Truncate(fname, 0))
+			},
+			verifyChunks: true,
+			expectError:  true,
+			expectedMsg:  "size 0: invalid argument",
 		},
 	}
 
@@ -1539,11 +1572,13 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// create a compactor
 			cfgProvider := newMockConfigProvider()
+			cfgProvider.verifyChunks[tenantID] = tc.verifyChunks
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
+			c.compactorCfg.BlockUpload.BlockValidationEnabled = true
 
 			// upload the block
 			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))
@@ -1596,7 +1631,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, blockID, bkt)
+			err = c.validateBlock(ctx, blockID, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)

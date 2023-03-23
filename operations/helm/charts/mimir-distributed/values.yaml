@@ -1527,7 +1527,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.17-alpine
+    tag: 1.6.19-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -1550,7 +1550,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.6.0
+    tag: v0.11.2
     pullPolicy: IfNotPresent
 
   resources:
@@ -1779,7 +1779,7 @@ results-cache:
   allocatedMemory: 512
 
   # -- Maximum item results-cache for memcached (in MB).
-  maxItemMemory: 1
+  maxItemMemory: 5
 
   # -- Extra init containers for results-cache pods
   initContainers: []

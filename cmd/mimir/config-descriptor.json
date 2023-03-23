@@ -3425,6 +3425,16 @@
         },
         {
           "kind": "field",
+          "name": "compactor_block_upload_verify_chunks",
+          "required": false,
+          "desc": "Verify chunks when uploading blocks via the upload API for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.block-upload-verify-chunks",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",
@@ -4768,10 +4778,9 @@
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
           "fieldValue": null,
-          "fieldDefaultValue": "json",
+          "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -4886,9 +4895,10 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "",
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
               "fieldValue": null,
               "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.storage-class",
               "fieldType": "string"
             },
             {
@@ -7604,7 +7614,7 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_size",
               "required": false,
-              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl \u003e 0.",
+              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
@@ -7619,6 +7629,39 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_ttl",
+              "required": false,
+              "desc": "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_size",
+              "required": false,
+              "desc": "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_force",
+              "required": false,
+              "desc": "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -10152,9 +10195,10 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "",
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
               "fieldValue": null,
               "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.storage-class",
               "fieldType": "string"
             },
             {
@@ -11523,9 +11567,10 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "",
+              "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
               "fieldValue": null,
               "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.storage-class",
               "fieldType": "string"
             },
             {
@@ -13671,9 +13716,10 @@
                   "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "",
+                  "desc": "The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.storage-class",
                   "fieldType": "string"
                 },
                 {

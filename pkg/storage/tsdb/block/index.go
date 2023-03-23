@@ -22,8 +22,10 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
@@ -31,9 +33,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
-// VerifyIndex does a full run over a block index and verifies that it fulfills the order invariants.
-func VerifyIndex(logger log.Logger, fn string, minTime, maxTime int64) error {
-	stats, err := GatherIndexHealthStats(logger, fn, minTime, maxTime)
+// VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
+func VerifyBlock(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error {
+	stats, err := GatherBlockHealthStats(logger, blockDir, minTime, maxTime, checkChunks)
 	if err != nil {
 		return err
 	}
@@ -53,13 +55,13 @@ type HealthStats struct {
 	DuplicatedChunks int
 	// OutsideChunks represents number of all chunks that are before or after time range specified in block meta.
 	OutsideChunks int
-	// CompleteOutsideChunks is subset of OutsideChunks that will be never accessed. They are completely out of time range specified in block meta.
+	// CompleteOutsideChunks is subset of OutsideChunks that will never be accessed. They are completely out of time range specified in block meta.
 	CompleteOutsideChunks int
 	// Issue347OutsideChunks represents subset of OutsideChunks that are outsiders caused by https://github.com/prometheus/tsdb/issues/347
 	// and is something that Thanos handle.
 	//
 	// Specifically we mean here chunks with minTime == block.maxTime and maxTime > block.MaxTime. These are
-	// are segregated into separate counters. These chunks are safe to be deleted, since they are duplicated across 2 blocks.
+	// segregated into separate counters. These chunks are safe to be deleted, since they are duplicated across 2 blocks.
 	Issue347OutsideChunks int
 	// OutOfOrderLabels represents the number of postings that contained out
 	// of order labels, a bug present in Prometheus 2.8.0 and below.
@@ -96,7 +98,7 @@ type HealthStats struct {
 }
 
 // OutOfOrderLabelsErr returns an error if the HealthStats object indicates
-// postings with out of order labels.  This is corrected by Prometheus Issue
+// postings without of order labels.  This is corrected by Prometheus Issue
 // #5372 and affects Prometheus versions 2.8.0 and below.
 func (i HealthStats) OutOfOrderLabelsErr() error {
 	if i.OutOfOrderLabels > 0 {
@@ -208,12 +210,15 @@ func (n *minMaxSumInt64) Avg() int64 {
 	return n.sum / n.cnt
 }
 
-// GatherIndexHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
-// helps to assess index health.
+// GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
+// helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
 // See HealthStats.Issue347OutsideChunks for details.
-func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64) (stats HealthStats, err error) {
-	r, err := index.NewFileReader(fn)
+func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunkData bool) (stats HealthStats, err error) {
+	indexFn := filepath.Join(blockDir, IndexFilename)
+	chunkDir := filepath.Join(blockDir, ChunksDirname)
+	// index reader
+	r, err := index.NewFileReader(indexFn)
 	if err != nil {
 		return stats, errors.Wrap(err, "open index file")
 	}
@@ -228,6 +233,7 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 		lset     labels.Labels
 		builder  labels.ScratchBuilder
 		chks     []chunks.Meta
+		cr       *chunks.Reader
 
 		seriesLifeDuration                          = newMinMaxSumInt64()
 		seriesLifeDurationWithoutSingleSampleSeries = newMinMaxSumInt64()
@@ -235,6 +241,15 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 		chunkDuration                               = newMinMaxSumInt64()
 		chunkSize                                   = newMinMaxSumInt64()
 	)
+
+	// chunk reader
+	if checkChunkData {
+		cr, err = chunks.NewDirReader(chunkDir, nil)
+		if err != nil {
+			return stats, errors.Wrapf(err, "failed to open chunk dir %s", chunkDir)
+		}
+		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
+	}
 
 	lnames, err := r.LabelNames()
 	if err != nil {
@@ -285,6 +300,14 @@ func GatherIndexHealthStats(logger log.Logger, fn string, minTime, maxTime int64
 		seriesLifeTimeMs := int64(0)
 		// Per chunk in series.
 		for i, c := range chks {
+			// Check if chunk data is valid.
+			if checkChunkData {
+				err := verifyChunks(cr, c)
+				if err != nil {
+					return stats, errors.Wrapf(err, "verify chunk %d of series %d", i, id)
+				}
+			}
+
 			stats.TotalChunks++
 
 			chkDur := c.MaxTime - c.MinTime
@@ -534,6 +557,60 @@ OUTER:
 	return repl, nil
 }
 
+func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
+	ch, err := cr.Chunk(cm)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
+	}
+
+	cb := ch.Bytes()
+	if len(cb) == 0 {
+		return errors.Errorf("empty chunk %d", cm.Ref)
+	}
+
+	samples := 0
+	firstSample := true
+	prevTs := int64(-1)
+
+	it := ch.Iterator(nil)
+	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+		samples++
+
+		var ts int64
+		switch valType {
+		case chunkenc.ValFloat:
+			ts, _ = it.At()
+		case chunkenc.ValHistogram:
+			ts, _ = it.AtHistogram()
+		case chunkenc.ValFloatHistogram:
+			ts, _ = it.AtFloatHistogram()
+		default:
+			return errors.Errorf("unsupported value type %v in chunk %d", valType, cm.Ref)
+		}
+
+		if firstSample {
+			firstSample = false
+			if ts != cm.MinTime {
+				return errors.Errorf("first sample doesn't match chunk MinTime, chunk: %d, chunk MinTime: %s, sample timestamp: %s", cm.Ref, formatTimestamp(cm.MinTime), formatTimestamp(ts))
+			}
+		} else if ts <= prevTs {
+			return errors.Errorf("out of order sample timestamps, chunk %d, previous timestamp: %s, sample timestamp: %s", cm.Ref, formatTimestamp(prevTs), formatTimestamp(ts))
+		}
+
+		prevTs = ts
+	}
+
+	if e := it.Err(); e != nil {
+		return errors.Wrapf(e, "failed to iterate over chunk samples, chunk %d", cm.Ref)
+	} else if samples == 0 {
+		return errors.Errorf("no samples found in chunk %d", cm.Ref)
+	} else if prevTs != cm.MaxTime {
+		return errors.Errorf("last sample doesn't match chunk MaxTime, chunk: %d, chunk MaxTime: %s, sample timestamp: %s", cm.Ref, formatTimestamp(cm.MaxTime), formatTimestamp(prevTs))
+	}
+
+	return nil
+}
+
 type seriesRepair struct {
 	lset labels.Labels
 	chks []chunks.Meta
@@ -693,4 +770,8 @@ func (ss stringset) slice() []string {
 	}
 	slices.Sort(slice)
 	return slice
+}
+
+func formatTimestamp(ts int64) string {
+	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 }

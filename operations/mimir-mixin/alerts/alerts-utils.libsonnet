@@ -10,7 +10,12 @@
     $._config.product + name,
 
   jobMatcher(job)::
-    'job=~".*/%s"' % job,
+    'job=~".*/%s"' % formatJobForQuery(job),
+
+  local formatJobForQuery(job) =
+    if std.isArray(job) then '(%s)' % std.join('|', job)
+    else if std.isString(job) then job
+    else error 'expected job "%s" to be a string or an array, but it is type "%s"' % [job, std.type(job)],
 
   withRunbookURL(url_format, groups)::
     local update_rule(rule) =

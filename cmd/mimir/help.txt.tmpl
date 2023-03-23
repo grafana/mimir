@@ -35,6 +35,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -191,6 +193,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -257,6 +261,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -289,6 +295,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-verify-chunks
+    	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.compactor-tenant-shard-size int
@@ -457,6 +465,8 @@ Usage of ./cmd/mimir/mimir:
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
+  -query-frontend.query-result-response-format string
+    	Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "protobuf")
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-total-shards int
@@ -529,6 +539,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.storage-class string
+    	The S3 storage class to use. Details can be found at https://aws.amazon.com/s3/storage-classes/.
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
