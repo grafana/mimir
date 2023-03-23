@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/guptarohit/asciigraph"
-	_ "github.com/guptarohit/asciigraph"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -95,11 +95,15 @@ func RunPostingsSimulator() {
 	noErr(err)
 	defer resultsFile.Close()
 
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
 	queriesChan := make(chan query_stat.QueryStat)
 	defer close(queriesChan)
 	resultSink := &resultConsumer{out: io.MultiWriter(resultsFile, os.Stdout)}
 	defer resultSink.print()
-	go processQueries(queriesChan, indexReader, resultSink)
+
+	wg.Add(1)
+	go processQueries(wg, queriesChan, indexReader, resultSink)
 
 	queryDecoder := json.NewDecoder(queriesFile)
 
@@ -118,23 +122,11 @@ func RunPostingsSimulator() {
 			continue
 		}
 
-		timeWouldSkipStoreGateways := func(t time.Time) bool {
-			return !t.IsZero() && t.After(q.Timestamp.Add(-12*time.Hour))
-		}
-
-		if timeWouldSkipStoreGateways(q.InstantQueryTime) {
-			continue // this was an instant query which would have only touched ingesters, skip
-		}
-
-		if timeWouldSkipStoreGateways(q.Start) && timeWouldSkipStoreGateways(q.End) {
-			continue // this was a range query that doesn't
-		}
-
 		queriesChan <- *q
 	}
 }
 
-func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader, resultsDest *resultConsumer) {
+func processQueries(done *sync.WaitGroup, queries <-chan query_stat.QueryStat, indexr *bucketIndexReader, resultsDest *resultConsumer) {
 	var (
 		i                int
 		currentMinute    int64
@@ -143,6 +135,7 @@ func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexRead
 		fannedOutQueries = make(chan query_stat.QueryStat)
 		ctx, cancel      = context.WithCancel(context.Background())
 	)
+	defer done.Done()
 	defer cancel()
 
 	for q := range queries {
@@ -168,19 +161,37 @@ func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexRead
 func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQueries <-chan query_stat.QueryStat, indexr *bucketIndexReader, statistics stats) {
 	defer wg.Done()
 	for q := range fannedOutQueries {
+		timeWouldSkipStoreGateways := func(t time.Time) bool {
+			return !t.IsZero() && t.After(q.Timestamp.Add(-12*time.Hour))
+		}
+
+		if timeWouldSkipStoreGateways(q.InstantQueryTime) {
+			continue // this was an instant query which would have only touched ingesters, skip
+		}
+
+		if timeWouldSkipStoreGateways(q.Start) && timeWouldSkipStoreGateways(q.End) {
+			continue // this was a range query that doesn't
+		}
+
 		vectorSelectors := extractVectorSelectors(q)
 		for _, selector := range vectorSelectors {
-			matchers := selector.LabelMatchers
-			if selector.Name != "" {
-				matchers = append(matchers, parser.MustLabelMatcher(labels.MatchEqual, labels.MetricName, selector.Name))
-			}
-			postingsStats, postingsWithShortcutStats := postings(ctx, matchers, indexr)
+			postingsStats, postingsWithShortcutStats := postings(ctx, selector.LabelMatchers, indexr)
+			//printMatchers(selector.LabelMatchers)
 			statistics.fetchedRegularPostings.Add(uint64(postingsStats.postingsTouchedSizeSum))
 			statistics.fetchedShortcutPostings.Add(uint64(postingsWithShortcutStats.postingsTouchedSizeSum))
 			statistics.fetchedRegularSeries.Add(uint64(postingsStats.seriesTouchedSizeSum))
 			statistics.fetchedShortcutSeries.Add(uint64(postingsWithShortcutStats.seriesTouchedSizeSum))
 		}
 	}
+}
+
+func printMatchers(matchers []*labels.Matcher) {
+	asStr := make([]string, len(matchers))
+	for i, m := range matchers {
+		asStr[i] = m.String()
+	}
+	sort.Strings(asStr)
+	fmt.Println(strings.Join(asStr, " "))
 }
 
 type resultConsumer struct {
@@ -242,10 +253,10 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		return s.export()
 	}
 
+	regularStats := doPostings(indexr.expandedPostings)
 	shortcutStats := doPostings(indexr.expandedPostingsShortcut)
-	//regularStats := doPostings(indexr.expandedPostings)
 
-	return newSafeQueryStats().export(), shortcutStats
+	return regularStats, shortcutStats
 }
 
 func extractVectorSelectors(q query_stat.QueryStat) []*parser.VectorSelector {

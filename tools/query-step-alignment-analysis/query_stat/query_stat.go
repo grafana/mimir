@@ -62,8 +62,8 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 			Time        string `json:"param_time"`
 			OrgID       string `json:"org_id"`
 			Path        string `json:"path"`
+			Timestamp   string `json:"ts"`
 		} `json:"labels"`
-		Timestamp string `json:"timestamp"`
 	}
 	if err := json.Unmarshal(b, &d); err != nil {
 		return err
@@ -94,7 +94,7 @@ func (qs *QueryStat) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
+	timestamp, err := time.Parse(time.RFC3339Nano, d.Labels.Timestamp)
 	if err != nil {
 		return err
 	}
