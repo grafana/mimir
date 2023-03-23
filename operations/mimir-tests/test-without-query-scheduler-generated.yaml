@@ -755,7 +755,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -770,7 +770,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.6.0
+        image: prom/memcached-exporter:v0.11.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -808,7 +808,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -823,7 +823,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.6.0
+        image: prom/memcached-exporter:v0.11.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -861,7 +861,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -876,7 +876,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.6.0
+        image: prom/memcached-exporter:v0.11.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -914,7 +914,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -929,7 +929,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.6.0
+        image: prom/memcached-exporter:v0.11.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:

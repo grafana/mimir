@@ -9,7 +9,7 @@
     "volumes":
       - "./config:/etc/agent-config"
   "memcached":
-    "image": "memcached:1.6.17-alpine"
+    "image": "memcached:1.6.19-alpine"
   "mimir-backend-1":
     "build":
       "context": "."
