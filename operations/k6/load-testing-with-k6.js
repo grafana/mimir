@@ -90,16 +90,16 @@ const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
  */
 const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
 /**
- * Allow for this script to write to a specific tenant in the Mimir cluster.
- * By default, no tenant is specified requiring the cluster to have multi-tenancy disabled.
+ * Tenant ID to read from/write to.
+ * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
  * @constant {string}
 */
-const TENANT_NAME = __ENV.K6_TENANT_NAME || '';
+const TENANT_ID = __ENV.K6_TENANT_ID || '';
 
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_NAME });
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_ID });
 
 const query_client_headers = {
     'User-Agent': 'k6-load-test',
@@ -501,8 +501,8 @@ function get_read_authentication_headers() {
         auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${READ_TOKEN}`)}`)
     }
     
-    if (TENANT_NAME !== '') {
-        auth_headers.set('X-Scope-OrgID', TENANT_NAME)
+    if (TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', TENANT_ID)
 
     }
     
