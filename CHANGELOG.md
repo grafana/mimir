@@ -13,6 +13,7 @@
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
 * [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
 * [CHANGE] Ingester: the `cortex_ingester_tsdb_wal_replay_duration_seconds` metrics has been removed. #4465
+* [CHANGE] Query-frontend: use protobuf internal query result payload format by default. This feature is no longer considered experimental. #4557
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
 * [FEATURE] Vault: Introduce experimental integration with Vault to fetch secrets used to configure TLS for clients. Server TLS secrets will still be read from a file. `tls-ca-path`, `tls-cert-path` and `tls-key-path` will denote the path in Vault for the following CLI flags when `-vault.enabled` is true: #4446.
   * `-distributor.ha-tracker.etcd.*`
@@ -53,18 +54,29 @@
 * [ENHANCEMENT] Store-gateway: use streaming implementation for LabelNames RPC. The batch size for streaming is controlled by `-blocks-storage.bucket-store.batch-series-size`. #4464
 * [ENHANCEMENT] Memcached: Add support for TLS or mTLS connections to cache servers. #4535
 * [ENHANCEMENT] Compactor: blocks index files are now validated for correctness for blocks uploaded via the TSDB block upload feature. #4503
+* [ENHANCEMENT] Compactor: block chunks and segment files are now validated for correctness for blocks uploaded via the TSDB block upload feature. #4549
+* [ENHANCEMENT] Ingester: added configuration options to configure the "postings for matchers" cache of each compacted block queried from ingesters: #4561
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 
 ### Mixin
 
 * [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492
+* [ENHANCEMENT] `_config.job_names.<job>` values can now be arrays of regular expressions in addition to a single string. Strings are still supported and behave as before. #4543
+* [ENHANCEMENT] Queries dashboard: remove mention to store-gateway "streaming enabled" in panels because store-gateway only support streaming series since Mimir 2.7. #4569
+* [BUGFIX] Ruler dashboard: show data for reads from ingesters. #4543
 
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
+* [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
+* [ENHANCEMENT] Add support for mTLS connections to Memcached servers. #4553
+* [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool

@@ -141,7 +141,7 @@ local filename = 'mimir-top-tenants.json';
         $.tablePanel(
           [
             'topk($limit, sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]) },
+            % { job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor) },
           ],
           { 'Value #A': { alias: 'samples/s' } }
         )
@@ -162,7 +162,7 @@ local filename = 'mimir-top-tenants.json';
               sum by (user) (rate(cortex_discarded_samples_total{%(job)s}[$__rate_interval] @ start()))
             )
           ||| % {
-            job: $.jobMatcher('%s|%s' % [$._config.job_names.ingester, $._config.job_names.distributor]),
+            job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor),
           },
           '{{ user }}',
         )

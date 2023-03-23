@@ -687,7 +687,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*)|(distributor|cortex|mimir|mimir-write.*))\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -777,7 +777,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*)|(distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*)|(distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*)|(distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
+                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",

@@ -974,6 +974,7 @@ type mockConfigProvider struct {
 	blockUploadEnabled           map[string]bool
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
+	verifyChunks                 map[string]bool
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -984,6 +985,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		blockUploadEnabled:           make(map[string]bool),
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
+		verifyChunks:                 make(map[string]bool),
 	}
 }
 
@@ -1021,6 +1023,10 @@ func (m *mockConfigProvider) CompactorBlockUploadEnabled(tenantID string) bool {
 
 func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) (time.Duration, bool) {
 	return m.userPartialBlockDelay[user], !m.userPartialBlockDelayInvalid[user]
+}
+
+func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) bool {
+	return m.verifyChunks[tenantID]
 }
 
 func (m *mockConfigProvider) S3SSEType(user string) string {
