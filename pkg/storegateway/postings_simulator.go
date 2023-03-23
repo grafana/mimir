@@ -37,6 +37,7 @@ const (
 	bucketLocation      = "/users/dimitar/proba/postings-shortcut/thanos-bucket"
 	indexHeaderLocation = "/users/dimitar/proba/postings-shortcut/local"
 	queriesDump         = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
+	resultsLocation     = "/users/dimitar/proba/postings-shortcut/results.txt"
 	tenantID            = "10428"
 	concurrency         = 8
 )
@@ -84,15 +85,19 @@ func RunPostingsSimulator() {
 	indexReader := block.indexReader()
 	defer indexReader.Close()
 
-	queriesStream, err := os.OpenFile(queriesDump, os.O_RDONLY, 0)
+	queriesFile, err := os.OpenFile(queriesDump, os.O_RDONLY, 0)
 	noErr(err)
-	defer queriesStream.Close()
+	defer queriesFile.Close()
 
-	queries := make(chan query_stat.QueryStat)
-	defer close(queries)
-	go processQueries(queries, indexReader)
+	resultsFile, err := os.OpenFile(resultsLocation, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0660)
+	noErr(err)
+	defer resultsFile.Close()
 
-	queryDecoder := json.NewDecoder(queriesStream)
+	queriesChan := make(chan query_stat.QueryStat)
+	defer close(queriesChan)
+	go processQueries(queriesChan, indexReader, io.MultiWriter(resultsFile, os.Stdout))
+
+	queryDecoder := json.NewDecoder(queriesFile)
 
 	q := &query_stat.QueryStat{}
 	for {
@@ -104,27 +109,29 @@ func RunPostingsSimulator() {
 		if errors.Is(err, io.EOF) {
 			break
 		}
+		if err != nil {
+			//fmt.Println("invalid query at offset ", queryDecoder.InputOffset())
+			continue
+		}
 
 		timeWouldSkipStoreGateways := func(t time.Time) bool {
 			return t.After(q.Timestamp.Add(-12 * time.Hour))
 		}
 
 		if !q.InstantQueryTime.IsZero() && timeWouldSkipStoreGateways(q.InstantQueryTime) {
-			//fmt.Printf("skipping instant %#v\n", q)
 			continue // this was an instant query which would have only touched ingesters, skip
 		}
 
 		if (!q.Start.IsZero() && timeWouldSkipStoreGateways(q.Start)) &&
 			(!q.End.IsZero() && timeWouldSkipStoreGateways(q.End)) {
-			//fmt.Printf("skipping range %#v\n", q)
 			continue // this was a range query that doesn't
 		}
 
-		queries <- *q
+		queriesChan <- *q
 	}
 }
 
-func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader) {
+func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexReader, resultsDest io.Writer) {
 	var (
 		i                int
 		currentMinute    int64
@@ -139,7 +146,7 @@ func processQueries(queries <-chan query_stat.QueryStat, indexr *bucketIndexRead
 		if q.Timestamp.UnixNano()/int64(time.Minute) != currentMinute {
 			close(fannedOutQueries)
 			wg.Wait()
-			fmt.Println("at ", i, q.Timestamp.UTC().String(), statistics)
+			fmt.Fprintln(resultsDest, "at ", i, q.Timestamp.UTC().String(), statistics)
 			statistics.reset()
 
 			wg.Add(concurrency)
