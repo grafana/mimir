@@ -38,12 +38,12 @@ import (
 )
 
 const (
-	bucketLocation      = "/users/dimitar/proba/postings-shortcut/thanos-bucket"
-	indexHeaderLocation = "/users/dimitar/proba/postings-shortcut/local"
-	queriesDump         = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
-	resultsLocation     = "/users/dimitar/proba/postings-shortcut/results.txt"
-	tenantID            = "10428"
-	concurrency         = 10
+	bucketLocation             = "/users/dimitar/proba/postings-shortcut/thanos-bucket"
+	indexHeaderLocation        = "/users/dimitar/proba/postings-shortcut/local"
+	queriesDump                = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
+	resultsLocation            = "/users/dimitar/proba/postings-shortcut/results.txt"
+	tenantID                   = "10428"
+	queryProcessingConcurrency = 10
 )
 
 var (
@@ -146,10 +146,10 @@ func processQueries(done *sync.WaitGroup, queries <-chan query_stat.QueryStat, i
 			wg.Wait()
 			resultsDest.record(q, statistics)
 
-			wg.Add(concurrency)
+			wg.Add(queryProcessingConcurrency)
 			statistics = newStats()
 			fannedOutQueries = make(chan query_stat.QueryStat)
-			for i := 0; i < concurrency; i++ {
+			for i := 0; i < queryProcessingConcurrency; i++ {
 				go processQueriesSingle(ctx, wg, fannedOutQueries, indexr, statistics)
 			}
 			currentMinute = q.Timestamp.UnixNano() / int64(time.Minute)
@@ -216,6 +216,7 @@ func (c *resultConsumer) print() {
 		curves[1] = append(curves[1], float64(s.fetchedShortcutPostings.Load()))
 	}
 	_, err := io.WriteString(c.out, asciigraph.PlotMany(curves[:], asciigraph.SeriesColors(asciigraph.Blue, asciigraph.DarkOrange), asciigraph.Width(465), asciigraph.Height(60), asciigraph.Caption("fetched postings")))
+	noErr(err)
 
 	curves = [4][]float64{} // two fields in each stat
 	for _, s := range c.allStats {
@@ -255,8 +256,8 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		)
 
 	nextSeries:
-		for _, seriesId := range p {
-			_, err = loadedRegularSeries.unsafeLoadSeries(seriesId, &symbolyzedLbls, &chks, true, s.unsafeStats)
+		for _, seriesID := range p {
+			_, err = loadedRegularSeries.unsafeLoadSeries(seriesID, &symbolyzedLbls, &chks, true, s.unsafeStats)
 			noErr(err)
 			lbls, err := indexr.LookupLabelsSymbols(symbolyzedLbls)
 			noErr(err)
