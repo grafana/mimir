@@ -73,6 +73,7 @@
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Add support for mTLS connections to Memcached servers. #4553
+* [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
