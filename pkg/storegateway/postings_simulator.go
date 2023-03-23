@@ -23,6 +23,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
@@ -41,7 +43,7 @@ const (
 	queriesDump         = "/users/dimitar/proba/postings-shortcut/ops-21-mar-2023-query-dump.json"
 	resultsLocation     = "/users/dimitar/proba/postings-shortcut/results.txt"
 	tenantID            = "10428"
-	concurrency         = 16
+	concurrency         = 10
 )
 
 var (
@@ -237,26 +239,55 @@ func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
 }
 
 func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (stats, statsWithShortcut *queryStats) {
-	doPostings := func(resolvePostings func(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error)) *queryStats {
+	doPostings := func(resolvePostings func(context.Context, []*labels.Matcher, *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error)) (*queryStats, []seriesChunkRefs) {
 		s := newSafeQueryStats()
-		p, err := resolvePostings(ctx, matchers, s)
+		p, remainingMatchers, err := resolvePostings(ctx, matchers, s)
 		noErr(err)
 
 		// Assume that all series that were fetched will be touched
 		loadedRegularSeries, err := indexr.preloadSeries(ctx, p, s)
 		noErr(err)
-		s.update(func(stats *queryStats) {
-			for _, b := range loadedRegularSeries.series {
-				stats.seriesTouchedSizeSum += len(b)
+
+		var (
+			symbolyzedLbls []symbolizedLabel
+			chks           []chunks.Meta
+			series         = make([]seriesChunkRefs, 0, len(loadedRegularSeries.series))
+		)
+
+	nextSeries:
+		for _, seriesId := range p {
+			_, err = loadedRegularSeries.unsafeLoadSeries(seriesId, &symbolyzedLbls, &chks, true, s.unsafeStats)
+			noErr(err)
+			lbls, err := indexr.LookupLabelsSymbols(symbolyzedLbls)
+			noErr(err)
+
+			for _, m := range remainingMatchers {
+				if !m.Matches(lbls.Get(m.Name)) {
+					continue nextSeries
+				}
 			}
-		})
-		return s.export()
+
+			series = append(series, seriesChunkRefs{lset: lbls})
+		}
+
+		return s.export(), series
 	}
 
-	regularStats := doPostings(indexr.expandedPostings)
-	shortcutStats := doPostings(indexr.expandedPostingsShortcut)
+	regularStats, selectedRegularSeries := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
+		series, err := indexr.expandedPostings(ctx, matchers, s)
+		return series, nil, err
+	})
+	shortcutStats, selectedShortcutSeries := doPostings(indexr.expandedPostingsShortcut)
+
+	assert.Equal(panicer{}, selectedRegularSeries, selectedShortcutSeries)
 
 	return regularStats, shortcutStats
+}
+
+type panicer struct{}
+
+func (panicer) Errorf(format string, args ...interface{}) {
+	panic(fmt.Sprintf(format, args...))
 }
 
 func extractVectorSelectors(q query_stat.QueryStat) []*parser.VectorSelector {

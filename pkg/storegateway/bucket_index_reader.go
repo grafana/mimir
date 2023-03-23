@@ -220,20 +220,20 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	return ps, nil
 }
 
-func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
+func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, _ []*labels.Matcher, returnErr error) {
 	postingGroups, keys, err := toPostingGroups(ms, r.block.indexHeaderReader)
 	if err != nil {
-		return nil, errors.Wrap(err, "toPostingGroups")
+		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
 	if len(keys) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	postingGroups, keys = restrictPostingLists(postingGroups)
+	postingGroups, remainingMatchers, keys := restrictPostingLists(postingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
 	if err != nil {
-		return nil, errors.Wrap(err, "get postings")
+		return nil, nil, errors.Wrap(err, "get postings")
 	}
 
 	postingIndex := 0
@@ -260,14 +260,14 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 
 	ps, err := index.ExpandPostings(result)
 	if err != nil {
-		return nil, errors.Wrap(err, "expand")
+		return nil, nil, errors.Wrap(err, "expand")
 	}
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
 	version, err := r.block.indexHeaderReader.IndexVersion()
 	if err != nil {
-		return nil, errors.Wrap(err, "get index version")
+		return nil, nil, errors.Wrap(err, "get index version")
 	}
 	if version >= 2 {
 		for i, id := range ps {
@@ -275,7 +275,7 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 		}
 	}
 
-	return ps, nil
+	return ps, remainingMatchers, nil
 }
 
 const (
@@ -285,7 +285,7 @@ const (
 	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
 )
 
-func restrictPostingLists(groups []postingGroup) ([]postingGroup, []labels.Label) {
+func restrictPostingLists(groups []postingGroup) ([]postingGroup, []*labels.Matcher, []labels.Label) {
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].totalSize < groups[j].totalSize
 	})
@@ -301,7 +301,7 @@ func restrictPostingLists(groups []postingGroup) ([]postingGroup, []labels.Label
 	if minGroupSize == 0 {
 		// This should also cover the case of all postings group. all postings is requested only when there is no
 		// additive group.
-		return groups, flattenKeys(groups)
+		return groups, nil, flattenKeys(groups)
 	}
 
 	var (
@@ -313,10 +313,17 @@ func restrictPostingLists(groups []postingGroup) ([]postingGroup, []labels.Label
 			selectedSize += g.totalSize
 		} else {
 			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
-			return groups[:i], flattenKeys(groups[:i])
+			return groups[:i], extractMatchers(groups[i:]), flattenKeys(groups[:i])
 		}
 	}
-	return groups, flattenKeys(groups)
+	return groups, nil, flattenKeys(groups)
+}
+
+func extractMatchers(groups []postingGroup) (out []*labels.Matcher) {
+	for _, g := range groups {
+		out = append(out, g.originalMatcher)
+	}
+	return
 }
 
 func flattenKeys(groups []postingGroup) (out []labels.Label) {
