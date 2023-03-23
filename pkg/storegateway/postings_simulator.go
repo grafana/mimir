@@ -192,7 +192,7 @@ func (c *resultConsumer) record(q query_stat.QueryStat, s stats) {
 	if len(c.allStats) == 0 {
 		fmt.Fprintf(c.out, "T\tfetched postings regular\tfetched series regular\tfetched postings shortcut\tfetched series shortcut\n")
 	}
-	fmt.Fprintln(c.out, q.Timestamp.UTC().Format(time.RFC3339), s)
+	fmt.Fprintln(c.out, q.Timestamp.UTC().Format(time.DateTime), s)
 	c.allStats = append(c.allStats, s)
 }
 
