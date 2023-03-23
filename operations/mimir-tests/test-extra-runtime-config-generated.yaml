@@ -1119,7 +1119,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1172,7 +1172,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1225,7 +1225,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1278,7 +1278,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.17-alpine
+        image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
