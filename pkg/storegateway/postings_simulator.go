@@ -178,8 +178,9 @@ func processQueriesSingle(ctx context.Context, wg *sync.WaitGroup, fannedOutQuer
 			if selector.Name != "" {
 				matchers = append(matchers, parser.MustLabelMatcher(labels.MatchEqual, labels.MetricName, selector.Name))
 			}
-			_, _, postingsStats := postings(ctx, matchers, indexr)
+			_, _, postingsStats, postingsWithShortcutStats := postings(ctx, matchers, indexr)
 			statistics.fetchedRegularPostings.Add(uint64(postingsStats.postingsTouchedSizeSum))
+			statistics.fetchedShortcutPostings.Add(uint64(postingsWithShortcutStats.postingsTouchedSizeSum))
 		}
 	}
 }
@@ -216,11 +217,16 @@ func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
 	}
 }
 
-func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (expandedPostings []storage.SeriesRef, expandedPostingsWithShortcut []storage.SeriesRef, stats *queryStats) {
+func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (expandedPostings, expandedPostingsWithShortcut []storage.SeriesRef, stats, statsWithShortcut *queryStats) {
 	safeStats := newSafeQueryStats()
-	expanded, err := indexr.expandedPostings(ctx, matchers, safeStats)
+	expandedPostings, err := indexr.expandedPostings(ctx, matchers, safeStats)
 	noErr(err)
-	return expanded, nil, safeStats.export()
+
+	shortcutStats := newSafeQueryStats()
+	expandedPostingsWithShortcut, err = indexr.expandedPostingsShortcut(ctx, matchers, shortcutStats)
+	noErr(err)
+
+	return expandedPostings, expandedPostingsWithShortcut, safeStats.export(), shortcutStats.export()
 }
 
 func parseQuery(q query_stat.QueryStat) []*parser.VectorSelector {

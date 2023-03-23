@@ -220,6 +220,62 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	return ps, nil
 }
 
+func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
+	postingGroups, keys, err := toPostingGroups(ms, r.block.indexHeaderReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "toPostingGroups")
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "get postings")
+	}
+
+	postingIndex := 0
+
+	var groupAdds, groupRemovals []index.Postings
+	for _, g := range postingGroups {
+		if g.isSubtract {
+			for _, l := range g.keys {
+				groupRemovals = append(groupRemovals, checkNilPosting(l, fetchedPostings[postingIndex]))
+				postingIndex++
+			}
+		} else {
+			toMerge := make([]index.Postings, 0, len(g.keys))
+			for _, l := range g.keys {
+				toMerge = append(toMerge, checkNilPosting(l, fetchedPostings[postingIndex]))
+				postingIndex++
+			}
+
+			groupAdds = append(groupAdds, index.Merge(toMerge...))
+		}
+	}
+
+	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
+
+	ps, err := index.ExpandPostings(result)
+	if err != nil {
+		return nil, errors.Wrap(err, "expand")
+	}
+
+	// As of version two all series entries are 16 byte padded. All references
+	// we get have to account for that to get the correct offset.
+	version, err := r.block.indexHeaderReader.IndexVersion()
+	if err != nil {
+		return nil, errors.Wrap(err, "get index version")
+	}
+	if version >= 2 {
+		for i, id := range ps {
+			ps[i] = id * 16
+		}
+	}
+
+	return ps, nil
+}
+
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index. The order of the returned labels
 // is the same as iterating through the posting groups and for each group adding all keys.
