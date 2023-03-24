@@ -21,11 +21,13 @@ local overrides = {
       {
         src: './dist/tmp/dependencies-%s-%s-%s/mimir.env' % [name, packager, arch],
         dst: '/etc/default/mimir',
+        type: 'config|noreplace',
         packager: 'deb',
       },
       {
         src: './dist/tmp/dependencies-%s-%s-%s/mimir.env' % [name, packager, arch],
         dst: '/etc/sysconfig/mimir',
+        type: 'config|noreplace',
         packager: 'rpm',
       },
       {
