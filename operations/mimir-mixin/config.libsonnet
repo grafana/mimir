@@ -193,6 +193,9 @@
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: true,
 
+    // Whether runbook dashboards are enabled.
+    runbook_dashboards_enabled: false,
+
     // Whether mimir gateway is enabled
     gateway_enabled: false,
 
