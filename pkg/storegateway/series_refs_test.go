@@ -1636,45 +1636,56 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 
 	newTestBlock := prepareTestBlockWithBinaryReader(tb, appendTestSeries(series))
 
-	seriesSelectionTestCases(tb, series, func(tb test.TB, testCase seriesSelectionTestCase) {
-		ctx, cancel := context.WithCancel(context.Background())
-		tb.Cleanup(cancel)
+	testSetups := map[string]struct {
+		indexCache indexcache.IndexCache
+	}{
+		"without index cache": {indexCache: noopCache{}},
+		"with index cache":    {indexCache: newInMemoryIndexCache(tb)},
+	}
 
-		var block = newTestBlock()
-		indexReader := block.indexReader()
-		tb.Cleanup(func() { require.NoError(tb, indexReader.Close()) })
+	for name, setup := range testSetups {
+		tb.Run(name, func(tb test.TB) {
+			seriesSelectionTestCases(tb, series, func(tb test.TB, testCase seriesSelectionTestCase) {
+				ctx, cancel := context.WithCancel(context.Background())
+				tb.Cleanup(cancel)
 
-		hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+				var block = newTestBlock()
+				indexReader := block.indexReader()
+				tb.Cleanup(func() { require.NoError(tb, indexReader.Close()) })
 
-		tb.ResetTimer()
+				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
 
-		for i := 0; i < tb.N(); i++ {
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(
-				ctx,
-				5000,
-				"",
-				indexReader,
-				newInMemoryIndexCache(tb),
-				block.meta,
-				testCase.matchers,
-				nil,
-				cachedSeriesHasher{hashCache},
-				false, // we don't skip chunks, so we can measure impact in loading chunk refs too
-				block.meta.MinTime,
-				block.meta.MaxTime,
-				2,
-				newSafeQueryStats(),
-				nil,
-			)
-			require.NoError(tb, err)
+				tb.ResetTimer()
 
-			actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
-			if !assert.Len(tb, actualSeriesSets, testCase.expectedSeriesLen) {
-				tb.Log(len(actualSeriesSets), testCase.expectedSeriesLen)
-			}
-			assert.NoError(tb, iterator.Err())
-		}
-	})
+				for i := 0; i < tb.N(); i++ {
+					iterator, err := openBlockSeriesChunkRefsSetsIterator(
+						ctx,
+						5000,
+						"",
+						indexReader,
+						setup.indexCache,
+						block.meta,
+						testCase.matchers,
+						nil,
+						cachedSeriesHasher{hashCache},
+						false, // we don't skip chunks, so we can measure impact in loading chunk refs too
+						block.meta.MinTime,
+						block.meta.MaxTime,
+						2,
+						newSafeQueryStats(),
+						nil,
+					)
+					require.NoError(tb, err)
+
+					actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
+					if !assert.Len(tb, actualSeriesSets, testCase.expectedSeriesLen) {
+						tb.Log(len(actualSeriesSets), testCase.expectedSeriesLen)
+					}
+					assert.NoError(tb, iterator.Err())
+				}
+			})
+		})
+	}
 }
 
 func TestMetasToRanges(t *testing.T) {
