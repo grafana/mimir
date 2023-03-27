@@ -2644,7 +2644,6 @@ func TestIngester_QueryStream(t *testing.T) {
 					assert.Greater(t, receivedSeries, 0)
 				}
 
-				expectedNumSeries = numSeries // Querying native histograms is not supported when query sharding is active.
 			} else {
 				receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
 					StartTimestampMs: math.MinInt64,
