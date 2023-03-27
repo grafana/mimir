@@ -219,7 +219,7 @@ func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backe
 	}
 
 	if expectedResponse.status != actualResponse.status {
-		return fmt.Errorf("expected status code %d but got %d", expectedResponse.status, actualResponse.status)
+		return fmt.Errorf("expected status code %d (returned by preferred backend) but got %d from secondary backend", expectedResponse.status, actualResponse.status)
 	}
 
 	if expectedResponse.contentType != "application/json" {
