@@ -119,11 +119,16 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 			status, body, resp, err := b.ForwardRequest(req, bodyReader)
 			elapsed := time.Since(start)
+			contentType := ""
+
+			if resp != nil {
+				contentType = resp.Header.Get("Content-Type")
+			}
 
 			res := &backendResponse{
 				backend:     b,
 				status:      status,
-				contentType: resp.Header.Get("Content-Type"),
+				contentType: contentType,
 				body:        body,
 				err:         err,
 			}
