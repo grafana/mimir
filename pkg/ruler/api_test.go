@@ -394,7 +394,7 @@ func TestRuler_Create(t *testing.T) {
 			cfg:    defaultCfg,
 			input:  "",
 			status: 400,
-			err:    errors.New("invalid rules config: rule group name must not be empty"),
+			err:    errors.New("invalid rules configuration: rule group name must not be empty"),
 		},
 		{
 			name: "with no rule group name",
@@ -406,7 +406,7 @@ rules:
   expr: up
 `,
 			status: 400,
-			err:    errors.New("invalid rules config: rule group name must not be empty"),
+			err:    errors.New("invalid rules configuration: rule group name must not be empty"),
 		},
 		{
 			name: "with no rules",
@@ -416,7 +416,7 @@ name: rg_name
 interval: 15s
 `,
 			status: 400,
-			err:    errors.New("invalid rules config: rule group 'rg_name' has no rules"),
+			err:    errors.New("invalid rules configuration: rule group 'rg_name' has no rules"),
 		},
 		{
 
@@ -438,7 +438,7 @@ rules:
   labels:
     test: test
 `,
-			err: errors.New("invalid rules config: rule group 'test' is a federated rule group, but rules federation is disabled; please contact your service administrator to have it enabled"),
+			err: errors.New("invalid rules configuration: rule group 'test' is a federated rule group, but rules federation is disabled; please contact your service administrator to have it enabled"),
 		},
 		{
 			name:   "with valid rules with enabled federation",
