@@ -534,9 +534,9 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 			},
 		},
 	}
-	inoutBytes, err := input.Marshal()
+	inputBytes, err := input.Marshal()
 	require.NoError(t, err)
-	return inoutBytes
+	return inputBytes
 }
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
@@ -590,6 +590,7 @@ func BenchmarkPushHandler(b *testing.B) {
 	buf := bytes.NewBuffer(snappy.Encode(nil, protobuf))
 	req := createRequest(b, protobuf)
 	pushFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+		pushReq.WriteRequest()
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}

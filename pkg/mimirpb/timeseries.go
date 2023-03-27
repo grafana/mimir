@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
@@ -23,17 +24,9 @@ const (
 )
 
 var (
-
-	/*
-		We cannot pool these as pointer-to-slice because the place we use them is in WriteRequest which is generated from Protobuf
-		and we don't have an option to make it a pointer. There is overhead here 24 bytes of garbage every time a PreallocTimeseries
-		is re-used. But since the slices are far far larger, we come out ahead.
-	*/
-	slicePool = sync.Pool{
-		New: func() interface{} {
-			return make([]PreallocTimeseries, 0, expectedTimeseries)
-		},
-	}
+	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
+		return make([]PreallocTimeseries, 0, expectedTimeseries)
+	})
 
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
@@ -284,7 +277,7 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.
 func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
-	return slicePool.Get().([]PreallocTimeseries)
+	return preallocTimeseriesSlicePool.Get()
 }
 
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
@@ -297,7 +290,7 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
-	slicePool.Put(ts[:0]) //nolint:staticcheck //see comment on slicePool for more details
+	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
 // TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
