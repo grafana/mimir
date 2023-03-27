@@ -97,12 +97,13 @@ func RunPostingsSimulator() {
 	noErr(err)
 	defer resultsFile.Close()
 
+	resultSink := &resultConsumer{out: io.MultiWriter(resultsFile, os.Stdout)}
+	defer resultSink.print()
+
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 	queriesChan := make(chan query_stat.QueryStat)
 	defer close(queriesChan)
-	resultSink := &resultConsumer{out: io.MultiWriter(resultsFile, os.Stdout)}
-	defer resultSink.print()
 
 	wg.Add(1)
 	go processQueries(wg, queriesChan, indexReader, resultSink)
