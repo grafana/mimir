@@ -43,7 +43,6 @@ func uploadAlertmanagerConfig(minio *e2e.HTTPService, bucket, user, config strin
 		Endpoint:        minio.HTTPEndpoint(),
 		Insecure:        true,
 		BucketName:      bucket,
-		StorageClass:    "STANDARD",
 		AccessKeyID:     e2edb.MinioAccessKey,
 		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 	}, "test", log.NewNopLogger())
@@ -263,7 +262,6 @@ func TestAlertmanagerSharding(t *testing.T) {
 				Endpoint:        minio.HTTPEndpoint(),
 				Insecure:        true,
 				BucketName:      alertsBucketName,
-				StorageClass:    "STANDARD",
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 			}, "test", log.NewNopLogger())
@@ -653,7 +651,6 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 				Endpoint:        minio.HTTPEndpoint(),
 				Insecure:        true,
 				BucketName:      alertsBucketName,
-				StorageClass:    "STANDARD",
 				AccessKeyID:     e2edb.MinioAccessKey,
 				SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 			}, "test", log.NewNopLogger())
