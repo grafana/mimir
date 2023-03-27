@@ -119,7 +119,7 @@ func (cfg *Config) Validate() error {
 			return errInvalidEndpointPrefix
 		}
 	}
-	if !util.StringsContain(supportedStorageClasses, cfg.StorageClass) && (cfg.StorageClass != "") {
+	if !util.StringsContain(supportedStorageClasses, cfg.StorageClass) && cfg.StorageClass != "" {
 		return errUnsupportedStorageClass
 	}
 	if err := cfg.SSE.Validate(); err != nil {
