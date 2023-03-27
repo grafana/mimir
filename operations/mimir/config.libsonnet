@@ -108,16 +108,19 @@
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_backend: 'memcached',
+    cache_index_queries_name: 'memcached-index-queries',
     memcached_index_queries_mtls_enabled: false,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
     cache_chunks_backend: 'memcached',
+    cache_chunks_name: 'memcached',  // this is named memcached by default for backward compatability
     memcached_chunks_mtls_enabled: false,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_backend: 'memcached',
+    cache_metadata_name: 'memcached-metadata',
     memcached_metadata_mtls_enabled: false,
 
     // mTLS can be used for connections to each cache cluster. If enabled for each type of
@@ -142,6 +145,7 @@
     memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
 
     cache_results_backend: 'memcached',
+    cache_results_name: 'memcached-frontend',
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
