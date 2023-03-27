@@ -84,7 +84,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 POST /api/v1/query query=some_metric&time=42",
 		},
 		{
@@ -97,7 +97,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
 		},
 		{
@@ -107,7 +107,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				return httptest.NewRequest("GET", "/api/v1/query", nil)
 			},
 			expectedParams:   url.Values{},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 GET /api/v1/query (no params)",
 		},
 		{
@@ -164,6 +164,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"cortex_query_fetched_series_total",
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
+				"cortex_query_fetched_index_bytes_total",
 			)
 
 			assert.NoError(t, err)
@@ -228,7 +229,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 		{
 			name:                "Failed round trip with no query params",
 			cfg:                 HandlerConfig{QueryStatsEnabled: true},
-			expectedMetrics:     4,
+			expectedMetrics:     5,
 			path:                "/api/v1/query",
 			expectQueryParamLog: false,
 			queryErr:            context.Canceled,
@@ -258,6 +259,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_series_total",
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
+				"cortex_query_fetched_index_bytes_total",
 			)
 
 			require.NoError(t, err)
