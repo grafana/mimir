@@ -307,7 +307,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false),
 			}
 
-			logger := &mockLogger{}
+			logger := newMockLogger()
 			reg := prometheus.NewPedanticRegistry()
 			comparator := &mockComparator{
 				comparisonResult: scenario.comparisonResult,
@@ -458,6 +458,13 @@ func (m *mockComparator) Compare(expected, actual []byte) error {
 
 type mockLogger struct {
 	messages []map[string]interface{}
+	lock     sync.Mutex
+}
+
+func newMockLogger() *mockLogger {
+	return &mockLogger{
+		lock: sync.Mutex{},
+	}
 }
 
 func (m *mockLogger) Log(keyvals ...interface{}) error {
@@ -471,6 +478,8 @@ func (m *mockLogger) Log(keyvals ...interface{}) error {
 		message[keyvals[keyIndex].(string)] = keyvals[keyIndex+1]
 	}
 
+	m.lock.Lock()
+	defer m.lock.Unlock()
 	m.messages = append(m.messages, message)
 
 	return nil
