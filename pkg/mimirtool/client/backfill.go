@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -100,20 +101,19 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		}
 	}
 
-	var readyToFinish = false
-	for !readyToFinish {
+	for {
 		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
 		if err != nil {
-			if resp.StatusCode == http.StatusTooManyRequests {
-				logctx.WithField("error", err).Error("too many current block validations, sleeping and trying again")
+			if strings.Contains(err.Error(), "429 Too Many Requests") {
+				// wait and try again
+				logctx.WithField("error", err).Warning("will sleep and try again")
 				time.Sleep(sleepTime)
-			} else {
-				return errors.Wrap(err, "request to finish block upload failed")
+				continue
 			}
-		} else {
-			readyToFinish = true
+			return errors.Wrap(err, "request to finish block upload failed")
 		}
 		drainAndCloseBody(resp)
+		break
 	}
 
 	for {

@@ -64,6 +64,7 @@
   * `-compactor.block-upload-validation-enabled` has been added, `compactor_block_upload_validation_enabled` can be used to override per tenant
   * `-compactor.block-upload.block-validation-enabled` was the previous global flag and has been removed
 * [ENHANCEMENT] OTLP: Add support for converting OTel exponential histograms to Prometheus native histograms. The ingestion of native histograms must be enabled, please set `-ingester.native-histograms-ingestion-enabled` to `true`. #4063
+* [ENHANCEMENT] Compactor: block upload validation concurrency can now be limited with `-compactor.max-block-upload-validation-concurrency`. #4598
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -87,6 +88,8 @@
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
+
+* [ENHANCEMENT] Backfill: mimirtool will now sleep and retry if it receives a 429 response while trying to finish an upload due to validation concurrency limits. #4598
 
 ### Query-tee
 
