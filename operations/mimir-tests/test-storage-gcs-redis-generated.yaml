@@ -157,25 +157,6 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-frontend
-  name: memcached-frontend
-  namespace: default
-spec:
-  clusterIP: None
-  ports:
-  - name: memcached-client
-    port: 11211
-    targetPort: 11211
-  - name: exporter-http-metrics
-    port: 9150
-    targetPort: 9150
-  selector:
-    name: memcached-frontend
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
     name: querier
   name: querier
   namespace: default
@@ -491,14 +472,13 @@ spec:
     spec:
       containers:
       - args:
+        - -blocks-storage.bucket-store.results-cache.backend=redis
+        - -blocks-storage.bucket-store.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.results-cache.redis.max-item-size=5242880
         - -query-frontend.align-queries-with-step=false
-        - -query-frontend.cache-results=true
-        - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
-        - -query-frontend.results-cache.backend=memcached
-        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
-        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.results-cache.backend=redis
+        - -query-frontend.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local:6379
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -984,59 +964,6 @@ spec:
         requests:
           storage: 100Gi
       storageClassName: fast
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: memcached-frontend
-  namespace: default
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      name: memcached-frontend
-  serviceName: memcached-frontend
-  template:
-    metadata:
-      labels:
-        name: memcached-frontend
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: memcached-frontend
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -m 1024
-        - -I 5m
-        - -c 16384
-        - -v
-        image: memcached:1.6.19-alpine
-        imagePullPolicy: IfNotPresent
-        name: memcached
-        ports:
-        - containerPort: 11211
-          name: client
-        resources:
-          limits:
-            memory: 1536Mi
-          requests:
-            cpu: 500m
-            memory: 1329Mi
-      - args:
-        - --memcached.address=localhost:11211
-        - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.11.2
-        imagePullPolicy: IfNotPresent
-        name: exporter
-        ports:
-        - containerPort: 9150
-          name: http-metrics
-  updateStrategy:
-    type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
