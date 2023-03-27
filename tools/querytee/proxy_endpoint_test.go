@@ -8,8 +8,6 @@ package querytee
 import (
 	"bytes"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +16,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
