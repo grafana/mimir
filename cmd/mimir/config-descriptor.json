@@ -3425,6 +3425,16 @@
         },
         {
           "kind": "field",
+          "name": "compactor_block_upload_validation_enabled",
+          "required": false,
+          "desc": "Enable block upload validation for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.block-upload-validation-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "compactor_block_upload_verify_chunks",
           "required": false,
           "desc": "Verify chunks when uploading blocks via the upload API for the tenant.",
@@ -8326,27 +8336,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "block",
-          "name": "block_upload",
-          "required": false,
-          "desc": "",
-          "blockEntries": [
-            {
-              "kind": "field",
-              "name": "block_validation_enabled",
-              "required": false,
-              "desc": "Validate blocks before finalizing a block upload",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "compactor.block-upload.block-validation-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            }
-          ],
-          "fieldValue": null,
-          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -10083,7 +10072,7 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.",
+              "desc": "Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.tenant-federation.enabled",

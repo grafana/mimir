@@ -28,10 +28,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
+* [BUGFIX] Include podAnnotations on the tokengen Job. #4540
+* [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
 
 ## 4.3.0
 

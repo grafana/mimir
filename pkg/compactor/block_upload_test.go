@@ -1229,15 +1229,13 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
+			cfgProvider.blockUploadValidationEnabled[tc.tenantID] = false
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &injectedBkt,
 				cfgProvider:  cfgProvider,
 			}
 
-			c.compactorCfg.BlockUpload = BlockUploadConfig{
-				BlockValidationEnabled: false,
-			}
 			c.compactorCfg.DataDir = t.TempDir()
 
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
@@ -1572,13 +1570,13 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// create a compactor
 			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadValidationEnabled[tenantID] = true
 			cfgProvider.verifyChunks[tenantID] = tc.verifyChunks
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.BlockUpload.BlockValidationEnabled = true
 
 			// upload the block
 			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))

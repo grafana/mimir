@@ -173,6 +173,11 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 		})
 	}
 
+	histograms := make([]mimirpb.Histogram, 0, len(promTs.Histograms))
+	for idx := range promTs.Histograms {
+		histograms = append(histograms, promToMimirHistogram(&promTs.Histograms[idx]))
+	}
+
 	exemplars := make([]mimirpb.Exemplar, 0, len(promTs.Exemplars))
 	for _, exemplar := range promTs.Exemplars {
 		labels := make([]mimirpb.LabelAdapter, 0, len(exemplar.Labels))
@@ -193,9 +198,47 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = labels
 	ts.Samples = samples
+	ts.Histograms = histograms
 	ts.Exemplars = exemplars
 
 	return mimirpb.PreallocTimeseries{TimeSeries: ts}
+}
+
+func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
+	pSpans := make([]mimirpb.BucketSpan, len(h.PositiveSpans))
+	for _, span := range h.PositiveSpans {
+		pSpans = append(
+			pSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+	nSpans := make([]mimirpb.BucketSpan, len(h.NegativeSpans))
+	for _, span := range h.NegativeSpans {
+		nSpans = append(
+			nSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+
+	return mimirpb.Histogram{
+		Count:          &mimirpb.Histogram_CountInt{CountInt: h.GetCountInt()},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()},
+		NegativeSpans:  nSpans,
+		NegativeDeltas: h.NegativeDeltas,
+		NegativeCounts: h.NegativeCounts,
+		PositiveSpans:  pSpans,
+		PositiveDeltas: h.PositiveDeltas,
+		PositiveCounts: h.PositiveCounts,
+		Timestamp:      h.Timestamp,
+		ResetHint:      mimirpb.Histogram_ResetHint(h.ResetHint),
+	}
 }
 
 // TimeseriesToOTLPRequest is used in tests.
@@ -215,17 +258,80 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			attributes.PutStr(l.Name, l.Value)
 		}
 
-		metric := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-		metric.SetName(name)
-		metric.SetEmptyGauge()
+		rm := d.ResourceMetrics()
+		sm := rm.AppendEmpty().ScopeMetrics()
 
-		for _, sample := range ts.Samples {
-			datapoint := metric.Gauge().DataPoints().AppendEmpty()
-			datapoint.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, int64(sample.Timestamp)*1000000)))
-			datapoint.SetDoubleValue(sample.Value)
-			attributes.CopyTo(datapoint.Attributes())
+		if len(ts.Samples) > 0 {
+			metric := sm.AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName(name)
+			metric.SetEmptyGauge()
+			for _, sample := range ts.Samples {
+				datapoint := metric.Gauge().DataPoints().AppendEmpty()
+				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
+				datapoint.SetDoubleValue(sample.Value)
+				attributes.CopyTo(datapoint.Attributes())
+			}
+		}
+
+		if len(ts.Histograms) > 0 {
+			metric := sm.AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName(name)
+			metric.SetEmptyExponentialHistogram()
+			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			for _, histogram := range ts.Histograms {
+				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+				datapoint.SetScale(histogram.Schema)
+				datapoint.SetCount(histogram.GetCountInt())
+
+				offset, counts := translateBucketsLayout(histogram.PositiveSpans, histogram.PositiveDeltas)
+				datapoint.Positive().SetOffset(offset)
+				datapoint.Positive().BucketCounts().FromRaw(counts)
+
+				offset, counts = translateBucketsLayout(histogram.NegativeSpans, histogram.NegativeDeltas)
+				datapoint.Negative().SetOffset(offset)
+				datapoint.Negative().BucketCounts().FromRaw(counts)
+
+				datapoint.SetSum(histogram.GetSum())
+				datapoint.SetZeroCount(histogram.GetZeroCountInt())
+				attributes.CopyTo(datapoint.Attributes())
+			}
 		}
 	}
 
 	return pmetricotlp.NewExportRequestFromMetrics(d)
+}
+
+// translateBucketLayout the test function that translates the Prometheus native histograms buckets
+// layout to the OTel exponential histograms sparse buckets layout. It is the inverse function to
+// https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/47471382940a0d794a387b06c99413520f0a68f8/pkg/translator/prometheusremotewrite/histograms.go#L118
+func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, []uint64) {
+	if len(spans) == 0 {
+		return 0, []uint64{}
+	}
+
+	firstSpan := spans[0]
+	bucketsCount := int(firstSpan.Length)
+	for i := 1; i < len(spans); i++ {
+		bucketsCount += int(spans[i].Offset) + int(spans[i].Length)
+	}
+	buckets := make([]uint64, bucketsCount)
+
+	bucketIdx := 0
+	deltaIdx := 0
+	currCount := int64(0)
+
+	// set offset of the first span to 0 to simplify translation
+	spans[0].Offset = 0
+	for _, span := range spans {
+		bucketIdx += int(span.Offset)
+		for i := 0; i < int(span.GetLength()); i++ {
+			currCount += deltas[deltaIdx]
+			buckets[bucketIdx] = uint64(currCount)
+			deltaIdx++
+			bucketIdx++
+		}
+	}
+
+	return firstSpan.Offset - 1, buckets
 }
