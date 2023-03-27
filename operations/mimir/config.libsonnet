@@ -616,6 +616,14 @@
         } else {}
       else {}
     ) + (
+      if $._config.cache_chunks_enabled && $._config.cache_chunks_backend == 'memcached' then {
+        'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
+        'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_name)s.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+      } else {}
+    ) + (
       if $._config.cache_chunks_enabled then
         if $._config.cache_chunks_backend == 'memcached' then (
           {
