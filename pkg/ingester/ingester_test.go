@@ -2648,7 +2648,7 @@ func TestIngester_QueryStream(t *testing.T) {
 				receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
 					StartTimestampMs: math.MinInt64,
 					EndTimestampMs:   math.MaxInt64,
-					Matchers:         []*client.LabelMatcher{{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "bar"}}, // Should return all series.
+					Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"}},
 				})
 
 				require.NoError(t, err)
