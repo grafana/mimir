@@ -42,7 +42,7 @@ var (
 	supportedStorageClasses        = s3_service.ObjectStorageClass_Values()
 	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
 	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
-	errUnsupportedStorageClass     = fmt.Errorf("unsupported S3 storage class(supported values: %s)", strings.Join(supportedStorageClasses, ", "))
+	errUnsupportedStorageClass     = fmt.Errorf("unsupported S3 storage class (supported values: %s)", strings.Join(supportedStorageClasses, ", "))
 	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
 	errInvalidEndpointPrefix       = errors.New("the endpoint must not prefixed with the bucket name")
 )
