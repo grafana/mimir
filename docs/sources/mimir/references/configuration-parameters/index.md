@@ -3482,7 +3482,7 @@ The `compactor` block configures the compactor component.
 # (advanced) Max number of uploaded blocks that can be validated concurrently. 0
 # = disabled.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
-[max_block_validation_concurrency: <int> | default = 1]
+[max_block_upload_validation_concurrency: <int> | default = 1]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by compactor, otherwise all

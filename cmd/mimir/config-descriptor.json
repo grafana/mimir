@@ -7867,7 +7867,7 @@
         },
         {
           "kind": "field",
-          "name": "max_block_validation_concurrency",
+          "name": "max_block_upload_validation_concurrency",
           "required": false,
           "desc": "Max number of uploaded blocks that can be validated concurrently. 0 = disabled.",
           "fieldValue": null,

@@ -100,10 +100,10 @@ type Config struct {
 	MaxCompactionTime          time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
-	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`   // Number of goroutines opening blocks before compaction.
-	MaxClosingBlocksConcurrency         int `yaml:"max_closing_blocks_concurrency" category:"advanced"`   // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
-	SymbolsFlushersConcurrency          int `yaml:"symbols_flushers_concurrency" category:"advanced"`     // Number of symbols flushers used when doing split compaction.
-	MaxBlockUploadValidationConcurrency int `yaml:"max_block_validation_concurrency" category:"advanced"` // Max number of uploaded blocks that can be validated concurrently.
+	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocksConcurrency         int `yaml:"max_closing_blocks_concurrency" category:"advanced"`          // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersConcurrency          int `yaml:"symbols_flushers_concurrency" category:"advanced"`            // Number of symbols flushers used when doing split compaction.
+	MaxBlockUploadValidationConcurrency int `yaml:"max_block_upload_validation_concurrency" category:"advanced"` // Max number of uploaded blocks that can be validated concurrently.
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
