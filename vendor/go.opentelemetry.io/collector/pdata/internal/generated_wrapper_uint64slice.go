@@ -17,30 +17,14 @@
 
 package internal
 
-import (
-	otlpresource "go.opentelemetry.io/collector/pdata/internal/data/protogen/resource/v1"
-)
-
-type Resource struct {
-	orig *otlpresource.Resource
+type UInt64Slice struct {
+	orig *[]uint64
 }
 
-func GetOrigResource(ms Resource) *otlpresource.Resource {
+func GetOrigUInt64Slice(ms UInt64Slice) *[]uint64 {
 	return ms.orig
 }
 
-func NewResource(orig *otlpresource.Resource) Resource {
-	return Resource{orig: orig}
-}
-
-func GenerateTestResource() Resource {
-	orig := otlpresource.Resource{}
-	tv := NewResource(&orig)
-	FillTestResource(tv)
-	return tv
-}
-
-func FillTestResource(tv Resource) {
-	FillTestMap(NewMap(&tv.orig.Attributes))
-	tv.orig.DroppedAttributesCount = uint32(17)
+func NewUInt64Slice(orig *[]uint64) UInt64Slice {
+	return UInt64Slice{orig: orig}
 }
