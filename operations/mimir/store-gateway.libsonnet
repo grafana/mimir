@@ -44,9 +44,15 @@
       'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
       'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
       'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
-      'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'],
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
+      'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections':
+        $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'] +
+        $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency'],
+      'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections':
+        $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'] +
+        $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency'],
+      'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections':
+        $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'] +
+        $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency'],
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
