@@ -220,7 +220,11 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	return ps, nil
 }
 
-func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, _ []*labels.Matcher, returnErr error) {
+type postingsSelectionStrategy interface {
+	SelectPostingGroups(groups []postingGroup) (selectedGroups []postingGroup, droppedGroups []postingGroup)
+}
+
+func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*labels.Matcher, postingsStrat postingsSelectionStrategy, stats *safeQueryStats) (returnRefs []storage.SeriesRef, _ []*labels.Matcher, returnErr error) {
 	postingGroups, keys, err := toPostingGroups(ms, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
@@ -229,7 +233,8 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 		return nil, nil, nil
 	}
 
-	postingGroups, remainingMatchers, keys := restrictPostingLists(postingGroups)
+	postingGroups, droppedPostingGroups := postingsStrat.SelectPostingGroups(postingGroups)
+	keys = flattenKeys(postingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
 	if err != nil {
@@ -275,48 +280,7 @@ func (r *bucketIndexReader) expandedPostingsShortcut(ctx context.Context, ms []*
 		}
 	}
 
-	return ps, remainingMatchers, nil
-}
-
-const (
-	postingsPerByteInPostingList = 1.25
-	bytesPerSeries               = 512
-
-	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
-)
-
-func restrictPostingLists(groups []postingGroup) ([]postingGroup, []*labels.Matcher, []labels.Label) {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].totalSize < groups[j].totalSize
-	})
-
-	var minGroupSize int
-	for _, g := range groups {
-		if !g.isSubtract {
-			minGroupSize = g.totalSize
-			break
-		}
-	}
-
-	if minGroupSize == 0 {
-		// This should also cover the case of all postings group. all postings is requested only when there is no
-		// additive group.
-		return groups, nil, flattenKeys(groups)
-	}
-
-	var (
-		selectedSize                  int
-		maxPossibleSelectedSeriesSize = int(float64(minGroupSize) * seriesBytesPerPostingByte)
-	)
-	for i, g := range groups {
-		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
-			selectedSize += g.totalSize
-		} else {
-			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
-			return groups[:i], extractMatchers(groups[i:]), flattenKeys(groups[:i])
-		}
-	}
-	return groups, nil, flattenKeys(groups)
+	return ps, extractMatchers(droppedPostingGroups), nil
 }
 
 func extractMatchers(groups []postingGroup) (out []*labels.Matcher) {

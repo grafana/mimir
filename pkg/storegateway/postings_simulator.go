@@ -240,6 +240,56 @@ func listenForSignals(ctx context.Context, cancel context.CancelFunc) {
 	}
 }
 
+type fetchAllStrategy struct{}
+
+func (n fetchAllStrategy) SelectPostingGroups(groups []postingGroup) (selectedGroups []postingGroup, droppedGroups []postingGroup) {
+	return groups, nil
+}
+
+const (
+	postingsPerByteInPostingList = 1.25
+	bytesPerSeries               = 512
+
+	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+)
+
+type sizeBasedStrategy struct{}
+
+func (s sizeBasedStrategy) SelectPostingGroups(groups []postingGroup) ([]postingGroup, []postingGroup) {
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int
+	for _, g := range groups {
+		if !g.isSubtract {
+			minGroupSize = g.totalSize
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all postings group. all postings is requested only when there is no
+		// additive group.
+		return groups, nil
+	}
+
+	var (
+		selectedSize                  int
+		maxPossibleSelectedSeriesSize = int(float64(minGroupSize) * seriesBytesPerPostingByte)
+	)
+	for i, g := range groups {
+		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
+			selectedSize += g.totalSize
+		} else {
+			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
+			return groups[:i], groups[i:]
+		}
+	}
+	return groups, nil
+
+}
+
 func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (stats, statsWithShortcut *queryStats) {
 	doPostings := func(resolvePostings func(context.Context, []*labels.Matcher, *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error)) (*queryStats, []seriesChunkRefs) {
 		s := newSafeQueryStats()
@@ -279,7 +329,9 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		series, err := indexr.expandedPostings(ctx, matchers, s)
 		return series, nil, err
 	})
-	shortcutStats, selectedShortcutSeries := doPostings(indexr.expandedPostingsShortcut)
+	shortcutStats, selectedShortcutSeries := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
+		return indexr.expandedPostingsShortcut(ctx, matchers, sizeBasedStrategy{}, s)
+	})
 
 	assert.Equal(panicer{}, selectedRegularSeries, selectedShortcutSeries)
 
