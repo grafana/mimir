@@ -51,9 +51,7 @@ memcached {
 
   // Dedicated memcached instance used to cache query results.
   memcached_frontend:
-    // There is no flag cache_results_enabled. We enable this just based on cache_frontend_backend flag.
-    if $._config.cache_frontend_backend == 'memcached' then
-      if $._config.cache_frontend_enabled && $._config.cache_frontend_backend == 'memcached' then
+    if $._config.cache_frontend_enabled && $._config.cache_frontend_backend == 'memcached' then
         $.memcached {
           name: 'memcached-frontend',
           max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
