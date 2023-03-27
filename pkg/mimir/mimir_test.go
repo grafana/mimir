@@ -62,7 +62,7 @@ func TestMimir(t *testing.T) {
 					StorageBackendConfig: bucket.StorageBackendConfig{
 						Backend: bucket.S3,
 						S3: s3.Config{
-							Endpoint:     "localhost",
+							Endpoint: "localhost",
 						},
 					},
 				},
@@ -80,7 +80,7 @@ func TestMimir(t *testing.T) {
 				StorageBackendConfig: bucket.StorageBackendConfig{
 					Backend: bucket.S3,
 					S3: s3.Config{
-						Endpoint:     "localhost",
+						Endpoint: "localhost",
 					},
 				},
 			},
