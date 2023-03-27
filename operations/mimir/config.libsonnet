@@ -100,9 +100,11 @@
 
     store_gateway_replication_factor: 3,
 
+
     cache_frontend_enabled: true,
-    cache_frontend_backend: 'memcached',
     cache_frontend_max_item_size_mb: 5,
+    cache_frontend_backend: 'memcached',
+    cache_frontend_name: 'memcached-frontend',
     memcached_frontend_mtls_enabled: false,
 
     cache_index_queries_enabled: true,
@@ -143,9 +145,6 @@
     memcached_client_cert_path: '/var/secrets/memcached-client-cert/',
     memcached_server_key_path: '/var/secrets/memcached-server-key/',
     memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
-
-    cache_results_backend: 'memcached',
-    cache_results_name: 'memcached-frontend',
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete

@@ -21,7 +21,7 @@
     } +
     // results-cache using memcached
     (
-      if $._config.cache_results_backend == 'memcached' then {
+      if $._config.cache_frontend_backend == 'memcached' then {
         'query-frontend.results-cache.backend': 'memcached',
         'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
         'query-frontend.results-cache.memcached.timeout': '500ms',
@@ -38,9 +38,9 @@
     ) +
     // results-cache using redis
     (
-      if $._config.cache_results_backend == 'redis' then {
+      if $._config.cache_frontend_backend == 'redis' then {
         'query-frontend.results-cache.backend': 'redis',
-        'query-frontend.results-cache.redis.endpoint': '%(cache_results_name)s.%(namespace)s.svc.cluster.local:6379' % $._config,
+        'query-frontend.results-cache.redis.endpoint': '%(cache_frontend_name)s.%(namespace)s.svc.cluster.local:6379' % $._config,
       } else {}
     ) + $.mimirRuntimeConfigFile,
 

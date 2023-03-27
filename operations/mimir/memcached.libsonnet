@@ -51,13 +51,15 @@ memcached {
 
   // Dedicated memcached instance used to cache query results.
   memcached_frontend:
-    if $._config.cache_frontend_enabled && $._config.cache_results_backend == 'memcached' then
-      $.memcached {
-        name: 'memcached-frontend',
-        max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
-        connection_limit: 16384,
-      } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
-    else {},
+    // There is no flag cache_results_enabled. We enable this just based on cache_frontend_backend flag.
+    if $._config.cache_frontend_backend == 'memcached' then
+      if $._config.cache_frontend_enabled && $._config.cache_frontend_backend == 'memcached' then
+        $.memcached {
+          name: 'memcached-frontend',
+          max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
+          connection_limit: 16384,
+        } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
+      else {},
 
   // Dedicated memcached instance used to temporarily cache index lookups.
   memcached_index_queries:
