@@ -76,34 +76,34 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.name, r.Method, p.routeName).Inc()
 }
 
-func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *backendResponse) {
+func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *backendResponse) {
 	var (
 		wg           = sync.WaitGroup{}
 		err          error
 		body         []byte
 		responses    = make([]*backendResponse, 0, len(p.backends))
 		responsesMtx = sync.Mutex{}
-		query        = r.URL.RawQuery
+		query        = req.URL.RawQuery
 	)
 
-	if r.Body != nil {
-		body, err = io.ReadAll(r.Body)
+	if req.Body != nil {
+		body, err = io.ReadAll(req.Body)
 		if err != nil {
 			level.Warn(p.logger).Log("msg", "Unable to read request body", "err", err)
 			return
 		}
-		if err := r.Body.Close(); err != nil {
+		if err := req.Body.Close(); err != nil {
 			level.Warn(p.logger).Log("msg", "Unable to close request body", "err", err)
 		}
 
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		if err := r.ParseForm(); err != nil {
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		if err := req.ParseForm(); err != nil {
 			level.Warn(p.logger).Log("msg", "Unable to parse form", "err", err)
 		}
-		query = r.Form.Encode()
+		query = req.Form.Encode()
 	}
 
-	level.Debug(p.logger).Log("msg", "Received request", "path", r.URL.Path, "query", query)
+	level.Debug(p.logger).Log("msg", "Received request", "path", req.URL.Path, "query", query)
 
 	wg.Add(len(p.backends))
 	for _, b := range p.backends {
@@ -119,14 +119,15 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 				bodyReader = io.NopCloser(bytes.NewReader(body))
 			}
 
-			status, body, err := b.ForwardRequest(r, bodyReader)
+			status, body, resp, err := b.ForwardRequest(req, bodyReader)
 			elapsed := time.Since(start)
 
 			res := &backendResponse{
-				backend: b,
-				status:  status,
-				body:    body,
-				err:     err,
+				backend:     b,
+				status:      status,
+				contentType: resp.Header.Get("Content-Type"),
+				body:        body,
+				err:         err,
 			}
 
 			// Log with a level based on the backend response.
@@ -135,8 +136,8 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 				lvl = level.Warn
 			}
 
-			lvl(p.logger).Log("msg", "Backend response", "path", r.URL.Path, "query", query, "backend", b.name, "status", status, "elapsed", elapsed)
-			p.metrics.requestDuration.WithLabelValues(res.backend.name, r.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+			lvl(p.logger).Log("msg", "Backend response", "path", req.URL.Path, "query", query, "backend", b.name, "status", status, "elapsed", elapsed)
+			p.metrics.requestDuration.WithLabelValues(res.backend.name, req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
 
 			// Keep track of the response if required.
 			if p.comparator != nil {
@@ -165,7 +166,7 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 		err := p.compareResponses(expectedResponse, actualResponse)
 		if err != nil {
 			level.Error(util_log.Logger).Log("msg", "response comparison failed", "route-name", p.routeName,
-				"query", query, "user", r.Header.Get("X-Scope-OrgID"), "err", err)
+				"query", query, "user", req.Header.Get("X-Scope-OrgID"), "err", err)
 			result = comparisonFailed
 		}
 
@@ -221,14 +222,23 @@ func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backe
 		return fmt.Errorf("expected status code %d but got %d", expectedResponse.status, actualResponse.status)
 	}
 
+	if expectedResponse.contentType != "application/json" {
+		return fmt.Errorf("skipped comparison of response because the response from the preferred backend contained an unexpected content type '%s', expected 'application/json'", expectedResponse.contentType)
+	}
+
+	if actualResponse.contentType != "application/json" {
+		return fmt.Errorf("skipped comparison of response because the response from the secondary backend contained an unexpected content type '%s', expected 'application/json'", actualResponse.contentType)
+	}
+
 	return p.comparator.Compare(expectedResponse.body, actualResponse.body)
 }
 
 type backendResponse struct {
-	backend *ProxyBackend
-	status  int
-	body    []byte
-	err     error
+	backend     *ProxyBackend
+	status      int
+	contentType string
+	body        []byte
+	err         error
 }
 
 func (r *backendResponse) succeeded() bool {
