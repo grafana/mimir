@@ -40,7 +40,7 @@
     (
       if $._config.cache_results_backend == 'redis' then {
         'query-frontend.results-cache.backend': 'redis',
-        'query-frontend.results-cache.redis.endpoint': '%(cache_results_name)s-redis-master.%(namespace)s.svc.cluster.local:6379' % $._config,
+        'query-frontend.results-cache.redis.endpoint': '%(cache_results_name)s.%(namespace)s.svc.cluster.local:6379' % $._config,
       } else {}
     ) + $.mimirRuntimeConfigFile,
 
