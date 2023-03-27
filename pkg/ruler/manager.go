@@ -332,9 +332,8 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	}
 
 	if !r.cfg.TenantFederation.Enabled && len(g.SourceTenants) > 0 {
-		errs = append(errs, fmt.Errorf("invalid rules config: rule group '%s' is a federated rule group, but rules federation is disabled. "+
-			"To enable the feature, configure the Mimir or GEM ruler instance with the following parameter or contact your service administrator: "+
-			"set -"+TenantFederationFlag+"=true as a CLI argument, ruler.tenant_federation.enabled: true in YAML", g.Name))
+		errs = append(errs, fmt.Errorf("invalid rules config: rule group '%s' is a federated rule group, "+
+			"but rules federation is disabled; please contact your service administrator to have it enabled", g.Name))
 	}
 
 	for i, r := range g.Rules {
