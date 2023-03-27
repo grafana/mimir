@@ -51,7 +51,6 @@ memcached {
 
   // Dedicated memcached instance used to cache query results.
   memcached_frontend:
-    // There is no flag cache_results_enabled. We enable this just based on cache_results_backend flag.
     if $._config.cache_frontend_enabled && $._config.cache_results_backend == 'memcached' then
       $.memcached {
         name: 'memcached-frontend',
