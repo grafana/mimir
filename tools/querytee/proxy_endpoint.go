@@ -16,8 +16,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type ResponsesComparator interface {
@@ -165,7 +163,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		result := comparisonSuccess
 		err := p.compareResponses(expectedResponse, actualResponse)
 		if err != nil {
-			level.Error(util_log.Logger).Log("msg", "response comparison failed", "route-name", p.routeName,
+			level.Error(p.logger).Log("msg", "response comparison failed", "route-name", p.routeName,
 				"query", query, "user", req.Header.Get("X-Scope-OrgID"), "err", err)
 			result = comparisonFailed
 		}

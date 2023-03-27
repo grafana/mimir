@@ -6,6 +6,10 @@
 package querytee
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -227,6 +231,142 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	}
 }
 
+func Test_ProxyEndpoint_Comparison(t *testing.T) {
+	scenarios := map[string]struct {
+		preferredResponseStatusCode  int
+		secondaryResponseStatusCode  int
+		preferredResponseContentType string
+		secondaryResponseContentType string
+		comparisonResult             error
+		expectedComparisonError      string
+	}{
+		"responses are the same": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+		},
+		"responses are not the same": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			comparisonResult:             errors.New("the responses are different"),
+			expectedComparisonError:      "the responses are different",
+		},
+		"responses have different status codes": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusTeapot,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonError:      "expected status code 200 (returned by preferred backend) but got 418 from secondary backend",
+		},
+		"preferred backend response has non-JSON content type": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "text/plain",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonError:      "skipped comparison of response because the response from the preferred backend contained an unexpected content type 'text/plain', expected 'application/json'",
+		},
+		"secondary backend response has non-JSON content type": {
+			preferredResponseStatusCode:  http.StatusOK,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "text/plain",
+			expectedComparisonError:      "skipped comparison of response because the response from the secondary backend contained an unexpected content type 'text/plain', expected 'application/json'",
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", scenario.preferredResponseContentType)
+				w.WriteHeader(scenario.preferredResponseStatusCode)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+
+			defer preferredBackend.Close()
+			preferredBackendURL, err := url.Parse(preferredBackend.URL)
+			require.NoError(t, err)
+
+			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", scenario.secondaryResponseContentType)
+				w.WriteHeader(scenario.secondaryResponseStatusCode)
+				_, err := w.Write([]byte("secondary response"))
+				require.NoError(t, err)
+			}))
+
+			defer secondaryBackend.Close()
+			secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
+			require.NoError(t, err)
+
+			backends := []*ProxyBackend{
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true),
+				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false),
+			}
+
+			logger := &mockLogger{}
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: scenario.comparisonResult,
+			}
+
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+			require.Equal(t, "preferred response", resp.Body.String())
+			require.Equal(t, scenario.preferredResponseStatusCode, resp.Code)
+
+			if scenario.expectedComparisonError == "" {
+				waitForResponseComparisonMetric(t, reg, "success")
+			} else {
+				// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+				// Wait for the response comparison to complete before checking the logged messages.
+				waitForResponseComparisonMetric(t, reg, "fail")
+
+				sawComparisonFailedMessage := false
+
+				for _, m := range logger.messages {
+					if m["msg"] == "response comparison failed" {
+						sawComparisonFailedMessage = true
+						require.EqualError(t, m["err"].(error), scenario.expectedComparisonError)
+					}
+				}
+
+				require.True(t, sawComparisonFailedMessage, "expected to find a 'response comparison failed' message logged, but only these messages were logged: %v", logger.messages)
+			}
+		})
+	}
+}
+
+func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult string) {
+	started := time.Now()
+	timeoutAt := started.Add(2 * time.Second)
+
+	for {
+		expected := fmt.Sprintf(`
+			# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+			# TYPE cortex_querytee_responses_compared_total counter
+			cortex_querytee_responses_compared_total{result="%v",route="test"} 1
+`, expectedResult)
+		err := testutil.GatherAndCompare(g, bytes.NewBufferString(expected), "cortex_querytee_responses_compared_total")
+
+		if err == nil {
+			return
+		}
+
+		if time.Now().After(timeoutAt) {
+			require.NoError(t, err, "timed out waiting for comparison result to be reported, last metrics comparison failed with error")
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
 func Test_backendResponse_succeeded(t *testing.T) {
 	tests := map[string]struct {
 		resStatus int
@@ -305,4 +445,32 @@ func Test_backendResponse_statusCode(t *testing.T) {
 			assert.Equal(t, testData.expected, res.statusCode())
 		})
 	}
+}
+
+type mockComparator struct {
+	comparisonResult error
+}
+
+func (m *mockComparator) Compare(expected, actual []byte) error {
+	return m.comparisonResult
+}
+
+type mockLogger struct {
+	messages []map[string]interface{}
+}
+
+func (m *mockLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("invalid log message")
+	}
+
+	message := map[string]interface{}{}
+
+	for keyIndex := 0; keyIndex < len(keyvals); keyIndex += 2 {
+		message[keyvals[keyIndex].(string)] = keyvals[keyIndex+1]
+	}
+
+	m.messages = append(m.messages, message)
+
+	return nil
 }
