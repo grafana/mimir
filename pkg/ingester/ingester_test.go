@@ -2523,17 +2523,17 @@ func TestIngester_QueryStream(t *testing.T) {
 	const numSeries = 1000
 
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
+		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "float")
 		floatReq, _, _, _ := mockWriteRequest(t, floatLbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, floatReq)
 		require.NoError(t, err)
 
-		histLbls := labels.FromStrings(labels.MetricName, "hist", "series_id", strconv.Itoa(seriesID))
+		histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "histogram")
 		histReq := mockHistogramWriteRequest(histLbls, int64(seriesID), seriesID, false)
 		_, err = i.Push(ctx, histReq)
 		require.NoError(t, err)
 
-		fhistLbls := labels.FromStrings(labels.MetricName, "fhist", "series_id", strconv.Itoa(seriesID))
+		fhistLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "floathistogram")
 		fhistReq := mockHistogramWriteRequest(fhistLbls, int64(seriesID), seriesID, true)
 		_, err = i.Push(ctx, fhistReq)
 		require.NoError(t, err)
@@ -2664,34 +2664,34 @@ func TestIngester_QueryStream(t *testing.T) {
 				assert.Empty(t, actualTimeseries)
 			}
 
-			// We expect that all series have been returned once per metric name.
+			// We expect that all series have been returned once per type.
 			actualSeriesIDs := map[string]map[int]struct{}{}
-			for _, metricName := range []string{"foo", "hist", "fhist"} {
-				actualSeriesIDs[metricName] = make(map[int]struct{})
+			for _, typeLabel := range []string{"float", "histogram", "floathistogram"} {
+				actualSeriesIDs[typeLabel] = make(map[int]struct{})
 			}
 
 			for _, series := range actualTimeseries {
 				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				metricName := lbls.Get(labels.MetricName)
+				typeLabel := lbls.Get("type")
 
 				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[metricName][seriesID]
+				_, exists := actualSeriesIDs[typeLabel][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[metricName][seriesID] = struct{}{}
+				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
 
-				switch metricName {
-				case "foo":
+				switch typeLabel {
+				case "float":
 					// We expect 1 sample with the same timestamp and value we've written.
 					require.Len(t, series.Samples, 1)
 					assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
 					assert.Equal(t, float64(seriesID), series.Samples[0].Value)
-				case "hist":
+				case "histogram":
 					require.Len(t, series.Histograms, 1)
 					require.Equal(t, mimirpb.FromHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestHistogram(seriesID)), series.Histograms[0])
-				case "fhist":
+				case "floathistogram":
 					require.Len(t, series.Histograms, 1)
 					require.Equal(t, mimirpb.FromFloatHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestFloatHistogram(seriesID)), series.Histograms[0])
 				default:
@@ -2701,15 +2701,15 @@ func TestIngester_QueryStream(t *testing.T) {
 
 			for _, series := range actualChunkseries {
 				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				metricName := lbls.Get(labels.MetricName)
+				typeLabel := lbls.Get("type")
 
 				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[metricName][seriesID]
+				_, exists := actualSeriesIDs[typeLabel][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[metricName][seriesID] = struct{}{}
+				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
 
 				// We expect 1 chunk.
 				require.Len(t, series.Chunks, 1)
