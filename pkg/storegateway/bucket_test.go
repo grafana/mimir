@@ -944,26 +944,26 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 }
 
 func benchmarkExpandedPostings(
-	t test.TB,
+	tb test.TB,
 	newTestBucketBlock func() *bucketBlock,
 	series int,
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+	tb.Cleanup(cancel)
 
-	seriesSelectionTestCases(t, series, func(tb test.TB, testCase seriesSelectionTestCase) {
+	seriesSelectionTestCases(tb, series, func(tb test.TB, testCase seriesSelectionTestCase) {
 		indexr := newBucketIndexReader(newTestBucketBlock())
 		indexrStats := newSafeQueryStats()
 
-		t.ResetTimer()
-		for i := 0; i < t.N(); i++ {
+		tb.ResetTimer()
+		for i := 0; i < tb.N(); i++ {
 			p, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
 
 			if err != nil {
-				t.Fatal(err.Error())
+				tb.Fatal(err.Error())
 			}
 			if testCase.expectedSeriesLen != len(p) {
-				t.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
 			}
 		}
 	})
