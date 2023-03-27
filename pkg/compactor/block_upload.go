@@ -104,6 +104,16 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
+		maxConcurrency := int64(c.compactorCfg.MaxBlockUploadValidationConcurrency)
+		//fmt.Println("maxConcurrency", maxConcurrency, "blockUploadValidations", c.blockUploadValidations.Load())
+		if maxConcurrency > 0 && c.blockUploadValidations.Load() >= maxConcurrency {
+			err := httpError{
+				message:    "too many block upload validations in progress",
+				statusCode: http.StatusTooManyRequests,
+			}
+			writeBlockUploadError(err, op, "", logger, w)
+			return
+		}
 		// create validation file to signal that block validation has started
 		if err := c.uploadValidation(ctx, blockID, userBkt); err != nil {
 			writeBlockUploadError(err, op, "while creating validation file", logger, w)
@@ -291,6 +301,8 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 			c.periodicValidationUpdater(ctx, logger, blockID, userBkt, cancel, validationHeartbeatInterval)
 		}()
 
+		c.blockUploadValidations.Inc()
+		defer c.blockUploadValidations.Dec()
 		if err := validation(ctx); err != nil {
 			level.Error(logger).Log("msg", "error while validating block", "err", err)
 			cancel()
