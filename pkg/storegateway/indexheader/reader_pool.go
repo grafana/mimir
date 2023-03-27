@@ -51,16 +51,9 @@ type ReaderPool struct {
 	lazyReaders   map[*LazyBinaryReader]struct{}
 }
 
-// NewReaderPool makes a new ReaderPool.
+// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
-	p := &ReaderPool{
-		logger:                logger,
-		metrics:               metrics,
-		lazyReaderEnabled:     lazyReaderEnabled,
-		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
-		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
-		close:                 make(chan struct{}),
-	}
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -79,6 +72,18 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 	}
 
 	return p
+}
+
+// newReaderPool makes a new ReaderPool.
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
+	return &ReaderPool{
+		logger:                logger,
+		metrics:               metrics,
+		lazyReaderEnabled:     lazyReaderEnabled,
+		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
+		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
+		close:                 make(chan struct{}),
+	}
 }
 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured

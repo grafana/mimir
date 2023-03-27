@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestHandler_remoteWrite(t *testing.T) {
@@ -40,12 +41,137 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_otlpWriteNoCompression(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
-	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, verifyWritePushFunc(t, mimirpb.API))
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
+func TestHandlerOTLPPush(t *testing.T) {
+	sampleSeries :=
+		[]prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "foo"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+				},
+			},
+		}
+	samplesVerifierFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+		request, err := pushReq.WriteRequest()
+		assert.NoError(t, err)
+
+		series := request.Timeseries
+		assert.Len(t, series, 1)
+
+		samples := series[0].Samples
+		assert.Equal(t, 1, len(samples))
+		assert.Equal(t, float64(1), samples[0].Value)
+		assert.Equal(t, "__name__", series[0].Labels[0].Name)
+		assert.Equal(t, "foo", series[0].Labels[0].Value)
+
+		pushReq.CleanUp()
+		return &mimirpb.WriteResponse{}, nil
+	}
+
+	tests := []struct {
+		name   string
+		series []prompb.TimeSeries
+
+		compression bool
+		encoding    string
+		maxMsgSize  int
+
+		verifyFunc   Func
+		responseCode int
+		errMessage   string
+	}{
+		{
+			name:         "Write samples. No compression",
+			maxMsgSize:   100000,
+			verifyFunc:   samplesVerifierFunc,
+			series:       sampleSeries,
+			responseCode: http.StatusOK,
+		},
+		{
+			name:         "Write samples. With compression",
+			compression:  true,
+			maxMsgSize:   100000,
+			verifyFunc:   samplesVerifierFunc,
+			series:       sampleSeries,
+			responseCode: http.StatusOK,
+		},
+		{
+			name:        "Write samples. Request too big",
+			compression: false,
+			maxMsgSize:  30,
+			series:      sampleSeries,
+			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+				_, err = pushReq.WriteRequest()
+				return &mimirpb.WriteResponse{}, err
+			},
+			responseCode: http.StatusRequestEntityTooLarge,
+			errMessage:   "the incoming push request has been rejected because its message size of 37 bytes is larger",
+		},
+		{
+			name:       "Write samples. Unsupported compression",
+			encoding:   "snappy",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+				_, err = pushReq.WriteRequest()
+				return &mimirpb.WriteResponse{}, err
+			},
+			responseCode: http.StatusUnsupportedMediaType,
+			errMessage:   "Only \"gzip\" or no compression supported",
+		},
+		{
+			name:       "Write histograms",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "foo"},
+					},
+					Histograms: []prompb.Histogram{
+						remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
+					},
+				},
+			},
+			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+				request, err := pushReq.WriteRequest()
+				assert.NoError(t, err)
+
+				series := request.Timeseries
+				assert.Len(t, series, 1)
+
+				histograms := series[0].Histograms
+				assert.Equal(t, 1, len(histograms))
+				assert.Equal(t, 1, int(histograms[0].Schema))
+
+				pushReq.CleanUp()
+				return &mimirpb.WriteResponse{}, nil
+			},
+			responseCode: http.StatusOK,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exportReq := TimeseriesToOTLPRequest(tt.series)
+			req := createOTLPRequest(t, exportReq, tt.compression)
+			if tt.encoding != "" {
+				req.Header.Set("Content-Encoding", tt.encoding)
+			}
+
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, nil, tt.verifyFunc)
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			assert.Equal(t, tt.responseCode, resp.Code)
+			if tt.errMessage != "" {
+				body, err := io.ReadAll(resp.Body)
+				assert.NoError(t, err)
+				assert.Contains(t, string(body), tt.errMessage)
+			}
+		})
+	}
 }
 
 func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
@@ -166,25 +292,6 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_otlpWriteWithCompression(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
-	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, verifyWritePushFunc(t, mimirpb.API))
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
-}
-
-func TestHandler_otlpWriteRequestTooBigNoCompression(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
-	resp := httptest.NewRecorder()
-
-	// This one is caught in the r.ContentLength check.
-	handler := OTLPHandler(30, nil, false, nil, readBodyPushFunc(t))
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
-	assert.Contains(t, resp.Body.String(), "the incoming push request has been rejected because its message size of 37 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
-}
-
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	// createOTLPRequest will create a request which is BIGGER with compression (37 vs 58 bytes).
@@ -208,16 +315,6 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Contains(t, string(body), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
-}
-
-func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
-	req.Header.Set("Content-Encoding", "snappy")
-
-	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, readBodyPushFunc(t))
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusUnsupportedMediaType, resp.Code)
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
@@ -421,14 +518,6 @@ func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.ExportRequest, co
 	return req
 }
 
-func createOTLPMetricRequest(t testing.TB) pmetricotlp.ExportRequest {
-	input := createPrometheusRemoteWriteProtobuf(t)
-	prwReq := &prompb.WriteRequest{}
-	require.NoError(t, proto.Unmarshal(input, prwReq))
-
-	return TimeseriesToOTLPRequest(prwReq.Timeseries)
-}
-
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 	t.Helper()
 	input := prompb.WriteRequest{
@@ -440,6 +529,8 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 				Samples: []prompb.Sample{
 					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 				},
+				Histograms: []prompb.Histogram{
+					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))},
 			},
 		},
 	}
@@ -450,6 +541,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
+	h := remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
@@ -458,6 +550,7 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool)
 			Samples: []mimirpb.Sample{
 				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 			},
+			Histograms: []mimirpb.Histogram{promToMimirHistogram(&h)},
 		},
 	}
 	input := mimirpb.WriteRequest{

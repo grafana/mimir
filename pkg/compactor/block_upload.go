@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -40,14 +39,6 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 )
-
-type BlockUploadConfig struct {
-	BlockValidationEnabled bool `yaml:"block_validation_enabled" category:"experimental"`
-}
-
-func (cfg *BlockUploadConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
-	f.BoolVar(&cfg.BlockValidationEnabled, prefix+".block-validation-enabled", true, "Validate blocks before finalizing a block upload")
-}
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
@@ -112,7 +103,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if c.compactorCfg.BlockUpload.BlockValidationEnabled {
+	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		// create validation file to signal that block validation has started
 		if err := c.uploadValidation(ctx, blockID, userBkt); err != nil {
 			writeBlockUploadError(err, op, "while creating validation file", logger, w)
