@@ -80,6 +80,10 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
 
+	// We put the end of the last posting list as the beginning of the label indices table.
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
 	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
 		return errors.Wrap(err, "add index meta")
 	}
@@ -363,10 +367,10 @@ func (fw *FileWriter) Remove() error {
 	return os.Remove(fw.name)
 }
 
-func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEnd uint64) error {
+func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEndBound uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
-	w.buf.PutBE64(indexLastPostingListEnd)
+	w.buf.PutBE64(indexLastPostingListEndBound)
 	return w.f.Write(w.buf.Get())
 }
 

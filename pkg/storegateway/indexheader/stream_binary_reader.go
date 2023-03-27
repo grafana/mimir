@@ -100,7 +100,11 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 
 	r.version = int(d.Byte())
 	r.indexVersion = int(d.Byte())
-	indexLastPostingListEnd := d.Be64()
+
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
+	indexLastPostingListEndBound := d.Be64()
 
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot read version and index version: %w", err)
@@ -120,7 +124,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEnd, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
