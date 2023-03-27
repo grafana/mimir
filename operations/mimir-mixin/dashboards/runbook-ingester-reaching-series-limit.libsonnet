@@ -63,15 +63,47 @@ local filename = 'runbook-mimir-ingester-reaching-series-limit.json';
         )
       )
       .addPanel(
-        $.timeseriesPanel('Current configured max_series limit for $namespace') + { fieldConfig: { defaults: { unit: 'short' } } }
+        $.timeseriesPanel('Current configured max_series limit for $namespace')
         + $.queryPanel(
           [
-            'max(cortex_ingester_instance_limits{limit="max_series", %(namespace_matcher)s})' % {
-              namespace_matcher: $.namespaceMatcher(),
-            },
+            'min(cortex_ingester_instance_limits{%(namespace_matcher)s, limit="max_series"} > 0)' % { namespace_matcher: $.namespaceMatcher() },
+            'min(cortex_ingester_instance_limits{%(namespace_matcher)s, limit="max_series"} > 0) * 0.9' % { namespace_matcher: $.namespaceMatcher() },
+            |||
+              (cortex_ingester_memory_series{%(namespace_matcher)s} and ignoring (limit) (cortex_ingester_instance_limits{%(namespace_matcher)s, limit="max_series"} > 0))
+              > scalar(min(cortex_ingester_instance_limits{%(namespace_matcher)s, limit="max_series"} > 0) * 0.9)
+            ||| % { namespace_matcher: $.namespaceMatcher() },
           ],
-          ['max series']
-        ),
+          [
+            'Ingester max series',
+            'Alert threshold',
+            '{{ %(per_instance_label)s }} series' % $._config,
+          ]
+        ) +
+        {
+          fieldConfig: {
+            defaults: { unit: 'short' },
+            overrides: [
+              {
+                matcher: { id: 'byName', options: 'Ingester max series' },
+                properties: [
+                  { id: 'custom.fillOpacity', value: 0 },
+                  { id: 'custom.lineStyle', value: { dash: [10, 10], fill: 'dash' } },
+                  { id: 'custom.showPoints', value: 'never' },
+                  { id: 'color', value: { mode: 'fixed', fixedColor: 'red' } },
+                ],
+              },
+              {
+                matcher: { id: 'byName', options: 'Alert threshold' },
+                properties: [
+                  { id: 'custom.fillOpacity', value: 0 },
+                  { id: 'custom.lineStyle', value: { dash: [10, 10], fill: 'dash' } },
+                  { id: 'custom.showPoints', value: 'never' },
+                  { id: 'color', value: { mode: 'fixed', fixedColor: 'yellow' } },
+                ],
+              },
+            ],
+          },
+        },
       )
       + { height: '350px' }
     )
@@ -135,7 +167,5 @@ local filename = 'runbook-mimir-ingester-reaching-series-limit.json';
         ),
       )
       + { height: '500px' }
-    )
-
-    { version: 16 },
+    ),
 }
