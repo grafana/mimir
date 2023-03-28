@@ -41,6 +41,7 @@ const (
 	maxQueryLengthFlag                     = "store.max-query-length"
 	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
 	requestRateFlag                        = "distributor.request-rate-limit"
 	requestBurstSizeFlag                   = "distributor.request-burst-size"
 	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
@@ -129,6 +130,7 @@ type Limits struct {
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -259,6 +261,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -506,6 +509,11 @@ func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 		return o.maxQueryLength(userID)
 	}
 	return t
+}
+
+// MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
+func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
 }
 
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
