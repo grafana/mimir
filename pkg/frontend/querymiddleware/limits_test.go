@@ -129,38 +129,38 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	}
 }
 
-func TestLimitsMiddleware_MaxQuerySizeBytes(t *testing.T) {
+func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 	now := time.Now()
 
 	tests := map[string]struct {
-		query             string
-		maxQuerySizeBytes map[string]int
-		expectError       bool
+		query       string
+		queryLimits map[string]int
+		expectError bool
 	}{
 		"should fail for queries longer than the limit": {
-			query:             fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
-			maxQuerySizeBytes: map[string]int{"test1": 100, "test2": 100},
-			expectError:       true,
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: true,
 		},
 		"should fail for queries longer than a one tenant limit": {
-			query:             fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
-			maxQuerySizeBytes: map[string]int{"test1": 100, "test2": 2000},
-			expectError:       true,
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 2000},
+			expectError: true,
 		},
 		"should fail for queries longer than a one tenant limit with one limit disabled": {
-			query:             fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
-			maxQuerySizeBytes: map[string]int{"test1": 100, "test2": 0},
-			expectError:       true,
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 0},
+			expectError: true,
 		},
 		"should work for queries under the limit": {
-			query:             fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
-			maxQuerySizeBytes: map[string]int{"test1": 100, "test2": 100},
-			expectError:       false,
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: false,
 		},
 		"should work for queries when the limit is disabled": {
-			query:             fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
-			maxQuerySizeBytes: map[string]int{"test1": 0, "test2": 0},
-			expectError:       false,
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 0, "test2": 0},
+			expectError: false,
 		},
 	}
 
@@ -175,8 +175,8 @@ func TestLimitsMiddleware_MaxQuerySizeBytes(t *testing.T) {
 			tenant.WithDefaultResolver(tenant.NewMultiResolver())
 			limits := multiTenantMockLimits{
 				byTenant: map[string]mockLimits{
-					"test1": {maxQuerySizeBytes: testData.maxQuerySizeBytes["test1"]},
-					"test2": {maxQuerySizeBytes: testData.maxQuerySizeBytes["test2"]},
+					"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},
+					"test2": {maxQueryExpressionSizeBytes: testData.queryLimits["test2"]},
 				},
 			}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
@@ -191,7 +191,7 @@ func TestLimitsMiddleware_MaxQuerySizeBytes(t *testing.T) {
 
 			if testData.expectError {
 				require.Error(t, err)
-				require.Contains(t, err.Error(), "err-mimir-max-query-size-bytes")
+				require.Contains(t, err.Error(), "err-mimir-max-query-expression-size-bytes")
 			} else {
 				require.NoError(t, err)
 				require.Same(t, innerRes, res)
@@ -367,8 +367,8 @@ func (m multiTenantMockLimits) MaxTotalQueryLength(userID string) time.Duration 
 	return m.byTenant[userID].maxTotalQueryLength
 }
 
-func (m multiTenantMockLimits) MaxQuerySizeBytes(userID string) int {
-	return m.byTenant[userID].maxQuerySizeBytes
+func (m multiTenantMockLimits) MaxQueryExpressionSizeBytes(userID string) int {
+	return m.byTenant[userID].maxQueryExpressionSizeBytes
 }
 
 func (m multiTenantMockLimits) MaxQueryParallelism(userID string) int {
@@ -423,7 +423,7 @@ type mockLimits struct {
 	maxQueryLookback                 time.Duration
 	maxQueryLength                   time.Duration
 	maxTotalQueryLength              time.Duration
-	maxQuerySizeBytes                int
+	maxQueryExpressionSizeBytes      int
 	maxCacheFreshness                time.Duration
 	maxQueryParallelism              int
 	maxShardedQueries                int
@@ -453,8 +453,8 @@ func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 	return m.maxTotalQueryLength
 }
 
-func (m mockLimits) MaxQuerySizeBytes(string) int {
-	return m.maxQuerySizeBytes
+func (m mockLimits) MaxQueryExpressionSizeBytes(string) int {
+	return m.maxQueryExpressionSizeBytes
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {

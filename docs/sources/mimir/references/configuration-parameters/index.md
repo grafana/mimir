@@ -2739,8 +2739,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.
-# CLI flag: -query-frontend.max-query-size-bytes
-[max_query_size_bytes: <int> | default = 0]
+# CLI flag: -query-frontend.max-query-expression-size-bytes
+[max_query_expression_size_bytes: <int> | default = 0]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

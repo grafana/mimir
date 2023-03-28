@@ -258,10 +258,10 @@ func NewMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Durati
 		maxTotalQueryLengthFlag))
 }
 
-func NewMaxQuerySizeBytesError(actualSizeBytes, maxQuerySizeBytes int) LimitError {
-	return LimitError(globalerror.MaxQuerySizeBytes.MessageWithPerTenantLimitConfig(
+func NewMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int) LimitError {
+	return LimitError(globalerror.MaxQueryExpressionSizeBytes.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the raw query size in bytes exceeds the limit (query size: %d, limit: %d)", actualSizeBytes, maxQuerySizeBytes),
-		maxQuerySizeBytesFlag))
+		maxQueryExpressionSizeBytesFlag))
 }
 
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
