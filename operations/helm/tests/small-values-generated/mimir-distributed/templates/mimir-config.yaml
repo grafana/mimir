@@ -26,18 +26,21 @@ data:
           backend: memcached
           memcached:
             addresses: dns+small-values-mimir-chunks-cache.citestns.svc:11211
+            max_idle_connections: 150
             max_item_size: 1048576
             timeout: 450ms
         index_cache:
           backend: memcached
           memcached:
             addresses: dns+small-values-mimir-index-cache.citestns.svc:11211
+            max_idle_connections: 150
             max_item_size: 5242880
         max_chunk_pool_bytes: 12884901888
         metadata_cache:
           backend: memcached
           memcached:
             addresses: dns+small-values-mimir-metadata-cache.citestns.svc:11211
+            max_idle_connections: 150
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       tsdb:

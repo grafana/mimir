@@ -2523,9 +2523,19 @@ func TestIngester_QueryStream(t *testing.T) {
 	const numSeries = 1000
 
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		lbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
-		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.Push(ctx, req)
+		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "float")
+		floatReq, _, _, _ := mockWriteRequest(t, floatLbls, float64(seriesID), int64(seriesID))
+		_, err = i.Push(ctx, floatReq)
+		require.NoError(t, err)
+
+		histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "histogram")
+		histReq := mockHistogramWriteRequest(histLbls, int64(seriesID), seriesID, false)
+		_, err = i.Push(ctx, histReq)
+		require.NoError(t, err)
+
+		fhistLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "floathistogram")
+		fhistReq := mockHistogramWriteRequest(fhistLbls, int64(seriesID), seriesID, true)
+		_, err = i.Push(ctx, fhistReq)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -2614,6 +2624,8 @@ func TestIngester_QueryStream(t *testing.T) {
 				return receivedSeries, nil
 			}
 
+			expectedNumSeries := numSeries * 3
+
 			if testData.numShards > 0 {
 				for shardIndex := 0; shardIndex < testData.numShards; shardIndex++ {
 					receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
@@ -2631,6 +2643,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					require.NoError(t, err)
 					assert.Greater(t, receivedSeries, 0)
 				}
+
 			} else {
 				receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
 					StartTimestampMs: math.MinInt64,
@@ -2644,56 +2657,110 @@ func TestIngester_QueryStream(t *testing.T) {
 
 			// Ensure we received the expected data types in response.
 			if testData.expectedStreamType == QueryStreamSamples {
-				assert.Len(t, actualTimeseries, numSeries)
+				assert.Len(t, actualTimeseries, expectedNumSeries)
 				assert.Empty(t, actualChunkseries)
 			} else {
-				assert.Len(t, actualChunkseries, numSeries)
+				assert.Len(t, actualChunkseries, expectedNumSeries)
 				assert.Empty(t, actualTimeseries)
 			}
 
-			// We expect that all series have been returned.
-			actualSeriesIDs := map[int]struct{}{}
+			// We expect that all series have been returned once per type.
+			actualSeriesIDs := map[string]map[int]struct{}{}
+			for _, typeLabel := range []string{"float", "histogram", "floathistogram"} {
+				actualSeriesIDs[typeLabel] = make(map[int]struct{})
+			}
 
 			for _, series := range actualTimeseries {
-				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				typeLabel := lbls.Get("type")
+
+				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[seriesID]
+				_, exists := actualSeriesIDs[typeLabel][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[seriesID] = struct{}{}
+				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
 
-				// We expect 1 sample with the same timestamp and value we've written.
-				require.Len(t, series.Samples, 1)
-				assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
-				assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+				switch typeLabel {
+				case "float":
+					// We expect 1 sample with the same timestamp and value we've written.
+					require.Len(t, series.Samples, 1)
+					assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
+					assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+				case "histogram":
+					require.Len(t, series.Histograms, 1)
+					require.Equal(t, mimirpb.FromHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestHistogram(seriesID)), series.Histograms[0])
+				case "floathistogram":
+					require.Len(t, series.Histograms, 1)
+					require.Equal(t, mimirpb.FromFloatHistogramToHistogramProto(int64(seriesID), util_test.GenerateTestFloatHistogram(seriesID)), series.Histograms[0])
+				default:
+					require.Fail(t, "unexpected metric name")
+				}
 			}
 
 			for _, series := range actualChunkseries {
-				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				typeLabel := lbls.Get("type")
+
+				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
-				_, exists := actualSeriesIDs[seriesID]
+				_, exists := actualSeriesIDs[typeLabel][seriesID]
 				assert.False(t, exists)
-				actualSeriesIDs[seriesID] = struct{}{}
+				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
 
 				// We expect 1 chunk.
 				require.Len(t, series.Chunks, 1)
 
-				data, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
-				require.NoError(t, err)
+				enc := series.Chunks[0].Encoding
+				switch enc {
+				case int32(chunk.PrometheusXorChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
+					require.NoError(t, err)
 
-				// We expect 1 sample with the same timestamp and value we've written.
-				it := data.Iterator(nil)
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
 
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				actualTs, actualValue := it.At()
-				assert.Equal(t, int64(seriesID), actualTs)
-				assert.Equal(t, float64(seriesID), actualValue)
+					require.Equal(t, chunkenc.ValFloat, it.Next())
+					actualTs, actualValue := it.At()
+					assert.Equal(t, int64(seriesID), actualTs)
+					assert.Equal(t, float64(seriesID), actualValue)
 
-				assert.Equal(t, chunkenc.ValNone, it.Next())
-				assert.NoError(t, it.Err())
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				case int32(chunk.PrometheusHistogramChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncHistogram, series.Chunks[0].Data)
+					require.NoError(t, err)
+
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
+
+					require.Equal(t, chunkenc.ValHistogram, it.Next())
+					actualTs, actualHist := it.AtHistogram()
+					require.Equal(t, int64(seriesID), actualTs)
+					require.Equal(t, util_test.GenerateTestHistogram(seriesID), actualHist)
+
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				case int32(chunk.PrometheusFloatHistogramChunk):
+					chk, err := chunkenc.FromData(chunkenc.EncFloatHistogram, series.Chunks[0].Data)
+					require.NoError(t, err)
+
+					// We expect 1 sample with the same timestamp and value we've written.
+					it := chk.Iterator(nil)
+
+					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+					actualTs, actualHist := it.AtFloatHistogram()
+					require.Equal(t, int64(seriesID), actualTs)
+					require.Equal(t, util_test.GenerateTestFloatHistogram(seriesID), actualHist)
+
+					assert.Equal(t, chunkenc.ValNone, it.Next())
+					assert.NoError(t, it.Err())
+				default:
+					require.Fail(t, "unexpected encoding")
+				}
 			}
 		})
 	}
@@ -3101,6 +3168,18 @@ func benchmarkIngesterQueryStream(ctx context.Context, b *testing.B, i *Ingester
 	}
 }
 
+func mockHistogramWriteRequest(lbls labels.Labels, timestampMs int64, histIdx int, genFloatHist bool) *mimirpb.WriteRequest {
+	var histograms []mimirpb.Histogram
+	if genFloatHist {
+		h := util_test.GenerateTestFloatHistogram(histIdx)
+		histograms = []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(timestampMs, h)}
+	} else {
+		h := util_test.GenerateTestHistogram(histIdx)
+		histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, h)}
+	}
+	return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([]labels.Labels{lbls}, histograms, nil)
+}
+
 func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
 	samples := []mimirpb.Sample{
 		{
@@ -3177,7 +3256,9 @@ func prepareHealthyIngester(b testing.TB) *Ingester {
 }
 
 func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) (*Ingester, error) {
-	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, defaultLimitsTestConfig(), "", registerer)
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.NativeHistogramsIngestionEnabled = true
+	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", registerer)
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {

@@ -66,10 +66,12 @@
   * `-compactor.block-upload.block-validation-enabled` was the previous global flag and has been removed
 * [ENHANCEMENT] OTLP: Add support for converting OTel exponential histograms to Prometheus native histograms. The ingestion of native histograms must be enabled, please set `-ingester.native-histograms-ingestion-enabled` to `true`. #4063
 * [ENHANCEMENT] Compactor: block upload validation concurrency can now be limited with `-compactor.max-block-upload-validation-concurrency`. #4598
+* [ENHANCEMENT] Query-frontend: add metric `cortex_query_fetched_index_bytes_total` to measure TSDB index bytes fetched to execute a query. #4597
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
 * [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
+* [BUGFIX] Packaging: flag `/etc/default/mimir` and `/etc/sysconfig/mimir` as config to prevent overwrite. #4587
 
 ### Mixin
 
@@ -81,6 +83,7 @@
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
+* [CHANGE] Memcached connections parameters `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`, `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections` and `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections` settings are now configured based on `max-get-multi-concurrency` and `max-async-concurrency`. #4591
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581

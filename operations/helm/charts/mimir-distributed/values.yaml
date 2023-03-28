@@ -164,6 +164,7 @@ mimir:
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 450ms
+            max_idle_connections: 150
         {{- end }}
         {{- if index .Values "index-cache" "enabled" }}
         index_cache:
@@ -171,6 +172,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
+            max_idle_connections: 150
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
         metadata_cache:
@@ -178,6 +180,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.metadataCacheAddress" . }}
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
+            max_idle_connections: 150
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
