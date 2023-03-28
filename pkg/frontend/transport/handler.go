@@ -115,7 +115,7 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 
 		h.queryIndexBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_fetched_index_bytes_total",
-			Help: "Number of TSDB index bytes fetched to execute a query.",
+			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
 		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
