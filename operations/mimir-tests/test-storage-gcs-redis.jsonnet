@@ -15,26 +15,19 @@ mimir {
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
     cache_frontend_enabled: true,
-    cache_frontend_max_item_size_mb: 5,
     cache_frontend_backend: 'redis',
     cache_frontend_name: 'redis-frontend',
 
     cache_index_queries_enabled: true,
-    cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_backend: 'redis',
     cache_index_queries_name: 'redis-index-queries',
 
     cache_chunks_enabled: true,
-    cache_chunks_max_item_size_mb: 1,
     cache_chunks_backend: 'redis',
     cache_chunks_name: 'redis-chunks',
 
     cache_metadata_enabled: true,
-    cache_metadata_max_item_size_mb: 1,
     cache_metadata_backend: 'redis',
     cache_metadata_name: 'redis-metadata',
-
-    cache_results_backend: 'redis',
-    cache_results_name: 'redis-frontend',
   },
 }
