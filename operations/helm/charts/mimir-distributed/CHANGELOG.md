@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Change number of Memcached max idle connections to 150. #4591
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
