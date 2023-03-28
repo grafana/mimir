@@ -375,7 +375,7 @@ func newMultitenantCompactor(
 	}
 
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_block_upload_current_validations",
+		Name: "cortex_block_upload_validations_in_progress",
 		Help: "Number of block upload validations currently running.",
 	}, func() float64 {
 		return float64(c.blockUploadValidations.Load())

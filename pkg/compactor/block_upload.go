@@ -288,6 +288,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *metadata.Meta, validation func(context.Context) error) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
+	c.blockUploadValidations.Inc()
+	defer c.blockUploadValidations.Dec()
 
 	{
 		var wg sync.WaitGroup
@@ -300,8 +302,6 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 			c.periodicValidationUpdater(ctx, logger, blockID, userBkt, cancel, validationHeartbeatInterval)
 		}()
 
-		c.blockUploadValidations.Inc()
-		defer c.blockUploadValidations.Dec()
 		if err := validation(ctx); err != nil {
 			level.Error(logger).Log("msg", "error while validating block", "err", err)
 			cancel()

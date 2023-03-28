@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -104,7 +103,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 	for {
 		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
 		if err != nil {
-			if strings.Contains(err.Error(), "429 Too Many Requests") {
+			if err == errTooManyRequests {
 				// wait and try again
 				logctx.WithField("error", err).Warning("will sleep and try again")
 				time.Sleep(sleepTime)

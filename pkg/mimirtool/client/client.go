@@ -28,6 +28,7 @@ const (
 var (
 	ErrResourceNotFound = errors.New("requested resource not found")
 	errConflict         = errors.New("conflict with current state of target resource")
+	errTooManyRequests  = errors.New("too many requests")
 )
 
 // Config is used to configure a MimirClient.
@@ -192,6 +193,13 @@ func checkResponse(r *http.Response) error {
 			"body":   bodyStr,
 		}).Debugln(msg)
 		return errConflict
+	}
+	if r.StatusCode == http.StatusTooManyRequests {
+		log.WithFields(log.Fields{
+			"status": r.Status,
+			"body":   bodyStr,
+		}).Debugln(msg)
+		return errTooManyRequests
 	}
 
 	log.WithFields(log.Fields{

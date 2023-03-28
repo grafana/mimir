@@ -982,7 +982,9 @@ Starts the uploading of a TSDB block with a given ID to object storage. The clie
 `meta.json` file as the request body. If the complete block already exists in object storage, a
 `409` (Conflict) status code gets returned. If the provided `meta.json` file is invalid, a `400` (Bad Request)
 status code gets returned. If the block's max time is before the tenant's retention period, a
-`422` (Unprocessable Entity) status code gets returned.
+`422` (Unprocessable Entity) status code gets returned. If the compactor has reached its limit for the maximum
+number of concurrent block upload validations, which is configured with `-compactor.max-block-upload-validation-concurrency`,
+a `429` (Too Many Requests) will be returned.
 
 The provided `meta.json` file must have a `thanos.files` section with the list of the block's files,
 otherwise the request will be rejected.
