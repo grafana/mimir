@@ -50,7 +50,7 @@ patches:
       name: 'ruler|querier'
     patch: |-
       - op: remove
-        path: /config/blocks_storage/bucket_store/metadata_cache/max_idle_connections
+        path: /config/blocks_storage/bucket_store/metadata_cache/memcached/max_idle_connections
 
   - target:
       kind: MimirConfig
