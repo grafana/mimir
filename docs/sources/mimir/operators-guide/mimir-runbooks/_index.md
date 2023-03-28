@@ -1534,6 +1534,18 @@ This limit is applied to range queries before they are split (according to time)
 To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
 If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
+### err-mimir-max-query-expression-size-bytes
+
+This error occurs when the size of a raw query exceeds the configured maximum size (in bytes).
+
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a large potentially expensive query.
+To configure the limit on a per-tenant basis, use the `-query-frontend.max-query-expression-size-bytes` option (or `max_query_expression_size_bytes` in the runtime configuration).
+
+How to **fix** it:
+
+- Consider reducing the size of the query. It's possible there's a simpler way to select the desired data or a better way to export data from Mimir.
+- Consider increasing the per-tenant limit by using the `-query-frontend.max-query-expression-size-bytes` option (or `max_query_expression_size_bytes` in the runtime configuration).
+
 ### err-mimir-tenant-max-request-rate
 
 This error occurs when the rate of write requests per second is exceeded for this tenant.
