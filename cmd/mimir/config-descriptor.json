@@ -3263,6 +3263,17 @@
         },
         {
           "kind": "field",
+          "name": "max_query_expression_size_bytes",
+          "required": false,
+          "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.max-query-expression-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
