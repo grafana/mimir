@@ -4,7 +4,8 @@ package mimirpb
 
 import (
 	"sync"
-	"sync/atomic"
+
+	"go.uber.org/atomic"
 )
 
 var reusableWriteRequestsPool = sync.Pool{
