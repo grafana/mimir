@@ -105,7 +105,9 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 
 	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		maxConcurrency := int64(c.compactorCfg.MaxBlockUploadValidationConcurrency)
-		if maxConcurrency > 0 && c.blockUploadValidations.Load() >= maxConcurrency {
+		currentValidations := c.blockUploadValidations.Inc()
+		defer c.blockUploadValidations.Dec()
+		if maxConcurrency > 0 && currentValidations > maxConcurrency {
 			err := httpError{
 				message:    "too many block upload validations in progress",
 				statusCode: http.StatusTooManyRequests,
