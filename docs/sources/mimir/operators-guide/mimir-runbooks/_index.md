@@ -611,14 +611,14 @@ This can also result in long-term queries failing as the store-gateways fail to 
 
 How to **investigate**:
 
-- Check the [Compactor Dashboard](https://grafana.com/docs/mimir/v2.7.x/operators-guide/monitor-grafana-mimir/dashboards/compactor/)
+- Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}})
   - Compactor has fallen behind:
     - **How to detect**: 
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
       - Also check the `Average blocks / tenant` panel - what is the count? A tenant would have one 24h block per day plus smaller blocks to be compacted if all is well. Given that, <1200 blocks could be normal. Thousands and thousands of blocks is not normal.
     - **What it means**: Compaction likely was failing for some reason in the past and now there is too much work to catch up at the current configuration and scaling level.
     - **How to mitigate**: Reconfigure and modify the compactor settings and resources for more scalability:
-      - Ensure your compactors are at least sized according to the [Planning capacity](https://grafana.com/docs/mimir/v2.7.x/operators-guide/run-production-environment/planning-capacity/#compactor) page and you have the recommended number of replicas.
+      - Ensure your compactors are at least sized according to the [Planning capacity]({{< relref "../run-production-environment/planning-capacity.md#compactor" >}}) page and you have the recommended number of replicas.
       - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a multiple of 1 for every 25M active series in your deployment - so 100M series = value of `4`.
       - Allow the compactor to run for some hours and see if the runs begin to succeed and the `Average blocks / tenant` starts to decrease.
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
