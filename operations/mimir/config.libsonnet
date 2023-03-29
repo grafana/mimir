@@ -592,9 +592,9 @@
           'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
         } else {}
       ) else if $._config.cache_frontend_backend == 'redis' then {
-        'blocks-storage.bucket-store.results-cache.backend': 'redis',
-        'blocks-storage.bucket-store.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
-        'blocks-storage.bucket-store.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+        'query-frontend.results-cache.redis.backend': 'redis',
+        'query-frontend.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
+        'query-frontend.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       } else {}
     else {}
   ),
