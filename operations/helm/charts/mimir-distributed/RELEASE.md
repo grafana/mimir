@@ -26,7 +26,7 @@ The following steps apply to a release candidate or a final release.
 1. Determine the Helm chart version number.
 
    [The Chart.yaml file](https://helm.sh/docs/topics/charts/#the-chartyaml-file) requires semantic versioning:
-   
+
    - Release candidates have the version `x.y.z-rc.w`, for example `3.1.0-rc.7`.
    - The final version has the version `x.y.z`, for example `3.1.0`.
 
@@ -36,7 +36,7 @@ The following steps apply to a release candidate or a final release.
 
    a. Create a PR, whose target is `main`, that updates the [Helm chart changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md), and move any `## main / unreleased` items under this release’s version.
 
-      > **Note:** If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
+   > **Note:** If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices into the section for this release.
 
    b. Have the PR reviewed by a maintainer.
 
@@ -51,10 +51,12 @@ The following steps apply to a release candidate or a final release.
    For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
 
 1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml), as needed:
+
    - `image.tag` (Mimir)
    - `enterprise.image.tag` (GEM)
 
-      > **Note:** Unlike the Mimir image tags, GEM image tags start with `v`. For example, `v2.6.0` instead of `2.6.0`.
+     > **Note:** Unlike the Mimir image tags, GEM image tags start with `v`. For example, `v2.6.0` instead of `2.6.0`.
+
    - `smoke_test.image.tag` (Smoke test; usually the same as Mimir)
    - `continuous_test.image.tag` (Continuous test; usually the same as Mimir)
 
