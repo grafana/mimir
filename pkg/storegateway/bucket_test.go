@@ -951,22 +951,24 @@ func benchmarkExpandedPostings(
 	ctx, cancel := context.WithCancel(context.Background())
 	tb.Cleanup(cancel)
 
-	seriesSelectionTestCases(tb, series, func(tb test.TB, testCase seriesSelectionTestCase) {
-		indexr := newBucketIndexReader(newTestBucketBlock())
-		indexrStats := newSafeQueryStats()
+	for _, testCase := range seriesSelectionTestCases(tb, series) {
+		tb.Run(testCase.name, func(tb test.TB) {
+			indexr := newBucketIndexReader(newTestBucketBlock())
+			indexrStats := newSafeQueryStats()
 
-		tb.ResetTimer()
-		for i := 0; i < tb.N(); i++ {
-			p, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
+			tb.ResetTimer()
+			for i := 0; i < tb.N(); i++ {
+				p, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
 
-			if err != nil {
-				tb.Fatal(err.Error())
+				if err != nil {
+					tb.Fatal(err.Error())
+				}
+				if testCase.expectedSeriesLen != len(p) {
+					tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				}
 			}
-			if testCase.expectedSeriesLen != len(p) {
-				tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
-			}
-		}
-	})
+		})
+	}
 }
 
 type seriesSelectionTestCase struct {
@@ -979,8 +981,7 @@ type seriesSelectionTestCase struct {
 func seriesSelectionTestCases(
 	t test.TB,
 	series int,
-	runTestCase func(tb test.TB, testCase seriesSelectionTestCase),
-) {
+) []seriesSelectionTestCase {
 	series = series / 5
 
 	iUniqueValues := series / 10      // The amount of unique values for "i" label prefix. See appendTestSeries.
@@ -1014,7 +1015,7 @@ func seriesSelectionTestCases(
 	// Just make sure that we're testing what we think we're testing.
 	require.NotEmpty(t, iRegexNotSetMatches.SetMatches(), "Should have non empty SetMatches to test the proper path.")
 
-	cases := []seriesSelectionTestCase{
+	return []seriesSelectionTestCase{
 		{`n="X"`, []*labels.Matcher{nX}, 0},
 		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}, 0},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}, 0},
@@ -1052,12 +1053,6 @@ func seriesSelectionTestCases(
 		{`n="1",i=~"<unique_prefix>.+"`, []*labels.Matcher{n1, iUniquePrefixPlus}, 2},
 		{`n="1",i!~"<unique_prefix>.+"`, []*labels.Matcher{n1, iNotUniquePrefixPlus}, int(float64(series)*0.2) - 2},
 		{`p!=""`, []*labels.Matcher{pNotEmpty}, series},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t test.TB) {
-			runTestCase(t, c)
-		})
 	}
 }
 
