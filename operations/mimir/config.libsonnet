@@ -592,7 +592,7 @@
           'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
         } else {}
       ) else if $._config.cache_frontend_backend == 'redis' then {
-        'query-frontend.results-cache.redis.backend': 'redis',
+        'query-frontend.results-cache.backend': 'redis',
         'query-frontend.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:6379' % $._config,
         'query-frontend.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       } else {}
@@ -611,13 +611,13 @@
           'blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency': 100,
           'blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency': 100,
           'blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.index-cache.redis.max-idle-connections':
+          'blocks-storage.bucket-store.index-cache.redis.connection-pool-size':
             $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency'] +
             $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-async-concurrency'],
-          'blocks-storage.bucket-store.chunks-cache.redis.max-idle-connections':
+          'blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size':
             $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency'] +
             $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency'],
-          'blocks-storage.bucket-store.metadata-cache.redis.max-idle-connections':
+          'blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size':
             $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency'] +
             $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency'],
         }

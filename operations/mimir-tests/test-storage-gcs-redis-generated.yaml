@@ -474,7 +474,7 @@ spec:
       - args:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.max-total-query-length=12000h
-        - -query-frontend.results-cache.redis.backend=redis
+        - -query-frontend.results-cache.backend=redis
         - -query-frontend.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local:6379
         - -query-frontend.results-cache.redis.max-item-size=5242880
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
@@ -993,25 +993,25 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=redis
+        - -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size=150
         - -blocks-storage.bucket-store.chunks-cache.redis.endpoint=redis.default.svc.cluster.local:6379
         - -blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency=100
-        - -blocks-storage.bucket-store.chunks-cache.redis.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.redis.max-item-size=1048576
         - -blocks-storage.bucket-store.index-cache.backend=redis
+        - -blocks-storage.bucket-store.index-cache.redis.connection-pool-size=150
         - -blocks-storage.bucket-store.index-cache.redis.endpoint=redis-index-queries.default.svc.cluster.local:6379
         - -blocks-storage.bucket-store.index-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency=100
-        - -blocks-storage.bucket-store.index-cache.redis.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.redis.max-item-size=5242880
         - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.max-chunk-pool-bytes=12884901888
         - -blocks-storage.bucket-store.metadata-cache.backend=redis
+        - -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size=150
         - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
         - -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency=100
-        - -blocks-storage.bucket-store.metadata-cache.redis.max-idle-connections=150
         - -blocks-storage.bucket-store.metadata-cache.redis.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
