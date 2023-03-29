@@ -119,25 +119,21 @@
     cache_frontend_enabled: self.memcached_frontend_enabled,
     cache_frontend_max_item_size_mb: self.memcached_frontend_max_item_size_mb,
     cache_frontend_backend: 'memcached',
-    cache_frontend_name: 'memcached-frontend',
     memcached_frontend_mtls_enabled: false,
 
     cache_index_queries_enabled: self.memcached_index_queries_enabled,
     cache_index_queries_max_item_size_mb: self.memcached_index_queries_max_item_size_mb,
     cache_index_queries_backend: 'memcached',
-    cache_index_queries_name: 'memcached-index-queries',
     memcached_index_queries_mtls_enabled: false,
 
     cache_chunks_enabled: self.memcached_chunks_enabled,
     cache_chunks_max_item_size_mb: self.memcached_chunks_max_item_size_mb,
     cache_chunks_backend: 'memcached',
-    cache_chunks_name: 'memcached',  // this is named memcached by default for backward compatability
     memcached_chunks_mtls_enabled: false,
 
     cache_metadata_enabled: self.memcached_metadata_enabled,
     cache_metadata_max_item_size_mb: self.memcached_metadata_max_item_size_mb,
     cache_metadata_backend: 'memcached',
-    cache_metadata_name: 'memcached-metadata',
     memcached_metadata_mtls_enabled: false,
 
     // mTLS can be used for connections to each cache cluster. If enabled for each type of
