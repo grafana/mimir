@@ -1630,6 +1630,61 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
+func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
+	const series = 5e6
+
+	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(b), appendTestSeries(series))
+
+	testSetups := map[string]struct {
+		indexCache indexcache.IndexCache
+	}{
+		"without index cache": {indexCache: noopCache{}},
+		"with index cache":    {indexCache: newInMemoryIndexCache(b)},
+	}
+
+	for name, setup := range testSetups {
+		for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
+			b.Run(name, func(b *testing.B) {
+				ctx, cancel := context.WithCancel(context.Background())
+				b.Cleanup(cancel)
+
+				var block = newTestBlock()
+				indexReader := block.indexReader()
+				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
+
+				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					iterator, err := openBlockSeriesChunkRefsSetsIterator(
+						ctx,
+						5000,
+						"",
+						indexReader,
+						setup.indexCache,
+						block.meta,
+						testCase.matchers,
+						nil,
+						cachedSeriesHasher{hashCache},
+						false, // we don't skip chunks, so we can measure impact in loading chunk refs too
+						block.meta.MinTime,
+						block.meta.MaxTime,
+						2,
+						newSafeQueryStats(),
+						nil,
+					)
+					require.NoError(b, err)
+
+					actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
+					assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
+					assert.NoError(b, iterator.Err())
+				}
+			})
+		}
+	}
+}
+
 func TestMetasToRanges(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	testCases := map[string]struct {
