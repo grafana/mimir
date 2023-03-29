@@ -212,7 +212,8 @@ const (
 
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
-	defaultInstanceLimits = &cfg.DefaultLimits
+	// Set default values for unmarshalling runtime-config updated values
+	setDefaultInstanceLimits(&cfg.DefaultLimits)
 
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
@@ -1870,12 +1871,12 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 
 func (d *Distributor) getInstanceLimits() *InstanceLimits {
 	if d.cfg.InstanceLimitsFn == nil {
-		return defaultInstanceLimits
+		return &d.cfg.DefaultLimits
 	}
 
 	l := d.cfg.InstanceLimitsFn()
 	if l == nil {
-		return defaultInstanceLimits
+		return &d.cfg.DefaultLimits
 	}
 
 	return l

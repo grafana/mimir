@@ -11,11 +11,11 @@ import (
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
-	defaultInstanceLimits = &InstanceLimits{
+	setDefaultInstanceLimits(&InstanceLimits{
 		MaxIngestionRate:             10,
 		MaxInflightPushRequests:      40,
 		MaxInflightPushRequestsBytes: 1024 * 1024,
-	}
+	})
 
 	l := InstanceLimits{}
 	input := `
