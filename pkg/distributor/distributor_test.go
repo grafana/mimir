@@ -4006,6 +4006,9 @@ func (i *mockIngester) Check(ctx context.Context, in *grpc_health_v1.HealthCheck
 func (i *mockIngester) Close() error {
 	return nil
 }
+func (i *mockIngester) PushReusable(ctx context.Context, req *mimirpb.ReusableWriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	return i.Push(ctx, &req.WriteRequest, opts...)
+}
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	time.Sleep(i.pushDelay)
@@ -4404,11 +4407,16 @@ func (i *mockIngester) countCalls(name string) int {
 // noopIngester is a mocked ingester which does nothing.
 type noopIngester struct {
 	client.IngesterClient
+	client.ReusableIngesterClient
 	grpc_health_v1.HealthClient
 }
 
 func (i *noopIngester) Close() error {
 	return nil
+}
+
+func (i *noopIngester) ReusablePush(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	return nil, nil
 }
 
 func (i *noopIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
