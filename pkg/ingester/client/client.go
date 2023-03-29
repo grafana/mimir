@@ -29,12 +29,14 @@ var ingesterClientRequestDuration = promauto.NewHistogramVec(prometheus.Histogra
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
 type HealthAndIngesterClient interface {
 	IngesterClient
+	ReusableIngesterClient
 	grpc_health_v1.HealthClient
 	Close() error
 }
 
 type closableHealthAndIngesterClient struct {
 	IngesterClient
+	ReusableIngesterClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }
@@ -49,10 +51,12 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 	if err != nil {
 		return nil, err
 	}
+	client := NewIngesterClient(conn)
 	return &closableHealthAndIngesterClient{
-		IngesterClient: NewIngesterClient(conn),
-		HealthClient:   grpc_health_v1.NewHealthClient(conn),
-		conn:           conn,
+		IngesterClient:         client,
+		ReusableIngesterClient: client.(ReusableIngesterClient),
+		HealthClient:           grpc_health_v1.NewHealthClient(conn),
+		conn:                   conn,
 	}, nil
 }
 
