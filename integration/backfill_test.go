@@ -47,7 +47,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 			labels.FromStrings("test", "test1", "a", "2"),
 			labels.FromStrings("test", "test1", "a", "3"),
 		},
-		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 	require.NoError(t, err)
 
 	block2, err := testhelper.CreateBlock(
@@ -57,7 +57,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 			labels.FromStrings("test", "test2", "a", "2"),
 			labels.FromStrings("test", "test2", "a", "3"),
 		},
-		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 	require.NoError(t, err)
 
 	s, err := e2e.NewScenario(networkName)
@@ -154,7 +154,7 @@ overrides:
 				labels.FromStrings("test", "bad", "a", "2"),
 				labels.FromStrings("test", "bad", "a", "3"),
 			},
-			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 		require.NoError(t, err)
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
