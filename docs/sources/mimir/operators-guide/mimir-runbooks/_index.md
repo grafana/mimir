@@ -588,6 +588,7 @@ When this alert fires, the compactor may still have successfully compacted some 
 How to **investigate**:
 
 - Look for any error in the compactor logs
+
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
@@ -606,6 +607,7 @@ How to **investigate**:
           ```
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}}) and set it to view the last 7 days.
+
   - Compactor has fallen behind:
     - **How to detect**:
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
