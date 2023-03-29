@@ -62,6 +62,8 @@ The following steps apply to a release candidate or a final release.
 
    For example, `4.5.0`.
 
+   > **Note:** This is the step that triggers the release process GitHub Action.
+
 1. Set the `appVersion` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the version of Mimir that the Helm chart deploys.
 
    For example, `2.6.0`.
