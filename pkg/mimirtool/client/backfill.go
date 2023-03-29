@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/grafana/dskit/backoff"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,6 +14,8 @@ import (
 	"path"
 	"path/filepath"
 	"time"
+
+	"github.com/grafana/dskit/backoff"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
