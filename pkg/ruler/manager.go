@@ -103,7 +103,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 // It's not safe to call this function concurrently.
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
-		RemoveFederatedRuleGroups(ruleGroups)
+		removeFederatedRuleGroups(ruleGroups, r.logger)
 	}
 
 	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
@@ -318,17 +318,22 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (*DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
 	var errs []error
 
 	if g.Name == "" {
-		errs = append(errs, errors.New("invalid rules config: rule group name must not be empty"))
+		errs = append(errs, errors.New("invalid rules configuration: rule group name must not be empty"))
 		return errs
 	}
 
 	if len(g.Rules) == 0 {
-		errs = append(errs, fmt.Errorf("invalid rules config: rule group '%s' has no rules", g.Name))
+		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has no rules", g.Name))
 		return errs
+	}
+
+	if !r.cfg.TenantFederation.Enabled && len(g.SourceTenants) > 0 {
+		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' is a federated rule group, "+
+			"but rules federation is disabled; please contact your service administrator to have it enabled", g.Name))
 	}
 
 	for i, r := range g.Rules {

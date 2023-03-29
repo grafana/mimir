@@ -1596,10 +1596,10 @@ query_frontend:
   [query_result_response_format: <string> | default = "json"]
 
 tenant_federation:
-  # Enable running rule groups against multiple tenants. The tenant IDs involved
-  # need to be in the rule group's 'source_tenants' field. If this flag is set
-  # to 'false' when there are already created federated rule groups, then these
-  # rules groups will be skipped during evaluations.
+  # Enable rule groups to query against multiple tenants. The tenant IDs
+  # involved need to be in the rule group's 'source_tenants' field. If this flag
+  # is set to 'false' when there are federated rule groups that already exist,
+  # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
 ```
@@ -2736,6 +2736,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # returned in the query results sooner.
 # CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
 [results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
+
+# (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
+# the size of the query.
+# CLI flag: -query-frontend.max-query-expression-size-bytes
+[max_query_expression_size_bytes: <int> | default = 0]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

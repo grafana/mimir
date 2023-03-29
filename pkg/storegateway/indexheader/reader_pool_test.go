@@ -100,7 +100,9 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	metrics := NewReaderPoolMetrics(nil)
-	pool := NewReaderPool(log.NewNopLogger(), true, idleTimeout, metrics)
+	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
+	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -116,6 +118,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
+	pool.closeIdleReaders()
 
 	// We expect the reader has been closed, but not released from the pool.
 	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))

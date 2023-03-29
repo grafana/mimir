@@ -700,7 +700,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
-				return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+				return nil, errors.New("-" + ruler.TenantFederationFlag + "=true requires -tenant-federation.enabled=true")
 			}
 			// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
 			// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.

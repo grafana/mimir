@@ -7,12 +7,15 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -121,6 +124,77 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 
 				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
 				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
+			}
+		})
+	}
+}
+
+func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
+	now := time.Now()
+
+	tests := map[string]struct {
+		query       string
+		queryLimits map[string]int
+		expectError bool
+	}{
+		"should fail for queries longer than the limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: true,
+		},
+		"should fail for queries longer than a one tenant limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 2000},
+			expectError: true,
+		},
+		"should fail for queries longer than a one tenant limit with one limit disabled": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 0},
+			expectError: true,
+		},
+		"should work for queries under the limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: false,
+		},
+		"should work for queries when the limit is disabled": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 0, "test2": 0},
+			expectError: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				Query: testData.query,
+				Start: util.TimeToMillis(now.Add(-time.Hour * 2)),
+				End:   util.TimeToMillis(now.Add(-time.Hour)),
+			}
+
+			tenant.WithDefaultResolver(tenant.NewMultiResolver())
+			limits := multiTenantMockLimits{
+				byTenant: map[string]mockLimits{
+					"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},
+					"test2": {maxQueryExpressionSizeBytes: testData.queryLimits["test2"]},
+				},
+			}
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := newEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "test1|test2")
+			outer := middleware.Wrap(inner)
+			res, err := outer.Do(ctx, req)
+
+			if testData.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "err-mimir-max-query-expression-size-bytes")
+			} else {
+				require.NoError(t, err)
+				require.Same(t, innerRes, res)
 			}
 		})
 	}
@@ -277,10 +351,79 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 	}
 }
 
+type multiTenantMockLimits struct {
+	byTenant map[string]mockLimits
+}
+
+func (m multiTenantMockLimits) MaxQueryLookback(userID string) time.Duration {
+	return m.byTenant[userID].maxQueryLookback
+}
+
+func (m multiTenantMockLimits) MaxQueryLength(userID string) time.Duration {
+	return m.byTenant[userID].maxQueryLength
+}
+
+func (m multiTenantMockLimits) MaxTotalQueryLength(userID string) time.Duration {
+	return m.byTenant[userID].maxTotalQueryLength
+}
+
+func (m multiTenantMockLimits) MaxQueryExpressionSizeBytes(userID string) int {
+	return m.byTenant[userID].maxQueryExpressionSizeBytes
+}
+
+func (m multiTenantMockLimits) MaxQueryParallelism(userID string) int {
+	return m.byTenant[userID].maxQueryParallelism
+}
+
+func (m multiTenantMockLimits) MaxCacheFreshness(userID string) time.Duration {
+	return m.byTenant[userID].maxCacheFreshness
+}
+
+func (m multiTenantMockLimits) QueryShardingTotalShards(userID string) int {
+	return m.byTenant[userID].totalShards
+}
+
+func (m multiTenantMockLimits) QueryShardingMaxShardedQueries(userID string) int {
+	return m.byTenant[userID].maxShardedQueries
+}
+
+func (m multiTenantMockLimits) SplitInstantQueriesByInterval(userID string) time.Duration {
+	return m.byTenant[userID].splitInstantQueriesInterval
+}
+
+func (m multiTenantMockLimits) CompactorSplitAndMergeShards(userID string) int {
+	return m.byTenant[userID].compactorShards
+}
+
+func (m multiTenantMockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration {
+	return m.byTenant[userID].compactorBlocksRetentionPeriod
+}
+
+func (m multiTenantMockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
+	return m.byTenant[userID].outOfOrderTimeWindow
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTL(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTL
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheOutOfOrderWindowTTL
+}
+
+func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
+	return m.byTenant[userID].creationGracePeriod
+}
+
+func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
+	return m.byTenant[userID].nativeHistogramsIngestionEnabled
+}
+
 type mockLimits struct {
 	maxQueryLookback                 time.Duration
 	maxQueryLength                   time.Duration
 	maxTotalQueryLength              time.Duration
+	maxQueryExpressionSizeBytes      int
 	maxCacheFreshness                time.Duration
 	maxQueryParallelism              int
 	maxShardedQueries                int
@@ -308,6 +451,10 @@ func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 		return m.maxQueryLength
 	}
 	return m.maxTotalQueryLength
+}
+
+func (m mockLimits) MaxQueryExpressionSizeBytes(string) int {
+	return m.maxQueryExpressionSizeBytes
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {
