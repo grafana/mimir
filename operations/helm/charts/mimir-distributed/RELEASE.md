@@ -86,10 +86,10 @@ The following steps apply to a release candidate or a final release.
 
    You might have to wait a few minutes.
 
-1. In a browser, go to https://grafana.com/docs/helm-charts/mimir-distributed and refresh the page.
+1. In a browser, go to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed) and refresh the page.
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
 The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>`, for example `mimir-distributed-4.5.0`, on the merge commit created when the PR is merged. To prevent releasing the same version with different content, the release process fails if the tag already exists. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
 
-When a `mimir-distributed-x.y.z` final version tag is pushed, the Helm chart documentation is [published](https://github.com/grafana/mimir/blob/main/.github/workflows/publish-technical-documentation-release-helm-charts.yml) to https://grafana.com/docs/helm-charts/mimir-distributed.
+When a `mimir-distributed-x.y.z` final version tag is pushed, the Helm chart documentation is [published](https://github.com/grafana/mimir/blob/main/.github/workflows/publish-technical-documentation-release-helm-charts.yml) to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed).
