@@ -63,7 +63,7 @@ memcached {
   memcached_index_queries:
     if $._config.cache_index_queries_enabled && $._config.cache_index_queries_backend == 'memcached' then
       $.memcached {
-        name: '%(cache_index_queries_backend)s-index-queries' % $._config,
+        name: 'memcached-index-queries',
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
         connection_limit: 16384,
       } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
@@ -73,7 +73,7 @@ memcached {
   memcached_chunks:
     if $._config.cache_chunks_enabled && $._config.cache_chunks_backend == 'memcached' then
       $.memcached {
-        name: '%(cache_chunks_backend)s' % $._config,
+        name: 'memcached',
         max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
 
         // Save memory by more tightly provisioning memcached chunks.
@@ -87,7 +87,7 @@ memcached {
   memcached_metadata:
     if $._config.cache_metadata_enabled && $._config.cache_metadata_backend == 'memcached' then
       $.memcached {
-        name: '%(cache_metadata_backend)s-metadata' % $._config,
+        name: 'memcached-metadata',
         max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
         connection_limit: 16384,
 
