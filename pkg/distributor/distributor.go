@@ -1342,14 +1342,16 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	if err != nil {
 		return err
 	}
-	c := h.(ingester_client.IngesterClient)
+	c := h.(ingester_client.ReusableIngesterClient)
 
-	req := mimirpb.WriteRequest{
+	req := mimirpb.NewReusableWriteRequest(mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     source,
-	}
-	_, err = c.Push(ctx, &req)
+	})
+	defer req.Release()
+
+	_, err = c.PushReusable(ctx, req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
