@@ -10,8 +10,12 @@ topologySpreadConstraints:
   topologyKey: {{ $constraint.topologyKey }}
   whenUnsatisfiable: {{ $constraint.whenUnsatisfiable }}
   labelSelector:
+  {{- if $constraint.labelSelector -}}
+    {{- $constraint.labelSelector | toYaml | nindent 4 -}}
+  {{- else }}
     matchLabels:
       {{- $selectorLabels | nindent 6 }}
+  {{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

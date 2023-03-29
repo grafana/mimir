@@ -72,9 +72,7 @@ spec:
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
-            app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
-            app.kubernetes.io/component: ingester
+            foo: bar
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -223,9 +221,7 @@ spec:
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
-            app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
-            app.kubernetes.io/component: ingester
+            foo: bar
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -374,9 +370,7 @@ spec:
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
-            app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
-            app.kubernetes.io/component: ingester
+            foo: bar
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule

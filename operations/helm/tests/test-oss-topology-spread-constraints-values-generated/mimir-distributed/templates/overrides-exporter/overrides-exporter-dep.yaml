@@ -99,9 +99,7 @@ spec:
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
-            app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
-            app.kubernetes.io/component: overrides-exporter
+            foo: bar
       tolerations:
         []
       terminationGracePeriodSeconds: 60
