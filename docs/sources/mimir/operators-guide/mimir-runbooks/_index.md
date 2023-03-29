@@ -605,11 +605,11 @@ How to **investigate**:
           ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
           ```
 
-- Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}})
+- Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}}) and set it to view the last 7 days.
   - Compactor has fallen behind:
     - **How to detect**:
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
-      - Also check the `Average blocks / tenant` panel - what is the count? A tenant would have one 24h block per day plus smaller blocks to be compacted if all is well. Given that, <1200 blocks could be normal. Thousands and thousands of blocks is not normal.
+      - Also check the `Average blocks / tenant` panel - what is the trend? A tenant should not have a steadily increasing number of blocks. A pattern of growth followed by compaction is normal. Total block counts can also be examined but these depend on the age of the tenants in the cluster and sharding settings. Values from <1200 blocks upward could be normal. 50K blocks would generally not be normal.
     - **What it means**: Compaction likely was failing for some reason in the past and now there is too much work to catch up at the current configuration and scaling level. This can also result in long-term queries failing as the store-gateways fail to handle the much larger number of smaller blocks than expected.
     - **How to mitigate**: Reconfigure and modify the compactor settings and resources for more scalability:
       - Ensure your compactors are at least sized according to the [Planning capacity]({{< relref "../run-production-environment/planning-capacity.md#compactor" >}}) page and you have the recommended number of replicas.
