@@ -183,7 +183,7 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerinstancehasnorulegroups
     expr: |
       # Alert on ruler instances in microservices mode that have no rule groups assigned,
-      min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
+      min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*mimir-)?ruler.*"}) == 0
       # but only if other ruler instances of the same cell do have rule groups assigned
       and on (cluster, namespace)
       (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
@@ -609,7 +609,7 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinstancehasnotenants
     expr: |
       # Alert on alertmanager instances in microservices mode that own no tenants,
-      min by(cluster, namespace, pod) (cortex_alertmanager_tenants_owned{pod=~"(.*-mimir-)?alertmanager.*"}) == 0
+      min by(cluster, namespace, pod) (cortex_alertmanager_tenants_owned{pod=~"(.*mimir-)?alertmanager.*"}) == 0
       # but only if other instances of the same cell do have tenants assigned.
       and on (cluster, namespace)
       max by(cluster, namespace) (cortex_alertmanager_tenants_owned) > 0
