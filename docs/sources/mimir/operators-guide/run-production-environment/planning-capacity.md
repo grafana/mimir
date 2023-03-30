@@ -159,7 +159,7 @@ Related to working with large tenants, there are two compactor-specific settings
 `-compactor.split-groups`
 `-compactor.split-and-merge-shards`
 
-For more information on how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
+For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 We currently recommend 1 shard per every 8 million active series in a tenant.
 
