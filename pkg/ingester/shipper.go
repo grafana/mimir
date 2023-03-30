@@ -172,6 +172,8 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
+		} else {
+			level.Info(s.logger).Log("msg", "finished uploading new block", "id", m.ULID)
 		}
 
 		meta.Shipped[m.ULID] = model.Now()
@@ -198,7 +200,6 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // library could actually unload the block if it found meta.json file missing.
 func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	level.Info(s.logger).Log("msg", "uploading new block", "id", meta.ULID)
-	defer level.Info(s.logger).Log("msg", "finished uploading new block", "id", meta.ULID)
 
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
