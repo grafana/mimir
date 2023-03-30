@@ -154,7 +154,7 @@ For more information about disk requirements, refer to [Compactor disk utilizati
 sum(prometheus_tsdb_head_series)
 ```
 
-There are two compactor specific settings related to working with large tenants that should be considered when planning/adjusting capacity.
+Related to working with large tenants, there are two compactor-specific settings to consider when planning or adjusting capacity:
 
 These are:
 `-compactor.split-groups`
