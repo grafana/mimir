@@ -172,9 +172,8 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
-		} else {
-			level.Info(s.logger).Log("msg", "finished uploading new block", "id", m.ULID)
 		}
+		level.Info(s.logger).Log("msg", "finished uploading new block", "id", m.ULID)
 
 		meta.Shipped[m.ULID] = model.Now()
 		shipped++
