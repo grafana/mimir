@@ -12,11 +12,6 @@ import (
 	"github.com/thanos-io/objstore/providers/s3"
 )
 
-const (
-	// Applied to PUT operations to denote the desired storage class for S3 Objects
-	awsStorageClassHeader = "X-Amz-Storage-Class"
-)
-
 // NewBucketClient creates a new S3 bucket client
 func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
 	s3Cfg, err := newS3Config(cfg)
