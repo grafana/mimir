@@ -23,6 +23,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 var (
@@ -186,6 +187,19 @@ func (r *LazyBinaryReader) LabelValues(name string, prefix string, filter func(s
 
 	r.usedAt.Store(time.Now().UnixNano())
 	return r.reader.LabelValues(name, prefix, filter)
+}
+
+// LabelValuesOffsets implements Reader.
+func (r *LazyBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
+	if err := r.load(); err != nil {
+		return nil, err
+	}
+
+	r.usedAt.Store(time.Now().UnixNano())
+	return r.reader.LabelValuesOffsets(name, prefix, filter)
 }
 
 // LabelNames implements Reader.
