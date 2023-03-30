@@ -163,7 +163,7 @@ For more information about how they work, refer to [Compaction algorithm]({{< re
 
 We recommend 1 shard per every 8 million active series in a tenant.
 
-For example, for a tenant with 100 million active series, use approximately 12 shards. The shard count should be an even number.
+For example, for a tenant with 100 million active series, use approximately 12 shards. Use an even number for the shard count.
 
 We also recommend setting the number of split-groups to be the same as the shard count.
 
