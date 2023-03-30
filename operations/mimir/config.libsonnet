@@ -532,6 +532,14 @@
     //    },
     ingester_instance_limits: null,
 
+    // Distributor limits are put directly into runtime config, if not null. Available limits:
+    //    distributor_instance_limits: {
+    //      max_ingestion_rate: 0,  // Max ingestion rate (samples/second) per distributor. 0 = no limit.
+    //      max_inflight_push_requests: 0,  // Max inflight push requests per distributor. 0 = no limit.
+    //      max_inflight_push_requests_bytes: 0,  // Max sum of inflight push request sizes per distributor. 0 = no limit.
+    //    },
+    distributor_instance_limits: null,
+
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
@@ -552,7 +560,8 @@
         { overrides: $._config.overrides }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
-        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {}),
+        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
+        + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
     }),
 
