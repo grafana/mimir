@@ -45,27 +45,15 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	maxIngestionRateFlag             = "distributor.instance-limits.max-ingestion-rate"
-	maxInflightPushRequestsFlag      = "distributor.instance-limits.max-inflight-push-requests"
-	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-bytes"
-)
-
 var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
-
-	// Distributor instance limits errors.
-	errMaxInflightRequestsReached      = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
-	errMaxIngestionRateReached         = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
-	errMaxInflightRequestsBytesReached = errors.New(globalerror.DistributorMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
 const (
@@ -172,7 +160,8 @@ type Config struct {
 	ShuffleShardingLookbackPeriod time.Duration `yaml:"-"`
 
 	// Limits for distributor
-	InstanceLimits InstanceLimits `yaml:"instance_limits"`
+	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
+	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
@@ -188,12 +177,6 @@ type Config struct {
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
 type PushWrapper func(next push.Func) push.Func
 
-type InstanceLimits struct {
-	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
-	MaxInflightPushRequests      int     `yaml:"max_inflight_push_requests" category:"advanced"`
-	MaxInflightPushRequestsBytes int     `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
-}
-
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
@@ -203,9 +186,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
-	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
-	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+
+	cfg.DefaultLimits.RegisterFlags(f)
 }
 
 // Validate config and returns error on failure
@@ -368,21 +350,30 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		metadataValidationMetrics: validation.NewMetadataValidationMetrics(reg),
 	}
 
-	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests"},
-	}).Set(float64(cfg.InstanceLimits.MaxInflightPushRequests))
-	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+	}, func() float64 {
+		il := d.getInstanceLimits()
+		return float64(il.MaxInflightPushRequests)
+	})
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
-	}).Set(float64(cfg.InstanceLimits.MaxInflightPushRequestsBytes))
-	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+	}, func() float64 {
+		il := d.getInstanceLimits()
+		return float64(il.MaxInflightPushRequestsBytes)
+	})
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_ingestion_rate"},
-	}).Set(cfg.InstanceLimits.MaxIngestionRate)
+	}, func() float64 {
+		il := d.getInstanceLimits()
+		return il.MaxIngestionRate
+	})
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_distributor_inflight_push_requests",
@@ -1105,12 +1096,13 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			}
 		}()
 
-		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
+		il := d.getInstanceLimits()
+		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
 		}
 
-		if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
-			if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
+		if il.MaxIngestionRate > 0 {
+			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				return nil, errMaxIngestionRateReached
 			}
 		}
@@ -1140,7 +1132,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			d.inflightPushRequestsBytes.Sub(reqSize)
 		})
 
-		if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			return nil, errMaxInflightRequestsBytesReached
 		}
 
@@ -1866,6 +1858,19 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 	}
 
 	return response, nil
+}
+
+func (d *Distributor) getInstanceLimits() InstanceLimits {
+	if d.cfg.InstanceLimitsFn == nil {
+		return d.cfg.DefaultLimits
+	}
+
+	l := d.cfg.InstanceLimitsFn()
+	if l == nil {
+		return d.cfg.DefaultLimits
+	}
+
+	return *l
 }
 
 func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
