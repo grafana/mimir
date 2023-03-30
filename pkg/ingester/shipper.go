@@ -166,15 +166,15 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 			continue
 		}
 
-		level.Info(s.logger).Log("msg", "shipping new block", "block", m.ULID)
+		level.Info(s.logger).Log("msg", "uploading new block to long-term storage", "block", m.ULID)
 		if err := s.upload(ctx, m); err != nil {
 			// No error returned, just log line. This is because we want other blocks to be shipped even
 			// though this one failed. It will be retried on second Sync iteration.
-			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
+			level.Error(s.logger).Log("msg", "uploading new block to long-term storage failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
 		}
-		level.Info(s.logger).Log("msg", "finished shipping new block", "block", m.ULID)
+		level.Info(s.logger).Log("msg", "finished uploading new block to long-term storage", "block", m.ULID)
 
 		meta.Shipped[m.ULID] = model.Now()
 		shipped++
