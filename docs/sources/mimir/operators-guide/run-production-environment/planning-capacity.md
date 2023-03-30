@@ -156,7 +156,6 @@ sum(prometheus_tsdb_head_series)
 
 Related to working with large tenants, there are two compactor-specific settings to consider when planning or adjusting capacity:
 
-These are:
 `-compactor.split-groups`
 `-compactor.split-and-merge-shards`
 
