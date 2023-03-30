@@ -50,7 +50,6 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		AccessKey:       cfg.AccessKeyID,
 		SecretKey:       cfg.SecretAccessKey.String(),
 		Insecure:        cfg.Insecure,
-		PutUserMetadata: map[string]string{awsStorageClassHeader: cfg.StorageClass},
 		SSEConfig:       sseCfg,
 		HTTPConfig: s3.HTTPConfig{
 			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
