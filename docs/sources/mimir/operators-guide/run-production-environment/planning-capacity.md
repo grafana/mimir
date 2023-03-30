@@ -161,7 +161,7 @@ Related to working with large tenants, there are two compactor-specific settings
 
 For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
-We currently recommend 1 shard per every 8 million active series in a tenant.
+We recommend 1 shard per every 8 million active series in a tenant.
 
 For example, for a tenant with 100 million active series, use approximately 12 shards. The shard count should be an even number.
 
