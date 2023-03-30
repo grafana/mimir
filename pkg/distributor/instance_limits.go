@@ -4,7 +4,6 @@ package distributor
 
 import (
 	"flag"
-	"sync"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
@@ -38,37 +37,16 @@ func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Sets default limit values for unmarshalling.
-var (
-	defaultInstanceLimits    *InstanceLimits
-	defaultInstanceLimitsMtx sync.RWMutex
-)
+var defaultInstanceLimits *InstanceLimits
 
 func SetDefaultInstanceLimitsForYAMLUnmarshalling(l InstanceLimits) {
-	defaultInstanceLimitsMtx.Lock()
-	defer defaultInstanceLimitsMtx.Unlock()
 	defaultInstanceLimits = &l
-}
-
-func getDefaultInstanceLimits() *InstanceLimits {
-	defaultInstanceLimitsMtx.RLock()
-	defer defaultInstanceLimitsMtx.RUnlock()
-
-	if defaultInstanceLimits == nil {
-		return nil
-	}
-
-	return &InstanceLimits{
-		MaxIngestionRate:             defaultInstanceLimits.MaxIngestionRate,
-		MaxInflightPushRequests:      defaultInstanceLimits.MaxInflightPushRequests,
-		MaxInflightPushRequestsBytes: defaultInstanceLimits.MaxInflightPushRequestsBytes,
-	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
-	defaults := getDefaultInstanceLimits()
-	if defaults != nil {
-		*l = *defaults
+	if defaultInstanceLimits != nil {
+		*l = *defaultInstanceLimits
 	}
 	type plain InstanceLimits // type indirection to make sure we don't go into recursive loop
 	return value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
