@@ -101,6 +101,7 @@
 * [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
 * [FEATURE] Add instructions about how to configure native histograms. #4527
 * [ENHANCEMENT] Runbook for MimirCompactorHasNotSuccessfullyRunCompaction extended to include scenario where compaction has fallen behind. #4609
+* [ENHANCEMENT] Add recommended settings for compactor `split-groups` and `split-and-merge-shards` to the Planning capacity page. #4621
 
 ### Tools
 
