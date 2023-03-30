@@ -238,7 +238,9 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 		secondaryResponseStatusCode  int
 		preferredResponseContentType string
 		secondaryResponseContentType string
-		comparisonResult             error
+		comparatorResult             ComparisonResult
+		comparatorError              error
+		expectedComparisonResult     ComparisonResult
 		expectedComparisonError      string
 	}{
 		"responses are the same": {
@@ -246,14 +248,18 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			secondaryResponseStatusCode:  http.StatusOK,
 			preferredResponseContentType: "application/json",
 			secondaryResponseContentType: "application/json",
+			comparatorResult:             ComparisonSuccess,
+			expectedComparisonResult:     ComparisonSuccess,
 		},
 		"responses are not the same": {
 			preferredResponseStatusCode:  http.StatusOK,
 			secondaryResponseStatusCode:  http.StatusOK,
 			preferredResponseContentType: "application/json",
 			secondaryResponseContentType: "application/json",
-			comparisonResult:             errors.New("the responses are different"),
+			comparatorResult:             ComparisonFailed,
+			comparatorError:              errors.New("the responses are different"),
 			expectedComparisonError:      "the responses are different",
+			expectedComparisonResult:     ComparisonFailed,
 		},
 		"responses have different status codes": {
 			preferredResponseStatusCode:  http.StatusOK,
@@ -261,6 +267,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			preferredResponseContentType: "application/json",
 			secondaryResponseContentType: "application/json",
 			expectedComparisonError:      "expected status code 200 (returned by preferred backend) but got 418 from secondary backend",
+			expectedComparisonResult:     ComparisonFailed,
 		},
 		"preferred backend response has non-JSON content type": {
 			preferredResponseStatusCode:  http.StatusOK,
@@ -268,6 +275,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			preferredResponseContentType: "text/plain",
 			secondaryResponseContentType: "application/json",
 			expectedComparisonError:      "skipped comparison of response because the response from the preferred backend contained an unexpected content type 'text/plain', expected 'application/json'",
+			expectedComparisonResult:     ComparisonSkipped,
 		},
 		"secondary backend response has non-JSON content type": {
 			preferredResponseStatusCode:  http.StatusOK,
@@ -275,6 +283,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			preferredResponseContentType: "application/json",
 			secondaryResponseContentType: "text/plain",
 			expectedComparisonError:      "skipped comparison of response because the response from the secondary backend contained an unexpected content type 'text/plain', expected 'application/json'",
+			expectedComparisonResult:     ComparisonSkipped,
 		},
 	}
 
@@ -310,7 +319,8 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			logger := newMockLogger()
 			reg := prometheus.NewPedanticRegistry()
 			comparator := &mockComparator{
-				comparisonResult: scenario.comparisonResult,
+				comparisonResult: scenario.comparatorResult,
+				comparisonError:  scenario.comparatorError,
 			}
 
 			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator)
@@ -322,29 +332,25 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			require.Equal(t, "preferred response", resp.Body.String())
 			require.Equal(t, scenario.preferredResponseStatusCode, resp.Code)
 
-			if scenario.expectedComparisonError == "" {
-				waitForResponseComparisonMetric(t, reg, "success")
-			} else {
-				// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
-				// Wait for the response comparison to complete before checking the logged messages.
-				waitForResponseComparisonMetric(t, reg, "fail")
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, scenario.expectedComparisonResult)
 
-				sawComparisonFailedMessage := false
+			switch scenario.expectedComparisonResult {
+			case ComparisonSuccess:
+				requireNoLogMessages(t, logger.messages, "response comparison failed", "response comparison skipped")
 
-				for _, m := range logger.messages {
-					if m["msg"] == "response comparison failed" {
-						sawComparisonFailedMessage = true
-						require.EqualError(t, m["err"].(error), scenario.expectedComparisonError)
-					}
-				}
+			case ComparisonFailed:
+				requireLogMessageWithError(t, logger.messages, "response comparison failed", scenario.expectedComparisonError)
 
-				require.True(t, sawComparisonFailedMessage, "expected to find a 'response comparison failed' message logged, but only these messages were logged: %v", logger.messages)
+			case ComparisonSkipped:
+				requireLogMessageWithError(t, logger.messages, "response comparison skipped", scenario.expectedComparisonError)
 			}
 		})
 	}
 }
 
-func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult string) {
+func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult) {
 	started := time.Now()
 	timeoutAt := started.Add(2 * time.Second)
 
@@ -366,6 +372,31 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
+}
+
+func requireNoLogMessages(t *testing.T, messages []map[string]interface{}, forbiddenMessages ...string) {
+	for _, m := range messages {
+		msg := m["msg"]
+
+		for _, forbiddenMessage := range forbiddenMessages {
+			if msg == forbiddenMessage {
+				require.Fail(t, "unexpected message logged", "expected to find no log lines with the message '%s', but these messages were logged: %v", forbiddenMessage, messages)
+			}
+		}
+	}
+}
+
+func requireLogMessageWithError(t *testing.T, messages []map[string]interface{}, expectedMessage string, expectedError string) {
+	sawMessage := false
+
+	for _, m := range messages {
+		if m["msg"] == expectedMessage {
+			sawMessage = true
+			require.EqualError(t, m["err"].(error), expectedError)
+		}
+	}
+
+	require.True(t, sawMessage, "expected to find a '%s' message logged, but only these messages were logged: %v", expectedMessage, messages)
 }
 
 func Test_backendResponse_succeeded(t *testing.T) {
@@ -449,11 +480,12 @@ func Test_backendResponse_statusCode(t *testing.T) {
 }
 
 type mockComparator struct {
-	comparisonResult error
+	comparisonResult ComparisonResult
+	comparisonError  error
 }
 
-func (m *mockComparator) Compare(expected, actual []byte) error {
-	return m.comparisonResult
+func (m *mockComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+	return m.comparisonResult, m.comparisonError
 }
 
 type mockLogger struct {

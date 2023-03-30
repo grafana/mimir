@@ -19,7 +19,7 @@ import (
 )
 
 type ResponsesComparator interface {
-	Compare(expected, actual []byte) error
+	Compare(expected, actual []byte) (ComparisonResult, error)
 }
 
 type ProxyEndpoint struct {
@@ -165,15 +165,26 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			expectedResponse, actualResponse = actualResponse, expectedResponse
 		}
 
-		result := comparisonSuccess
-		err := p.compareResponses(expectedResponse, actualResponse)
-		if err != nil {
-			level.Error(p.logger).Log("msg", "response comparison failed", "route-name", p.routeName,
-				"query", query, "user", req.Header.Get("X-Scope-OrgID"), "err", err)
-			result = comparisonFailed
+		result, err := p.compareResponses(expectedResponse, actualResponse)
+		if result == ComparisonFailed {
+			level.Error(p.logger).Log(
+				"msg", "response comparison failed",
+				"route-name", p.routeName,
+				"query", query,
+				"user", req.Header.Get("X-Scope-OrgID"),
+				"err", err,
+			)
+		} else if result == ComparisonSkipped {
+			level.Warn(p.logger).Log(
+				"msg", "response comparison skipped",
+				"route-name", p.routeName,
+				"query", query,
+				"user", req.Header.Get("X-Scope-OrgID"),
+				"err", err,
+			)
 		}
 
-		p.metrics.responsesComparedTotal.WithLabelValues(p.routeName, result).Inc()
+		p.metrics.responsesComparedTotal.WithLabelValues(p.routeName, string(result)).Inc()
 	}
 }
 
@@ -212,25 +223,25 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 	return responses[0]
 }
 
-func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) error {
+func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) (ComparisonResult, error) {
 	if expectedResponse.err != nil {
-		return fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
+		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
 	}
 
 	if actualResponse.err != nil {
-		return fmt.Errorf("skipped comparison of response because the request to the secondary backend failed: %w", actualResponse.err)
+		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the secondary backend failed: %w", actualResponse.err)
 	}
 
 	if expectedResponse.status != actualResponse.status {
-		return fmt.Errorf("expected status code %d (returned by preferred backend) but got %d from secondary backend", expectedResponse.status, actualResponse.status)
+		return ComparisonFailed, fmt.Errorf("expected status code %d (returned by preferred backend) but got %d from secondary backend", expectedResponse.status, actualResponse.status)
 	}
 
 	if expectedResponse.contentType != "application/json" {
-		return fmt.Errorf("skipped comparison of response because the response from the preferred backend contained an unexpected content type '%s', expected 'application/json'", expectedResponse.contentType)
+		return ComparisonSkipped, fmt.Errorf("skipped comparison of response because the response from the preferred backend contained an unexpected content type '%s', expected 'application/json'", expectedResponse.contentType)
 	}
 
 	if actualResponse.contentType != "application/json" {
-		return fmt.Errorf("skipped comparison of response because the response from the secondary backend contained an unexpected content type '%s', expected 'application/json'", actualResponse.contentType)
+		return ComparisonSkipped, fmt.Errorf("skipped comparison of response because the response from the secondary backend contained an unexpected content type '%s', expected 'application/json'", actualResponse.contentType)
 	}
 
 	return p.comparator.Compare(expectedResponse.body, actualResponse.body)
