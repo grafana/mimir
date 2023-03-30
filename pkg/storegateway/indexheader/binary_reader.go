@@ -370,6 +370,8 @@ func (fw *FileWriter) Remove() error {
 func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEndBound uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
+	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
+	// After that this is the offset of the label indices table.
 	w.buf.PutBE64(indexLastPostingListEndBound)
 	return w.f.Write(w.buf.Get())
 }
