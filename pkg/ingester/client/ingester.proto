@@ -101,7 +101,7 @@ message StreamChunk {
     FLOAT_HISTOGRAM = 3;
   }
   Encoding type  = 3;
-  bytes data     = 4;
+  bytes data     = 4 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.DirectlyUnmarshalledByteSlice"];
 }
 
 message QueryRequest {

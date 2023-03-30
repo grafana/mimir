@@ -29,7 +29,7 @@ message Chunk {
     Chunk_FloatHistogram = 2;
   }
   Encoding type  = 1;
-  bytes data     = 2;
+  bytes data     = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.DirectlyUnmarshalledByteSlice"];
 }
 
 message Series {
