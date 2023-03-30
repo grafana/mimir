@@ -69,11 +69,12 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds *prometheus.CounterVec
-	querySeries  *prometheus.CounterVec
-	queryBytes   *prometheus.CounterVec
-	queryChunks  *prometheus.CounterVec
-	activeUsers  *util.ActiveUsersCleanupService
+	querySeconds    *prometheus.CounterVec
+	querySeries     *prometheus.CounterVec
+	queryChunkBytes *prometheus.CounterVec
+	queryChunks     *prometheus.CounterVec
+	queryIndexBytes *prometheus.CounterVec
+	activeUsers     *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -102,7 +103,7 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of series fetched to execute a query.",
 		}, []string{"user"})
 
-		h.queryBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		h.queryChunkBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_fetched_chunk_bytes_total",
 			Help: "Number of chunk bytes fetched to execute a query.",
 		}, []string{"user"})
@@ -112,12 +113,18 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of chunks fetched to execute a query.",
 		}, []string{"user"})
 
+		h.queryIndexBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_fetched_index_bytes_total",
+			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
 			h.querySeries.DeleteLabelValues(user)
-			h.queryBytes.DeleteLabelValues(user)
+			h.queryChunkBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
+			h.queryIndexBytes.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -253,8 +260,9 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
 		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
-		f.queryBytes.WithLabelValues(userID).Add(float64(numBytes))
+		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
+		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 

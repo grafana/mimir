@@ -57,14 +57,14 @@ func (m mockQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels
 
 type mockChunkQuerier struct {
 	storage.ChunkQuerier
-	matrix model.Matrix
+	seriesSet storage.SeriesSet
 }
 
 func (m mockChunkQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	if sp == nil {
 		panic("mockChunkQuerier: select params must be set")
 	}
-	return storage.NewSeriesSetToChunkSet(series.MatrixToSeriesSet(m.matrix))
+	return storage.NewSeriesSetToChunkSet(m.seriesSet)
 }
 
 func TestSampledRemoteRead(t *testing.T) {
@@ -135,6 +135,7 @@ func TestSampledRemoteRead(t *testing.T) {
 func TestStreamedRemoteRead(t *testing.T) {
 	tcs := map[string]struct {
 		samples         []model.SamplePair
+		histograms      []mimirpb.Histogram
 		expectedResults []*client.StreamReadResponse
 	}{
 		"with 120 samples, we expect 1 frame with 1 chunk": {
@@ -149,7 +150,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(0, 120),
+									Data:      getIndexedChunk(0, 120, chunkenc.EncXOR),
 								},
 							},
 						},
@@ -170,13 +171,13 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(0, 121),
+									Data:      getIndexedChunk(0, 121, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 120,
 									MaxTimeMs: 120,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(1, 121),
+									Data:      getIndexedChunk(1, 121, chunkenc.EncXOR),
 								},
 							},
 						},
@@ -197,13 +198,13 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(0, 481),
+									Data:      getIndexedChunk(0, 481, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 120,
 									MaxTimeMs: 239,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(1, 481),
+									Data:      getIndexedChunk(1, 481, chunkenc.EncXOR),
 								},
 							},
 						},
@@ -218,13 +219,13 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 240,
 									MaxTimeMs: 359,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(2, 481),
+									Data:      getIndexedChunk(2, 481, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 360,
 									MaxTimeMs: 479,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(3, 481),
+									Data:      getIndexedChunk(3, 481, chunkenc.EncXOR),
 								},
 							},
 						},
@@ -239,7 +240,48 @@ func TestStreamedRemoteRead(t *testing.T) {
 									MinTimeMs: 480,
 									MaxTimeMs: 480,
 									Type:      client.XOR,
-									Data:      getIndexedXORChunk(4, 481),
+									Data:      getIndexedChunk(4, 481, chunkenc.EncXOR),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"120 native histograms": {
+			histograms: getNHistogramSamples(120),
+			expectedResults: []*client.StreamReadResponse{
+				{
+					ChunkedSeries: []*client.StreamChunkedSeries{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Chunks: []client.StreamChunk{
+								{
+									MinTimeMs: 0,
+									MaxTimeMs: 119,
+									Type:      client.HISTOGRAM,
+									Data:      getIndexedChunk(0, 120, chunkenc.EncHistogram),
+								},
+							},
+						},
+					},
+					QueryIndex: 0,
+				},
+			},
+		},
+		"120 native float histograms": {
+			histograms: getNFloatHistogramSamples(120),
+			expectedResults: []*client.StreamReadResponse{
+				{
+					ChunkedSeries: []*client.StreamChunkedSeries{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Chunks: []client.StreamChunk{
+								{
+									MinTimeMs: 0,
+									MaxTimeMs: 119,
+									Type:      client.FLOAT_HISTOGRAM,
+									Data:      getIndexedChunk(0, 120, chunkenc.EncFloatHistogram),
 								},
 							},
 						},
@@ -253,12 +295,13 @@ func TestStreamedRemoteRead(t *testing.T) {
 			q := &mockSampleAndChunkQueryable{
 				chunkQueryableFn: func(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
 					return mockChunkQuerier{
-						matrix: model.Matrix{
-							{
-								Metric: model.Metric{"foo": "bar"},
-								Values: tc.samples,
-							},
-						},
+						seriesSet: series.NewConcreteSeriesSet([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								tc.samples,
+								tc.histograms,
+							),
+						}),
 					}, nil
 				},
 			}
@@ -309,20 +352,46 @@ func TestStreamedRemoteRead(t *testing.T) {
 }
 
 func getNSamples(n int) []model.SamplePair {
-	var retVal []model.SamplePair
+	var ret []model.SamplePair
 	for i := 0; i < n; i++ {
-		retVal = append(retVal, model.SamplePair{
+		ret = append(ret, model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i),
 		})
 	}
-	return retVal
+	return ret
 }
 
-func getIndexedXORChunk(idx, samplesCount int) []byte {
+func getNHistogramSamples(n int) []mimirpb.Histogram {
+	var ret []mimirpb.Histogram
+	for i := 0; i < n; i++ {
+		h := test.GenerateTestHistogram(i)
+		ret = append(ret, mimirpb.FromHistogramToHistogramProto(int64(i), h))
+	}
+	return ret
+}
+
+func getNFloatHistogramSamples(n int) []mimirpb.Histogram {
+	var ret []mimirpb.Histogram
+	for i := 0; i < n; i++ {
+		h := test.GenerateTestFloatHistogram(i)
+		ret = append(ret, mimirpb.FromFloatHistogramToHistogramProto(int64(i), h))
+	}
+	return ret
+}
+
+func getIndexedChunk(idx, samplesCount int, encoding chunkenc.Encoding) []byte {
 	const samplesPerChunk = 120
 
-	enc := chunkenc.NewXORChunk()
+	var enc chunkenc.Chunk
+	switch encoding {
+	case chunkenc.EncXOR:
+		enc = chunkenc.NewXORChunk()
+	case chunkenc.EncHistogram:
+		enc = chunkenc.NewHistogramChunk()
+	case chunkenc.EncFloatHistogram:
+		enc = chunkenc.NewFloatHistogramChunk()
+	}
 	ap, _ := enc.Appender()
 
 	baseIdx := idx * samplesPerChunk
@@ -331,7 +400,15 @@ func getIndexedXORChunk(idx, samplesCount int) []byte {
 		if j >= samplesCount {
 			break
 		}
-		ap.Append(int64(j), float64(j))
+
+		switch encoding {
+		case chunkenc.EncXOR:
+			ap.Append(int64(j), float64(j))
+		case chunkenc.EncHistogram:
+			ap.AppendHistogram(int64(j), test.GenerateTestHistogram(j))
+		case chunkenc.EncFloatHistogram:
+			ap.AppendFloatHistogram(int64(j), test.GenerateTestFloatHistogram(j))
+		}
 	}
 	return enc.Bytes()
 }

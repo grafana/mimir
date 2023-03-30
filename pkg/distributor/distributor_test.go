@@ -3615,9 +3615,9 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
 		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
-		distributorCfg.InstanceLimits.MaxInflightPushRequests = cfg.maxInflightRequests
-		distributorCfg.InstanceLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
-		distributorCfg.InstanceLimits.MaxIngestionRate = cfg.maxIngestionRate
+		distributorCfg.DefaultLimits.MaxInflightPushRequests = cfg.maxInflightRequests
+		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
+		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 
 		if cfg.forwarding {

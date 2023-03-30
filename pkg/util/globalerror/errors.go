@@ -49,11 +49,12 @@ const (
 	MetricMetadataHelpTooLong       ID = "help-too-long" // unused, left here to prevent reuse for different purpose
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
-	MaxQueryLength       ID = "max-query-length"
-	MaxTotalQueryLength  ID = "max-total-query-length"
-	RequestRateLimited   ID = "tenant-max-request-rate"
-	IngestionRateLimited ID = "tenant-max-ingestion-rate"
-	TooManyHAClusters    ID = "tenant-too-many-ha-clusters"
+	MaxQueryLength              ID = "max-query-length"
+	MaxTotalQueryLength         ID = "max-total-query-length"
+	MaxQueryExpressionSizeBytes ID = "max-query-expression-size-bytes"
+	RequestRateLimited          ID = "tenant-max-request-rate"
+	IngestionRateLimited        ID = "tenant-max-ingestion-rate"
+	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"

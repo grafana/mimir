@@ -78,14 +78,14 @@ spec:
                 - store-gateway-zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: small-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: small-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -229,14 +229,14 @@ spec:
                 - store-gateway-zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: small-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: small-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -380,14 +380,14 @@ spec:
                 - store-gateway-zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: small-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: small-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
