@@ -12,9 +12,12 @@ import (
 
 const (
 	queryTeeMetricsNamespace = "cortex_querytee"
-	comparisonSuccess        = "success"
-	comparisonFailed         = "fail"
+	ComparisonSuccess        = ComparisonResult("success")
+	ComparisonFailed         = ComparisonResult("fail")
+	ComparisonSkipped        = ComparisonResult("skip")
 )
+
+type ComparisonResult string
 
 type ProxyMetrics struct {
 	requestDuration        *prometheus.HistogramVec
