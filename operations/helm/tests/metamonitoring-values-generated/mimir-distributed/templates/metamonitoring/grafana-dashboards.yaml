@@ -4,6 +4,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-alertmanager-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -867,6 +868,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-alertmanager-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -3587,6 +3589,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-compactor-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -4557,6 +4560,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-compactor-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -6973,6 +6977,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-config-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -7302,6 +7307,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-object-store-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -8359,6 +8365,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-overrides-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -8640,6 +8647,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-overview-networking-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -9811,6 +9819,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-overview-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -11156,6 +11165,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-overview-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -12668,6 +12678,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-queries-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -15933,6 +15944,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-reads-networking-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -18124,6 +18136,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-reads-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -20851,6 +20864,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-reads-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -25694,6 +25708,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-remote-ruler-reads-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -26733,6 +26748,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-remote-ruler-reads-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -27936,6 +27952,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-rollout-progress-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -29370,6 +29387,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-ruler-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -32156,6 +32174,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-scaling-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -32534,6 +32553,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-slow-queries-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -32872,6 +32892,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-tenants-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -35551,6 +35572,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-top-tenants-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -37044,6 +37066,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-writes-networking-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -38215,6 +38238,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-writes-resources-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
@@ -39627,6 +39651,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mimir-writes-dashboard
+  namespace: citestns
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
