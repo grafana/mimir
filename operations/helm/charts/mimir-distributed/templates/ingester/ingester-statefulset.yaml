@@ -76,8 +76,7 @@ spec:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.ingester.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}

@@ -76,14 +76,14 @@ spec:
               cpu: 1
               memory: 512Mi
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: large-values
-              app.kubernetes.io/component: nginx
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: large-values
+            app.kubernetes.io/component: nginx
       volumes:
         - name: config
           configMap:
