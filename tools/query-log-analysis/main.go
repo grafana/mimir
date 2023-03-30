@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/prometheus/common/model"
 	"math"
 	"os"
 	"strconv"
@@ -51,7 +52,7 @@ func run(instantQueryLogs string, rangeQueryLogs string, queryIngestersWithin ti
 
 	allStats := append(instantQueriesStats, rangeQueriesStats...)
 	w := csv.NewWriter(os.Stdout)
-	columnNames := []string{"Query", "Query type", "Query time range (seconds)", "Would hit ingester", "Would hit store gateway", "User agent", "Response time (ms)", "Fetched series count", "Fetched chunks size (bytes)", "Fetched chunks count"}
+	columnNames := []string{"Query", "Query type", "Query time range (seconds)", "Query time steps", "Would hit ingester", "Would hit store gateway", "User agent", "Response time (ms)", "Fetched series count", "Fetched chunks size (bytes)", "Fetched chunks count"}
 	if err := w.Write(columnNames); err != nil {
 		return err
 	}
@@ -61,6 +62,7 @@ func run(instantQueryLogs string, rangeQueryLogs string, queryIngestersWithin ti
 			s.query,
 			s.queryType,
 			strconv.FormatFloat(s.queryRangeSeconds, 'f', 2, 64),
+			strconv.FormatInt(s.queryTimeSteps, 10),
 			strconv.FormatBool(s.wouldHitIngester),
 			strconv.FormatBool(s.wouldHitStoreGateway),
 			s.userAgent,
@@ -102,6 +104,7 @@ func loadInstantQueriesStats(logsPath string, queryIngestersWithin time.Duration
 			query:                    line.Fields.Query,
 			queryType:                "instant",
 			queryRangeSeconds:        0,
+			queryTimeSteps:           1,
 			wouldHitIngester:         line.Fields.QueryTime.After(line.Fields.ExecutionTimestamp.Add(-queryIngestersWithin)),
 			wouldHitStoreGateway:     line.Fields.QueryTime.Before(line.Fields.ExecutionTimestamp.Add(-queryStoreAfter)),
 			userAgent:                line.Fields.UserAgent,
@@ -133,10 +136,13 @@ func loadRangeQueriesStats(logsPath string, queryIngestersWithin time.Duration, 
 	stats := make([]queryStats, len(logLines))
 
 	for i, line := range logLines {
+		timeRange := line.Fields.QueryTimeRangeEnd.Sub(line.Fields.QueryTimeRangeStart.Time)
+
 		stats[i] = queryStats{
 			query:                    line.Fields.Query,
 			queryType:                "range",
-			queryRangeSeconds:        line.Fields.QueryTimeRangeEnd.Sub(line.Fields.QueryTimeRangeStart.Time).Seconds(),
+			queryRangeSeconds:        timeRange.Seconds(),
+			queryTimeSteps:           int64(timeRange.Seconds()/line.Fields.QueryTimeRangeStep.Seconds() + 1),
 			wouldHitIngester:         line.Fields.QueryTimeRangeEnd.After(line.Fields.ExecutionTimestamp.Add(-queryIngestersWithin)),
 			wouldHitStoreGateway:     line.Fields.QueryTimeRangeStart.Before(line.Fields.ExecutionTimestamp.Add(-queryStoreAfter)),
 			userAgent:                line.Fields.UserAgent,
@@ -152,28 +158,29 @@ func loadRangeQueriesStats(logsPath string, queryIngestersWithin time.Duration, 
 
 type instantQueryLogLine struct {
 	Fields struct {
-		ExecutionTimestamp time.Time      `json:"ts"`
-		Query              string         `json:"param_query"`
-		QueryTime          prometheusTime `json:"param_time"`
-		UserAgent          string         `json:"user_agent"`
-		ResponseTime       jsonDuration   `json:"response_time"`
-		FetchedSeriesCount int64          `json:"fetched_series_count,string"`
-		FetchedChunkBytes  int64          `json:"fetched_chunk_bytes,string"`
-		FetchedChunkCount  int64          `json:"fetched_chunk_count,string"`
+		ExecutionTimestamp time.Time          `json:"ts"`
+		Query              string             `json:"param_query"`
+		QueryTime          prometheusTime     `json:"param_time"`
+		UserAgent          string             `json:"user_agent"`
+		ResponseTime       prometheusDuration `json:"response_time"`
+		FetchedSeriesCount int64              `json:"fetched_series_count,string"`
+		FetchedChunkBytes  int64              `json:"fetched_chunk_bytes,string"`
+		FetchedChunkCount  int64              `json:"fetched_chunks_count,string"`
 	} `json:"fields"`
 }
 
 type rangeQueryLogLine struct {
 	Fields struct {
-		ExecutionTimestamp  time.Time      `json:"ts"`
-		Query               string         `json:"param_query"`
-		QueryTimeRangeStart prometheusTime `json:"param_start"`
-		QueryTimeRangeEnd   prometheusTime `json:"param_end"`
-		UserAgent           string         `json:"user_agent"`
-		ResponseTime        jsonDuration   `json:"response_time"`
-		FetchedSeriesCount  int64          `json:"fetched_series_count,string"`
-		FetchedChunkBytes   int64          `json:"fetched_chunk_bytes,string"`
-		FetchedChunkCount   int64          `json:"fetched_chunk_count,string"`
+		ExecutionTimestamp  time.Time          `json:"ts"`
+		Query               string             `json:"param_query"`
+		QueryTimeRangeStart prometheusTime     `json:"param_start"`
+		QueryTimeRangeEnd   prometheusTime     `json:"param_end"`
+		QueryTimeRangeStep  prometheusDuration `json:"param_step,string"`
+		UserAgent           string             `json:"user_agent"`
+		ResponseTime        prometheusDuration `json:"response_time"`
+		FetchedSeriesCount  int64              `json:"fetched_series_count,string"`
+		FetchedChunkBytes   int64              `json:"fetched_chunk_bytes,string"`
+		FetchedChunkCount   int64              `json:"fetched_chunks_count,string"`
 	} `json:"fields"`
 }
 
@@ -181,6 +188,7 @@ type queryStats struct {
 	query                    string
 	queryType                string  // range or instant
 	queryRangeSeconds        float64 // 0 for instant queries
+	queryTimeSteps           int64   // 1 for instant queries
 	wouldHitIngester         bool
 	wouldHitStoreGateway     bool
 	userAgent                string
@@ -206,18 +214,28 @@ func (t *prometheusTime) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-type jsonDuration struct {
+type prometheusDuration struct {
 	time.Duration
 }
 
-func (d *jsonDuration) UnmarshalJSON(b []byte) error {
+func (d *prometheusDuration) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
 
-	parsed, err := time.ParseDuration(s)
-	d.Duration = parsed
+	if seconds, err := strconv.ParseFloat(s, 64); err == nil {
+		d.Duration = time.Second * time.Duration(seconds)
+		return nil
+	}
+
+	if parsed, err := time.ParseDuration(s); err == nil {
+		d.Duration = parsed
+		return nil
+	}
+
+	parsed, err := model.ParseDuration(s)
+	d.Duration = time.Duration(parsed)
 
 	return err
 }
