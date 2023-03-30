@@ -48,7 +48,11 @@ func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 // Sets default limit values for unmarshalling.
 var defaultInstanceLimits *InstanceLimits
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface. If give
+func SetDefaultInstanceLimitsForYAMLUnmarshalling(l InstanceLimits) {
+	defaultInstanceLimits = &l
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
 	if defaultInstanceLimits != nil {
 		*l = *defaultInstanceLimits
