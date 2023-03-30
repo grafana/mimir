@@ -40,6 +40,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
+        foo: bar
       annotations:
       namespace: "citestns"
     spec:

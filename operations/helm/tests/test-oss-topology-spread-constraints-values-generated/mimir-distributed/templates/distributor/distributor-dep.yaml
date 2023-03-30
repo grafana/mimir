@@ -101,7 +101,7 @@ spec:
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
-            foo: bar
+            component: distributor
       tolerations:
         []
       terminationGracePeriodSeconds: 60

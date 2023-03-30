@@ -5,6 +5,8 @@ enterprise:
   enabled: true
 
 alertmanager:
+  podLabels:
+    foo: bar
   topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
@@ -22,7 +24,7 @@ distributor:
     whenUnsatisfiable: DoNotSchedule
     labelSelector:
       matchLabels:
-        foo: bar
+        component: distributor
 ingester:
   topologySpreadConstraints:
   - maxSkew: 1
@@ -30,11 +32,13 @@ ingester:
     whenUnsatisfiable: DoNotSchedule
     labelSelector:
       matchLabels:
-        foo: bar
+        component: ingester
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: DoNotSchedule
 overrides_exporter:
+  podLabels:
+    foo: bar
   topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
