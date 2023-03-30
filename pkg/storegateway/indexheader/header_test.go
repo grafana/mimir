@@ -183,21 +183,30 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname, "", nil)
+		strVals, err := headerReader.LabelValues(lname, "", nil)
 		require.NoError(t, err)
-		require.Equal(t, expectedLabelVals, vals)
+		require.Equal(t, expectedLabelVals, strVals)
 
-		for _, v := range vals {
-			if minStart > expRanges[labels.Label{Name: lname, Value: v}].Start {
-				minStart = expRanges[labels.Label{Name: lname, Value: v}].Start
+		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
+		require.NoError(t, err)
+		strValsFromOffsets := make([]string, len(valOffsets))
+		for i := range valOffsets {
+			strValsFromOffsets[i] = valOffsets[i].Value
+		}
+		require.Equal(t, expectedLabelVals, strValsFromOffsets)
+
+		for _, v := range valOffsets {
+			if minStart > expRanges[labels.Label{Name: lname, Value: v.Value}].Start {
+				minStart = expRanges[labels.Label{Name: lname, Value: v.Value}].Start
 			}
-			if maxEnd < expRanges[labels.Label{Name: lname, Value: v}].End {
-				maxEnd = expRanges[labels.Label{Name: lname, Value: v}].End
+			if maxEnd < expRanges[labels.Label{Name: lname, Value: v.Value}].End {
+				maxEnd = expRanges[labels.Label{Name: lname, Value: v.Value}].End
 			}
 
-			ptr, err := headerReader.PostingsOffset(lname, v)
+			ptr, err := headerReader.PostingsOffset(lname, v.Value)
 			require.NoError(t, err)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.Value}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.Value}], v.Off)
 		}
 	}
 
