@@ -14,7 +14,7 @@ import (
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
-	setDefaultInstanceLimits(&InstanceLimits{
+	SetDefaultInstanceLimitsForYAMLUnmarshalling(InstanceLimits{
 		MaxIngestionRate:        10,
 		MaxInMemoryTenants:      20,
 		MaxInMemorySeries:       30,

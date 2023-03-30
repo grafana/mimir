@@ -212,9 +212,6 @@ const (
 
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
-	// Set default values for unmarshalling runtime-config updated values
-	setDefaultInstanceLimits(&cfg.DefaultLimits)
-
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
@@ -358,30 +355,24 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests"},
 	}, func() float64 {
-		if il := d.getInstanceLimits(); il != nil {
-			return float64(il.MaxInflightPushRequests)
-		}
-		return 0
+		il := d.getInstanceLimits()
+		return float64(il.MaxInflightPushRequests)
 	})
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
 	}, func() float64 {
-		if il := d.getInstanceLimits(); il != nil {
-			return float64(il.MaxInflightPushRequestsBytes)
-		}
-		return 0
+		il := d.getInstanceLimits()
+		return float64(il.MaxInflightPushRequestsBytes)
 	})
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_ingestion_rate"},
 	}, func() float64 {
-		if il := d.getInstanceLimits(); il != nil {
-			return il.MaxIngestionRate
-		}
-		return 0
+		il := d.getInstanceLimits()
+		return il.MaxIngestionRate
 	})
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -1106,11 +1097,11 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		}()
 
 		il := d.getInstanceLimits()
-		if il != nil && il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
 		}
 
-		if il != nil && il.MaxIngestionRate > 0 {
+		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				return nil, errMaxIngestionRateReached
 			}
@@ -1141,7 +1132,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			d.inflightPushRequestsBytes.Sub(reqSize)
 		})
 
-		if il != nil && il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			return nil, errMaxInflightRequestsBytesReached
 		}
 
@@ -1869,17 +1860,17 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 	return response, nil
 }
 
-func (d *Distributor) getInstanceLimits() *InstanceLimits {
+func (d *Distributor) getInstanceLimits() InstanceLimits {
 	if d.cfg.InstanceLimitsFn == nil {
-		return &d.cfg.DefaultLimits
+		return d.cfg.DefaultLimits
 	}
 
 	l := d.cfg.InstanceLimitsFn()
 	if l == nil {
-		return &d.cfg.DefaultLimits
+		return d.cfg.DefaultLimits
 	}
 
-	return l
+	return *l
 }
 
 func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {

@@ -43,10 +43,10 @@ var (
 	defaultInstanceLimitsMtx sync.RWMutex
 )
 
-func setDefaultInstanceLimits(l *InstanceLimits) {
+func SetDefaultInstanceLimitsForYAMLUnmarshalling(l InstanceLimits) {
 	defaultInstanceLimitsMtx.Lock()
 	defer defaultInstanceLimitsMtx.Unlock()
-	defaultInstanceLimits = l
+	defaultInstanceLimits = &l
 }
 
 func getDefaultInstanceLimits() *InstanceLimits {
