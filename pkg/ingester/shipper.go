@@ -197,7 +197,8 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
 func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
-	level.Info(s.logger).Log("msg", "upload new block", "id", meta.ULID)
+	level.Info(s.logger).Log("msg", "uploading new block", "id", meta.ULID)
+	defer level.Info(s.logger).Log("msg", "finished uploading new block", "id", meta.ULID)
 
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
