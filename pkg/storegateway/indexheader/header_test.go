@@ -32,11 +32,11 @@ import (
 
 var implementations = []struct {
 	name    string
-	factory func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader
+	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
 }{
 	{
 		name: "stream binary reader",
-		factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
@@ -45,7 +45,7 @@ var implementations = []struct {
 	},
 	{
 		name: "lazy stream binary reader",
-		factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			readerFactory := func() (Reader, error) {
 				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
