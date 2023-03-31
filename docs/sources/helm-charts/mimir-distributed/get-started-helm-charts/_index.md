@@ -18,7 +18,7 @@ The Grafana Mimir [Helm](https://helm.sh/) chart allows you to configure, instal
 
 ## Before you begin
 
-The instructions that follow are common across any flavor of Kubernetes. If you don't have experience with Kubernetes, you can still try by installing a lightweight flavor of Kubernetes, for example [kind](https://kind.sigs.k8s.io/).
+The instructions that follow are common across any flavor of Kubernetes. If you don't have experience with Kubernetes, you can install a lightweight flavor of Kubernetes such as [kind](https://kind.sigs.k8s.io/).
 
 Experience with the following is recommended, but not essential:
 
@@ -35,11 +35,11 @@ Experience with the following is recommended, but not essential:
 ### Software requirements
 
 - Kubernetes 1.20 or higher
-- The [kubectl](https://kubernetes.io/docs/reference/kubectl/) command for your version of Kubernetes
+- The [`kubectl`](https://kubernetes.io/docs/reference/kubectl/) command for your version of Kubernetes
 
   Run the following command to get both the Kubernetes and `kubectl` version: `kubectl version`. The command prints out the server and client versions, where the server is the Kubernetes itself and client means `kubectl`.
 
-- The [helm](https://helm.sh) command version 3.8 or higher
+- The [`helm`](https://helm.sh) command version 3.8 or higher
 
   Run the following command to get the Helm version: `helm version`.
 
