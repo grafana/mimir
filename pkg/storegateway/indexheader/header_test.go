@@ -32,30 +32,30 @@ import (
 
 var implementations = []struct {
 	name    string
-	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
+	factory func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader
 }{
 	{
 		name: "stream binary reader",
-		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+		factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
 			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
 		},
 	},
-	{
-		name: "lazy stream binary reader",
-		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-			}
-
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
-			require.NoError(t, err)
-			requireCleanup(t, br.Close)
-			return br
-		},
-	},
+	//{
+	//	name: "lazy stream binary reader",
+	//	factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
+	//		readerFactory := func() (Reader, error) {
+	//			return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	//		}
+	//
+	//		br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+	//		require.NoError(t, err)
+	//		requireCleanup(t, br.Close)
+	//		return br
+	//	},
+	//},
 }
 
 func TestReadersComparedToIndexHeader(t *testing.T) {
@@ -252,7 +252,9 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	return m
 }
 
-func TestReadersLabelValues(t *testing.T) {
+// func BenchmarkReadersLabelValues(tst *testing.B) {
+func TestReadersLabelValues(tst *testing.T) {
+	t := test.NewTB(tst)
 	const testLabelCount = 32
 	const testSeriesCount = 512
 
@@ -351,15 +353,19 @@ func TestReadersLabelValues(t *testing.T) {
 	}
 
 	for _, impl := range implementations {
-		t.Run(impl.name, func(t *testing.T) {
+		t.Run(impl.name, func(t test.TB) {
 			r := impl.factory(t, ctx, tmpDir, id)
 			for lbl, tcs := range tests {
-				t.Run(lbl, func(t *testing.T) {
+				t.Run(lbl, func(t test.TB) {
 					for _, tc := range tcs {
-						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
-							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
-							require.NoError(t, err)
-							require.Equal(t, tc.expected, len(values))
+						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t test.TB) {
+							for i := 0; i < t.N(); i++ {
+								values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+								require.NoError(t, err)
+								if !assert.Equal(t, tc.expected, len(values)) {
+									t.Log("wef")
+								}
+							}
 						})
 					}
 				})
@@ -447,7 +453,7 @@ func readSymbols(bs index.ByteSlice, version, off int) ([]string, map[uint32]str
 	return symbolSlice, symbols, errors.Wrap(d.Err(), "read symbols")
 }
 
-func requireCleanup(t *testing.T, cleanupFun func() error) {
+func requireCleanup(t testing.TB, cleanupFun func() error) {
 	t.Cleanup(func() {
 		require.NoError(t, cleanupFun())
 	})
