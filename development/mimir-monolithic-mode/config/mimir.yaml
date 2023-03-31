@@ -71,5 +71,8 @@ ruler_storage:
     secret_access_key: supersecret
     insecure: true
 
+limits:
+  native_histograms_ingestion_enabled: true
+
 runtime_config:
   file: ./config/runtime.yaml

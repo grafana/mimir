@@ -74,5 +74,8 @@ ruler_storage:
     region_name:       RegionOne
     container_name: mimir-rules
 
+limits:
+  native_histograms_ingestion_enabled: true
+
 runtime_config:
   file: ./config/runtime.yaml
