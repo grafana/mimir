@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 func TestRetry(t *testing.T) {
@@ -25,6 +27,7 @@ func TestRetry(t *testing.T) {
 		Code: http.StatusBadRequest,
 		Body: []byte("Bad Request"),
 	})
+	errUnprocessable := apierror.New(apierror.TypeBadData, "invalid expression type \"range vector\" for range query, must be Scalar or instant Vector\"")
 	errInternal := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 		Code: http.StatusInternalServerError,
 		Body: []byte("Internal Server Error"),
@@ -55,6 +58,14 @@ func TestRetry(t *testing.T) {
 				return nil, errBadRequest
 			}),
 			err: errBadRequest,
+		},
+		{
+			name:            "don't retry bad-data",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errUnprocessable
+			}),
+			err: errUnprocessable,
 		},
 		{
 			name:            "retry 500s",
