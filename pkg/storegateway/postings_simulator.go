@@ -247,7 +247,7 @@ func (n fetchAllStrategy) SelectPostingGroups(groups []postingGroup) (selectedGr
 }
 
 const (
-	postingsPerByteInPostingList = 1.25
+	postingsPerByteInPostingList = 4
 	bytesPerSeries               = 512
 
 	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
