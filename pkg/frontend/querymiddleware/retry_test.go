@@ -35,6 +35,7 @@ func TestRetry(t *testing.T) {
 		handler Handler
 		resp    Response
 		err     error
+		retr    int
 	}{
 		{
 			name: "retry failures",
@@ -45,9 +46,11 @@ func TestRetry(t *testing.T) {
 				return nil, fmt.Errorf("fail")
 			}),
 			resp: &PrometheusResponse{Status: "Hello World"},
+			retr: 4,
 		},
 		{
 			name: "don't retry 400s",
+			retr: 0,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				return nil, errBadRequest
 			}),
@@ -55,6 +58,7 @@ func TestRetry(t *testing.T) {
 		},
 		{
 			name: "retry 500s",
+			retr: 5,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				return nil, errInternal
 			}),
@@ -62,6 +66,7 @@ func TestRetry(t *testing.T) {
 		},
 		{
 			name: "last error",
+			retr: 4,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				if try.Inc() == 5 {
 					return nil, errBadRequest
@@ -73,12 +78,23 @@ func TestRetry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			try.Store(0)
-			h := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(tc.handler)
+			var cl countingLogger
+			h := newRetryMiddleware(&cl, 5, nil).Wrap(tc.handler)
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
+			require.Equal(t, tc.retr, cl.count)
 		})
 	}
+}
+
+type countingLogger struct {
+	count int
+}
+
+func (c *countingLogger) Log(...interface{}) error {
+	c.count++
+	return nil
 }
 
 func Test_RetryMiddlewareCancel(t *testing.T) {
