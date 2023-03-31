@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -79,6 +81,10 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 			return resp, nil
 		}
 
+		// Any error from the Prometheus API is non-retryable.
+		if apierror.IsAPIError(err) || errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		// Retry if we get a HTTP 500 or a non-HTTP error.
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok || httpResp.Code/100 == 5 {
