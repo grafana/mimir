@@ -166,13 +166,15 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 			continue
 		}
 
+		level.Info(s.logger).Log("msg", "uploading new block to long-term storage", "block", m.ULID)
 		if err := s.upload(ctx, m); err != nil {
 			// No error returned, just log line. This is because we want other blocks to be shipped even
 			// though this one failed. It will be retried on second Sync iteration.
-			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
+			level.Error(s.logger).Log("msg", "uploading new block to long-term storage failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
 		}
+		level.Info(s.logger).Log("msg", "finished uploading new block to long-term storage", "block", m.ULID)
 
 		meta.Shipped[m.ULID] = model.Now()
 		shipped++
@@ -197,8 +199,6 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
 func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
-	level.Info(s.logger).Log("msg", "upload new block", "id", meta.ULID)
-
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
