@@ -88,7 +88,7 @@
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
 * [CHANGE] Memcached connections parameters `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`, `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections` and `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections` settings are now configured based on `max-get-multi-concurrency` and `max-async-concurrency`. #4591
-* [CHANGE] Add support to use external Redis as cache. Following are some changes in the jsonnet config: #4386 ##4640
+* [CHANGE] Add support to use external Redis as cache. Following are some changes in the jsonnet config: #4386 #4640
   * `memcached_index_queries_enabled` has been renamed to `cache_index_queries_enabled`
   * `memcached_index_queries_max_item_size_mb` has been renamed to `cache_index_queries_max_item_size_mb`
   * `memcached_metadata_enabled` has been renamed to `cache_metadata_enabled`
