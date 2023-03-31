@@ -94,6 +94,7 @@ The following features are currently experimental:
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  - `-query-frontend.query-sharding-max-regexp-size-bytes`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)
