@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -178,7 +179,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 
 	minStart := int64(math.MaxInt64)
 	maxEnd := int64(math.MinInt64)
-	for il, lname := range expLabelNames {
+	for _, lname := range expLabelNames {
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
@@ -186,7 +187,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, err)
 		require.Equal(t, expectedLabelVals, vals)
 
-		for iv, v := range vals {
+		for _, v := range vals {
 			if minStart > expRanges[labels.Label{Name: lname, Value: v}].Start {
 				minStart = expRanges[labels.Label{Name: lname, Value: v}].Start
 			}
@@ -196,26 +197,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 
 			ptr, err := headerReader.PostingsOffset(lname, v)
 			require.NoError(t, err)
-
-			// For index-cache those values are exact.
-			//
-			// For binary they are exact except last item posting offset. It's good enough if the value is larger than exact posting ending.
-			if indexReader.Version() == index.FormatV2 {
-				if iv == len(vals)-1 && il == len(expLabelNames)-1 {
-					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
-					continue
-				}
-			} else {
-				// For index formatV1 the last one does not mean literally last value, as postings were not sorted.
-				// Account for that. We know it's 40 label value.
-				if v == "40" {
-					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
-					continue
-				}
-			}
-			require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
 		}
 	}
 

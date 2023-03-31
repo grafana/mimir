@@ -100,7 +100,14 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 
 	r.version = int(d.Byte())
 	r.indexVersion = int(d.Byte())
-	indexLastPostingEnd := d.Be64()
+
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
+	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
+	// After that this is the offset of the label indices table.
+	// So what we read here will depend on what version of Mimir created the index header file.
+	indexLastPostingListEndBound := d.Be64()
 
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot read version and index version: %w", err)
@@ -120,7 +127,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
