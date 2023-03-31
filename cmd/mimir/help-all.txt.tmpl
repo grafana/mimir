@@ -1667,6 +1667,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-frontend.query-result-response-format string
     	Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "protobuf")
+  -query-frontend.query-sharding-max-regexp-size-bytes int
+    	[experimental] Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-target-series-per-shard uint
