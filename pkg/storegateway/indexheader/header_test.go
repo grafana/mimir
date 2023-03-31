@@ -43,19 +43,19 @@ var implementations = []struct {
 			return br
 		},
 	},
-	//{
-	//	name: "lazy stream binary reader",
-	//	factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
-	//		readerFactory := func() (Reader, error) {
-	//			return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-	//		}
-	//
-	//		br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
-	//		require.NoError(t, err)
-	//		requireCleanup(t, br.Close)
-	//		return br
-	//	},
-	//},
+	{
+		name: "lazy stream binary reader",
+		factory: func(t testing.TB, ctx context.Context, dir string, id ulid.ULID) Reader {
+			readerFactory := func() (Reader, error) {
+				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			}
+
+			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
 }
 
 func TestReadersComparedToIndexHeader(t *testing.T) {
@@ -261,9 +261,34 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	return m
 }
 
-// func BenchmarkReadersLabelValues(tst *testing.B) {
-func TestReadersLabelValues(tst *testing.T) {
-	t := test.NewTB(tst)
+func TestReadersLabelValues(t *testing.T) {
+	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
+	for _, impl := range implementations {
+		t.Run(impl.name, func(t *testing.T) {
+			r := impl.factory(t, context.Background(), blockDir, blockID)
+			for lbl, tcs := range tests {
+				t.Run(lbl, func(t *testing.T) {
+					for _, tc := range tcs {
+						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
+							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+							require.NoError(t, err)
+							require.Equal(t, tc.expected, len(values))
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+type labelValuesTestCase struct {
+	prefix   string
+	desc     string
+	filter   func(string) bool
+	expected int
+}
+
+func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string) {
 	const testLabelCount = 32
 	const testSeriesCount = 512
 
@@ -304,13 +329,7 @@ func TestReadersLabelValues(tst *testing.T) {
 	require.NoError(t, err)
 	requireCleanup(t, indexFile.Close)
 
-	type testCase struct {
-		prefix   string
-		desc     string
-		filter   func(string) bool
-		expected int
-	}
-	tests := map[string][]testCase{
+	tests = map[string][]labelValuesTestCase{
 		"test_label_0": {
 			{prefix: "", expected: 512},
 			{prefix: "value_", expected: 512},
@@ -352,35 +371,16 @@ func TestReadersLabelValues(tst *testing.T) {
 	for lblIdx := 2; lblIdx < testLabelCount; lblIdx++ {
 		lbl := fmt.Sprintf("test_label_%d", lblIdx)
 		tests[lbl] = append(tests[lbl],
-			testCase{prefix: "", expected: lblIdx},
-			testCase{prefix: "value_", expected: lblIdx},
-			testCase{prefix: "value_000", expected: 1},
-			testCase{prefix: "value_001", expected: 1},
-			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx-1), expected: 1},
-			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx), expected: 0},
+			labelValuesTestCase{prefix: "", expected: lblIdx},
+			labelValuesTestCase{prefix: "value_", expected: lblIdx},
+			labelValuesTestCase{prefix: "value_000", expected: 1},
+			labelValuesTestCase{prefix: "value_001", expected: 1},
+			labelValuesTestCase{prefix: fmt.Sprintf("value_%03d", lblIdx-1), expected: 1},
+			labelValuesTestCase{prefix: fmt.Sprintf("value_%03d", lblIdx), expected: 0},
 		)
 	}
 
-	for _, impl := range implementations {
-		t.Run(impl.name, func(t test.TB) {
-			r := impl.factory(t, ctx, tmpDir, id)
-			for lbl, tcs := range tests {
-				t.Run(lbl, func(t test.TB) {
-					for _, tc := range tcs {
-						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t test.TB) {
-							for i := 0; i < t.N(); i++ {
-								values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
-								require.NoError(t, err)
-								if !assert.Equal(t, tc.expected, len(values)) {
-									t.Log("wef")
-								}
-							}
-						})
-					}
-				})
-			}
-		})
-	}
+	return tests, id, tmpDir
 }
 
 func BenchmarkBinaryWrite(t *testing.B) {
