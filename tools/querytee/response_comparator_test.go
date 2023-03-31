@@ -451,13 +451,15 @@ func TestCompareSamplesResponse(t *testing.T) {
 				UseRelativeError:  bool(tc.useRelativeError),
 				SkipRecentSamples: tc.skipRecentSamples,
 			})
-			err := samplesComparator.Compare(tc.expected, tc.actual)
+			result, err := samplesComparator.Compare(tc.expected, tc.actual)
 			if tc.err == nil {
 				require.NoError(t, err)
+				require.Equal(t, ComparisonSuccess, result)
 				return
 			}
 			require.Error(t, err)
 			require.Equal(t, tc.err.Error(), err.Error())
+			require.Equal(t, result, ComparisonFailed)
 		})
 	}
 }

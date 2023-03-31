@@ -302,8 +302,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	defaultInstanceLimits = &cfg.DefaultLimits
-
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -2431,12 +2429,12 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	}
 
 	if i.cfg.InstanceLimitsFn == nil {
-		return defaultInstanceLimits
+		return &i.cfg.DefaultLimits
 	}
 
 	l := i.cfg.InstanceLimitsFn()
 	if l == nil {
-		return defaultInstanceLimits
+		return &i.cfg.DefaultLimits
 	}
 
 	return l

@@ -101,8 +101,7 @@ spec:
         {{- toYaml .Values.overrides_exporter.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.overrides_exporter.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.overrides_exporter.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.overrides_exporter.terminationGracePeriodSeconds }}
