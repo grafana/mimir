@@ -49,6 +49,7 @@ const (
 	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
 	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	BlockUploadMaxBlockSizeBytes           = "compactor.block-upload-max-block-size-bytes"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -158,6 +159,7 @@ type Limits struct {
 	CompactorBlockUploadEnabled           bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
+	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -256,6 +258,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
+	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
@@ -669,6 +672,11 @@ func (o *Overrides) CompactorBlockUploadValidationEnabled(tenantID string) bool 
 // CompactorBlockUploadVerifyChunks returns whether compaction chunk verification is enabled for a certain tenant.
 func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).CompactorBlockUploadVerifyChunks
+}
+
+// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated.
+func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(tenantID string) int64 {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadMaxBlockSizeBytes
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

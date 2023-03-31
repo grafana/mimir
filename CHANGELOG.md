@@ -6,6 +6,7 @@
 
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [ENHANCEMENT] Compactor: added the configurable limit `compactor.block-upload-max-block-size-bytes` or `compactor_block_upload_max_block_size_bytes` to limit the byte size of uploaded or validated blocks. #4680
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 
 ### Documentation

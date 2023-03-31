@@ -31,7 +31,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -41,6 +43,10 @@ const (
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
 )
+
+var maxBlockUploadSizeBytesFormat = globalerror.CompactorBlockUploadMaxBlockSizeBytes.MessageWithPerTenantLimitConfig(
+	"the block upload exceeded the maximum block size bytes limit (limit: %d bytes)",
+	validation.BlockUploadMaxBlockSizeBytes)
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
@@ -152,7 +158,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		decreaseActiveValidationsInDefer = false
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
 			defer c.blockUploadValidations.Dec()
-			return c.validateBlock(ctx, blockID, userBkt, tenantID)
+			return c.validateBlock(ctx, logger, blockID, userBkt, tenantID)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -204,7 +210,7 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *meta
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "starting block upload")
 
-	if msg := c.sanitizeMeta(logger, blockID, meta); msg != "" {
+	if msg := c.sanitizeMeta(logger, tenantID, blockID, meta); msg != "" {
 		return httpError{
 			message:    msg,
 			statusCode: http.StatusBadRequest,
@@ -373,7 +379,7 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
-func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
+func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, blockID ulid.ULID, meta *metadata.Meta) string {
 	if meta == nil {
 		return "missing block metadata"
 	}
@@ -424,6 +430,10 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID
 		if f.SizeBytes <= 0 {
 			return fmt.Sprintf("file with invalid size: %s", f.RelPath)
 		}
+	}
+
+	if err := c.validateMaximumBlockSize(logger, meta.Thanos.Files, userID); err != nil {
+		return err.Error()
 	}
 
 	if meta.Version != metadata.TSDBVersion1 {
@@ -509,7 +519,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, userID string) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket, userID string) error {
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -537,6 +547,10 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}
 
+	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
+		return err
+	}
+
 	// validate block
 	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
 	err = block.VerifyBlock(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
@@ -544,6 +558,32 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		return errors.Wrap(err, "error validating block")
 	}
 
+	return nil
+}
+
+func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files []metadata.File, userID string) error {
+	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
+	if maxBlockSizeBytes <= 0 {
+		return nil
+	}
+
+	blockSizeBytes := int64(0)
+	for _, f := range files {
+		if f.SizeBytes < 0 {
+			return errors.New("invalid negative file size in block metadata")
+		}
+		blockSizeBytes += f.SizeBytes
+		if blockSizeBytes < 0 {
+			// overflow
+			break
+		}
+	}
+
+	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
+		err := fmt.Errorf(maxBlockUploadSizeBytesFormat, maxBlockSizeBytes)
+		level.Error(logger).Log("err", err, "size", blockSizeBytes)
+		return err
+	}
 	return nil
 }
 
