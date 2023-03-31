@@ -73,6 +73,23 @@ ingester_limits:
   max_inflight_push_requests: 30000
 ```
 
+## Distributor instance limits
+
+The runtime configuration file can be used to dynamically adjust Grafana Mimir distributor instance limits. While per-tenant limits are limits applied to each tenant, per-distributor-instance limits are limits applied to each distributor process.
+Distributor limits ensure individual distributors are not overwhelmed, regardless of any per-tenant limits. These limits can be set under the `distributor.instance_limits` block in the global configuration file, with CLI flags, or under the `distributor_limits` field in the runtime configuration file.
+
+The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest load.
+
+Everything under the `instance_limits` section within the [`distributor`]({{< relref "../references/configuration-parameters/index.md#distributor" >}}) block can be overridden via runtime configuration.
+The following example shows a portion of the runtime configuration that changes the distributor limits:
+
+```yaml
+distributor_limits:
+  max_ingestion_rate: 75000
+  max_inflight_push_requests: 1500
+  max_inflight_push_requests_bytes: 314572800
+```
+
 ## Runtime configuration of ingester streaming
 
 An advanced runtime configuration option controls if ingesters transfer encoded chunks (the default) or transfer decoded series to queriers at query time.

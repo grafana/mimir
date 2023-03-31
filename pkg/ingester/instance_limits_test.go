@@ -14,12 +14,12 @@ import (
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
-	defaultInstanceLimits = &InstanceLimits{
+	SetDefaultInstanceLimitsForYAMLUnmarshalling(InstanceLimits{
 		MaxIngestionRate:        10,
 		MaxInMemoryTenants:      20,
 		MaxInMemorySeries:       30,
 		MaxInflightPushRequests: 40,
-	}
+	})
 
 	l := InstanceLimits{}
 	input := `

@@ -41,6 +41,7 @@ const (
 	maxQueryLengthFlag                     = "store.max-query-length"
 	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
 	requestRateFlag                        = "distributor.request-rate-limit"
 	requestBurstSizeFlag                   = "distributor.request-burst-size"
 	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
@@ -111,24 +112,26 @@ type Limits struct {
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
-	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery   int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback               model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length" doc:"hidden"` // TODO: deprecated, remove in 2.8
-	MaxPartialQueryLength          model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
-	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
-	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	QueryShardingMaxShardedQueries int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
-	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	MaxChunksPerQuery               int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxFetchedSeriesPerQuery        int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery    int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback                model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxQueryLength                  model.Duration `yaml:"max_query_length" json:"max_query_length" doc:"hidden"` // TODO: deprecated, remove in 2.8
+	MaxPartialQueryLength           model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
+	MaxQueryParallelism             int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	MaxLabelsQueryLength            model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MaxCacheFreshness               model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
+	MaxQueriersPerTenant            int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards        int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	QueryShardingMaxShardedQueries  int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	QueryShardingMaxRegexpSizeBytes int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes" category:"experimental"`
+	SplitInstantQueriesByInterval   model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -234,6 +237,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
+	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 0, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 
 	_ = l.RulerEvaluationDelay.Set("1m")
@@ -259,6 +263,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -508,6 +513,11 @@ func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 	return t
 }
 
+// MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
+func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
+}
+
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
 func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxLabelsQueryLength)
@@ -540,6 +550,13 @@ func (o *Overrides) QueryShardingTotalShards(userID string) int {
 // be run for a given received query. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxShardedQueries
+}
+
+// QueryShardingMaxRegexpSizeBytes returns the limit to the max number of bytes allowed
+// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
+// than this limit, the query will not be sharded. 0 to disable limit.
+func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
 }
 
 // SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query

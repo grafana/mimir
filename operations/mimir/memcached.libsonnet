@@ -50,48 +50,52 @@ memcached {
   },
 
   // Dedicated memcached instance used to cache query results.
-  memcached_frontend: if $._config.memcached_frontend_enabled then
-    $.memcached {
-      name: 'memcached-frontend',
-      max_item_size: '%dm' % [$._config.memcached_frontend_max_item_size_mb],
-      connection_limit: 16384,
-    } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
-  else {},
+  memcached_frontend:
+    if $._config.cache_frontend_enabled && $._config.cache_frontend_backend == 'memcached' then
+      $.memcached {
+        name: 'memcached-frontend',
+        max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
+        connection_limit: 16384,
+      } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
+    else {},
 
   // Dedicated memcached instance used to temporarily cache index lookups.
-  memcached_index_queries: if $._config.memcached_index_queries_enabled then
-    $.memcached {
-      name: 'memcached-index-queries',
-      max_item_size: '%dm' % [$._config.memcached_index_queries_max_item_size_mb],
-      connection_limit: 16384,
-    } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
-  else {},
+  memcached_index_queries:
+    if $._config.cache_index_queries_enabled && $._config.cache_index_queries_backend == 'memcached' then
+      $.memcached {
+        name: 'memcached-index-queries',
+        max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
+        connection_limit: 16384,
+      } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
+    else {},
 
   // Memcached instance used to cache chunks.
-  memcached_chunks: if $._config.memcached_chunks_enabled then
-    $.memcached {
-      name: 'memcached',
-      max_item_size: '%dm' % [$._config.memcached_chunks_max_item_size_mb],
+  memcached_chunks:
+    if $._config.cache_chunks_enabled && $._config.cache_chunks_backend == 'memcached' then
+      $.memcached {
+        name: 'memcached',
+        max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
 
-      // Save memory by more tightly provisioning memcached chunks.
-      memory_limit_mb: 6 * 1024,
-      overprovision_factor: 1.05,
-      connection_limit: 16384,
-    } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
-  else {},
+        // Save memory by more tightly provisioning memcached chunks.
+        memory_limit_mb: 6 * 1024,
+        overprovision_factor: 1.05,
+        connection_limit: 16384,
+      } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
+    else {},
 
   // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
-  memcached_metadata: if $._config.memcached_metadata_enabled then
-    $.memcached {
-      name: 'memcached-metadata',
-      max_item_size: '%dm' % [$._config.memcached_metadata_max_item_size_mb],
-      connection_limit: 16384,
+  memcached_metadata:
+    if $._config.cache_metadata_enabled && $._config.cache_metadata_backend == 'memcached' then
+      $.memcached {
+        name: 'memcached-metadata',
+        max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
+        connection_limit: 16384,
 
-      // Metadata cache doesn't need much memory.
-      memory_limit_mb: 512,
+        // Metadata cache doesn't need much memory.
+        memory_limit_mb: 512,
 
-      statefulSet+:
-        statefulSet.mixin.spec.withReplicas(1),
-    } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
-  else {},
+        statefulSet+:
+          statefulSet.mixin.spec.withReplicas(1),
+      } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
+    else {},
 }

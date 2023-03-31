@@ -90,8 +90,7 @@ spec:
         {}
       affinity:
         {}
-      topologySpreadConstraints:
-        
+      
       tolerations:
         []
       terminationGracePeriodSeconds: 60

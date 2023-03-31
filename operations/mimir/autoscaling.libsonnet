@@ -17,14 +17,17 @@
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
     autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
+    autoscaling_ruler_memory_target_utilization: 1,
 
     autoscaling_query_frontend_enabled: false,
     autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
     autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+    autoscaling_query_frontend_memory_target_utilization: 1,
 
     autoscaling_ruler_query_frontend_enabled: false,
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
+    autoscaling_ruler_query_frontend_memory_target_utilization: 1,
   },
 
   assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
@@ -147,7 +150,7 @@
     ],
   }),
 
-  local newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas) = self.newScaledObject(
+  local newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization) = self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -175,7 +178,7 @@
           ],
 
           // Threshold is expected to be a string
-          threshold: std.toString(siToBytes(memory_requests)),
+          threshold: std.toString(std.floor(siToBytes(memory_requests) * memory_target_utilization)),
         },
       ],
     },
@@ -264,6 +267,7 @@
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+      memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
     ),
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
@@ -318,6 +322,7 @@
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+      memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
@@ -407,7 +412,7 @@
           ],
 
           // Threshold is expected to be a string
-          threshold: std.toString(siToBytes($.ruler_container.resources.requests.memory)),
+          threshold: std.toString(std.floor(siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
         },
       ],
     },

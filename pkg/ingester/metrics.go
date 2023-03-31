@@ -190,7 +190,7 @@ func newIngesterMetrics(
 			ConstLabels: map[string]string{limitLabel: "max_ingestion_rate"},
 		}, func() float64 {
 			if g := instanceLimitsFn(); g != nil {
-				return float64(g.MaxIngestionRate)
+				return g.MaxIngestionRate
 			}
 			return 0
 		}),

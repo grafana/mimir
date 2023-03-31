@@ -1,0 +1,83 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-topology-spread-constraints-values-minio
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-5.0.4
+    release: test-oss-topology-spread-constraints-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-oss-topology-spread-constraints-values
+  template:
+    metadata:
+      name: test-oss-topology-spread-constraints-values-minio
+      labels:
+        app: minio
+        release: test-oss-topology-spread-constraints-values
+      annotations:
+        checksum/secrets: 41f7f877f10f2ea40a1686a155be549f360a12291f6c50593deaf78f117913cc
+        checksum/config: e6194bba87946ebf955220a02e85317d2694486e69b653db129a058b4691fc6a
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2022-12-12T19-27-27Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-topology-spread-constraints-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-topology-spread-constraints-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-oss-topology-spread-constraints-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-oss-topology-spread-constraints-values-minio

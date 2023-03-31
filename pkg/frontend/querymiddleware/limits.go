@@ -39,6 +39,10 @@ type Limits interface {
 	// frontend will process in parallel.
 	MaxQueryParallelism(userID string) int
 
+	// MaxQueryExpressionSizeBytes returns the limit of the max number of bytes long a raw
+	// query may be. 0 means "unlimited".
+	MaxQueryExpressionSizeBytes(userID string) int
+
 	// MaxCacheFreshness returns the period after which results are cacheable,
 	// to prevent caching of very recent results.
 	MaxCacheFreshness(userID string) time.Duration
@@ -49,6 +53,11 @@ type Limits interface {
 	// QueryShardingMaxShardedQueries returns the max number of sharded queries that can
 	// be run for a given received query. 0 to disable limit.
 	QueryShardingMaxShardedQueries(userID string) int
+
+	// QueryShardingMaxRegexpSizeBytes returns the limit to the max number of bytes allowed
+	// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
+	// than this limit, the query will not be sharded. 0 to disable limit.
+	QueryShardingMaxRegexpSizeBytes(userID string) int
 
 	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
 	SplitInstantQueriesByInterval(userID string) time.Duration
@@ -150,6 +159,14 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 				"creationGracePeriod", creationGracePeriod)
 
 			r = r.WithStartEnd(r.GetStart(), maxEndTime)
+		}
+	}
+
+	// Enforce max query size, in bytes.
+	if maxQuerySize := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, l.MaxQueryExpressionSizeBytes); maxQuerySize > 0 {
+		querySize := len(r.GetQuery())
+		if querySize > maxQuerySize {
+			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxQueryExpressionSizeBytesError(querySize, maxQuerySize).Error())
 		}
 	}
 
