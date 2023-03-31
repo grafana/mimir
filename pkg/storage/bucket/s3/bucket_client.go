@@ -6,8 +6,6 @@
 package s3
 
 import (
-	"strings"
-
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
