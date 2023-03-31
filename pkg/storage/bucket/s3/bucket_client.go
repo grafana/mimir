@@ -6,6 +6,8 @@
 package s3
 
 import (
+	"strings"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
@@ -43,6 +45,12 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		return s3.Config{}, err
 	}
 
+	putUserMetadata := map[string]string{}
+
+	if cfg.StorageClass != "" {
+		putUserMetadata[awsStorageClassHeader] = cfg.StorageClass
+	}
+
 	return s3.Config{
 		Bucket:          cfg.BucketName,
 		Endpoint:        cfg.Endpoint,
@@ -50,7 +58,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		AccessKey:       cfg.AccessKeyID,
 		SecretKey:       cfg.SecretAccessKey.String(),
 		Insecure:        cfg.Insecure,
-		PutUserMetadata: map[string]string{awsStorageClassHeader: cfg.StorageClass},
+		PutUserMetadata: putUserMetadata,
 		SSEConfig:       sseCfg,
 		HTTPConfig: s3.HTTPConfig{
 			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
