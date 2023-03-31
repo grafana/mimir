@@ -119,7 +119,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	s.shardingAttempts.Inc()
-	shardedQuery, shardingStats, err := s.shardQuery(ctx, queryExpr, totalShards)
+	shardedQuery, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), totalShards)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
@@ -236,7 +236,7 @@ func mapEngineError(err error) error {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(ctx context.Context, queryExpr parser.Expr, totalShards int) (string, *astmapper.MapperStats, error) {
+func (s *querySharding) shardQuery(ctx context.Context, query string, totalShards int) (string, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
@@ -246,7 +246,14 @@ func (s *querySharding) shardQuery(ctx context.Context, queryExpr parser.Expr, t
 		return "", nil, err
 	}
 
-	shardedQuery, err := mapper.Map(queryExpr)
+	// The mapper can modify the input expression in-place, so we must re-parse the original query
+	// each time before passing it to the mapper.
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	shardedQuery, err := mapper.Map(expr)
 	if err != nil {
 		return "", nil, err
 	}
@@ -321,7 +328,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		// - count(metric)
 		//
 		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1)
+		_, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), 1)
 		numShardableLegs := 1
 		if err == nil && shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()
