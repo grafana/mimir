@@ -4,7 +4,6 @@ package mimirpb
 
 import (
 	"sync"
-	"sync/atomic"
 )
 
 var reusableWriteRequestsPool = sync.Pool{
@@ -20,31 +19,23 @@ func NewReusableWriteRequest(request WriteRequest) *ReusableWriteRequest {
 type ReusableWriteRequest struct {
 	WriteRequest
 
-	bytes atomic.Pointer[[]byte]
+	bytes []byte
 }
 
+// Marshal reuses the internal buffer to marshal the request.
+// It is not thread-safe.
 func (wr *ReusableWriteRequest) Marshal() ([]byte, error) {
-	var b []byte
-	bp := wr.bytes.Load()
-	if bp != nil {
-		b = *bp
-	} else {
-		bp = new([]byte)
-	}
-
 	size := wr.Size()
-	if cap(b) < size {
-		b = make([]byte, size)
-		*bp = b
+	if cap(wr.bytes) < size {
+		wr.bytes = make([]byte, size)
 	}
-	wr.bytes.Store(bp)
 
-	n, err := wr.MarshalToSizedBuffer(b[:size])
+	n, err := wr.MarshalToSizedBuffer(wr.bytes[:size])
 	if err != nil {
 		return nil, err
 	}
 
-	return b[:n], nil
+	return wr.bytes[:n], nil
 }
 
 func (wr *ReusableWriteRequest) Release() {
