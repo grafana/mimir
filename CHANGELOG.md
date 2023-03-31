@@ -65,6 +65,10 @@
   * `-compactor.block-upload-validation-enabled` has been added, `compactor_block_upload_validation_enabled` can be used to override per tenant
   * `-compactor.block-upload.block-validation-enabled` was the previous global flag and has been removed
 * [ENHANCEMENT] OTLP: Add support for converting OTel exponential histograms to Prometheus native histograms. The ingestion of native histograms must be enabled, please set `-ingester.native-histograms-ingestion-enabled` to `true`. #4063
+* [ENHANCEMENT] Query-frontend: add metric `cortex_query_fetched_index_bytes_total` to measure TSDB index bytes fetched to execute a query. #4597
+* [ENHANCEMENT] Query-frontend: add experimental limit to enforce a max query expression size in bytes via `-query-frontend.max-query-expression-size-bytes` or `max_query_expression_size_bytes`. #4604
+* [ENHANCEMENT] Query-tee: improve message logged when comparing responses and one response contains a non-JSON payload. #4588
+* [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_limits` block in runtime configuration in addition to the existing configuration. #4619
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -77,15 +81,19 @@
 * [ENHANCEMENT] `_config.job_names.<job>` values can now be arrays of regular expressions in addition to a single string. Strings are still supported and behave as before. #4543
 * [ENHANCEMENT] Queries dashboard: remove mention to store-gateway "streaming enabled" in panels because store-gateway only support streaming series since Mimir 2.7. #4569
 * [BUGFIX] Ruler dashboard: show data for reads from ingesters. #4543
+* [BUGFIX] Pod selector regex for deployments: change `(.*-mimir-)` to `(.*mimir-)`. #4603
 
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381
+* [CHANGE] Memcached connections parameters `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`, `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections` and `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections` settings are now configured based on `max-get-multi-concurrency` and `max-async-concurrency`. #4591
+* [CHANGE] Add support to use external Redis as cache. #4386
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
 * [ENHANCEMENT] Add support for mTLS connections to Memcached servers. #4553
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
+* [ENHANCEMENT] Autoscaling: Add `autoscaling_query_frontend_memory_target_utilization`, `autoscaling_ruler_query_frontend_memory_target_utilization`, and `autoscaling_ruler_memory_target_utilization` configuration options, for controlling the corresponding autoscaler memory thresholds. Each has a default of 1, i.e. 100%. #4612
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
@@ -96,6 +104,7 @@
 
 * [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
 * [FEATURE] Add instructions about how to configure native histograms. #4527
+* [ENHANCEMENT] Runbook for MimirCompactorHasNotSuccessfullyRunCompaction extended to include scenario where compaction has fallen behind. #4609
 
 ### Tools
 

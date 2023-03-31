@@ -87,7 +87,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 			metrics := newIngesterMetrics(
 				prometheus.NewPedanticRegistry(),
 				true,
-				func() *InstanceLimits { return defaultInstanceLimits },
+				func() *InstanceLimits { return nil },
 				nil,
 				nil,
 			)
