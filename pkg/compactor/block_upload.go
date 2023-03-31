@@ -106,7 +106,12 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		maxConcurrency := int64(c.compactorCfg.MaxBlockUploadValidationConcurrency)
 		currentValidations := c.blockUploadValidations.Inc()
-		defer c.blockUploadValidations.Dec()
+		decreaseActiveValidationsInDefer := true
+		defer func() {
+			if decreaseActiveValidationsInDefer {
+				c.blockUploadValidations.Dec()
+			}
+		}()
 		if maxConcurrency > 0 && currentValidations > maxConcurrency {
 			err := httpError{
 				message:    "too many block upload validations in progress",
@@ -120,7 +125,9 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			writeBlockUploadError(err, op, "while creating validation file", logger, w)
 			return
 		}
+		decreaseActiveValidationsInDefer = false
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
+			defer c.blockUploadValidations.Dec()
 			return c.validateBlock(ctx, blockID, userBkt, tenantID)
 		})
 	} else {
@@ -290,8 +297,6 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *metadata.Meta, validation func(context.Context) error) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
-	c.blockUploadValidations.Inc()
-	defer c.blockUploadValidations.Dec()
 
 	{
 		var wg sync.WaitGroup

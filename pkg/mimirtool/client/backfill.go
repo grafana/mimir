@@ -15,16 +15,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/grafana/dskit/backoff"
-
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
-
-const maxRetries = 10
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
 	// Upload each block
@@ -104,14 +100,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		}
 	}
 
-	retryConfig := backoff.Config{
-		MinBackoff: 5 * time.Second,
-		MaxBackoff: 1 * time.Minute,
-		MaxRetries: maxRetries,
-	}
-	retry := backoff.New(ctx, retryConfig)
-
-	for retry.Ongoing() {
+	for {
 		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
 		if err == nil {
 			drainAndCloseBody(resp)
@@ -121,7 +110,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 			return errors.Wrap(err, "request to finish block upload failed")
 		}
 		logctx.WithField("error", err).Warning("will sleep and try again")
-		retry.Wait()
+		time.Sleep(sleepTime)
 	}
 
 	for {
