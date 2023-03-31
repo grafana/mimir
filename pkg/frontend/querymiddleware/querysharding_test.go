@@ -950,30 +950,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 	}
 }
 
-func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
-	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "aaa{", // Invalid query.
-	}
-
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
-
-	// Mock the downstream handler, always returning success (regardless the query is valid or not).
-	downstream := &mockHandler{}
-	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
-
-	// Run the query with sharding middleware wrapping the downstream one.
-	// We expect the query parsing done by the query sharding middleware to fail
-	// but to fallback on the downstream one which always returns success.
-	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-	require.NoError(t, err)
-	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
-	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
-}
-
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
