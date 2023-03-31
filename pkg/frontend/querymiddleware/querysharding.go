@@ -446,9 +446,7 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 				continue
 			}
 
-			if length := len(matcher.Value); length > longest {
-				longest = length
-			}
+			longest = util_math.Max(longest, len(matcher.Value))
 		}
 	}
 
