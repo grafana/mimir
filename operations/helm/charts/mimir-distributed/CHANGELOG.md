@@ -35,7 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
-* [BUGFIX] Set MetricTarget type to Utilization to align with usage of averageUtilization.
+* [BUGFIX] Set MetricTarget type to Utilization to align with usage of averageUtilization. #4642
 
 ## 4.3.0
 
