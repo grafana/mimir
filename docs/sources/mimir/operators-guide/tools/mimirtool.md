@@ -469,7 +469,7 @@ You can analyze your Grafana or Hosted Grafana instance to determine which metri
 
 The following command runs against your Grafana instance, downloads its dashboards, and extracts the Prometheus
 metrics used in its queries.
-The output is a JSON file. You can use this file with `analyse prometheus --grafana-metrics-file`.
+The output is a JSON file. You can use this file with `analyze prometheus --grafana-metrics-file`.
 
 ```bash
 mimirtool analyze grafana --address=<url>
@@ -513,7 +513,7 @@ mimirtool analyze grafana --address=<url>
 #### Ruler
 
 The following command runs against your Grafana Mimir, Grafana Enterprise Metrics, or Grafana Cloud Prometheus instance. The command fetches the rule groups and extracts the Prometheus metrics used in the rule queries.
-The output is a JSON file. You can use this file with `analyse prometheus --ruler-metrics-file`.
+The output is a JSON file. You can use this file with `analyze prometheus --ruler-metrics-file`.
 
 ```bash
 mimirtool analyze ruler --address=<url> --id=<tenant_id>
@@ -571,7 +571,7 @@ mimirtool analyze dashboard <file>...
 #### Rule-file
 
 The following command accepts Prometheus rule YAML files as input and extracts Prometheus metrics used in the queries.
-The output is a JSON file. You can use the output file with `analyse prometheus --ruler-metrics-file`.
+The output is a JSON file. You can use the output file with `analyze prometheus --ruler-metrics-file`.
 
 ```bash
 mimirtool analyze rule-file <file>
@@ -586,8 +586,8 @@ mimirtool analyze rule-file <file>
 #### Prometheus
 
 The following command runs against your Grafana Mimir, Grafana Metrics Enterprise, Prometheus, or Cloud Prometheus instance.
-The command uses the output from a previous run of `analyse grafana`, `analyse dashboard`, `analyse ruler`
-or `analyse rule-file` to show the number of series in the Prometheus instance that are used in dashboards or rules, or both.
+The command uses the output from a previous run of `analyze grafana`, `analyze dashboard`, `analyze ruler`
+or `analyze rule-file` to show the number of series in the Prometheus instance that are used in dashboards or rules, or both.
 This command also shows which metrics exist in Grafana Cloud that are _not_ in dashboards or rules. The output is a JSON file.
 
 > **Note:** The command makes a request for every active series in the Prometheus instance.
@@ -604,8 +604,8 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 | `MIMIR_ADDRESS`      | `--address`              | Sets the address of the Prometheus instance.                                                                             |
 | `MIMIR_TENANT_ID`    | `--id`                   | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
 | `MIMIR_API_KEY`      | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
-| -                    | `--grafana-metrics-file` | `mimirtool analyse grafana` or `mimirtool analyse dashboard` output file, which by default is `metrics-in-grafana.json`. |
-| -                    | `--ruler-metrics-file`   | `mimirtool analyse ruler` or `mimirtool analyse rule-file` output file, which by default is `metrics-in-ruler.json`.     |
+| -                    | `--grafana-metrics-file` | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`. |
+| -                    | `--ruler-metrics-file`   | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.     |
 | -                    | `--output`               | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
 
 ##### Example output

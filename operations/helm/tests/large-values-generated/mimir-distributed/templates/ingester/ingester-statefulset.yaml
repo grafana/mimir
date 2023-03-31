@@ -79,14 +79,14 @@ spec:
                 - ingester-zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: large-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: large-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -231,14 +231,14 @@ spec:
                 - ingester-zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: large-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: large-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -383,14 +383,14 @@ spec:
                 - ingester-zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: large-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: large-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240

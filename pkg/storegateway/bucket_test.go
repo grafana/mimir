@@ -943,14 +943,45 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	return ulid
 }
 
-// Very similar benchmark to ths: https://github.com/prometheus/prometheus/blob/1d1732bc25cc4b47f513cb98009a4eb91879f175/tsdb/querier_bench_test.go#L82,
-// but with postings results check when run as test.
 func benchmarkExpandedPostings(
-	t test.TB,
+	tb test.TB,
 	newTestBucketBlock func() *bucketBlock,
 	series int,
 ) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	tb.Cleanup(cancel)
+
+	for _, testCase := range seriesSelectionTestCases(tb, series) {
+		tb.Run(testCase.name, func(tb test.TB) {
+			indexr := newBucketIndexReader(newTestBucketBlock())
+			indexrStats := newSafeQueryStats()
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N(); i++ {
+				p, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
+
+				if err != nil {
+					tb.Fatal(err.Error())
+				}
+				if testCase.expectedSeriesLen != len(p) {
+					tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				}
+			}
+		})
+	}
+}
+
+type seriesSelectionTestCase struct {
+	name              string
+	matchers          []*labels.Matcher
+	expectedSeriesLen int
+}
+
+// Very similar benchmark to ths: https://github.com/prometheus/prometheus/blob/1d1732bc25cc4b47f513cb98009a4eb91879f175/tsdb/querier_bench_test.go#L82,
+func seriesSelectionTestCases(
+	t test.TB,
+	series int,
+) []seriesSelectionTestCase {
 	series = series / 5
 
 	iUniqueValues := series / 10      // The amount of unique values for "i" label prefix. See appendTestSeries.
@@ -984,12 +1015,7 @@ func benchmarkExpandedPostings(
 	// Just make sure that we're testing what we think we're testing.
 	require.NotEmpty(t, iRegexNotSetMatches.SetMatches(), "Should have non empty SetMatches to test the proper path.")
 
-	cases := []struct {
-		name     string
-		matchers []*labels.Matcher
-
-		expectedLen int
-	}{
+	return []seriesSelectionTestCase{
 		{`n="X"`, []*labels.Matcher{nX}, 0},
 		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}, 0},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}, 0},
@@ -1027,25 +1053,6 @@ func benchmarkExpandedPostings(
 		{`n="1",i=~"<unique_prefix>.+"`, []*labels.Matcher{n1, iUniquePrefixPlus}, 2},
 		{`n="1",i!~"<unique_prefix>.+"`, []*labels.Matcher{n1, iNotUniquePrefixPlus}, int(float64(series)*0.2) - 2},
 		{`p!=""`, []*labels.Matcher{pNotEmpty}, series},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t test.TB) {
-			indexr := newBucketIndexReader(newTestBucketBlock())
-			indexrStats := newSafeQueryStats()
-
-			t.ResetTimer()
-			for i := 0; i < t.N(); i++ {
-				p, err := indexr.ExpandedPostings(ctx, c.matchers, indexrStats)
-
-				if err != nil {
-					t.Fatal(err.Error())
-				}
-				if c.expectedLen != len(p) {
-					t.Fatalf("expected %d postings but got %d", c.expectedLen, len(p))
-				}
-			}
-		})
 	}
 }
 

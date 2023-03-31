@@ -142,7 +142,7 @@ groups:
         close to the limit.'
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemorymapareastoohigh
     expr: |
-      process_memory_map_areas{job=~".*/((ingester.*|cortex|mimir|mimir-write.*)|(store-gateway.*|cortex|mimir|mimir-backend.*))"} / process_memory_map_areas_limit{job=~".*/((ingester.*|cortex|mimir|mimir-write.*)|(store-gateway.*|cortex|mimir|mimir-backend.*))"} > 0.8
+      process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} > 0.8
     for: 5m
     labels:
       severity: critical
@@ -183,7 +183,7 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerinstancehasnorulegroups
     expr: |
       # Alert on ruler instances in microservices mode that have no rule groups assigned,
-      min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*-mimir-)?ruler.*"}) == 0
+      min by(cluster, namespace, pod) (cortex_ruler_managers_total{pod=~"(.*mimir-)?ruler.*"}) == 0
       # but only if other ruler instances of the same cell do have rule groups assigned
       and on (cluster, namespace)
       (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
@@ -200,8 +200,8 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirringmembersmismatch
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write.*)"}))
-        != sum by(cluster, namespace) (up{job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write.*)"})
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}))
+        != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"})
       )
       and
       (
@@ -609,7 +609,7 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinstancehasnotenants
     expr: |
       # Alert on alertmanager instances in microservices mode that own no tenants,
-      min by(cluster, namespace, pod) (cortex_alertmanager_tenants_owned{pod=~"(.*-mimir-)?alertmanager.*"}) == 0
+      min by(cluster, namespace, pod) (cortex_alertmanager_tenants_owned{pod=~"(.*mimir-)?alertmanager.*"}) == 0
       # but only if other instances of the same cell do have tenants assigned.
       and on (cluster, namespace)
       max by(cluster, namespace) (cortex_alertmanager_tenants_owned) > 0

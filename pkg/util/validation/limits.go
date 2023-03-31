@@ -41,6 +41,7 @@ const (
 	maxQueryLengthFlag                     = "store.max-query-length"
 	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
 	requestRateFlag                        = "distributor.request-rate-limit"
 	requestBurstSizeFlag                   = "distributor.request-burst-size"
 	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
@@ -129,6 +130,7 @@ type Limits struct {
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -147,12 +149,14 @@ type Limits struct {
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
 
 	// Compactor.
-	CompactorBlocksRetentionPeriod     model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
-	CompactorSplitAndMergeShards       int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
-	CompactorSplitGroups               int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
-	CompactorTenantShardSize           int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
-	CompactorPartialBlockDeletionDelay model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
-	CompactorBlockUploadEnabled        bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorSplitAndMergeShards          int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorSplitGroups                  int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
+	CompactorTenantShardSize              int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
+	CompactorPartialBlockDeletionDelay    model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
+	CompactorBlockUploadEnabled           bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
+	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -248,6 +252,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is %s: a lower value will be ignored and the feature disabled. 0 to disable.", block.MetaFilename, MinCompactorPartialBlockDeletionDelay.String()))
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
+	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
+	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
@@ -255,6 +261,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -504,6 +511,11 @@ func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 	return t
 }
 
+// MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
+func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
+}
+
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
 func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxLabelsQueryLength)
@@ -630,6 +642,16 @@ func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) (delay tim
 // CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
 func (o *Overrides) CompactorBlockUploadEnabled(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).CompactorBlockUploadEnabled
+}
+
+// CompactorBlockUploadValidationEnabled returns whether block upload validation is enabled for a certain tenant.
+func (o *Overrides) CompactorBlockUploadValidationEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadValidationEnabled
+}
+
+// CompactorBlockUploadVerifyChunks returns whether compaction chunk verification is enabled for a certain tenant.
+func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorBlockUploadVerifyChunks
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

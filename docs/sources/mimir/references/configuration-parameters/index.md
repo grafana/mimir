@@ -1,8 +1,8 @@
 ---
 aliases:
-  - operators-guide/configuring/references/configuration-parameters/
-  - configure/references/configuration-parameters/
-  - references/configuration-parameters/
+  - ../operators-guide/configure/reference-configuration-parameters/
+  - ../operators-guide/configuring/reference-configuration-parameters/
+  - ../reference-configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -75,6 +75,8 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 **Experimental** parameters will remain experimental until they are either made stable or removed. Parameters that are made stable will be classified as either **basic** or **advanced**. We aim to make this decision on an experimental parameter within 6 months of its initial release, but this decision may take longer depending on what we discover during testing, or if upstream dependencies (e.g., Prometheus) of our code changes.
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
+A configuration parameter is in maintenance and usable as expected between its deprecation and removal.
+If you configure Mimir with a removed parameter, Mimir will fail to start.
 
 ![Parameter states](param-states.png)
 
@@ -1221,10 +1223,10 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
-# (experimental) Format to use when retrieving query results from queriers.
-# Supported values: json, protobuf
+# Format to use when retrieving query results from queriers. Supported values:
+# json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
-[query_result_response_format: <string> | default = "json"]
+[query_result_response_format: <string> | default = "protobuf"]
 
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
@@ -1594,10 +1596,10 @@ query_frontend:
   [query_result_response_format: <string> | default = "json"]
 
 tenant_federation:
-  # Enable running rule groups against multiple tenants. The tenant IDs involved
-  # need to be in the rule group's 'source_tenants' field. If this flag is set
-  # to 'false' when there are already created federated rule groups, then these
-  # rules groups will be skipped during evaluations.
+  # Enable rule groups to query against multiple tenants. The tenant IDs
+  # involved need to be in the rule group's 'source_tenants' field. If this flag
+  # is set to 'false' when there are federated rule groups that already exist,
+  # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
 ```
@@ -2735,6 +2737,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
 [results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 
+# (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
+# the size of the query.
+# CLI flag: -query-frontend.max-query-expression-size-bytes
+[max_query_expression_size_bytes: <int> | default = 0]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -2819,6 +2826,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]
+
+# Enable block upload validation for the tenant.
+# CLI flag: -compactor.block-upload-validation-enabled
+[compactor_block_upload_validation_enabled: <boolean> | default = true]
+
+# Verify chunks when uploading blocks via the upload API for the tenant.
+# CLI flag: -compactor.block-upload-verify-chunks
+[compactor_block_upload_verify_chunks: <boolean> | default = true]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
@@ -3349,7 +3364,7 @@ tsdb:
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
   # (experimental) Maximum number of entries in the cache for postings for
-  # matchers in the Head and OOOHead when ttl > 0.
+  # matchers in the Head and OOOHead when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
@@ -3357,6 +3372,22 @@ tsdb:
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
+
+  # (experimental) How long to cache postings for matchers in each compacted
+  # block queried from the ingester. 0 disables the cache and just deduplicates
+  # the in-flight calls.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
+  [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
+
+  # (experimental) Maximum number of entries in the cache for postings for
+  # matchers in each compacted block when TTL is greater than 0.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
+  [block_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Force the cache to be used for postings for matchers in
+  # compacted blocks, even if it's not a concurrent (query-sharding) call.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
+  [block_postings_for_matchers_cache_force: <boolean> | default = false]
 ```
 
 ### compactor
@@ -3549,11 +3580,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-block_upload:
-  # (experimental) Validate blocks before finalizing a block upload
-  # CLI flag: -compactor.block-upload.block-validation-enabled
-  [block_validation_enabled: <boolean> | default = true]
 ```
 
 ### store_gateway

@@ -3263,6 +3263,17 @@
         },
         {
           "kind": "field",
+          "name": "max_query_expression_size_bytes",
+          "required": false,
+          "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.max-query-expression-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -3421,6 +3432,26 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "compactor.block-upload-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_block_upload_validation_enabled",
+          "required": false,
+          "desc": "Enable block upload validation for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.block-upload-validation-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_block_upload_verify_chunks",
+          "required": false,
+          "desc": "Verify chunks when uploading blocks via the upload API for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "compactor.block-upload-verify-chunks",
           "fieldType": "boolean"
         },
         {
@@ -4768,10 +4799,9 @@
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
           "fieldValue": null,
-          "fieldDefaultValue": "json",
+          "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -7595,7 +7625,7 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_size",
               "required": false,
-              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl \u003e 0.",
+              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
@@ -7610,6 +7640,39 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_ttl",
+              "required": false,
+              "desc": "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_size",
+              "required": false,
+              "desc": "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_force",
+              "required": false,
+              "desc": "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -8274,27 +8337,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "block",
-          "name": "block_upload",
-          "required": false,
-          "desc": "",
-          "blockEntries": [
-            {
-              "kind": "field",
-              "name": "block_validation_enabled",
-              "required": false,
-              "desc": "Validate blocks before finalizing a block upload",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "compactor.block-upload.block-validation-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            }
-          ],
-          "fieldValue": null,
-          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -10031,7 +10073,7 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.",
+              "desc": "Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.tenant-federation.enabled",

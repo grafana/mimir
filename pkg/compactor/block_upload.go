@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -40,14 +39,6 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 )
-
-type BlockUploadConfig struct {
-	BlockValidationEnabled bool `yaml:"block_validation_enabled" category:"experimental"`
-}
-
-func (cfg *BlockUploadConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
-	f.BoolVar(&cfg.BlockValidationEnabled, prefix+".block-validation-enabled", true, "Validate blocks before finalizing a block upload")
-}
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
@@ -112,14 +103,14 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if c.compactorCfg.BlockUpload.BlockValidationEnabled {
+	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		// create validation file to signal that block validation has started
 		if err := c.uploadValidation(ctx, blockID, userBkt); err != nil {
 			writeBlockUploadError(err, op, "while creating validation file", logger, w)
 			return
 		}
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
-			return c.validateBlock(ctx, blockID, userBkt, m)
+			return c.validateBlock(ctx, blockID, userBkt, tenantID)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -350,6 +341,11 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
+	// check that the blocks doesn't contain down-sampled data
+	if meta.Thanos.Downsample.Resolution > 0 {
+		return "block contains downsampled data"
+	}
+
 	meta.ULID = blockID
 	for l, v := range meta.Thanos.Labels {
 		switch l {
@@ -476,7 +472,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, meta *metadata.Meta) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, userBkt objstore.Bucket, userID string) error {
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -502,6 +498,13 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
 			return errors.Errorf("file size mismatch for %s", f.RelPath)
 		}
+	}
+
+	// validate block
+	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
+	err = block.VerifyBlock(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
+	if err != nil {
+		return errors.Wrap(err, "error validating block")
 	}
 
 	return nil

@@ -82,6 +82,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
 - Query-frontend
@@ -90,6 +93,7 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
+  - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - Max number of used instances (`-query-scheduler.max-used-instances`)
@@ -112,13 +116,15 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-- Protobuf internal query result payload format
-  - `-query-frontend.query-result-response-format=protobuf`
-  - `-ruler.query-frontend.query-result-response-format=protobuf`
+- Protobuf internal query result payload format for rule evaluation (`-ruler.query-frontend.query-result-response-format=protobuf`)
+  - Note that using the protobuf format for the query path (`-query-frontend.query-result-response-format=protobuf`) is not considered experimental
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 
 ## Deprecated features
+
+Deprecated features are usable up until the release that indicates their removal.
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
 
 The following features are currently deprecated and will be **removed in Mimir 2.9**:
 

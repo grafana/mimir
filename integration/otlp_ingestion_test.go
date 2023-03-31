@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -32,13 +31,15 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
-	flags := map[string]string{
-		"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":       blocksBucketName,
-		"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":          "true",
-	}
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			// Enable protobuf format so that we can use native histograms.
+			"-query-frontend.query-result-response-format": "protobuf",
+		},
+	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
@@ -72,4 +73,21 @@ func TestOTLPIngestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+
+	// Push series with histograms to Mimir
+	series, expectedVector, _ = generateHistogramSeries("series", now)
+	res, err = c.PushOTLP(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	result, err = c.Query("series", now)
+	require.NoError(t, err)
+
+	want := expectedVector[0]
+	got := result.(model.Vector)[0]
+	assert.Equal(t, want.Histogram.Sum, got.Histogram.Sum)
+	assert.Equal(t, want.Histogram.Count, got.Histogram.Count)
+	// it is not possible to assert with assert.ElementsMatch(t, expectedVector, result.(model.Vector))
+	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
+	// to test setup logic
 }

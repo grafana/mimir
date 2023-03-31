@@ -269,6 +269,8 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 
 	// make sure to set default limits before we start loading configuration into memory
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
+	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
+	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
 
 	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
@@ -329,6 +331,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 
 func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Distributor.InstanceLimitsFn = distributorInstanceLimits(t.RuntimeConfig)
 
 	// Only enable shuffle sharding on the read path when `query-ingesters-within`
 	// is non-zero since otherwise we can't determine if an ingester should be part
@@ -700,7 +703,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
-				return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+				return nil, errors.New("-" + ruler.TenantFederationFlag + "=true requires -tenant-federation.enabled=true")
 			}
 			// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
 			// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.

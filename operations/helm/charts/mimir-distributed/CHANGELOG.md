@@ -28,6 +28,14 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Change number of Memcached max idle connections to 150. #4591
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
+* [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
+* [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
+* [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
+* [BUGFIX] Include podAnnotations on the tokengen Job. #4540
+* [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+
 ## 4.3.0
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381

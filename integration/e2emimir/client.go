@@ -205,6 +205,12 @@ func (c *Client) QueryRaw(query string) (*http.Response, []byte, error) {
 	return c.DoGetBody(addr)
 }
 
+func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte, error) {
+	addr := fmt.Sprintf("http://%s/prometheus/api/v1/query?query=%s&time=%s", c.querierAddress, url.QueryEscape(query), FormatTime(ts))
+
+	return c.DoGetBody(addr)
+}
+
 // Series finds series by label matchers.
 func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
 	result, _, err := c.querierClient.Series(context.Background(), matches, start, end)

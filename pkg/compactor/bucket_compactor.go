@@ -314,7 +314,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure all input blocks are valid.
-		stats, err := block.GatherIndexHealthStats(jobLogger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
+		stats, err := block.GatherBlockHealthStats(jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
 		if err != nil {
 			return errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
@@ -388,7 +388,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		uploadedBlocks.Inc()
 
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
-		index := filepath.Join(bdir, block.IndexFilename)
 
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
@@ -411,7 +410,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure the output block is valid.
-		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
+		if err := block.VerifyBlock(jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
@@ -546,7 +545,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	// Verify repaired id before uploading it.
-	if err := block.VerifyIndex(logger, filepath.Join(tmpdir, resid.String(), block.IndexFilename), meta.MinTime, meta.MaxTime); err != nil {
+	if err := block.VerifyBlock(logger, filepath.Join(tmpdir, resid.String()), meta.MinTime, meta.MaxTime, false); err != nil {
 		return errors.Wrapf(err, "repaired block is invalid %s", resid)
 	}
 

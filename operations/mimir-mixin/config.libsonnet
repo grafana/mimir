@@ -69,32 +69,32 @@
     // Whenever you do any change here, please reflect it in the doc at:
     // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
     job_names: {
-      ingester: '(ingester.*|cortex|mimir|mimir-write.*)',  // Match also custom and per-zone ingester deployments.
-      distributor: '(distributor|cortex|mimir|mimir-write.*)',
-      querier: '(querier.*|cortex|mimir|mimir-read.*)',  // Match also custom querier deployments.
-      ruler_querier: '(ruler-querier.*)',  // Match also custom querier deployments.
-      ruler: '(ruler|cortex|mimir|mimir-backend.*)',
-      query_frontend: '(query-frontend.*|cortex|mimir|mimir-read.*)',  // Match also custom query-frontend deployments.
-      ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
-      query_scheduler: '(query-scheduler.*|mimir-backend.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ruler_query_scheduler: '(ruler-query-scheduler.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],
+      querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
+      ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
+      ruler: ['ruler', 'cortex', 'mimir', 'mimir-backend.*'],
+      query_frontend: ['query-frontend.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom query-frontend deployments.
+      ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
+      query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
-      store_gateway: '(store-gateway.*|cortex|mimir|mimir-backend.*)',  // Match also per-zone store-gateway deployments.
-      gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-      compactor: '(compactor.*|cortex|mimir|mimir-backend.*)',  // Match also custom compactor deployments.
-      alertmanager: '(alertmanager|cortex|mimir|mimir-backend.*)',
-      overrides_exporter: '(overrides-exporter|mimir-backend.*)',
+      store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
+      gateway: ['gateway', 'cortex-gw', 'cortex-gw-internal'],
+      compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
+      alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
+      overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
 
       // The following are job matchers used to select all components in a given "path".
-      write: '(distributor|ingester.*|mimir-write.*)',
-      read: '(query-frontend.*|querier.*|ruler-query-frontend.*|ruler-querier.*|mimir-read.*)',
-      backend: '(ruler|query-scheduler.*|ruler-query-scheduler.*|store-gateway.*|compactor.*|alertmanager|overrides-exporter|mimir-backend.*)',
+      write: ['distributor', 'ingester.*', 'mimir-write.*'],
+      read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
+      backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
-      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*-mimir-)?%s' % regexp else regexp,
+      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*mimir-)?%s' % regexp else regexp,
       // Wrap the regexp to match any prefix if the deployment type is "baremetal".
       local baremetalCompatibleMatcher = function(regexp) if $._config.deployment_type == 'baremetal' then '.*%s' % regexp else regexp,
       local instanceMatcher = function(regexp) baremetalCompatibleMatcher(helmCompatibleMatcher('%s.*' % regexp)),
