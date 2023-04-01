@@ -31,14 +31,15 @@ func TestRetry(t *testing.T) {
 	})
 
 	for _, tc := range []struct {
-		name    string
-		handler Handler
-		resp    Response
-		err     error
-		retr    int
+		name            string
+		handler         Handler
+		resp            Response
+		err             error
+		expectedRetries int
 	}{
 		{
-			name: "retry failures",
+			name:            "retry failures",
+			expectedRetries: 4,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				if try.Inc() == 5 {
 					return &PrometheusResponse{Status: "Hello World"}, nil
@@ -46,27 +47,26 @@ func TestRetry(t *testing.T) {
 				return nil, fmt.Errorf("fail")
 			}),
 			resp: &PrometheusResponse{Status: "Hello World"},
-			retr: 4,
 		},
 		{
-			name: "don't retry 400s",
-			retr: 0,
+			name:            "don't retry 400s",
+			expectedRetries: 0,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				return nil, errBadRequest
 			}),
 			err: errBadRequest,
 		},
 		{
-			name: "retry 500s",
-			retr: 5,
+			name:            "retry 500s",
+			expectedRetries: 5,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				return nil, errInternal
 			}),
 			err: errInternal,
 		},
 		{
-			name: "last error",
-			retr: 4,
+			name:            "last error",
+			expectedRetries: 4,
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				if try.Inc() == 5 {
 					return nil, errBadRequest
@@ -83,7 +83,7 @@ func TestRetry(t *testing.T) {
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
-			require.Equal(t, tc.retr, cl.count)
+			require.Equal(t, tc.expectedRetries, cl.count)
 		})
 	}
 }
