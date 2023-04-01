@@ -2637,7 +2637,7 @@ metaMonitoring:
     enabled: false
 
     # -- Controls the image repository and tag for config-reloader and grafana-agent containers in the meta-monitoring
-    # statefulSet and daemonSet created by the grafana-agent-operator. You can define one or both sections under imageRepo.
+    # StatefulSet and DaemonSet created by the grafana-agent-operator. You can define one or both sections under imageRepo.
     # If a section is defined, you must pass repo, image and tag keys.
     imageRepo:
     #  configReloader:
