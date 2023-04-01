@@ -30,7 +30,7 @@ With zone-aware replication enabled, Grafana Mimir ensures data replication to r
 > Ensure that you configure deployment tooling so that it is also zone-aware.
 > The deployment tooling is responsible for executing rolling updates.
 > Rolling updates should only update replicas in a single zone at any given time.
-> You can utilize the [Kubernetes rollout operator](#kubernetes-operator-for-simplifying-rollouts-of-zone-aware-components) to assist with this.
+> You can utilize the [Kubernetes rollout Operator](#kubernetes-operator-for-simplifying-rollouts-of-zone-aware-components) to assist with this.
 
 Grafana Mimir supports zone-aware replication for the following:
 
