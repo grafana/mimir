@@ -91,7 +91,7 @@ The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) i
 
 Note that even in a scenario where you have deployed Grafana Mimir to a single physical availability zone, the Rollout Operator is immensely useful.
 
-This is because it automates and accelerates the process of rollouts by:
+This is because the Operator automates and accelerates the process of rollouts by:
 
 - Allowing an entire zone to be updated at a time
 - Prioritizing rollout of unhealthy zones over healthy zones to ensure stability
