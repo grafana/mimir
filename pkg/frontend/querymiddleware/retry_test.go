@@ -78,23 +78,22 @@ func TestRetry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			try.Store(0)
-			var cl countingLogger
-			h := newRetryMiddleware(&cl, 5, nil).Wrap(tc.handler)
+			mockMetrics := mockRetryMetrics{}
+			h := newRetryMiddleware(log.NewNopLogger(), 5, &mockMetrics).Wrap(tc.handler)
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
-			require.Equal(t, tc.expectedRetries, cl.count)
+			require.Equal(t, tc.expectedRetries, mockMetrics.retries)
 		})
 	}
 }
 
-type countingLogger struct {
-	count int
+type mockRetryMetrics struct {
+	retries int
 }
 
-func (c *countingLogger) Log(...interface{}) error {
-	c.count++
-	return nil
+func (c *mockRetryMetrics) Observe(v int) {
+	c.retries = v
 }
 
 func Test_RetryMiddlewareCancel(t *testing.T) {
