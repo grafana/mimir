@@ -35,6 +35,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+* [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
+
 
 ## 4.3.0
 
