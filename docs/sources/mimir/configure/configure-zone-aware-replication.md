@@ -97,7 +97,7 @@ This is because the Operator automates and accelerates the process of rollouts b
 - Prioritizing rollout of unhealthy zones over healthy zones to ensure stability
 - Allowing the administrator to determine how aggressive rollouts should be
 
-This functionality is particularly useful in larger deployments where rollouts would otherwise take a very long time and likely require manual intervention if issues were to occur.
+The automated functionality provided by an Operator is particularly useful in larger deployments where rollouts would otherwise take a very long time and likely require manual intervention if issues were to occur.
 
 ## Enabling zone-awareness via the Grafana Mimir Jsonnet
 
