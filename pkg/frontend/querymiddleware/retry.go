@@ -17,11 +17,15 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+type intObservation interface {
+	Observe(int)
+}
+
 type retryMiddlewareMetrics struct {
 	retriesCount prometheus.Histogram
 }
 
-func newRetryMiddlewareMetrics(registerer prometheus.Registerer) *retryMiddlewareMetrics {
+func newRetryMiddlewareMetrics(registerer prometheus.Registerer) intObservation {
 	return &retryMiddlewareMetrics{
 		retriesCount: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -32,17 +36,21 @@ func newRetryMiddlewareMetrics(registerer prometheus.Registerer) *retryMiddlewar
 	}
 }
 
+func (m *retryMiddlewareMetrics) Observe(v int) {
+	m.retriesCount.Observe(float64(v))
+}
+
 type retry struct {
 	log        log.Logger
 	next       Handler
 	maxRetries int
 
-	metrics *retryMiddlewareMetrics
+	metrics intObservation
 }
 
 // newRetryMiddleware returns a middleware that retries requests if they
 // fail with 500 or a non-HTTP error.
-func newRetryMiddleware(log log.Logger, maxRetries int, metrics *retryMiddlewareMetrics) Middleware {
+func newRetryMiddleware(log log.Logger, maxRetries int, metrics intObservation) Middleware {
 	if metrics == nil {
 		metrics = newRetryMiddlewareMetrics(nil)
 	}
@@ -59,7 +67,7 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics *retryMiddleware
 
 func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 	tries := 0
-	defer func() { r.metrics.retriesCount.Observe(float64(tries)) }()
+	defer func() { r.metrics.Observe(tries) }()
 
 	var lastErr error
 	for ; tries < r.maxRetries; tries++ {
