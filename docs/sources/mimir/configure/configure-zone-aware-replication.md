@@ -93,7 +93,7 @@ Note that even in a scenario where you have deployed Grafana Mimir to a single p
 
 This is because the Operator automates and accelerates the process of rollouts by:
 
-- Allowing an entire zone to be updated at a time
+- Allowing an entire zone to be updated at one time
 - Prioritizing rollout of unhealthy zones over healthy zones to ensure stability
 - Allowing the administrator to determine how aggressive rollouts should be
 
