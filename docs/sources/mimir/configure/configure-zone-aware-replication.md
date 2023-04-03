@@ -18,6 +18,7 @@ Grafana Mimir defines failure domains as _zones_. Depending on the underlying in
 - Availability zones
 - Data centers
 - Racks
+- Anti-affinity groups within a single availability zone
 
 Without zone-aware replication enabled, Grafana Mimir replicates data randomly across all component replicas, regardless of whether the replicas are running within the same zone.
 Even with a Grafana Mimir cluster deployed across multiple zones, the replicas for any given data could reside in the same zone.
@@ -29,6 +30,7 @@ With zone-aware replication enabled, Grafana Mimir ensures data replication to r
 > Ensure that you configure deployment tooling so that it is also zone-aware.
 > The deployment tooling is responsible for executing rolling updates.
 > Rolling updates should only update replicas in a single zone at any given time.
+> You can utilize the [Kubernetes rollout Operator](#kubernetes-operator-for-simplifying-rollouts-of-zone-aware-components) to assist with this.
 
 Grafana Mimir supports zone-aware replication for the following:
 
@@ -85,7 +87,17 @@ Deploying Grafana Mimir with zone-aware replication across multiple cloud provid
 
 ## Kubernetes operator for simplifying rollouts of zone-aware components
 
-The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) is a Kubernetes operator that makes it easier for you to manage multi-availability-zone rollouts. Consider using the Kubernetes Rollout Operator when you run Grafana Mimir on Kubernetes with zone awareness enabled.
+The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) is a Kubernetes Operator that makes it easier for you to manage multi-availability-zone rollouts. Consider using the Kubernetes Rollout Operator when you run Grafana Mimir on Kubernetes with zone awareness enabled.
+
+Note that even in a scenario where you have deployed Grafana Mimir to a single physical availability zone, the Rollout Operator is immensely useful.
+
+This is because the Operator automates and accelerates the process of rollouts by:
+
+- Allowing an entire zone to be updated at one time
+- Prioritizing rollout of unhealthy zones over healthy zones to ensure stability
+- Allowing the administrator to determine how aggressive rollouts should be
+
+The automated functionality provided by an Operator is particularly useful in larger deployments where rollouts would otherwise take a very long time and likely require manual intervention if issues were to occur.
 
 ## Enabling zone-awareness via the Grafana Mimir Jsonnet
 
