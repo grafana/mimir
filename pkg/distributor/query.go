@@ -92,7 +92,7 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
 	}
 
 	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)
