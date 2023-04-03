@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -105,7 +106,13 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, log)
+	// Parse the query.
+	queryExpr, err := parser.ParseExpr(r.GetQuery())
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return s.next.Do(ctx, r)
@@ -239,6 +246,8 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 		return "", nil, err
 	}
 
+	// The mapper can modify the input expression in-place, so we must re-parse the original query
+	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -253,7 +262,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, spanLog log.Logger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog log.Logger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -263,6 +272,20 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
 		return 1
+	}
+
+	// Ensure there's no regexp matcher longer than the configured limit.
+	maxRegexpSizeBytes := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.QueryShardingMaxRegexpSizeBytes)
+	if maxRegexpSizeBytes > 0 {
+		if longest := longestRegexpMatcherBytes(queryExpr); longest > maxRegexpSizeBytes {
+			level.Debug(spanLog).Log(
+				"msg", "query sharding has been disabled because the query contains a regexp matcher longer than the limit",
+				"longest regexp bytes", longest,
+				"limit bytes", maxRegexpSizeBytes,
+			)
+
+			return 1
+		}
 	}
 
 	// Honor the number of shards specified in the request (if any).
@@ -417,4 +440,22 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	}
 
 	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
+}
+
+// longestRegexpMatcherBytes returns the length (in bytes) of the longest regexp
+// matcher found in the query, or 0 if the query has no regexp matcher.
+func longestRegexpMatcherBytes(expr parser.Expr) int {
+	var longest int
+
+	for _, selectors := range parser.ExtractSelectors(expr) {
+		for _, matcher := range selectors {
+			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
+				continue
+			}
+
+			longest = util_math.Max(longest, len(matcher.Value))
+		}
+	}
+
+	return longest
 }

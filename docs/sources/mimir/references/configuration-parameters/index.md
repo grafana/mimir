@@ -2712,6 +2712,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
+# (experimental) Disable query sharding for any query containing a regular
+# expression matcher longer than the configured number of bytes. 0 to disable
+# the limit.
+# CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
+[query_sharding_max_regexp_size_bytes: <int> | default = 0]
+
 # (experimental) Split instant queries by an interval and execute in parallel. 0
 # to disable it.
 # CLI flag: -query-frontend.split-instant-queries-by-interval
