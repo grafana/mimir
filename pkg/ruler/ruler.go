@@ -94,6 +94,11 @@ type Config struct {
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
 
+	// Enables forwarding metrics evaluated from the Ruler to any Prometheus remote-write compatible backend.``
+	EnableRemoteWrite bool
+	// RWConfigs is used by the remote write forwarding ruler
+	RWConfigs []RemoteWriteConfig `yaml:"remote_write,omitempty"`
+
 	// Max time to tolerate outage for restoring "for" state of alert.
 	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
 	// Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period.
@@ -167,6 +172,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.DisabledTenants, "ruler.disabled-tenants", "Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.")
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
+
+	f.BoolVar(&cfg.EnableRemoteWrite, "ruler.enable-remote-write", false, "Enable ruler to remote write output.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
