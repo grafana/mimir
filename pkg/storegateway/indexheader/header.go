@@ -38,7 +38,7 @@ type Reader interface {
 
 	// LabelValues returns all label values for given label name or error.
 	// If no values are found for label name, or label name does not exists,
-	// then empty string is returned and no error.
+	// then empty slice is returned and no error.
 	// If non-empty prefix is provided, only values starting with the prefix are returned.
 	// If non-nil filter is provided, then only values for which filter returns true are returned.
 	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
@@ -46,7 +46,7 @@ type Reader interface {
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// If no values are found for label name, or label name does not exists,
-	// then empty string is returned and no error.
+	// then empty slice is returned and no error.
 	// If non-empty prefix is provided, only posting lists starting with the prefix are returned.
 	// If non-nil filter is provided, then only posting lists for which filter returns true are returned.
 	LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
