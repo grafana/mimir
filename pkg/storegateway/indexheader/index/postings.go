@@ -45,8 +45,8 @@ type PostingOffsetTable interface {
 // The End is exclusive and is typically the byte offset of the CRC32 field.
 // The End might be bigger than the actual posting ending, but not larger than the whole index file.
 type PostingListOffset struct {
-	Value string
-	Off   index.Range
+	LabelValue string
+	Off        index.Range
 }
 
 type PostingOffsetTableV1 struct {
@@ -280,11 +280,11 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter fu
 	values := make([]PostingListOffset, 0, len(e))
 	for k, r := range e {
 		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, PostingListOffset{Value: k, Off: r})
+			values = append(values, PostingListOffset{LabelValue: k, Off: r})
 		}
 	}
 	sort.Slice(values, func(i, j int) bool {
-		return values[i].Value < values[j].Value
+		return values[i].LabelValue < values[j].LabelValue
 	})
 	return values, nil
 }
@@ -444,7 +444,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 var labelValuesAccumulators = sync.Pool{New: func() any {
 	return &postingsTableV2Accumulator[string]{
 		transform: func(offset PostingListOffset) string {
-			return offset.Value
+			return offset.LabelValue
 		},
 	}
 }}
@@ -580,16 +580,16 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 		currentValueIsLast := noMoreMatches
 		currentValueMatches := nextValueMatches
 		if nextIsConsumed {
-			currList.Value, currList.Off.Start = nextValueSafe, nextOffset
+			currList.LabelValue, currList.Off.Start = nextValueSafe, nextOffset
 			nextIsConsumed = false
 		} else {
-			currList.Value, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
+			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
 		}
 
 		// If the next value matches, we need to also populate its end offset and then call the visitor.
 		if currentValueMatches {
 			// We peek at the next list, so we can use it as the end offset of the current one.
-			if currList.Value == lastVal {
+			if currList.LabelValue == lastVal {
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {

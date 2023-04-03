@@ -191,22 +191,22 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, err)
 		strValsFromOffsets := make([]string, len(valOffsets))
 		for i := range valOffsets {
-			strValsFromOffsets[i] = valOffsets[i].Value
+			strValsFromOffsets[i] = valOffsets[i].LabelValue
 		}
 		require.Equal(t, expectedLabelVals, strValsFromOffsets)
 
 		for _, v := range valOffsets {
-			if minStart > expRanges[labels.Label{Name: lname, Value: v.Value}].Start {
-				minStart = expRanges[labels.Label{Name: lname, Value: v.Value}].Start
+			if minStart > expRanges[labels.Label{Name: lname, Value: v.LabelValue}].Start {
+				minStart = expRanges[labels.Label{Name: lname, Value: v.LabelValue}].Start
 			}
-			if maxEnd < expRanges[labels.Label{Name: lname, Value: v.Value}].End {
-				maxEnd = expRanges[labels.Label{Name: lname, Value: v.Value}].End
+			if maxEnd < expRanges[labels.Label{Name: lname, Value: v.LabelValue}].End {
+				maxEnd = expRanges[labels.Label{Name: lname, Value: v.LabelValue}].End
 			}
 
-			ptr, err := headerReader.PostingsOffset(lname, v.Value)
+			ptr, err := headerReader.PostingsOffset(lname, v.LabelValue)
 			require.NoError(t, err)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.Value}], ptr)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.Value}], v.Off)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], v.Off)
 		}
 	}
 
