@@ -595,6 +595,10 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 			} else {
 				nextIsConsumed = true
 				nextValueSafe, nextOffset, nextValueMatches, noMoreMatches = readNextList()
+
+				// The end we want for the current posting list should be the byte offset of the CRC32 field.
+				// The start of the next posting list is the byte offset of the number_of_entries field.
+				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
 				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
 			}
 			visitor.visit(currList)
