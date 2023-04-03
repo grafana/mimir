@@ -59,7 +59,8 @@ If the expected blocks have not been queried, the querier retries fetching sampl
 If the consistency check fails after all retry attempts, the query execution fails.
 Query failure due to the querier not querying all blocks ensures the correctness of query results.
 
-If the query time range overlaps with the `-querier.query-ingesters-within` duration, the querier also sends the request to ingesters. The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage or are not yet available for querying through the store-gateway.
+If the query time range overlaps with the `-querier.query-ingesters-within` duration, the querier also sends the request to ingesters.
+The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage or are not yet available for querying through the store-gateway.
 
 The configured period for `-querier.query-ingesters-within` should be:
   - greater than `-querier.query-store-after` and,
