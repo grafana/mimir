@@ -471,10 +471,6 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		return nil, nil
 	}
 
-	if filter == nil {
-		filter = func(string) bool { return true }
-	}
-
 	offsetIdx := 0
 	if prefix != "" {
 		offsetIdx, ok = e.prefixOffset(prefix)
@@ -508,7 +504,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		val = yoloString(d.UnsafeUvarintBytes())
 
 		prefixMatches := strings.HasPrefix(val, prefix)
-		isAMatch = prefixMatches && filter(val)
+		isAMatch = prefixMatches && (filter == nil || filter(val))
 		noMoreMatches = val == lastVal || (!prefixMatches && prefix < val)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
