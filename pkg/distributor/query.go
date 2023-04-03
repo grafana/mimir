@@ -90,9 +90,9 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	// If tenant uses shuffle sharding, we should only query ingesters which are
 	// part of the tenant's subring.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
-
-	if shardSize > 0 && d.cfg.ShuffleShardingIngestersEnabled {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngesterTSDBRetention, time.Now()).GetReplicationSetForOperation(ring.Read)
+	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
+	if shardSize > 0 && lookbackPeriod > 0 {
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
 	}
 
 	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)

@@ -157,8 +157,7 @@ type Config struct {
 	SkipLabelNameValidation bool `yaml:"-"`
 
 	// The two fields below are dynamically injected from the querier and ingester configs
-	ShuffleShardingIngestersEnabled bool          `yaml:"-"`
-	IngesterTSDBRetention           time.Duration `yaml:"-"`
+	ShuffleShardingLookbackPeriod time.Duration `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
