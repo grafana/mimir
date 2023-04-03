@@ -1285,7 +1285,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				assert.Equal(t, "internal server error\n", string(body))
 			case tc.expTooManyRequests:
 				assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
-				assert.Equal(t, "too many block upload validations in progress\n", string(body))
+				assert.Equal(t, "too many block upload validations in progress, limit is 2\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
