@@ -64,8 +64,7 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 // Do injects a cardinality estimate into the query hints (if available) and
 // caches the actual cardinality observed for this query.
 func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Response, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "cardinalityEstimation.Do")
-	defer spanLog.Finish()
+	spanLog := spanlogger.FromContext(ctx, c.logger)
 
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
