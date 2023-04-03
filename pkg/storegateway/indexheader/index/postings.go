@@ -10,7 +10,6 @@ import (
 	"hash/crc32"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
@@ -441,73 +440,35 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-var labelValuesAccumulators = sync.Pool{New: func() any {
-	return &postingsTableV2Accumulator[string]{
-		transform: func(offset PostingListOffset) string {
-			return offset.LabelValue
-		},
-	}
-}}
-
 func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	acc := labelValuesAccumulators.Get().(*postingsTableV2Accumulator[string])
-	defer func() {
-		acc.acc = nil
-		labelValuesAccumulators.Put(acc)
-	}()
-
-	if err := t.postingOffsets(name, prefix, filter, acc); err != nil {
-		return nil, errors.Wrap(err, "get label values")
-	}
-	return acc.acc, nil
-}
-
-var labelValuesOffsetsAccumulators = sync.Pool{New: func() any {
-	return &postingsTableV2Accumulator[PostingListOffset]{
-		transform: func(offset PostingListOffset) PostingListOffset {
-			return offset
-		},
-	}
-}}
-
-func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
-	acc := labelValuesOffsetsAccumulators.Get().(*postingsTableV2Accumulator[PostingListOffset])
-	defer func() {
-		acc.acc = nil
-		labelValuesOffsetsAccumulators.Put(acc)
-	}()
-
-	if err := t.postingOffsets(name, prefix, filter, acc); err != nil {
+	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
+	if err != nil {
 		return nil, errors.Wrap(err, "get label values offsets")
 	}
-	return acc.acc, nil
+	return offsets, nil
 }
 
-type postingsTableV2Accumulator[T any] struct {
-	transform func(PostingListOffset) T
-	acc       []T
+func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetIdentity)
+	if err != nil {
+		return nil, errors.Wrap(err, "get label values offsets")
+	}
+	return offsets, nil
 }
 
-func (v *postingsTableV2Accumulator[T]) estimatedValues(n int) {
-	v.acc = make([]T, 0, n)
-}
+// postingListOffsetIdentity cam be used with postingOffsets.
+func postingListOffsetIdentity(offset PostingListOffset) PostingListOffset { return offset }
 
-func (v *postingsTableV2Accumulator[T]) visit(offset PostingListOffset) {
-	v.acc = append(v.acc, v.transform(offset))
-}
+// postingListOffsetValue can be used with postingOffsets.
+func postingListOffsetValue(offset PostingListOffset) string { return offset.LabelValue }
 
-type postingsTableV2Visitor interface {
-	estimatedValues(n int)
-	visit(offset PostingListOffset)
-}
-
-func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter func(string) bool, visitor postingsTableV2Visitor) (err error) {
+func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, filter func(string) bool, extract func(PostingListOffset) T) (_ []T, err error) {
 	e, ok := t.postings[name]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	if len(e.offsets) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	if filter == nil {
@@ -518,10 +479,10 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 	if prefix != "" {
 		offsetIdx, ok = e.prefixOffset(prefix)
 		if !ok {
-			return nil
+			return nil, nil
 		}
 	}
-	visitor.estimatedValues((len(e.offsets) - offsetIdx) * t.postingOffsetsInMemSampling)
+	result := make([]T, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -532,7 +493,7 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	var skip int
-	skipToValue := func() {
+	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -543,10 +504,7 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 		} else {
 			d.Skip(skip)
 		}
-	}
 
-	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
-		skipToValue()
 		val = yoloString(d.UnsafeUvarintBytes())
 
 		prefixMatches := strings.HasPrefix(val, prefix)
@@ -601,13 +559,13 @@ func (t *PostingOffsetTableV2) postingOffsets(name string, prefix string, filter
 				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
 				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
 			}
-			visitor.visit(currList)
+			result = append(result, extract(currList))
 		}
 		if currentValueIsLast {
 			break
 		}
 	}
-	return d.Err()
+	return result, d.Err()
 }
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
