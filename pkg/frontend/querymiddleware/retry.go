@@ -10,12 +10,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type retryMiddlewareMetrics struct {
