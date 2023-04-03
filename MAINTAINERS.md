@@ -28,6 +28,6 @@ Some parts of the codebase have other maintainers, the package paths also includ
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
   - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - `packaging`:
-  - Wilfried ROSET - [@wilfriedroset](https://github.com/wilfriedroset) ([OVHCloud](https://www.ovhcloud.com/))
-  - Nicolas DUPEUX - [@vaxvms](https://github.com/vaxvms) ([OVHCloud](https://www.ovhcloud.com/))
-  - bubu11e - [@bubu11e](https://github.com/bubu11e) ([OVHCloud](https://www.ovhcloud.com/))
+  - Wilfried ROSET - [@wilfriedroset](https://github.com/wilfriedroset) ([OVHcloud](https://www.ovhcloud.com/))
+  - Nicolas DUPEUX - [@vaxvms](https://github.com/vaxvms) ([OVHcloud](https://www.ovhcloud.com/))
+  - Julien GIRARD - [@bubu11e](https://github.com/bubu11e) ([OVHcloud](https://www.ovhcloud.com/))
