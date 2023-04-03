@@ -114,7 +114,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		}()
 		if maxConcurrency > 0 && currentValidations > maxConcurrency {
 			err := httpError{
-				message:    "too many block upload validations in progress",
+				message:    fmt.Sprintf("too many block upload validations in progress, limit is %d", maxConcurrency),
 				statusCode: http.StatusTooManyRequests,
 			}
 			writeBlockUploadError(err, op, "", logger, w)
