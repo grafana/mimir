@@ -551,8 +551,8 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {
-				nextIsPopulated = true
 				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
+				nextIsPopulated = true
 
 				// The end we want for the current posting list should be the byte offset of the CRC32 field.
 				// The start of the next posting list is the byte offset of the number_of_entries field.
