@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"math"
 	"path/filepath"
 	"testing"
 
@@ -177,8 +176,6 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	expRanges, err := indexReader.PostingsRanges()
 	require.NoError(t, err)
 
-	minStart := int64(math.MaxInt64)
-	maxEnd := int64(math.MinInt64)
 	for _, lname := range expLabelNames {
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
@@ -196,13 +193,6 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.Equal(t, expectedLabelVals, strValsFromOffsets)
 
 		for _, v := range valOffsets {
-			if minStart > expRanges[labels.Label{Name: lname, Value: v.LabelValue}].Start {
-				minStart = expRanges[labels.Label{Name: lname, Value: v.LabelValue}].Start
-			}
-			if maxEnd < expRanges[labels.Label{Name: lname, Value: v.LabelValue}].End {
-				maxEnd = expRanges[labels.Label{Name: lname, Value: v.LabelValue}].End
-			}
-
 			ptr, err := headerReader.PostingsOffset(lname, v.LabelValue)
 			require.NoError(t, err)
 			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
