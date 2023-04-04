@@ -87,7 +87,7 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 externalConfigVersion: '0'
 
 # -- Enables Vault Agent to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
-useVaultAgent: true
+useVaultAgent: false
 
 mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.
@@ -902,7 +902,6 @@ overrides_exporter:
 
   podLabels: {}
   podAnnotations: {}
-
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
@@ -2248,7 +2247,6 @@ gateway:
   podLabels: {}
   # -- Annotations Deployment Pods
   podAnnotations: {}
-
   # -- PodDisruptionBudget https://kubernetes.io/docs/tasks/run-application/configure-pdb/
   podDisruptionBudget: {}
   # -- Additional CLI args for the container
@@ -2665,7 +2663,7 @@ metaMonitoring:
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
     # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/production/operator/crds
-    installOperator: true
+    installOperator: false
 
     logs:
       # -- Controls whether to create resources PodLogs and LogsInstance resources
