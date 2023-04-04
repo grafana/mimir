@@ -298,6 +298,10 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
+{{- if .ctx.Values.useVaultAgent }}
+{{- $vaultAgentAnnotations := include "mimir.vaultAgent.annotations" .component }}
+{{- $vaultAgentAnnotations }}
+{{- end }}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
 {{- with ($componentSection).podAnnotations }}
 {{ toYaml . }}
@@ -427,6 +431,38 @@ Examples:
   {{- if not $section -}}{{- printf "Component section %s not found in values; values: %s" . ($.ctx.Values | toJson | abbrev 100) | fail -}}{{- end -}}
 {{- end -}}
 {{- $section | toYaml -}}
+{{- end -}}
+
+{{/*
+Return the Vault Agent pod annotations if enabled and required by the component
+Params:
+  component = component name
+*/}}
+{{- define "mimir.vaultAgent.annotations" -}}
+{{- $vaultEnabledComponents := dict
+  "admin-api" true
+  "alertmanager" true
+  "compactor" true
+  "distributor" true
+  "gateway" true
+  "ingester" true
+  "overrides-exporter" true
+  "querier" true
+  "query-frontend" true
+  "query-scheduler" true
+  "ruler" true
+  "store-gateway" true
+-}}
+{{- if hasKey $vaultEnabledComponents . }}
+vault.hashicorp.com/agent-inject: 'true'
+vault.hashicorp.com/role: 'gem'
+vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
+vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
+vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
+vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
+vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+foo: 'bar'
+{{- end}}
 {{- end -}}
 
 {{/*

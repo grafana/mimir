@@ -86,8 +86,8 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
 externalConfigVersion: '0'
 
-# -- Enables Vault Agent to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running
-useVaultAgent: false
+# -- Enables Vault Agent to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
+useVaultAgent: true
 
 mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.
@@ -444,14 +444,7 @@ alertmanager:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # -- Pod Disruption Budget for alertmanager, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget: {}
@@ -655,14 +648,7 @@ distributor:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -741,14 +727,7 @@ ingester:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # -- The name of the PriorityClass for ingester pods
   priorityClassName: null
@@ -922,14 +901,7 @@ overrides_exporter:
     type: RollingUpdate
 
   podLabels: {}
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -1008,14 +980,7 @@ ruler:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -1085,14 +1050,7 @@ querier:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -1162,14 +1120,7 @@ query_frontend:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -1240,14 +1191,7 @@ query_scheduler:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -1327,14 +1271,7 @@ store_gateway:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # -- Pod Disruption Budget for store-gateway, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
@@ -1506,14 +1443,7 @@ compactor:
   podLabels: {}
 
   # Pod Annotations
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
@@ -2317,14 +2247,7 @@ gateway:
   # -- Labels for Deployment Pods
   podLabels: {}
   # -- Annotations Deployment Pods
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   # -- PodDisruptionBudget https://kubernetes.io/docs/tasks/run-application/configure-pdb/
   podDisruptionBudget: {}
@@ -2951,14 +2874,7 @@ admin_api:
     type: RollingUpdate
 
   podLabels: {}
-  podAnnotations:
-    vault.hashicorp.com/agent-inject: 'true'
-    vault.hashicorp.com/role: 'gem'
-    vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-    vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-    vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-    vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-    vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+  podAnnotations: {}
 
   nodeSelector: {}
   affinity: {}
