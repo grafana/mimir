@@ -118,6 +118,10 @@
 * [ENHANCEMENT] Backfill: mimirtool will now sleep and retry if it receives a 429 response while trying to finish an upload due to validation concurrency limits. #4598
 * [ENHANCEMENT] `gauge` panel type is supported now in `mimirtool analyze dashboard`. #4679
 
+### Mimir Continuous Test
+
+* [ENHANCEMENT] Add coherency for the selected ranges and instants of test queries. #4704
+
 ### Query-tee
 
 ### Documentation
