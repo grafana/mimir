@@ -104,10 +104,10 @@ func checkBlock(blockDir string) {
 		}
 		fmt.Printf("bad=%s\n", c)
 		fmt.Printf("good=%s\n", theGood)
+		inLabelName := flipHappensInLabelName(theGood, ls)
+		fmt.Printf("in_label_name=%t\n\n", inLabelName)
 		fmt.Printf("diff=%s\n", diff)
 		fmt.Printf("     %s^\n", strings.Repeat(" ", where))
-		inLabelName := flipHappensInLabelName(theGood, ls)
-		fmt.Sprintf("in_label_name=%t\n\n", inLabelName)
 		if inLabelName {
 			inLabelNameCount++
 		}
