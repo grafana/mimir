@@ -21,7 +21,7 @@ results-cache:
   enabled: false
 ```
 
-Next we have to tell Mimir how to connect to the external Redis. Refer to [configuration parameters](/docs/mimir/latest/references/configuration-parameters/) on available configuration options for Redis. We can use the Redis configuration block in `mimir.structuredConfig` as follows:
+Next we have to tell Mimir how to connect to the external Redis. Refer to [configuration parameters](/docs/mimir/latest/references/configuration-parameters/#redis) on available configuration options for Redis. We can use the Redis configuration block in `mimir.structuredConfig` as follows:
 
 ```yaml
 mimir:
