@@ -459,7 +459,6 @@ vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.k
 vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
 vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
 vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
-foo: 'bar'
 {{- end}}
 {{- end -}}
 
