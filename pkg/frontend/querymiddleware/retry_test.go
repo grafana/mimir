@@ -94,16 +94,16 @@ func TestRetry(t *testing.T) {
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
-			require.Equal(t, tc.expectedRetries, mockMetrics.retries)
+			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
 		})
 	}
 }
 
 type mockRetryMetrics struct {
-	retries int
+	retries float64
 }
 
-func (c *mockRetryMetrics) Observe(v int) {
+func (c *mockRetryMetrics) Observe(v float64) {
 	c.retries = v
 }
 
