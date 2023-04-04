@@ -443,11 +443,11 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 }
 
 func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
+	values, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
 	if err != nil {
-		return nil, errors.Wrap(err, "get label values offsets")
+		return nil, errors.Wrap(err, "get label values")
 	}
-	return offsets, nil
+	return values, nil
 }
 
 func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
@@ -503,16 +503,16 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			d.Skip(skip)
 		}
 
-		val = yoloString(d.UnsafeUvarintBytes())
+		unsafeValue := yoloString(d.UnsafeUvarintBytes())
 
-		prefixMatches := strings.HasPrefix(val, prefix)
-		isAMatch = prefixMatches && (filter == nil || filter(val))
-		noMoreMatches = val == lastVal || (!prefixMatches && prefix < val)
+		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
+		isAMatch = prefixMatches && (filter == nil || filter(unsafeValue))
+		noMoreMatches = unsafeValue == lastVal || (!prefixMatches && prefix < unsafeValue)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
 		if isAMatch {
-			val = strings.Clone(val)
+			val = strings.Clone(unsafeValue)
 		} else {
 			val = ""
 		}
