@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,6 +37,8 @@ func checkBlock(blockDir string) {
 	}
 	defer block.Close()
 
+	fmt.Println(fmt.Sprintf("Analyzing %s", block.Meta().ULID.String()))
+
 	idx, err := block.Index()
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block index", "err", err)
@@ -52,8 +53,8 @@ func checkBlock(blockDir string) {
 		return
 	}
 
-	good := map[string]struct{}{}
-	candidates := map[string]labels.Labels{}
+	goodSymbols := map[string]struct{}{}
+	candidateSymbols := map[string]labels.Labels{}
 
 	var builder labels.ScratchBuilder
 	for p.Next() {
@@ -65,14 +66,23 @@ func checkBlock(blockDir string) {
 		}
 
 		lbls := builder.Labels()
+		isGood := false
 		if len(chks) > 1 {
-			good[lbls.String()] = struct{}{}
+			isGood = true
 		} else if chks[0].MinTime != chks[0].MaxTime {
 			// blindly assume we have at least 1 chunk, otherwise this will panic.
 			// mintime != maxtime implies that there's more than one sample
-			good[lbls.String()] = struct{}{}
-		} else {
-			candidates[lbls.String()] = lbls
+			isGood = true
+		}
+
+		for _, lbl := range lbls {
+			if isGood {
+				goodSymbols[lbl.Name] = struct{}{}
+				goodSymbols[lbl.Value] = struct{}{}
+			} else {
+				candidateSymbols[lbl.Name] = lbls
+				candidateSymbols[lbl.Value] = lbls
+			}
 		}
 	}
 
@@ -82,45 +92,25 @@ func checkBlock(blockDir string) {
 	}
 
 	count := 0
-	inLabelNameCount := 0
-	for c, ls := range candidates {
-		theGood, pos, ok := existsExactlyOneSeriesFlippingJustOneBit(good, c)
+	for candidateSymbol, ls := range candidateSymbols {
+		theGood, _, ok := existsExactlyOneSymbolFlippingJustOneBit(goodSymbols, candidateSymbol)
 		if !ok {
 			// We couldn't find other series flipping just one bit.
 			continue
 		}
-		start := 0
-		if pos > 16 {
-			start = pos - 16
-		}
-		end := len(c) - 1
-		if pos+16 < end {
-			end = pos + 16
-		}
-		diff := c[start:end]
-		where := pos
-		if start > 0 {
-			where = 16
-		}
-		fmt.Printf("bad=%s\n", c)
-		fmt.Printf("good=%s\n", theGood)
-		fmt.Printf("diff=%s\n", diff)
-		fmt.Printf("     %s^\n", strings.Repeat(" ", where))
-		inLabelName := flipHappensInLabelName(theGood, ls)
-		fmt.Sprintf("in_label_name=%t\n\n", inLabelName)
-		if inLabelName {
-			inLabelNameCount++
-		}
+
+		fmt.Println("Good:", theGood)
+		fmt.Println("Bad: ", candidateSymbol)
+		fmt.Println("Bad series:", ls.String())
+		fmt.Println("")
+
 		count++
 	}
-	decision := false
-	if inLabelNameCount > 0 || count > 3 {
-		decision = true
-	}
-	fmt.Printf("BLOCK=%s COUNT=%d IN_LABEL_NAME=%d DECISION=%t\n\n", block.Meta().ULID.String(), count, inLabelNameCount, decision)
+
+	fmt.Printf("Analyzed BLOCK=%s COUNT=%d\n\n", block.Meta().ULID.String(), count)
 }
 
-func existsExactlyOneSeriesFlippingJustOneBit(good map[string]struct{}, candidate string) (string, int, bool) {
+func existsExactlyOneSymbolFlippingJustOneBit(good map[string]struct{}, candidate string) (string, int, bool) {
 	cb := []byte(candidate)
 	count := 0
 	theGood := ""
