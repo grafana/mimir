@@ -435,8 +435,6 @@ Examples:
 
 {{/*
 Return the Vault Agent pod annotations if enabled and required by the component
-Params:
-  component = component name
 */}}
 {{- define "mimir.vaultAgent.annotations" -}}
 {{- $vaultEnabledComponents := dict
