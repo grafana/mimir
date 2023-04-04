@@ -3491,7 +3491,7 @@ The `compactor` block configures the compactor component.
 [symbols_flushers_concurrency: <int> | default = 1]
 
 # (advanced) Max number of uploaded blocks that can be validated concurrently. 0
-# = disabled.
+# = no limit.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
