@@ -59,10 +59,10 @@ type IndexCache interface {
 	FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
 
 	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
-	StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte)
+	StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string, v []byte)
 
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
-	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
+	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool)
 
 	// StoreSeriesForPostings stores a series set for the provided postings.
 	StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
