@@ -29,10 +29,12 @@ type PostingOffsetTable interface {
 	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
 	// LabelValues returns a list of values for the label named name that match filter and have the prefix provided.
+	// The returned label values are sorted lexicographically.
 	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
 
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
+	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
 	LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
