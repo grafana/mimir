@@ -115,6 +115,7 @@
 ### Documentation
 
 * [CHANGE] Clarify what deprecation means in the lifecycle of configuration parameters. #4499
+* [CHANGE] Update compactor `split-groups` and `split-and-merge-shards` recommendation on component page. #4623
 * [FEATURE] Add instructions about how to configure native histograms. #4527
 * [ENHANCEMENT] Runbook for MimirCompactorHasNotSuccessfullyRunCompaction extended to include scenario where compaction has fallen behind. #4609
 * [ENHANCEMENT] Add explanation for QPS values for reads in remote ruler mode and writes generally, to the Ruler dashboard page. #4629
