@@ -53,14 +53,15 @@ func main() {
 
 	concurrency.ForEachJob(ctx, len(blockRefs), concurrencyLimit, func(ctx context.Context, idx int) error {
 		blockRef := blockRefs[idx]
-		logger.Log("msg", "checking block", "ref", blockRef)
+		blockLogger := log.With(logger, "ref", blockRef)
+		blockLogger.Log("msg", "checking block")
 
-		if isValid, err := analyzeBlock(ctx, bucketClient, blockRef, logger); err != nil {
-			logger.Log("msg", "unable to analyze block", "ref", blockRef, "err", err)
+		if isValid, err := analyzeBlock(ctx, bucketClient, blockRef, blockLogger); err != nil {
+			blockLogger.Log("msg", "unable to analyze block", "err", err)
 		} else if !isValid {
-			logger.Log("msg", "invalid block", "ref", blockRef)
+			blockLogger.Log("msg", "invalid block")
 		} else {
-			logger.Log("msg", "valid block", "ref", blockRef)
+			blockLogger.Log("msg", "valid block")
 		}
 
 		return nil
