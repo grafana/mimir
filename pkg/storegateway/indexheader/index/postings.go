@@ -516,41 +516,43 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		} else {
 			val = ""
 		}
-		// The information in length and number of entries is redundant,
-		// so we can omit the first one - length - and return
+		// In the postings section of the index the information in each posting list for length and number
+		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
+		// So we can omit the first one - length - and return
 		// the offset of the number_of_entries field.
 		startOff = int64(d.Uvarint64()) + postingLengthFieldSize
 		return
 	}
 
 	var (
-		currList         PostingListOffset
-		nextIsConsumed   bool
-		nextValueSafe    string
-		nextValueMatches bool
-		nextOffset       int64
-		noMoreMatches    bool
+		currList            PostingListOffset
+		currentValueIsLast  bool
+		currentValueMatches bool
+		nextIsPopulated     bool
+		nextValueSafe       string
+		nextValueMatches    bool
+		nextOffset          int64
+		nextValueIsLast     bool
 	)
 
 	for d.Err() == nil {
-		currentValueIsLast := noMoreMatches
-		currentValueMatches := nextValueMatches
-		if nextIsConsumed {
-			currList.LabelValue, currList.Off.Start = nextValueSafe, nextOffset
-			nextIsConsumed = false
+		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
+		if nextIsPopulated {
+			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
+			nextIsPopulated = false
 		} else {
 			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
 		}
 
-		// If the next value matches, we need to also populate its end offset and then call the visitor.
+		// If the current value matches, we need to also populate its end offset and then call the visitor.
 		if currentValueMatches {
-			// We peek at the next list, so we can use it as the end offset of the current one.
+			// We peek at the next list, so we can use its offset as the end offset of the current one.
 			if currList.LabelValue == lastVal {
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {
-				nextIsConsumed = true
-				nextValueSafe, nextOffset, nextValueMatches, noMoreMatches = readNextList()
+				nextIsPopulated = true
+				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
 
 				// The end we want for the current posting list should be the byte offset of the CRC32 field.
 				// The start of the next posting list is the byte offset of the number_of_entries field.
