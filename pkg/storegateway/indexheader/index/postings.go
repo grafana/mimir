@@ -458,7 +458,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter fu
 	return offsets, nil
 }
 
-// postingListOffsetIdentity cam be used with postingOffsets.
+// postingListOffsetIdentity can be used with postingOffsets.
 func postingListOffsetIdentity(offset PostingListOffset) PostingListOffset { return offset }
 
 // postingListOffsetValue can be used with postingOffsets.
@@ -510,7 +510,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		noMoreMatches = val == lastVal || (!prefixMatches && prefix < val)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
-		// We'll only need the sting if it matches our filter.
+		// We'll only need the string if it matches our filter.
 		if isAMatch {
 			val = strings.Clone(val)
 		} else {
