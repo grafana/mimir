@@ -14,6 +14,7 @@
 * [CHANGE] Ingester: the `cortex_ingester_tsdb_wal_replay_duration_seconds` metrics has been removed. #4465
 * [CHANGE] Query-frontend: use protobuf internal query result payload format by default. This feature is no longer considered experimental. #4557
 * [CHANGE] Ruler: reject creating federated rule groups while tenant federation is disabled. Previously the rule groups would be silently dropped during bucket sync. #4555
+* [CHANGE] Compactor: the `/api/v1/upload/block/{block}/finish` endpoint now returns a `429` status code when the compactor has reached the limit specified by `-compactor.max-block-upload-validation-concurrency`. #4598
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
 * [FEATURE] Vault: Introduce experimental integration with Vault to fetch secrets used to configure TLS for clients. Server TLS secrets will still be read from a file. `tls-ca-path`, `tls-cert-path` and `tls-key-path` will denote the path in Vault for the following CLI flags when `-vault.enabled` is true: #4446.
   * `-distributor.ha-tracker.etcd.*`
@@ -65,6 +66,7 @@
 * [ENHANCEMENT] Compactor: validation of blocks uploaded via the TSDB block upload feature is now configurable on a per tenant basis: #4585
   * `-compactor.block-upload-validation-enabled` has been added, `compactor_block_upload_validation_enabled` can be used to override per tenant
   * `-compactor.block-upload.block-validation-enabled` was the previous global flag and has been removed
+* [ENHANCEMENT] TSDB Block Upload: block upload validation concurrency can now be limited with `-compactor.max-block-upload-validation-concurrency`. #4598
 * [ENHANCEMENT] OTLP: Add support for converting OTel exponential histograms to Prometheus native histograms. The ingestion of native histograms must be enabled, please set `-ingester.native-histograms-ingestion-enabled` to `true`. #4063 #4639
 * [ENHANCEMENT] Query-frontend: add metric `cortex_query_fetched_index_bytes_total` to measure TSDB index bytes fetched to execute a query. #4597
 * [ENHANCEMENT] Query-frontend: add experimental limit to enforce a max query expression size in bytes via `-query-frontend.max-query-expression-size-bytes` or `max_query_expression_size_bytes`. #4604
@@ -104,6 +106,8 @@
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
+
+* [ENHANCEMENT] Backfill: mimirtool will now sleep and retry if it receives a 429 response while trying to finish an upload due to validation concurrency limits. #4598
 
 ### Query-tee
 
