@@ -94,7 +94,7 @@ func diffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
 
 func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
 	if !isDiffVarintSnappyEncodedPostings(input) {
-		return nil, errors.New("dvs header not found")
+		return nil, errors.New(string(codecHeaderSnappy) + " header not found")
 	}
 
 	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappy):])
@@ -179,7 +179,7 @@ func encodedMatchersLen(matchers []*labels.Matcher) int {
 
 func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, []*labels.Matcher, error) {
 	if !isDiffVarintSnappyWithmatchersEncodedPostings(input) {
-		return nil, nil, errors.New("dm header not found")
+		return nil, nil, errors.New(string(codecHeaderSnappyWithmatchers) + " header not found")
 	}
 
 	codecLen := len(codecHeaderSnappyWithmatchers)
