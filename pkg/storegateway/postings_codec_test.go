@@ -106,7 +106,7 @@ func TestLabelMatchersTypeValues(t *testing.T) {
 
 	for matcherType, val := range expectedValues {
 		assert.Equal(t, int(labels.MustNewMatcher(matcherType, "", "").Type), val,
-			"diffVarintSnappyMatchersEncode relies on the number values of hte matchers not changing. "+
+			"diffVarintSnappyWithMatchersEncode relies on the number values of hte matchers not changing. "+
 				"It caches each matcher type as these integer values. "+
 				"If the integer values change, then the already cached values in the index cache will be improperly decoded.")
 	}
@@ -176,7 +176,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 					t.Log("original size (4*entries):", 4*p.len(), "bytes")
 					p.reset() // We reuse postings between runs, so we need to reset iterator.
 
-					data, err := diffVarintSnappyMatchersEncode(p, p.len(), matchers)
+					data, err := diffVarintSnappyWithMatchersEncode(p, p.len(), matchers)
 					assert.NoError(t, err)
 
 					t.Log("encoded size", len(data), "bytes")

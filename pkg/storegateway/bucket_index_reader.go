@@ -161,7 +161,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, unappliedMatchers []*labels.Matcher) {
-	data, err := diffVarintSnappyMatchersEncode(index.NewListPostings(refs), len(refs), unappliedMatchers)
+	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), unappliedMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
@@ -552,7 +552,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 			}
 		})
 
-	case isDiffVarintSnappyWithmatchersEncodedPostings(b):
+	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
 		s := time.Now()
 		l, matchers, err = diffVarintSnappyMatchersDecode(b)
 

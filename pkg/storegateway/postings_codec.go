@@ -33,7 +33,7 @@ type codec string
 
 const (
 	codecHeaderSnappy             codec = "dvs" // As in "diff+varint+snappy".
-	codecHeaderSnappyWithmatchers codec = "dm"  // As in "dvs+matchers"
+	codecHeaderSnappyWithMatchers codec = "dm"  // As in "dvs+matchers"
 )
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
@@ -106,15 +106,15 @@ func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
 }
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy+matchers codec.
-func isDiffVarintSnappyWithmatchersEncodedPostings(input []byte) bool {
-	return bytes.HasPrefix(input, []byte(codecHeaderSnappyWithmatchers))
+func isDiffVarintSnappyWithMatchersEncodedPostings(input []byte) bool {
+	return bytes.HasPrefix(input, []byte(codecHeaderSnappyWithMatchers))
 }
 
-// diffVarintSnappyMatchersEncode encodes postings into snappy-encoded diff+varint representation,
+// diffVarintSnappyWithMatchersEncode encodes postings into snappy-encoded diff+varint representation,
 // prepended with any unapplied matchers to the result.
-// Returned byte slice starts with codecHeaderSnappyWithmatchers header.
+// Returned byte slice starts with codecHeaderSnappyWithMatchers header.
 // Length argument is expected number of postings, used for preallocating buffer.
-func diffVarintSnappyMatchersEncode(p index.Postings, length int, unappliedMatchers []*labels.Matcher) ([]byte, error) {
+func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, unappliedMatchers []*labels.Matcher) ([]byte, error) {
 	varintPostings, err := diffVarintEncodeNoHeader(p, length)
 	if err != nil {
 		return nil, err
@@ -122,13 +122,13 @@ func diffVarintSnappyMatchersEncode(p index.Postings, length int, unappliedMatch
 
 	// Estimate sizes
 	estimatedMatchersLen := encodedMatchersLen(unappliedMatchers)
-	codecLen := len(codecHeaderSnappyWithmatchers)
+	codecLen := len(codecHeaderSnappyWithMatchers)
 
 	// Preallocate buffer
 	result := make([]byte, codecLen+estimatedMatchersLen+snappy.MaxEncodedLen(len(varintPostings)))
 
 	// Codec
-	copy(result, codecHeaderSnappyWithmatchers)
+	copy(result, codecHeaderSnappyWithMatchers)
 
 	// Matchers size + matchers
 	actualMatchersLen, err := encodeMatchers(estimatedMatchersLen, unappliedMatchers, result[codecLen:])
@@ -178,11 +178,11 @@ func encodedMatchersLen(matchers []*labels.Matcher) int {
 }
 
 func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, []*labels.Matcher, error) {
-	if !isDiffVarintSnappyWithmatchersEncodedPostings(input) {
-		return nil, nil, errors.New(string(codecHeaderSnappyWithmatchers) + " header not found")
+	if !isDiffVarintSnappyWithMatchersEncodedPostings(input) {
+		return nil, nil, errors.New(string(codecHeaderSnappyWithMatchers) + " header not found")
 	}
 
-	codecLen := len(codecHeaderSnappyWithmatchers)
+	codecLen := len(codecHeaderSnappyWithMatchers)
 	matchers, matchersLen, err := decodeMatchers(input[codecLen:])
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "decoding matchers")
