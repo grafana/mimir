@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"unsafe"
 
 	"github.com/dennwc/varint"
 	"github.com/golang/snappy"
@@ -220,7 +219,6 @@ func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 		value := string(src[:n])
 		src = src[n:]
 
-		// TODO dimitarvdimitrov add a test to make sure the matcher is compiled (maybe we can even take it from the compiled query matchers?)
 		m, err := labels.NewMatcher(typ, labelName, value)
 		if err != nil {
 			return nil, 0, err
@@ -229,10 +227,6 @@ func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 	}
 
 	return matchers, initialLength - len(src), nil
-}
-
-func yoloString(buf []byte) string {
-	return *((*string)(unsafe.Pointer(&buf)))
 }
 
 func newDiffVarintPostings(input []byte) *diffVarintPostings {
