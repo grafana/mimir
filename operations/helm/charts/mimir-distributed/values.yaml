@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r231-b8b0d61
+  tag: r232-ff833f1
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -2808,7 +2808,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r231-1c2d0f37
+    tag: r232-bb9f8414
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3334,7 +3334,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r231-b8b0d61
+    tag: r232-ff833f1
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3354,7 +3354,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r231-b8b0d61
+    tag: r232-ff833f1
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 
