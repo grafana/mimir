@@ -156,7 +156,7 @@ func encodeMatchers(totalLen int, matchers []*labels.Matcher, dest []byte) (writ
 		written += binary.PutUvarint(dest[written:], uint64(len(m.Name)))
 		written += copy(dest[written:], m.Name)
 
-		dest[written] = byte(m.Type) // TODO dimitarvdimitrov add a test which breaks when m.Type changes its values (i.e. Equal is not 0, NotEqual is not 1)
+		dest[written] = byte(m.Type)
 		written++
 
 		written += binary.PutUvarint(dest[written:], uint64(len(m.Value)))
@@ -225,6 +225,7 @@ func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 		value = yoloString(src[:n])
 		src = src[n:]
 
+		// TODO dimitarvdimitrov add a test to make sure the matcher is compiled (maybe we can even take it from the compiled query matchers?)
 		m, err := labels.NewMatcher(typ, labelName, value)
 		if err != nil {
 			return nil, 0, err
