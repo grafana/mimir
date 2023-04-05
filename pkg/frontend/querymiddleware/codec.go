@@ -359,16 +359,16 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadAllBody(r)))
 	}
 
-	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
-	defer log.Finish()
-	log.LogFields(otlog.Int("status_code", r.StatusCode))
+	log := spanlogger.FromContext(ctx, logger)
 
 	buf, err := bodyBuffer(r)
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
-	log.LogFields(otlog.Int("bytes", len(buf)))
+	log.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
+		otlog.Int("status_code", r.StatusCode),
+		otlog.Int("bytes", len(buf)))
 
 	contentType := r.Header.Get("Content-Type")
 	formatter := findFormatter(contentType)

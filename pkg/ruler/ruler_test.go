@@ -461,7 +461,7 @@ func TestGetRules(t *testing.T) {
 			totalConfiguredRules := 0
 
 			forEachRuler(func(rID string, r *Ruler) {
-				localRules, err := r.listRules(context.Background())
+				localRules, err := r.listRules(context.Background(), rulerSyncReasonPeriodic)
 				require.NoError(t, err)
 				for _, rules := range localRules {
 					totalLoadedRules += len(rules)
@@ -814,6 +814,28 @@ func TestSharding(t *testing.T) {
 				},
 			},
 		},
+		"shard size 2, 3 rulers, ruler2 is in joining stat": {
+			shuffleShardSize: 2,
+
+			setupRing: func(desc *ring.Desc) {
+				// user1, group2 should have been owned by ruler2, but ruler2 is in JOINING state. So, it would be owned by ruler1.
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 0) + 1}), ring.JOINING, time.Now())
+				// user2, user3 should have been owned by ruler2 or ruler3, but ruler2 is in JOINING state. So, it would be owned by ruler3.
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
+			},
+
+			expectedRules: expectedRulesMap{
+				ruler1: map[string]rulespb.RuleGroupList{
+					user1: {user1Group1, user1Group2},
+				},
+				ruler2: map[string]rulespb.RuleGroupList{},
+				ruler3: map[string]rulespb.RuleGroupList{
+					user2: {user2Group1},
+					user3: {user3Group1},
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -883,7 +905,7 @@ func TestSharding(t *testing.T) {
 			}
 
 			// Always add ruler1 to expected rulers, even if there is no ring (no sharding).
-			loadedRules1, err := r1.listRules(context.Background())
+			loadedRules1, err := r1.listRules(context.Background(), rulerSyncReasonPeriodic)
 			require.NoError(t, err)
 
 			expected := expectedRulesMap{
@@ -893,7 +915,7 @@ func TestSharding(t *testing.T) {
 			addToExpected := func(id string, r *Ruler) {
 				// Only expect rules from other rulers when using ring, and they are present in the ring.
 				if r != nil && rulerRing != nil && rulerRing.HasInstance(id) {
-					loaded, err := r.listRules(context.Background())
+					loaded, err := r.listRules(context.Background(), rulerSyncReasonPeriodic)
 					require.NoError(t, err)
 					// Normalize nil map to empty one.
 					if loaded == nil {

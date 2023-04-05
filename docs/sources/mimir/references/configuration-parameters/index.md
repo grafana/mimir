@@ -3490,6 +3490,11 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.symbols-flushers-concurrency
 [symbols_flushers_concurrency: <int> | default = 1]
 
+# (advanced) Max number of uploaded blocks that can be validated concurrently. 0
+# = no limit.
+# CLI flag: -compactor.max-block-upload-validation-concurrency
+[max_block_upload_validation_concurrency: <int> | default = 1]
+
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by compactor, otherwise all
 # tenants can be compacted. Subject to sharding.

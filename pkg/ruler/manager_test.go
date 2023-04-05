@@ -56,6 +56,7 @@ func TestSyncRuleGroups(t *testing.T) {
 		},
 	}
 	m.SyncRuleGroups(context.Background(), userRules)
+	m.Start()
 	mgr1 := getManager(m, user1)
 	require.NotNil(t, mgr1)
 	test.Poll(t, 1*time.Second, true, func() interface{} {

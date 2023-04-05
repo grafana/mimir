@@ -7889,6 +7889,17 @@
         },
         {
           "kind": "field",
+          "name": "max_block_upload_validation_concurrency",
+          "required": false,
+          "desc": "Max number of uploaded blocks that can be validated concurrently. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "compactor.max-block-upload-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.",

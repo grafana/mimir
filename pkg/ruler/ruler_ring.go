@@ -22,11 +22,18 @@ const (
 	ringAutoForgetUnhealthyPeriods = 2
 )
 
-// RingOp is the operation used for distributing rule groups between rulers.
-var RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {
-	// Only ACTIVE rulers get any rule groups. If instance is not ACTIVE, we need to find another ruler.
-	return s != ring.ACTIVE
-})
+var (
+	// RuleEvalRingOp is the operation used for distributing rule groups between rulers.
+	RuleEvalRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {
+		// Only ACTIVE rulers get any rule groups. If instance is not ACTIVE, we need to find another ruler.
+		return s != ring.ACTIVE
+	})
+
+	RuleSyncRingOp = ring.NewOp([]ring.InstanceState{ring.JOINING, ring.ACTIVE}, func(s ring.InstanceState) bool {
+		// Only ACTIVE or JOINING rulers can sync rule groups. If instance is not ACTIVE NOR JOINING, we need to find another ruler.
+		return s != ring.ACTIVE && s != ring.JOINING
+	})
+)
 
 // RingConfig masks the ring lifecycler config which contains
 // many options not really required by the rulers ring. This config

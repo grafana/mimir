@@ -586,14 +586,15 @@ func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
 	return fmt.Errorf("%v. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(remainingBlocks), " "))
 }
 
-// filterBlocksByShard removes blocks that can be safely ignored when using query sharding. We know that block can be safely
-// ignored, if it was compacted using split-and-merge compactor, and it has a valid compactor shard ID. We exploit the
-// fact that split-and-merge compactor and query-sharding use the same series-sharding algorithm.
+// filterBlocksByShard removes blocks that can be safely ignored when using query sharding.
+// We know that block can be safely ignored, if it was compacted using split-and-merge
+// compactor, and it has a valid compactor shard ID. We exploit the fact that split-and-merge
+// compactor and query-sharding use the same series-sharding algorithm.
 //
 // This function modifies input slice.
 //
-// This function also returns number of "incompatible" blocks -- blocks with compactor shard ID, but with compactor shard
-// and query shard being incompatible for optimization.
+// This function also returns number of "incompatible" blocks -- blocks with compactor shard ID,
+// but with compactor shard and query shard being incompatible for optimization.
 func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardCount uint64) (_ bucketindex.Blocks, incompatibleBlocks int) {
 	for ix := 0; ix < len(blocks); {
 		b := blocks[ix]
@@ -626,14 +627,18 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 	return blocks, incompatibleBlocks
 }
 
-// canBlockWithCompactorShardIndexContainQueryShard returns false if block with given compactor shard ID can *definitely NOT*
-// contain series for given query shard. Returns true otherwise (we don't know if block *does* contain such series,
+// canBlockWithCompactorShardIndexContainQueryShard returns false if block with
+// given compactor shard ID can *definitely NOT* contain series for given query shard.
+// Returns true otherwise (we don't know if block *does* contain such series,
 // but we cannot rule it out).
 //
-// In other words, if this function returns false, block with given compactorShardID doesn't need to be searched for series from given query shard.
+// In other words, if this function returns false, block with given compactorShardID
+// doesn't need to be searched for series from given query shard.
 //
-// In addition this function also returns whether query and compactor shard counts were divisible by each other (one way or the other).
-func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount uint64) (result bool, divisibleShardCounts bool) {
+// In addition this function also returns whether query and compactor shard counts were
+// divisible by each other (one way or the other).
+func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex,
+	compactorShardCount uint64) (result bool, divisibleShardCounts bool) {
 	// If queryShardCount = compactorShardCount * K for integer K, then we know that series in queryShardIndex
 	// can only be in the block for which (queryShardIndex % compactorShardCount == compactorShardIndex).
 	//
@@ -659,15 +664,17 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 	return true, false
 }
 
-// fetchSeriesFromStores fetches series satisfying convertedMatchers and in the time range [minT, maxT) from all
-// store-gateways in clients. Series are fetched from the given set of store-gateways concurrently. In successful
-// case, i.e., when all the concurrent fetches terminate with no exception, fetchSeriesFromStores returns:
+// fetchSeriesFromStores fetches series satisfying convertedMatchers and in the
+// time range [minT, maxT) from all store-gateways in clients. Series are fetched
+// from the given set of store-gateways concurrently. In successful case, i.e.,
+// when all the concurrent fetches terminate with no exception, fetchSeriesFromStores returns:
 //  1. a slice of fetched storage.SeriesSet
 //  2. a slice of ulid.ULID corresponding to the queried blocks
 //  3. storage.Warnings encountered during the operation
 //
-// In case of a serious error during any of the concurrent executions, the error is returned. Errors while creating storepb.SeriesRequest,
-// context cancellation, and unprocessable requests to the store-gateways (e.g., if a chunk or series limit is hit) are
+// In case of a serious error during any of the concurrent executions, the error is returned.
+// Errors while creating storepb.SeriesRequest, context cancellation, and unprocessable
+// requests to the store-gateways (e.g., if a chunk or series limit is hit) are
 // considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, error) {
 	var (

@@ -1135,9 +1135,13 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		setUpBucket            func(*testing.T, objstore.Bucket)
 		errorInjector          func(op bucket.Operation, name string) error
 		disableBlockUpload     bool
+		enableValidation       bool // should only be set to true for tests that fail before validation is started
+		maxConcurrency         int
+		setConcurrency         int64
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
+		expTooManyRequests     bool
 		expInternalServerError bool
 	}{
 		{
@@ -1215,6 +1219,16 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			errorInjector:          bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
 			expInternalServerError: true,
 		},
+		{
+			name:               "too many concurrent validations",
+			tenantID:           tenantID,
+			blockID:            blockID,
+			setUpBucket:        validSetup,
+			enableValidation:   true,
+			maxConcurrency:     2,
+			setConcurrency:     2,
+			expTooManyRequests: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1229,11 +1243,15 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
-			cfgProvider.blockUploadValidationEnabled[tc.tenantID] = false
+			cfgProvider.blockUploadValidationEnabled[tc.tenantID] = tc.enableValidation
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &injectedBkt,
 				cfgProvider:  cfgProvider,
+			}
+			c.compactorCfg.MaxBlockUploadValidationConcurrency = tc.maxConcurrency
+			if tc.setConcurrency > 0 {
+				c.blockUploadValidations.Add(tc.setConcurrency)
 			}
 
 			c.compactorCfg.DataDir = t.TempDir()
@@ -1265,6 +1283,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			case tc.expInternalServerError:
 				assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 				assert.Equal(t, "internal server error\n", string(body))
+			case tc.expTooManyRequests:
+				assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+				assert.Equal(t, "too many block upload validations in progress, limit is 2\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))

@@ -10,11 +10,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/instrument"
-
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
@@ -32,8 +31,10 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics, 
 		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-				sp := spanlogger.FromContext(ctx, logger)
-				req.LogToSpan(sp.Span)
+				sp := opentracing.SpanFromContext(ctx)
+				if sp != nil {
+					req.LogToSpan(sp)
+				}
 
 				var err error
 				resp, err = next.Do(ctx, req)
