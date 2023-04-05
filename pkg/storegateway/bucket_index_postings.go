@@ -192,7 +192,7 @@ type postingGroup struct {
 	matcher    *labels.Matcher
 	keys       []labels.Label
 
-	// totalSize is the size in bytes of all the posting lists for keys
+	// totalSize is the size in bytes of all the posting lists for keys.
 	totalSize int64
 }
 

@@ -261,7 +261,7 @@ func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
 	return m
 }
 
-// extractLabels returns the keys of the posting groups in the that they are found in each posting group.
+// extractLabels returns the keys of the posting groups in the order that they are found in each posting group.
 func extractLabels(groups []postingGroup) []labels.Label {
 	numKeys := 0
 	for _, pg := range groups {
