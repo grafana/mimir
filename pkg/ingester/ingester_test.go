@@ -6229,7 +6229,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	pushSamples := func(start, end int64, expErr bool) {
+	pushSamples := func(start, end int64, expErr bool, valueFunc func(int64) float64) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
@@ -6239,7 +6239,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 			samples = append(samples, mimirpb.Sample{
 				TimestampMs: ts,
-				Value:       float64(ts),
+				Value:       valueFunc(ts),
 			})
 			lbls = append(lbls, s)
 		}
@@ -6254,7 +6254,20 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		}
 	}
 
-	verifySamples := func(start, end int64) {
+	tsValueFunc := func(ts int64) float64 {
+		return float64(ts)
+	}
+
+	differValueFunc := func(matchTs int64, matchValue float64, otherwise func(ts int64) float64) func(ts int64) float64 {
+		return func(ts int64) float64 {
+			if ts == matchTs {
+				return matchValue
+			}
+			return otherwise(ts)
+		}
+	}
+
+	verifySamples := func(start, end int64, valueFunc func(int64) float64) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
@@ -6262,7 +6275,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 			expSamples = append(expSamples, model.SamplePair{
 				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
+				Value:     model.SampleValue(valueFunc(ts)),
 			})
 		}
 		expMatrix := model.Matrix{{
@@ -6288,12 +6301,12 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	}
 
 	// Push first in-order sample at minute 100.
-	pushSamples(100, 100, false)
-	verifySamples(100, 100)
+	pushSamples(100, 100, false, tsValueFunc)
+	verifySamples(100, 100, tsValueFunc)
 
 	// OOO is not enabled. So it errors out. No sample ingested.
-	pushSamples(90, 99, true)
-	verifySamples(100, 100)
+	pushSamples(90, 99, true, tsValueFunc)
+	verifySamples(100, 100, tsValueFunc)
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -6304,16 +6317,16 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 
 	// Now it works.
-	pushSamples(90, 99, false)
-	verifySamples(90, 100)
+	pushSamples(90, 99, false, tsValueFunc)
+	verifySamples(90, 100, tsValueFunc)
 
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
-	pushSamples(69, 99, true)
-	verifySamples(70, 100)
+	pushSamples(69, 99, true, tsValueFunc)
+	verifySamples(70, 100, tsValueFunc)
 
 	// All beyond the ooo time window. None ingested.
-	pushSamples(50, 69, true)
-	verifySamples(70, 100)
+	pushSamples(50, 69, true, tsValueFunc)
+	verifySamples(70, 100, tsValueFunc)
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -6322,8 +6335,8 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	// Increase the time window again. It works.
 	setOOOTimeWindow(model.Duration(60 * time.Minute))
-	pushSamples(50, 69, false)
-	verifySamples(50, 100)
+	pushSamples(50, 69, false, tsValueFunc)
+	verifySamples(50, 100, tsValueFunc)
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -6332,13 +6345,20 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	// Decrease the time window again. Same push should fail.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
-	pushSamples(50, 69, true)
-	verifySamples(50, 100)
+	pushSamples(50, 69, true, tsValueFunc)
+	verifySamples(50, 100, tsValueFunc)
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
 	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
+	differ := differValueFunc(101*time.Minute.Milliseconds(), 0, tsValueFunc)
+	pushSamples(100, 105, false, tsValueFunc)
+	verifySamples(50, 105, tsValueFunc)
+	// Push out of order sample that differs at ts 101
+	pushSamples(99, 104, false, differ)
+	verifySamples(50, 105, tsValueFunc)
 }
 
 // Test_Ingester_OutOfOrder_CompactHead tests that the OOO head is compacted
