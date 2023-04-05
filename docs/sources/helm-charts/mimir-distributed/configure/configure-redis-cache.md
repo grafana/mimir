@@ -6,9 +6,9 @@ description: "Learn how to configure Grafana Mimir to use external Redis as cach
 
 # Configure Redis cache
 
-Beside built-in support for Memcached, Mimir also supports Redis for the chunks-cache, index-cache, results-cache and metadata-cache. To use Redis, disable the built-in Memcached
-from `mimir-distributed` helm chart by making sure the cache configuration is not enabled. To disable Memcached either set `*-cache.enabled` to false as shown in the following yaml or remove the whole `*-cache`
-block from values file so that default setting disables Memcached. Removing the whole block is more recommended.
+Besides support for Memcached, Mimir also supports Redis for the chunks-cache, index-cache, results-cache and metadata-cache. To use Redis, deploy Redis instances, disable the built-in Memcached configuration flag in  values.yaml of `mimir-distributed` Helm chart, and then configure Mimir to use Redis.
+
+To disable Memcached, remove any `chunks-cache`, `index-cache`, `metadata-cache` and `results-cache` configuration from your Helm `values.yaml` file. Alternatively, explicitly disable each of the Memcached instances by setting `enabled` to `false`:
 
 ```yaml
 chunks-cache:
