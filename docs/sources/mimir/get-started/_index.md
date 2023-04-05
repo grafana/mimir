@@ -110,9 +110,12 @@ In a terminal, run one of the following commands:
 - Using Docker:
 
   ```bash
+  docker network create grafanet
+  
   docker run \
     --rm \
     --name mimir \
+    --network grafanet \
     --publish 9009:9009 \
     --volume "$(pwd)"/demo.yaml:/etc/mimir/demo.yaml grafana/mimir:latest \
     --config.file=/etc/mimir/demo.yaml
@@ -178,7 +181,7 @@ metrics:
 In a new terminal, run a local Grafana server using Docker:
 
 ```bash
-docker run --rm --name=grafana -p 3000:3000 grafana/grafana
+docker run --rm --name=grafana --network=grafanet -p 3000:3000 grafana/grafana
 ```
 
 ### Add Grafana Mimir as a Prometheus data source
@@ -190,7 +193,7 @@ docker run --rm --name=grafana -p 3000:3000 grafana/grafana
    | Field | Value                                                                |
    | ----- | -------------------------------------------------------------------- |
    | Name  | Mimir                                                                |
-   | URL   | [http://localhost:9009/prometheus](http://localhost:9009/prometheus) |
+   | URL   | [http://mimir:9009/prometheus](http://mimir:9009/prometheus) if you used Docker / [http://localhost:9009/prometheus](http://localhost:9009/prometheus) if you used local binary |
 
 To add a data source, refer to [Add a data source](/docs/grafana/latest/administration/data-source-management/#add-a-data-source).
 
