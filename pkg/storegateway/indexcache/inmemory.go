@@ -421,7 +421,7 @@ type cacheKeyExpandedPostings struct {
 func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
 
 func (c cacheKeyExpandedPostings) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey))
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.postingsSelectionStrategy)
 }
 
 type cacheKeySeriesForPostings struct {
