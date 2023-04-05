@@ -83,7 +83,7 @@ type Config struct {
 	AccessKeyID      string         `yaml:"access_key_id"`
 	Insecure         bool           `yaml:"insecure" category:"advanced"`
 	SignatureVersion string         `yaml:"signature_version" category:"advanced"`
-	StorageClass     string         `yaml:"storage_class"`
+	StorageClass     string         `yaml:"storage_class" category:"experimental"`
 
 	SSE  SSEConfig  `yaml:"sse"`
 	HTTP HTTPConfig `yaml:"http"`
