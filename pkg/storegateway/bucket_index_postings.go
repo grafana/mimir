@@ -36,19 +36,21 @@ type rawPostingGroup struct {
 	prefix          string
 }
 
-func newRawIntersectingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+func newRawIntersectingPostingGroup(m *labels.Matcher, keys []labels.Label) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract: false,
-		labelName:  labelName,
-		keys:       keys,
+		isSubtract:      false,
+		labelName:       m.Name,
+		keys:            keys,
+		originalMatcher: m,
 	}
 }
 
-func newRawSubtractingPostingGroup(labelName string, keys []labels.Label) rawPostingGroup {
+func newRawSubtractingPostingGroup(m *labels.Matcher, keys []labels.Label) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract: true,
-		labelName:  labelName,
-		keys:       keys,
+		isSubtract:      true,
+		labelName:       m.Name,
+		keys:            keys,
+		originalMatcher: m,
 	}
 }
 
@@ -140,16 +142,16 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newRawSubtractingPostingGroup(m.Name, keys)
+			return newRawSubtractingPostingGroup(m, keys)
 		}
-		return newRawIntersectingPostingGroup(m.Name, keys)
+		return newRawIntersectingPostingGroup(m, keys)
 	}
 
 	if m.Value != "" {
 		// Fast-path for equal matching.
 		// Works for every case except for `foo=""`, which is a special case, see below.
 		if m.Type == labels.MatchEqual {
-			return newRawIntersectingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawIntersectingPostingGroup(m, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 
 		// If matcher is `label!="foo"`, we select an empty label value too,
@@ -157,7 +159,7 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 		// So this matcher selects all series in the storage,
 		// except for the ones that do have `label="foo"`
 		if m.Type == labels.MatchNotEqual {
-			return newRawSubtractingPostingGroup(m.Name, []labels.Label{{Name: m.Name, Value: m.Value}})
+			return newRawSubtractingPostingGroup(m, []labels.Label{{Name: m.Name, Value: m.Value}})
 		}
 	}
 
