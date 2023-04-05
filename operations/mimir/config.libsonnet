@@ -100,39 +100,23 @@
 
     store_gateway_replication_factor: 3,
 
-    // DEPRECATED
-    // These configs are deprecated and will be removed in the future.
-    // Please use the variables with cache_* prefix below.
-    memcached_frontend_enabled: true,
-    memcached_frontend_max_item_size_mb: 5,
-
-    memcached_index_queries_enabled: true,
-    memcached_index_queries_max_item_size_mb: 5,
-
-    memcached_chunks_enabled: true,
-    memcached_chunks_max_item_size_mb: 1,
-
-    memcached_metadata_enabled: true,
-    memcached_metadata_max_item_size_mb: 1,
-    // end DEPRECATED block
-
-    cache_frontend_enabled: self.memcached_frontend_enabled,
-    cache_frontend_max_item_size_mb: self.memcached_frontend_max_item_size_mb,
+    cache_frontend_enabled: true,
+    cache_frontend_max_item_size_mb: 5,
     cache_frontend_backend: 'memcached',
     memcached_frontend_mtls_enabled: false,
 
-    cache_index_queries_enabled: self.memcached_index_queries_enabled,
-    cache_index_queries_max_item_size_mb: self.memcached_index_queries_max_item_size_mb,
+    cache_index_queries_enabled: true,
+    cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_backend: 'memcached',
     memcached_index_queries_mtls_enabled: false,
 
-    cache_chunks_enabled: self.memcached_chunks_enabled,
-    cache_chunks_max_item_size_mb: self.memcached_chunks_max_item_size_mb,
+    cache_chunks_enabled: true,
+    cache_chunks_max_item_size_mb: 1,
     cache_chunks_backend: 'memcached',
     memcached_chunks_mtls_enabled: false,
 
-    cache_metadata_enabled: self.memcached_metadata_enabled,
-    cache_metadata_max_item_size_mb: self.memcached_metadata_max_item_size_mb,
+    cache_metadata_enabled: true,
+    cache_metadata_max_item_size_mb: 1,
     cache_metadata_backend: 'memcached',
     memcached_metadata_mtls_enabled: false,
 
@@ -532,6 +516,14 @@
     //    },
     ingester_instance_limits: null,
 
+    // Distributor limits are put directly into runtime config, if not null. Available limits:
+    //    distributor_instance_limits: {
+    //      max_ingestion_rate: 0,  // Max ingestion rate (samples/second) per distributor. 0 = no limit.
+    //      max_inflight_push_requests: 0,  // Max inflight push requests per distributor. 0 = no limit.
+    //      max_inflight_push_requests_bytes: 0,  // Max sum of inflight push request sizes per distributor. 0 = no limit.
+    //    },
+    distributor_instance_limits: null,
+
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
@@ -552,7 +544,8 @@
         { overrides: $._config.overrides }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
-        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {}),
+        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
+        + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
     }),
 

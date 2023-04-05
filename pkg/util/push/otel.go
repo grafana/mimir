@@ -205,7 +205,7 @@ func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries
 }
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
-	pSpans := make([]mimirpb.BucketSpan, len(h.PositiveSpans))
+	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
 	for _, span := range h.PositiveSpans {
 		pSpans = append(
 			pSpans, mimirpb.BucketSpan{
@@ -214,7 +214,7 @@ func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 			},
 		)
 	}
-	nSpans := make([]mimirpb.BucketSpan, len(h.NegativeSpans))
+	nSpans := make([]mimirpb.BucketSpan, 0, len(h.NegativeSpans))
 	for _, span := range h.NegativeSpans {
 		nSpans = append(
 			nSpans, mimirpb.BucketSpan{

@@ -20,7 +20,7 @@ spec:
       resource:
         name: memory
         target:
-          type: AverageValue
+          type: Utilization
           averageUtilization: {{ . }}
   {{- end }}
   {{- with .Values.gateway.autoscaling.targetCPUUtilizationPercentage }}
@@ -28,7 +28,7 @@ spec:
       resource:
         name: cpu
         target:
-          type: AverageValue
+          type: Utilization
           averageUtilization: {{ . }}
   {{- end }}
 {{- end -}}

@@ -74,16 +74,14 @@ func (jsonDecoder) vectorToPromQLVector(vec model.Vector) promql.Vector {
 	retVal := make(promql.Vector, 0, len(vec))
 	for _, p := range vec {
 
-		lbl := make(labels.Labels, 0, len(p.Metric))
+		b := labels.NewScratchBuilder(len(p.Metric))
 		for ln, lv := range p.Metric {
-			lbl = append(lbl, labels.Label{
-				Name:  string(ln),
-				Value: string(lv),
-			})
+			b.Add(string(ln), string(lv))
 		}
+		b.Sort()
 
 		retVal = append(retVal, promql.Sample{
-			Metric: lbl,
+			Metric: b.Labels(),
 			Point: promql.Point{
 				V: float64(p.Value),
 				T: int64(p.Timestamp),

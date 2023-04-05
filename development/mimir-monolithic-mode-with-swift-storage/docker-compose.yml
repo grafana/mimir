@@ -33,8 +33,8 @@ services:
 
   prometheus:
 
-    image: prom/prometheus:v2.16.0
-    command: ["--config.file=/etc/prometheus/prometheus.yaml"]
+    image: prom/prometheus:v2.40.6
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
     ports:

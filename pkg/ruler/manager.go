@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -53,6 +54,8 @@ type DefaultMultiTenantManager struct {
 	configUpdatesTotal            *prometheus.CounterVec
 	registry                      prometheus.Registerer
 	logger                        log.Logger
+
+	rulerIsRunning atomic.Bool
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
@@ -147,6 +150,22 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	r.managersTotal.Set(float64(len(r.userManagers)))
 }
 
+func (r *DefaultMultiTenantManager) Start() {
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
+
+	// Skip starting the user managers if the ruler is already running.
+	if r.rulerIsRunning.Load() {
+		return
+	}
+
+	for _, mngr := range r.userManagers {
+		go mngr.Run()
+	}
+	// set rulerIsRunning to true once user managers are started.
+	r.rulerIsRunning.Store(true)
+}
+
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
 // concurrently for the same user.
@@ -217,7 +236,11 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user
 
 	// manager.Run() starts running the manager and blocks until Stop() is called.
 	// Hence run it as another goroutine.
-	go manager.Run()
+	// We only start the rule manager if the ruler is in running state.
+	if r.rulerIsRunning.Load() {
+		go manager.Run()
+	}
+
 	r.userManagers[user] = manager
 	return manager, true, nil
 }
