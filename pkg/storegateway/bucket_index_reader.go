@@ -42,7 +42,7 @@ type postingsSelectionStrategy interface {
 type selectAllStrategy struct{}
 
 func (selectAllStrategy) name() string {
-	return "selectAll"
+	return "all"
 }
 
 func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
