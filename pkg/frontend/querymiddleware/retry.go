@@ -77,7 +77,7 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 			return resp, nil
 		}
 
-		if apierror.IsNonretryableAPIError(err) || errors.Is(err, context.Canceled) {
+		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
 			return nil, err
 		}
 		// Retry if we get a HTTP 500 or a non-HTTP error.
