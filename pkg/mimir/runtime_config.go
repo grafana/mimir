@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/runtimeconfig"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -33,7 +34,8 @@ type runtimeConfigValues struct {
 
 	IngesterChunkStreaming *bool `yaml:"ingester_stream_chunks_when_using_blocks"`
 
-	IngesterLimits *ingester.InstanceLimits `yaml:"ingester_limits"`
+	IngesterLimits    *ingester.InstanceLimits    `yaml:"ingester_limits"`
+	DistributorLimits *distributor.InstanceLimits `yaml:"distributor_limits"`
 }
 
 // runtimeConfigTenantLimits provides per-tenant limit overrides based on a runtimeconfig.Manager
@@ -140,6 +142,20 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 		val := manager.GetConfig()
 		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
 			return cfg.IngesterLimits
+		}
+		return nil
+	}
+}
+
+func distributorInstanceLimits(manager *runtimeconfig.Manager) func() *distributor.InstanceLimits {
+	if manager == nil {
+		return nil
+	}
+
+	return func() *distributor.InstanceLimits {
+		val := manager.GetConfig()
+		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
+			return cfg.DistributorLimits
 		}
 		return nil
 	}

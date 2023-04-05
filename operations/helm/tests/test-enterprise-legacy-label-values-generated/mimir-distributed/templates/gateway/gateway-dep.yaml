@@ -82,13 +82,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-gateway
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-gateway
+            release: test-enterprise-legacy-label-values
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

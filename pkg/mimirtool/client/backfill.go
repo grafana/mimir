@@ -100,11 +100,18 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		}
 	}
 
-	resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
-	if err != nil {
-		return errors.Wrap(err, "request to finish block upload failed")
+	for {
+		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
+		if err == nil {
+			drainAndCloseBody(resp)
+			break
+		}
+		if !errors.Is(err, errTooManyRequests) {
+			return errors.Wrap(err, "request to finish block upload failed")
+		}
+		logctx.WithField("error", err).Warning("will sleep and try again")
+		time.Sleep(sleepTime)
 	}
-	drainAndCloseBody(resp)
 
 	for {
 		uploadResult, err := c.getBlockUpload(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))

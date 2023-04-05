@@ -23,13 +23,31 @@ const postingLengthFieldSize = 4
 
 type PostingOffsetTable interface {
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
+	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
+	// The End is exclusive and is typically the byte offset of the CRC32 field.
+	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
 	// LabelValues returns a list of values for the label named name that match filter and have the prefix provided.
+	// The returned label values are sorted lexicographically.
 	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
+
+	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
+	// The ranges of each posting list are the same as returned by PostingsOffset.
+	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
+	LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
+}
+
+// PostingListOffset contains the start and end offset of a posting list.
+// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
+// The End is exclusive and is typically the byte offset of the CRC32 field.
+// The End might be bigger than the actual posting ending, but not larger than the whole index file.
+type PostingListOffset struct {
+	LabelValue string
+	Off        index.Range
 }
 
 type PostingOffsetTableV1 struct {
@@ -37,17 +55,17 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
-		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingEnd)
+		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
 	} else if indexVersion == index.FormatV2 {
-		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
+		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling)
 	}
 
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (*PostingOffsetTableV1, error) {
+func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -77,14 +95,17 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	}
 
 	if len(t.postings) > 0 {
-		prevRng.End = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
+		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
+		// The last posting list ends before the label offset table.
+		// In worst case we will overfetch a few bytes.
+		prevRng.End = int64(indexLastPostingListEndBound) - crc32.Size
 		t.postings[lastKey][lastValue] = prevRng
 	}
 
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -175,9 +196,10 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	}
 
 	if len(t.postings) > 0 {
-		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
+		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
+		// The last posting list ends before the label offset table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[currentName].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
+		t.postings[currentName].lastValOffset = int64(indexLastPostingListEndBound) - crc32.Size
 	}
 
 	// Trim any extra space in the slices.
@@ -248,6 +270,23 @@ func (t *PostingOffsetTableV1) LabelValues(name string, prefix string, filter fu
 		}
 	}
 	slices.Sort(values)
+	return values, nil
+}
+
+func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+	e, ok := t.postings[name]
+	if !ok {
+		return nil, nil
+	}
+	values := make([]PostingListOffset, 0, len(e))
+	for k, r := range e {
+		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
+			values = append(values, PostingListOffset{LabelValue: k, Off: r})
+		}
+	}
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].LabelValue < values[j].LabelValue
+	})
 	return values, nil
 }
 
@@ -403,7 +442,29 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) (v []string, err error) {
+func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
+	values, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
+	if err != nil {
+		return nil, errors.Wrap(err, "get label values")
+	}
+	return values, nil
+}
+
+func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetIdentity)
+	if err != nil {
+		return nil, errors.Wrap(err, "get label values offsets")
+	}
+	return offsets, nil
+}
+
+// postingListOffsetIdentity can be used with postingOffsets.
+func postingListOffsetIdentity(offset PostingListOffset) PostingListOffset { return offset }
+
+// postingListOffsetValue can be used with postingOffsets.
+func postingListOffsetValue(offset PostingListOffset) string { return offset.LabelValue }
+
+func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, filter func(string) bool, extract func(PostingListOffset) T) (_ []T, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -419,6 +480,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 			return nil, nil
 		}
 	}
+	result := make([]T, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -428,12 +490,11 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 	d.ResetAt(e.offsets[offsetIdx].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
-	skip := 0
-	values := make([]string, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
-	for d.Err() == nil {
+	var skip int
+	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
 		if skip == 0 {
-			// These are always the same number of bytes,
-			// and it's faster to skip than parse.
+			// These are always the same number of bytes, since it's the same label name each time.
+			// It's faster to skip than parse.
 			skip = d.Len()
 			d.Uvarint()          // Keycount.
 			d.SkipUvarintBytes() // Label name.
@@ -443,35 +504,68 @@ func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter fu
 		}
 
 		unsafeValue := yoloString(d.UnsafeUvarintBytes())
-		if prefix == "" {
-			// Quick path for no prefix matching.
-			if filter == nil || filter(unsafeValue) {
-				// Clone the yolo string since its bytes will be invalidated as soon as
-				// any other reads against the decoding buffer are performed.
-				values = append(values, strings.Clone(unsafeValue))
-			}
+
+		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
+		isAMatch = prefixMatches && (filter == nil || filter(unsafeValue))
+		noMoreMatches = unsafeValue == lastVal || (!prefixMatches && prefix < unsafeValue)
+		// Clone the yolo string since its bytes will be invalidated as soon as
+		// any other reads against the decoding buffer are performed.
+		// We'll only need the string if it matches our filter.
+		if isAMatch {
+			val = strings.Clone(unsafeValue)
 		} else {
-			if strings.HasPrefix(unsafeValue, prefix) {
-				if filter == nil || filter(unsafeValue) {
-					// Clone the yolo string since its bytes will be invalidated as soon as
-					// any other reads against the decoding buffer are performed.
-					values = append(values, strings.Clone(unsafeValue))
-				}
-			} else if prefix < unsafeValue {
-				// There will be no more values with the prefix.
-				break
-			}
+			val = ""
+		}
+		// In the postings section of the index the information in each posting list for length and number
+		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
+		// So we can omit the first one - length - and return
+		// the offset of the number_of_entries field.
+		startOff = int64(d.Uvarint64()) + postingLengthFieldSize
+		return
+	}
+
+	var (
+		currList            PostingListOffset
+		currentValueIsLast  bool
+		currentValueMatches bool
+		nextIsPopulated     bool
+		nextValueSafe       string
+		nextValueMatches    bool
+		nextOffset          int64
+		nextValueIsLast     bool
+	)
+
+	for d.Err() == nil {
+		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
+		if nextIsPopulated {
+			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
+			nextIsPopulated = false
+		} else {
+			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
 		}
 
-		if unsafeValue == lastVal {
+		// If the current value matches, we need to also populate its end offset and then call the visitor.
+		if currentValueMatches {
+			// We peek at the next list, so we can use its offset as the end offset of the current one.
+			if currList.LabelValue == lastVal {
+				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
+				currList.Off.End = e.lastValOffset
+			} else {
+				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
+				nextIsPopulated = true
+
+				// The end we want for the current posting list should be the byte offset of the CRC32 field.
+				// The start of the next posting list is the byte offset of the number_of_entries field.
+				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
+				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
+			}
+			result = append(result, extract(currList))
+		}
+		if currentValueIsLast {
 			break
 		}
-		d.Uvarint64() // Offset.
 	}
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "get label values")
-	}
-	return values, nil
+	return result, d.Err()
 }
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
