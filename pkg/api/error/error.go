@@ -116,8 +116,8 @@ func IsAPIError(err error) bool {
 	return errors.As(err, &apiErr)
 }
 
-// IsAPIError returns true if err is an apiError which should be failed and not retried.
-func IsNonretryableAPIError(err error) bool {
+// IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
+func IsNonRetryableAPIError(err error) bool {
 	apiErr := &apiError{}
 	// Reasoning:
 	// TypeNone, TypeUnavailable and TypeNotFound are not used anywhere in Mimir or Prometheus;
