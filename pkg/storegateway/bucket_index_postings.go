@@ -31,46 +31,46 @@ type rawPostingGroup struct {
 	labelName  string
 	keys       []labels.Label
 
-	isLazy          bool
-	originalMatcher *labels.Matcher
-	prefix          string
+	isLazy  bool
+	matcher *labels.Matcher
+	prefix  string
 }
 
 func newRawIntersectingPostingGroup(m *labels.Matcher, keys []labels.Label) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract:      false,
-		labelName:       m.Name,
-		keys:            keys,
-		originalMatcher: m,
+		isSubtract: false,
+		labelName:  m.Name,
+		keys:       keys,
+		matcher:    m,
 	}
 }
 
 func newRawSubtractingPostingGroup(m *labels.Matcher, keys []labels.Label) rawPostingGroup {
 	return rawPostingGroup{
-		isSubtract:      true,
-		labelName:       m.Name,
-		keys:            keys,
-		originalMatcher: m,
+		isSubtract: true,
+		labelName:  m.Name,
+		keys:       keys,
+		matcher:    m,
 	}
 }
 
 func newLazyIntersectingPostingGroup(m *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isLazy:          true,
-		isSubtract:      false,
-		labelName:       m.Name,
-		prefix:          m.Prefix(),
-		originalMatcher: m,
+		isLazy:     true,
+		isSubtract: false,
+		labelName:  m.Name,
+		prefix:     m.Prefix(),
+		matcher:    m,
 	}
 }
 
 func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 	return rawPostingGroup{
-		isLazy:          true,
-		isSubtract:      true,
-		labelName:       m.Name,
-		prefix:          m.Prefix(),
-		originalMatcher: m,
+		isLazy:     true,
+		isSubtract: true,
+		labelName:  m.Name,
+		prefix:     m.Prefix(),
+		matcher:    m,
 	}
 }
 
@@ -82,7 +82,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		totalSize int64
 	)
 	if g.isLazy {
-		filter := g.originalMatcher.Matches
+		filter := g.matcher.Matches
 		if g.isSubtract {
 			filter = not(filter)
 		}
@@ -104,10 +104,10 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 	}
 
 	return postingGroup{
-		isSubtract:      g.isSubtract,
-		originalMatcher: g.originalMatcher,
-		keys:            keys,
-		totalSize:       totalSize,
+		isSubtract: g.isSubtract,
+		matcher:    g.matcher,
+		keys:       keys,
+		totalSize:  totalSize,
 	}, nil
 }
 
@@ -188,9 +188,9 @@ func not(filter func(string) bool) func(string) bool {
 // All the labels in keys should have a corresponding postings list in the index.
 // This computation happens in expandedPostings.
 type postingGroup struct {
-	isSubtract      bool
-	originalMatcher *labels.Matcher
-	keys            []labels.Label
+	isSubtract bool
+	matcher    *labels.Matcher
+	keys       []labels.Label
 
 	// totalSize is the size in bytes of all the posting lists for keys
 	totalSize int64

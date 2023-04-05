@@ -256,7 +256,7 @@ func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
 	}
 	m := make([]*labels.Matcher, len(groups))
 	for i := range groups {
-		m[i] = groups[i].originalMatcher
+		m[i] = groups[i].matcher
 	}
 	return m
 }
