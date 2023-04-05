@@ -98,8 +98,7 @@ func newQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
-	defer log.Span.Finish()
+	log := spanlogger.FromContext(ctx, s.logger)
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {

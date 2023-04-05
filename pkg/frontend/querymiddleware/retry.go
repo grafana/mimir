@@ -17,6 +17,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type retryMiddlewareMetrics struct {
@@ -84,7 +85,8 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok || httpResp.Code/100 == 5 {
 			lastErr = err
-			level.Error(util_log.WithContext(ctx, r.log)).Log("msg", "error processing request", "try", tries, "err", err)
+			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, r.log))
+			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
 			continue
 		}
 
