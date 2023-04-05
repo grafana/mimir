@@ -37,6 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.1`. #4659
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+* [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
 
 ## 4.3.0
 
