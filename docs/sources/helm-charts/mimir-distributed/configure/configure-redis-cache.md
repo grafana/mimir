@@ -32,7 +32,6 @@ mimir:
           backend: redis
           redis:
             endpoint: <redis-url>:6379
-            # and some more configs
         index_cache:
           backend: redis
           redis:
