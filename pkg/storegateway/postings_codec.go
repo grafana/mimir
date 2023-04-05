@@ -121,35 +121,35 @@ func diffVarintSnappyMatchersEncode(p index.Postings, length int, unappliedMatch
 	}
 
 	// Estimate sizes
-	matchersLen := encodedMatchersLen(unappliedMatchers)
+	estimatedMatchersLen := encodedMatchersLen(unappliedMatchers)
 	codecLen := len(codecHeaderSnappyWithmatchers)
 
 	// Preallocate buffer
-	result := make([]byte, codecLen+matchersLen+snappy.MaxEncodedLen(len(varintPostings)))
+	result := make([]byte, codecLen+estimatedMatchersLen+snappy.MaxEncodedLen(len(varintPostings)))
 
 	// Codec
 	copy(result, codecHeaderSnappyWithmatchers)
 
 	// Matchers size + matchers
-	matchersWritten, err := encodeMatchers(matchersLen, unappliedMatchers, result[codecLen:])
+	actualMatchersLen, err := encodeMatchers(estimatedMatchersLen, unappliedMatchers, result[codecLen:])
 	if err != nil {
 		return nil, err
 	}
-	if matchersWritten != matchersLen {
-		return nil, fmt.Errorf("encoding matchers wrote unexpected number of bytes: wrote %d, expected %d", matchersWritten, matchersLen)
+	if actualMatchersLen != estimatedMatchersLen {
+		return nil, fmt.Errorf("encoding matchers wrote unexpected number of bytes: wrote %d, expected %d", actualMatchersLen, estimatedMatchersLen)
 	}
 
 	// Compressed postings
-	compressedPostings := snappy.Encode(result[codecLen+matchersWritten:], varintPostings)
+	compressedPostings := snappy.Encode(result[codecLen+actualMatchersLen:], varintPostings)
 
-	result = result[:codecLen+matchersWritten+len(compressedPostings)]
+	result = result[:codecLen+actualMatchersLen+len(compressedPostings)]
 	return result, nil
 }
 
 // encodeMatchers needs to be called with the precomputed length of the encoded matchers from encodedMatchersLen
-func encodeMatchers(totalLen int, matchers []*labels.Matcher, dest []byte) (written int, _ error) {
-	if len(dest) < totalLen {
-		return 0, fmt.Errorf("too small buffer to encode matchers: need at least %d, got %d", totalLen, dest)
+func encodeMatchers(expectedLen int, matchers []*labels.Matcher, dest []byte) (written int, _ error) {
+	if len(dest) < expectedLen {
+		return 0, fmt.Errorf("too small buffer to encode matchers: need at least %d, got %d", expectedLen, dest)
 	}
 	written += binary.PutUvarint(dest, uint64(len(matchers)))
 	for _, m := range matchers {
