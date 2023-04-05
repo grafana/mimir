@@ -52,15 +52,15 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
-	block         *bucketBlock
-	postingsStrat postingsSelectionStrategy
-	dec           *index.Decoder
+	block            *bucketBlock
+	postingsStrategy postingsSelectionStrategy
+	dec              *index.Decoder
 }
 
-func newBucketIndexReader(block *bucketBlock, postingsStrat postingsSelectionStrategy) *bucketIndexReader {
+func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	r := &bucketIndexReader{
-		block:         block,
-		postingsStrat: postingsStrat,
+		block:            block,
+		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
@@ -166,11 +166,11 @@ func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
 	}
-	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, r.postingsStrat.name(), data)
+	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, r.postingsStrategy.name(), data)
 }
 
 func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, bool) {
-	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key, r.postingsStrat.name())
+	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key, r.postingsStrategy.name())
 	if !ok {
 		return nil, nil, false
 	}
@@ -199,7 +199,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		return nil, nil, nil
 	}
 
-	postingGroups, omittedPostingGroups := r.postingsStrat.selectPostings(postingGroups)
+	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
 	if err != nil {
