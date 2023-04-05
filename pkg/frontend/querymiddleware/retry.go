@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -21,7 +23,7 @@ type retryMiddlewareMetrics struct {
 	retriesCount prometheus.Histogram
 }
 
-func newRetryMiddlewareMetrics(registerer prometheus.Registerer) *retryMiddlewareMetrics {
+func newRetryMiddlewareMetrics(registerer prometheus.Registerer) prometheus.Observer {
 	return &retryMiddlewareMetrics{
 		retriesCount: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -32,17 +34,21 @@ func newRetryMiddlewareMetrics(registerer prometheus.Registerer) *retryMiddlewar
 	}
 }
 
+func (m *retryMiddlewareMetrics) Observe(v float64) {
+	m.retriesCount.Observe(v)
+}
+
 type retry struct {
 	log        log.Logger
 	next       Handler
 	maxRetries int
 
-	metrics *retryMiddlewareMetrics
+	metrics prometheus.Observer
 }
 
 // newRetryMiddleware returns a middleware that retries requests if they
 // fail with 500 or a non-HTTP error.
-func newRetryMiddleware(log log.Logger, maxRetries int, metrics *retryMiddlewareMetrics) Middleware {
+func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Observer) Middleware {
 	if metrics == nil {
 		metrics = newRetryMiddlewareMetrics(nil)
 	}
@@ -59,7 +65,7 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics *retryMiddleware
 
 func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 	tries := 0
-	defer func() { r.metrics.retriesCount.Observe(float64(tries)) }()
+	defer func() { r.metrics.Observe(float64(tries)) }()
 
 	var lastErr error
 	for ; tries < r.maxRetries; tries++ {
@@ -71,6 +77,9 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 			return resp, nil
 		}
 
+		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		// Retry if we get a HTTP 500 or a non-HTTP error.
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok || httpResp.Code/100 == 5 {
