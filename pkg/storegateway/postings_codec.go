@@ -177,7 +177,6 @@ func encodedMatchersLen(matchers []*labels.Matcher) int {
 	return matchersLen
 }
 
-// diffVarintSnappyMatchersDecode retains pointers to the buffer.
 func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, []*labels.Matcher, error) {
 	if !isDiffVarintSnappyWithmatchersEncodedPostings(input) {
 		return nil, nil, errors.New("dm header not found")
@@ -196,7 +195,6 @@ func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, []*labels.Mat
 	return newDiffVarintPostings(raw), matchers, nil
 }
 
-// decodeMatchers retains points to the buffer
 func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 	initialLength := len(src)
 	numMatchers, numMatchersLen := varint.Uvarint(src)
@@ -206,23 +204,20 @@ func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 	}
 	matchers := make([]*labels.Matcher, 0, numMatchers)
 
-	var (
-		typ       labels.MatchType
-		labelName string
-		value     string
-	)
 	for i := uint64(0); i < numMatchers; i++ {
 		n, nLen := varint.Uvarint(src)
 		src = src[nLen:]
-		labelName = yoloString(src[:n])
+		// We should copy the string so that we don't retain a reference to the original slice, which may be large.
+		labelName := string(src[:n])
 		src = src[n:]
 
-		typ = labels.MatchType(src[0])
+		typ := labels.MatchType(src[0])
 		src = src[1:]
 
 		n, nLen = varint.Uvarint(src)
 		src = src[nLen:]
-		value = yoloString(src[:n])
+		// We should copy the string so that we don't retain a reference to the original slice, which may be large.
+		value := string(src[:n])
 		src = src[n:]
 
 		// TODO dimitarvdimitrov add a test to make sure the matcher is compiled (maybe we can even take it from the compiled query matchers?)
