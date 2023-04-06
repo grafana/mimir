@@ -480,7 +480,6 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			return nil, nil
 		}
 	}
-	result := make([]T, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -491,7 +490,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 	lastVal := e.offsets[len(e.offsets)-1].value
 
 	var skip int
-	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
+	readNextList := func(doAlloc bool) (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -511,7 +510,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
-		if isAMatch {
+		if isAMatch && doAlloc {
 			val = strings.Clone(unsafeValue)
 		} else {
 			val = ""
@@ -533,7 +532,26 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		nextValueMatches    bool
 		nextOffset          int64
 		nextValueIsLast     bool
+
+		matchingVals int
 	)
+	for d.Err() == nil {
+		_, _, currentValueMatches, currentValueIsLast = readNextList(false)
+		// If the current value matches, we need to also populate its end offset and then call the visitor.
+		if currentValueMatches {
+			matchingVals++
+		}
+		if currentValueIsLast {
+			break
+		}
+	}
+
+	if matchingVals == 0 {
+		return nil, nil
+	}
+
+	result := make([]T, 0, matchingVals)
+	d.ResetAt(e.offsets[offsetIdx].tableOff)
 
 	for d.Err() == nil {
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
@@ -541,7 +559,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
 			nextIsPopulated = false
 		} else {
-			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
+			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList(true)
 		}
 
 		// If the current value matches, we need to also populate its end offset and then call the visitor.
@@ -551,7 +569,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {
-				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
+				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList(true)
 				nextIsPopulated = true
 
 				// The end we want for the current posting list should be the byte offset of the CRC32 field.
@@ -565,6 +583,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			break
 		}
 	}
+
 	return result, d.Err()
 }
 
