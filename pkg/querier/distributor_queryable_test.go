@@ -547,7 +547,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 			test.RequireIteratorFloat(t, s.TimestampMs, s.Value, it, valType)
 		case mimirpb.Histogram:
 			if s.IsFloatHistogram() {
-				test.RequireIteratorFloatHistogram(t, s.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&s), it, valType)
+				test.RequireIteratorFloatHistogram(t, s.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&s), it, valType)
 			} else {
 				test.RequireIteratorHistogram(t, s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s), it, valType)
 			}
@@ -584,7 +584,7 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 		case mimirpb.Histogram:
 			if s.IsFloatHistogram() {
 				ensureChunk(chunk.PrometheusFloatHistogramChunk, s.Timestamp)
-				overflow, err = chunks[len(chunks)-1].Data.AddFloatHistogram(s.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&s))
+				overflow, err = chunks[len(chunks)-1].Data.AddFloatHistogram(s.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&s))
 			} else {
 				ensureChunk(chunk.PrometheusHistogramChunk, s.Timestamp)
 				overflow, err = chunks[len(chunks)-1].Data.AddHistogram(s.Timestamp, mimirpb.FromHistogramProtoToHistogram(&s))

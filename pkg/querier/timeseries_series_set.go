@@ -176,12 +176,12 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 	}
 	h := t.ts.series.Histograms[t.iH]
 	if h.IsFloatHistogram() {
-		return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+		return h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
 	}
-	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h).ToFloat()
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
-// AtT implements implements chunkenc.Iterator.
+// AtT implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtT() int64 {
 	if t.atH {
 		if t.iH < 0 || t.iH >= len(t.ts.series.Histograms) {

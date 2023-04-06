@@ -4143,7 +4143,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		for _, h := range ts.Histograms {
 			if h.IsFloatHistogram() {
 				fhexists = true
-				newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h))
+				newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h))
 				if err != nil {
 					panic(err)
 				}
