@@ -12,6 +12,7 @@ The following are the main/default maintainers:
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 - Patrick Oyarzun — [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
+- Charles Korn — [@charleskorn](https://github.com/charleskorn) ([Grafana Labs](https://grafana.com/))
 
 Some parts of the codebase have other maintainers, the package paths also include all sub-packages:
 
@@ -26,3 +27,7 @@ Some parts of the codebase have other maintainers, the package paths also includ
 - `pkg/ruler`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
   - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
+- `packaging`:
+  - Wilfried ROSET - [@wilfriedroset](https://github.com/wilfriedroset) ([OVHcloud](https://www.ovhcloud.com/))
+  - Nicolas DUPEUX - [@vaxvms](https://github.com/vaxvms) ([OVHcloud](https://www.ovhcloud.com/))
+  - Julien GIRARD - [@bubu11e](https://github.com/bubu11e) ([OVHcloud](https://www.ovhcloud.com/))

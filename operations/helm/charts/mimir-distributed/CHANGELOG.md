@@ -29,12 +29,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
+* [FEATURE] Allow for deploying mixin dashboards as part of the helm chart. #4618
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
+* [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.1`. #4659
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+* [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
 
 ## 4.3.0
 

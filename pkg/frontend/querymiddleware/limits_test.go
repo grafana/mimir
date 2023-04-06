@@ -387,6 +387,10 @@ func (m multiTenantMockLimits) QueryShardingMaxShardedQueries(userID string) int
 	return m.byTenant[userID].maxShardedQueries
 }
 
+func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
+	return m.byTenant[userID].maxRegexpSizeBytes
+}
+
 func (m multiTenantMockLimits) SplitInstantQueriesByInterval(userID string) time.Duration {
 	return m.byTenant[userID].splitInstantQueriesInterval
 }
@@ -427,6 +431,7 @@ type mockLimits struct {
 	maxCacheFreshness                time.Duration
 	maxQueryParallelism              int
 	maxShardedQueries                int
+	maxRegexpSizeBytes               int
 	splitInstantQueriesInterval      time.Duration
 	totalShards                      int
 	compactorShards                  int
@@ -474,6 +479,10 @@ func (m mockLimits) QueryShardingTotalShards(string) int {
 
 func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 	return m.maxShardedQueries
+}
+
+func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
+	return m.maxRegexpSizeBytes
 }
 
 func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {

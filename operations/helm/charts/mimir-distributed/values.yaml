@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r231-b8b0d61
+  tag: r232-ff833f1
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -2563,6 +2563,17 @@ gateway:
         }
 
 metaMonitoring:
+  # Dashboard configuration for deploying Grafana dashboards for Mimir
+  dashboards:
+    # -- If enabled, Grafana dashboards are deployed
+    enabled: false
+    # -- Annotations to add to the Grafana dashboard ConfigMap
+    annotations:
+      k8s-sidecar-target-directory: /tmp/dashboards/Mimir Dashboards
+    # -- Labels to add to the Grafana dashboard ConfigMap
+    labels:
+      grafana_dashboard: "1"
+
   # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
@@ -2635,6 +2646,19 @@ metaMonitoring:
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
     # Note that you need to configure serviceMonitor in order to have some metrics available.
     enabled: false
+
+    # -- Controls the image repository and tag for config-reloader and grafana-agent containers in the meta-monitoring
+    # StatefulSet and DaemonSet created by the grafana-agent-operator. You can define one or both sections under imageRepo.
+    # If a section is defined, you must pass repo, image and tag keys.
+    imageRepo:
+    #  configReloader:
+    #    repo: quay.io
+    #    image: prometheus-operator/prometheus-config-reloader
+    #    tag: v0.47.0
+    #  grafanaAgent:
+    #    repo: docker.io
+    #    image: grafana/agent
+    #    tag: v0.29.0
 
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
@@ -2797,7 +2821,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r231-1c2d0f37
+    tag: r232-bb9f8414
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3323,7 +3347,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r231-b8b0d61
+    tag: r232-ff833f1
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3343,7 +3367,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r231-b8b0d61
+    tag: r232-ff833f1
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

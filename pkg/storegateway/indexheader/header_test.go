@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"math"
 	"path/filepath"
 	"testing"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -176,46 +176,27 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	expRanges, err := indexReader.PostingsRanges()
 	require.NoError(t, err)
 
-	minStart := int64(math.MaxInt64)
-	maxEnd := int64(math.MinInt64)
-	for il, lname := range expLabelNames {
+	for _, lname := range expLabelNames {
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname, "", nil)
+		strVals, err := headerReader.LabelValues(lname, "", nil)
 		require.NoError(t, err)
-		require.Equal(t, expectedLabelVals, vals)
+		require.Equal(t, expectedLabelVals, strVals)
 
-		for iv, v := range vals {
-			if minStart > expRanges[labels.Label{Name: lname, Value: v}].Start {
-				minStart = expRanges[labels.Label{Name: lname, Value: v}].Start
-			}
-			if maxEnd < expRanges[labels.Label{Name: lname, Value: v}].End {
-				maxEnd = expRanges[labels.Label{Name: lname, Value: v}].End
-			}
+		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
+		require.NoError(t, err)
+		strValsFromOffsets := make([]string, len(valOffsets))
+		for i := range valOffsets {
+			strValsFromOffsets[i] = valOffsets[i].LabelValue
+		}
+		require.Equal(t, expectedLabelVals, strValsFromOffsets)
 
-			ptr, err := headerReader.PostingsOffset(lname, v)
+		for _, v := range valOffsets {
+			ptr, err := headerReader.PostingsOffset(lname, v.LabelValue)
 			require.NoError(t, err)
-
-			// For index-cache those values are exact.
-			//
-			// For binary they are exact except last item posting offset. It's good enough if the value is larger than exact posting ending.
-			if indexReader.Version() == index.FormatV2 {
-				if iv == len(vals)-1 && il == len(expLabelNames)-1 {
-					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
-					continue
-				}
-			} else {
-				// For index formatV1 the last one does not mean literally last value, as postings were not sorted.
-				// Account for that. We know it's 40 label value.
-				if v == "40" {
-					require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}].Start, ptr.Start)
-					require.Truef(t, expRanges[labels.Label{Name: lname, Value: v}].End <= ptr.End, "got offset %v earlier than actual posting end %v ", ptr.End, expRanges[labels.Label{Name: lname, Value: v}].End)
-					continue
-				}
-			}
-			require.Equal(t, expRanges[labels.Label{Name: lname, Value: v}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
+			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], v.Off)
 		}
 	}
 
@@ -271,6 +252,33 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 }
 
 func TestReadersLabelValues(t *testing.T) {
+	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
+	for _, impl := range implementations {
+		t.Run(impl.name, func(t *testing.T) {
+			r := impl.factory(t, context.Background(), blockDir, blockID)
+			for lbl, tcs := range tests {
+				t.Run(lbl, func(t *testing.T) {
+					for _, tc := range tcs {
+						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
+							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+							require.NoError(t, err)
+							require.Equal(t, tc.expected, len(values))
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+type labelValuesTestCase struct {
+	prefix   string
+	desc     string
+	filter   func(string) bool
+	expected int
+}
+
+func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string) {
 	const testLabelCount = 32
 	const testSeriesCount = 512
 
@@ -311,13 +319,7 @@ func TestReadersLabelValues(t *testing.T) {
 	require.NoError(t, err)
 	requireCleanup(t, indexFile.Close)
 
-	type testCase struct {
-		prefix   string
-		desc     string
-		filter   func(string) bool
-		expected int
-	}
-	tests := map[string][]testCase{
+	tests = map[string][]labelValuesTestCase{
 		"test_label_0": {
 			{prefix: "", expected: 512},
 			{prefix: "value_", expected: 512},
@@ -359,31 +361,16 @@ func TestReadersLabelValues(t *testing.T) {
 	for lblIdx := 2; lblIdx < testLabelCount; lblIdx++ {
 		lbl := fmt.Sprintf("test_label_%d", lblIdx)
 		tests[lbl] = append(tests[lbl],
-			testCase{prefix: "", expected: lblIdx},
-			testCase{prefix: "value_", expected: lblIdx},
-			testCase{prefix: "value_000", expected: 1},
-			testCase{prefix: "value_001", expected: 1},
-			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx-1), expected: 1},
-			testCase{prefix: fmt.Sprintf("value_%03d", lblIdx), expected: 0},
+			labelValuesTestCase{prefix: "", expected: lblIdx},
+			labelValuesTestCase{prefix: "value_", expected: lblIdx},
+			labelValuesTestCase{prefix: "value_000", expected: 1},
+			labelValuesTestCase{prefix: "value_001", expected: 1},
+			labelValuesTestCase{prefix: fmt.Sprintf("value_%03d", lblIdx-1), expected: 1},
+			labelValuesTestCase{prefix: fmt.Sprintf("value_%03d", lblIdx), expected: 0},
 		)
 	}
 
-	for _, impl := range implementations {
-		t.Run(impl.name, func(t *testing.T) {
-			r := impl.factory(t, ctx, tmpDir, id)
-			for lbl, tcs := range tests {
-				t.Run(lbl, func(t *testing.T) {
-					for _, tc := range tcs {
-						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
-							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
-							require.NoError(t, err)
-							require.Equal(t, tc.expected, len(values))
-						})
-					}
-				})
-			}
-		})
-	}
+	return tests, id, tmpDir
 }
 
 func BenchmarkBinaryWrite(t *testing.B) {
@@ -465,7 +452,7 @@ func readSymbols(bs index.ByteSlice, version, off int) ([]string, map[uint32]str
 	return symbolSlice, symbols, errors.Wrap(d.Err(), "read symbols")
 }
 
-func requireCleanup(t *testing.T, cleanupFun func() error) {
+func requireCleanup(t testing.TB, cleanupFun func() error) {
 	t.Cleanup(func() {
 		require.NoError(t, cleanupFun())
 	})

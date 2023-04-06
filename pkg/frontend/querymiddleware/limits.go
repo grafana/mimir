@@ -54,6 +54,11 @@ type Limits interface {
 	// be run for a given received query. 0 to disable limit.
 	QueryShardingMaxShardedQueries(userID string) int
 
+	// QueryShardingMaxRegexpSizeBytes returns the limit to the max number of bytes allowed
+	// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
+	// than this limit, the query will not be sharded. 0 to disable limit.
+	QueryShardingMaxRegexpSizeBytes(userID string) int
+
 	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
 	SplitInstantQueriesByInterval(userID string) time.Duration
 

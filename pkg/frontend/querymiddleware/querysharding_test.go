@@ -950,30 +950,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 	}
 }
 
-func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
-	req := &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  step.Milliseconds(),
-		Query: "aaa{", // Invalid query.
-	}
-
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
-
-	// Mock the downstream handler, always returning success (regardless the query is valid or not).
-	downstream := &mockHandler{}
-	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
-
-	// Run the query with sharding middleware wrapping the downstream one.
-	// We expect the query parsing done by the query sharding middleware to fail
-	// but to fallback on the downstream one which always returns success.
-	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-	require.NoError(t, err)
-	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
-	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
-}
-
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
@@ -1155,6 +1131,99 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				maxShardedQueries:                testData.maxShardedQueries,
 				compactorShards:                  testData.compactorShards,
 				nativeHistogramsIngestionEnabled: testData.nativeHistograms,
+			}
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
+
+			// Keep track of the unique number of shards queried to downstream.
+			uniqueShardsMx := sync.Mutex{}
+			uniqueShards := map[string]struct{}{}
+
+			downstream := &mockHandler{}
+			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+				Status: statusSuccess, Data: &PrometheusData{
+					ResultType: string(parser.ValueTypeVector),
+				},
+			}, nil).Run(func(args mock.Arguments) {
+				req := args[1].(Request)
+				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
+
+				uniqueShardsMx.Lock()
+				uniqueShards[reqShard] = struct{}{}
+				uniqueShardsMx.Unlock()
+			})
+
+			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+			assert.Equal(t, testData.expectedShards, len(uniqueShards))
+		})
+	}
+}
+
+func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
+	const (
+		totalShards       = 16
+		maxShardedQueries = 16
+	)
+
+	tests := map[string]struct {
+		query              string
+		maxRegexpSizeBytes int
+		expectedShards     int
+	}{
+		"query is shardable and has no regexp matchers": {
+			query:              `sum(metric{app="a-long-matcher-but-not-regexp"})`,
+			maxRegexpSizeBytes: 10,
+			expectedShards:     16,
+		},
+		"query is shardable and has short regexp matchers in vector selector": {
+			query:              `sum(metric{app="test",namespace=~"short"})`,
+			maxRegexpSizeBytes: 10,
+			expectedShards:     16,
+		},
+		"query is shardable and has long regexp matchers in vector selector": {
+			query:              `sum(metric{app="test",namespace=~"short",cluster!~"this-is-longer-than-limit"})`,
+			maxRegexpSizeBytes: 10,
+			expectedShards:     1,
+		},
+		"query is shardable, has long regexp matchers in vector selector but limit is disabled": {
+			query:              `sum(metric{app="test",namespace=~"short",cluster!~"this-is-longer-than-limit"})`,
+			maxRegexpSizeBytes: 0,
+			expectedShards:     16,
+		},
+		"query is shardable and has short regexp matchers in matrix selector": {
+			query:              `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`,
+			maxRegexpSizeBytes: 10,
+			expectedShards:     16,
+		},
+		"query is shardable and has long regexp matchers in matrix selector": {
+			query:              `sum(sum_over_time(metric{app="test",namespace=~"short",cluster!~"this-is-longer-than-limit"}[5m]))`,
+			maxRegexpSizeBytes: 10,
+			expectedShards:     1,
+		},
+		"query is shardable, has long regexp matchers in matrix selector but limit is disabled": {
+			query:              `sum(sum_over_time(metric{app="test",namespace=~"short",cluster!~"this-is-longer-than-limit"}[5m]))`,
+			maxRegexpSizeBytes: 0,
+			expectedShards:     16,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: testData.query,
+			}
+
+			limits := mockLimits{
+				totalShards:                      totalShards,
+				maxShardedQueries:                maxShardedQueries,
+				maxRegexpSizeBytes:               testData.maxRegexpSizeBytes,
+				compactorShards:                  0,
+				nativeHistogramsIngestionEnabled: false,
 			}
 			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
 
@@ -1723,6 +1792,40 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 				require.Nil(t, err)
 				require.Equal(t, c.expected, result)
 			}
+		})
+	}
+}
+
+func TestLongestRegexpMatcherBytes(t *testing.T) {
+	tests := map[string]struct {
+		expr     string
+		expected int
+	}{
+		"should return 0 if the query has no vector selectors": {
+			expr:     "1",
+			expected: 0,
+		},
+		"should return 0 if the query has regexp matchers": {
+			expr:     `count(metric{app="test"})`,
+			expected: 0,
+		},
+		"should return the longest regexp matcher for a query with vector selectors": {
+			expr:     `avg(metric{app="test",namespace=~"short"}) / count(metric{app="very-very-long-but-ignored",namespace!~"longest-regexp"})`,
+			expected: 14,
+		},
+		"should return the longest regexp matcher for a query with matrix selectors": {
+			expr:     `avg_over_time(metric{app="test",namespace!~"short"}[5m]) / count_over_time(metric{app="very-very-long-but-ignored",namespace=~"longest-regexp"}[5m])`,
+			expected: 14,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			parsed, err := parser.ParseExpr(testData.expr)
+			require.NoError(t, err)
+
+			actual := longestRegexpMatcherBytes(parsed)
+			assert.Equal(t, testData.expected, actual)
 		})
 	}
 }

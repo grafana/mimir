@@ -2712,6 +2712,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
+# (experimental) Disable query sharding for any query containing a regular
+# expression matcher longer than the configured number of bytes. 0 to disable
+# the limit.
+# CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
+[query_sharding_max_regexp_size_bytes: <int> | default = 0]
+
 # (experimental) Split instant queries by an interval and execute in parallel. 0
 # to disable it.
 # CLI flag: -query-frontend.split-instant-queries-by-interval
@@ -3483,6 +3489,11 @@ The `compactor` block configures the compactor component.
 # (advanced) Number of symbols flushers used when doing split compaction.
 # CLI flag: -compactor.symbols-flushers-concurrency
 [symbols_flushers_concurrency: <int> | default = 1]
+
+# (advanced) Max number of uploaded blocks that can be validated concurrently. 0
+# = no limit.
+# CLI flag: -compactor.max-block-upload-validation-concurrency
+[max_block_upload_validation_concurrency: <int> | default = 1]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by compactor, otherwise all

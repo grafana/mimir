@@ -241,7 +241,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230331082743-9fe1bd2d63f8
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230401063535-ae170f644c62
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -249,8 +249,6 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 // - https://github.com/grafana/memberlist/pull/3
 // - https://github.com/hashicorp/memberlist/pull/263
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
-
-replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 
 // In sync with github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 replace google.golang.org/grpc => google.golang.org/grpc v1.47.0
