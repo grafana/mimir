@@ -46,8 +46,8 @@ type PostingOffsetTable interface {
 // The End is exclusive and is typically the byte offset of the CRC32 field.
 // The End might be bigger than the actual posting ending, but not larger than the whole index file.
 type PostingListOffset struct {
+	index.Range
 	LabelValue string
-	Off        index.Range
 }
 
 type PostingOffsetTableV1 struct {
@@ -281,7 +281,7 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter fu
 	values := make([]PostingListOffset, 0, len(e))
 	for k, r := range e {
 		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, PostingListOffset{LabelValue: k, Off: r})
+			values = append(values, PostingListOffset{LabelValue: k, Range: r})
 		}
 	}
 	sort.Slice(values, func(i, j int) bool {
@@ -538,10 +538,10 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 	for d.Err() == nil {
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
 		if nextIsPopulated {
-			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
+			currList.LabelValue, currList.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
 			nextIsPopulated = false
 		} else {
-			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
+			currList.LabelValue, currList.Start, currentValueMatches, currentValueIsLast = readNextList()
 		}
 
 		// If the current value matches, we need to also populate its end offset and then call the visitor.
@@ -549,7 +549,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			// We peek at the next list, so we can use its offset as the end offset of the current one.
 			if currList.LabelValue == lastVal {
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-				currList.Off.End = e.lastValOffset
+				currList.End = e.lastValOffset
 			} else {
 				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
 				nextIsPopulated = true
@@ -557,7 +557,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 				// The end we want for the current posting list should be the byte offset of the CRC32 field.
 				// The start of the next posting list is the byte offset of the number_of_entries field.
 				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
-				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
+				currList.End = nextOffset - crc32.Size - postingLengthFieldSize
 			}
 			result = append(result, extract(currList))
 		}

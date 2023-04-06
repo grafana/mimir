@@ -93,7 +93,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		keys = make([]labels.Label, len(vals))
 		for i := range vals {
 			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
-			totalSize += vals[i].Off.End - vals[i].Off.Start
+			totalSize += vals[i].End - vals[i].Start
 		}
 	} else {
 		var err error
