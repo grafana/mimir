@@ -141,16 +141,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	}{
 		"float samples": {
 			expectedValType: chunkenc.ValFloat,
-			floats: func(startMs, endMs int64) []prompb.Sample {
-				var samples []prompb.Sample
-				for i := startMs; i < endMs; i++ {
-					samples = append(samples, prompb.Sample{
-						Value:     rand.Float64(),
-						Timestamp: i,
-					})
-				}
-				return samples
-			},
+			floats: generateFloatSamples,
 		},
 		"histograms": {
 			expectedValType: chunkenc.ValHistogram,
@@ -348,4 +339,143 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateFloatSamples(startMs, endMs int64) []prompb.Sample {
+	var samples []prompb.Sample
+	for i := startMs; i < endMs; i++ {
+		samples = append(samples, prompb.Sample{
+			Value:     rand.Float64(),
+			Timestamp: i,
+		})
+	}
+	return samples
+}
+
+// In this test we receive samples and then receive an out of order sample that
+// introduces a different value at an existing samples' timestamp.
+func TestQuerierRemoteReadWithInconsistentOutOfOrder(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-ingester.ring.heartbeat-period": "1s",
+			"-ingester.out-of-order-time-window": "2h",
+		},
+	)
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
+
+	// Start Mimir components for the write path.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
+
+	// Wait until the distributor has updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(3*512+1), "cortex_ring_tokens_total"))
+
+	// Push a series for each user to Mimir.
+	now := time.Now()
+
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	require.NoError(t, err)
+
+	// Generate the series
+	startMs := now.Add(-2*time.Second).Unix() * 1000
+	endMs := now.Add(2*time.Second).Unix() * 1000
+
+	var series []prompb.TimeSeries
+	series = append(series, prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: labels.MetricName, Value: "series_1"},
+		},
+		Samples: generateFloatSamples(startMs, endMs),
+	})
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Send the first stample again, but different value
+	series[0].Samples = series[0].Samples[:1]
+	series[0].Samples[0].Value = series[0].Samples[0].Value * 2
+
+	res, err = c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(querier))
+
+	// Wait until the querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "series_1")
+	require.NoError(t, err)
+
+	q, err := remote.ToQuery(startMs, endMs, []*labels.Matcher{matcher}, &storage.SelectHints{
+		Step:  1,
+		Start: startMs,
+		End:   endMs,
+	})
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{q},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
+	}
+
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+	compressedReq := snappy.Encode(nil, data)
+
+	// Call the remote read API endpoint with a timeout.
+	httpReqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(httpReqCtx, "POST", "http://"+querier.HTTPEndpoint()+"/prometheus/api/v1/read", bytes.NewReader(compressedReq))
+	require.NoError(t, err)
+	httpReq.Header.Set("X-Scope-OrgID", "user-1")
+	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Add("Accept-Encoding", "snappy")
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("User-Agent", "Prometheus/1.8.2")
+	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+
+	httpResp, err := http.DefaultClient.Do(httpReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, httpResp.StatusCode, i)
+
+	compressed, err := io.ReadAll(httpResp.Body)
+	require.NoError(t, err)
+
+	uncompressed, err := snappy.Decode(nil, compressed)
+	require.NoError(t, err)
+
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	require.NoError(t, err)
+
+	// Validate the returned remote read data matches what was written
+	require.Len(t, resp.Results, 1)
+	require.Len(t, resp.Results[0].Timeseries, 1)
+	require.Len(t, resp.Results[0].Timeseries[0].Labels, 1)
+	require.Equal(t, "series_1", resp.Results[0].Timeseries[0].Labels[0].GetValue())
+	require.NotEmpty(t, resp.Results[0].Timeseries[0].Samples)
+	firstSample := resp.Results[0].Timeseries[0].Samples[0]
+	require.Equal(t, startMs, firstSample.Timestamp)
+
+	require.Equal(t, series[0].Samples[0].Value, firstSample.Value)
 }
