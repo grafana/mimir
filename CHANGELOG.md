@@ -42,6 +42,7 @@
   * `-query-scheduler.ring.etcd.*`
   * `-overrides-exporter.ring.etcd.*`
 * [FEATURE] Distributor, ingester, querier, query-frontend, store-gateway: add experimental support for native histograms. Requires that the experimental protobuf query result response format is enabled by `-query-frontend.query-result-response-format=protobuf` on the query frontend. #4286 #4352 #4354 #4376 #4377 #4387 #4396 #4425 #4442 #4494 #4512 #4513 #4526
+* [FEATURE] Added `-<prefix>.s3.storage-class` flag to configure the S3 storage class for objects written to S3 buckets. #3438
 * [FEATURE] Add `freebsd` to the target OS when generating binaries for a Mimir release. #4654
 * [ENHANCEMENT] Add timezone information to Alpine Docker images. #4583
 * [ENHANCEMENT] Ruler: Sync rules when ruler JOINING the ring instead of ACTIVE, In order to reducing missed rule iterations during ruler restarts. #4451

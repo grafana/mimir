@@ -52,6 +52,7 @@ require (
 require (
 	cloud.google.com/go/storage v1.28.1
 	github.com/alecthomas/chroma v0.10.0
+	github.com/aws/aws-sdk-go v1.44.217
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
@@ -102,7 +103,6 @@ require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/aws/aws-sdk-go v1.44.217 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.15.1 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.11.0 // indirect

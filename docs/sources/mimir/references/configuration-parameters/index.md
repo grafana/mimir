@@ -4033,6 +4033,13 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
 
+# (experimental) The S3 storage class to use, not set by default. Details can be
+# found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
+# STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
+# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+# CLI flag: -<prefix>.s3.storage-class
+[storage_class: <string> | default = ""]
+
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   # CLI flag: -<prefix>.s3.sse.type

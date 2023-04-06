@@ -59,6 +59,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
@@ -651,6 +653,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
@@ -799,6 +803,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.swift.auth-url string
@@ -1945,6 +1951,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
