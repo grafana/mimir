@@ -84,6 +84,7 @@
 * [BUGFIX] OTLP: Do not drop exemplars of the OTLP Monotonic Sum metric. #4063
 * [BUGFIX] Packaging: flag `/etc/default/mimir` and `/etc/sysconfig/mimir` as config to prevent overwrite. #4587
 * [BUGFIX] Query-frontend: don't retry queries which error inside PromQL. #4643
+* [BUGFIX] Store-gateway & query-frontend: report more consistent statistics for fetched index bytes. #4671
 
 ### Mixin
 
