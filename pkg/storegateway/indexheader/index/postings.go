@@ -323,34 +323,42 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
-func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
-	// Find the first offset that is greater or equal to the value.
-	offsetIdx := sort.Search(len(e.offsets), func(i int) bool {
+func (e *postingValueOffsets) prefixOffsetIdxs(prefix string) (start, end int, ok bool) {
+	// Find the first offset that is greater or equal to the prefix.
+	start = sort.Search(len(e.offsets), func(i int) bool {
 		return prefix <= e.offsets[i].value
 	})
 
 	// We always include the last value in the offsets,
 	// and given that prefix is always less or equal than the value,
 	// we can conclude that there are no values with this prefix.
-	if offsetIdx == len(e.offsets) {
-		return 0, false
+	if start == len(e.offsets) {
+		return 0, 0, false
 	}
 
 	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
 	// Next values won't have the prefix, so we can return early.
-	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
-		return 0, false
+	if start == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
+		return 0, 0, false
 	}
 
-	// If the value is not equal to the prefix, this value might have the prefix.
+	// If the value is not equal to the prefix, this offset might have the prefix.
 	// But maybe the values in the previous offset also had the prefix,
 	// so we need to step back one offset to find all values with this prefix.
 	// Unless, of course, we are at the first offset.
-	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
-		offsetIdx--
+	if start > 0 && e.offsets[start].value != prefix {
+		start--
 	}
 
-	return offsetIdx, true
+	// Find the first offset that is larger than the prefix.
+	end = sort.Search(len(e.offsets), func(i int) bool {
+		return prefix < e.offsets[i].value
+	})
+	if end == len(e.offsets) {
+		end--
+	}
+
+	return start, end, true
 }
 
 type postingOffset struct {
@@ -473,14 +481,14 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		return nil, nil
 	}
 
-	offsetIdx := 0
+	offsetIdx, lastOffsetIdx := 0, len(e.offsets)-1
 	if prefix != "" {
-		offsetIdx, ok = e.prefixOffset(prefix)
+		offsetIdx, lastOffsetIdx, ok = e.prefixOffsetIdxs(prefix)
 		if !ok {
 			return nil, nil
 		}
 	}
-	result := make([]T, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
+	result := make([]T, 0, (lastOffsetIdx-offsetIdx)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -488,7 +496,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.ResetAt(e.offsets[offsetIdx].tableOff)
-	lastVal := e.offsets[len(e.offsets)-1].value
+	lastVal := e.offsets[lastOffsetIdx].value
 
 	var skip int
 	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
