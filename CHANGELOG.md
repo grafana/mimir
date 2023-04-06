@@ -98,6 +98,8 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] `gauge` panel type is supported now in `mimirtool analyze dashboard`. #TBD
+
 ### Query-tee
 
 ### Documentation
