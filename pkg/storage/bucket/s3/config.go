@@ -15,10 +15,11 @@ import (
 
 	s3_service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore/providers/s3"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
