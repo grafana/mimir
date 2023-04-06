@@ -79,10 +79,10 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
 	var (
-		loaded            bool
-		cached            bool
-		promise           expandedPostingsPromise
-		unappliedMatchers []*labels.Matcher
+		loaded           bool
+		cached           bool
+		promise          expandedPostingsPromise
+		deferredMatchers []*labels.Matcher
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
@@ -93,12 +93,12 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		span.Finish()
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
-	returnRefs, unappliedMatchers, cached, returnErr = promise(ctx)
-	if len(unappliedMatchers) > 0 {
+	returnRefs, deferredMatchers, cached, returnErr = promise(ctx)
+	if len(deferredMatchers) > 0 {
 		// This shouldn't be reached since we do not have any postingsSelectionStrategy at the moment
 		// and all matchers should be applied via posting lists.
-		// This will change once the clients of ExpandedPostings can work with unapplied matchers.
-		return nil, fmt.Errorf("there are unapplied matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(unappliedMatchers), indexcache.CanonicalLabelMatchersKey(ms))
+		// This will change once the clients of ExpandedPostings can work with deferred matchers.
+		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(deferredMatchers), indexcache.CanonicalLabelMatchersKey(ms))
 	}
 
 	return returnRefs, returnErr
@@ -113,11 +113,11 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 // TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (promise expandedPostingsPromise, loaded bool) {
 	var (
-		refs              []storage.SeriesRef
-		unappliedMatchers []*labels.Matcher
-		err               error
-		done              = make(chan struct{})
-		cached            bool
+		refs             []storage.SeriesRef
+		deferredMatchers []*labels.Matcher
+		err              error
+		done             = make(chan struct{})
+		cached           bool
 	)
 
 	promise = func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error) {
@@ -135,7 +135,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		refsCopy := make([]storage.SeriesRef, len(refs))
 		copy(refsCopy, refs)
 
-		return refsCopy, unappliedMatchers, cached, nil
+		return refsCopy, deferredMatchers, cached, nil
 	}
 
 	key := indexcache.CanonicalLabelMatchersKey(ms)
@@ -148,20 +148,20 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	defer close(done)
 	defer r.block.expandedPostingsPromises.Delete(key)
 
-	refs, unappliedMatchers, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
+	refs, deferredMatchers, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
 	if cached {
 		return promise, false
 	}
-	refs, unappliedMatchers, err = r.expandedPostings(ctx, ms, stats)
+	refs, deferredMatchers, err = r.expandedPostings(ctx, ms, stats)
 	if err != nil {
 		return promise, false
 	}
-	r.cacheExpandedPostings(r.block.userID, key, refs, unappliedMatchers)
+	r.cacheExpandedPostings(r.block.userID, key, refs, deferredMatchers)
 	return promise, false
 }
 
-func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, unappliedMatchers []*labels.Matcher) {
-	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), unappliedMatchers)
+func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, deferredMatchers []*labels.Matcher) {
+	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), deferredMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
@@ -175,7 +175,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 		return nil, nil, false
 	}
 
-	p, unappliedMatchers, err := r.decodePostings(data, stats)
+	p, deferredMatchers, err := r.decodePostings(data, stats)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return nil, nil, false
@@ -186,11 +186,11 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 		level.Warn(r.block.logger).Log("msg", "can't expand decoded expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return nil, nil, false
 	}
-	return refs, unappliedMatchers, true
+	return refs, deferredMatchers, true
 }
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
-func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, unappliedMatchers []*labels.Matcher, returnErr error) {
+func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, deferredMatchers []*labels.Matcher, returnErr error) {
 	postingGroups, err := toPostingGroups(ms, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
@@ -404,10 +404,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, unappliedMatchers, err := r.decodePostings(b, stats)
-			if len(unappliedMatchers) > 0 {
+			l, deferredMatchers, err := r.decodePostings(b, stats)
+			if len(deferredMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, indexcache.CanonicalLabelMatchersKey(unappliedMatchers))
+					key.Name, key.Value, r.block.meta.ULID, indexcache.CanonicalLabelMatchersKey(deferredMatchers))
 			}
 			if err == nil {
 				output[ix] = l
