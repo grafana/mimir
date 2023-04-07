@@ -91,6 +91,7 @@
 * [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492
 * [ENHANCEMENT] `_config.job_names.<job>` values can now be arrays of regular expressions in addition to a single string. Strings are still supported and behave as before. #4543
 * [ENHANCEMENT] Queries dashboard: remove mention to store-gateway "streaming enabled" in panels because store-gateway only support streaming series since Mimir 2.7. #4569
+* [ENHANCEMENT] Ruler: Add panel description for Read QPS panel in Ruler dashboard to explain values when in remote ruler mode. #4675
 * [BUGFIX] Ruler dashboard: show data for reads from ingesters. #4543
 * [BUGFIX] Pod selector regex for deployments: change `(.*-mimir-)` to `(.*mimir-)`. #4603
 
