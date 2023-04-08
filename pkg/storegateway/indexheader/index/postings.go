@@ -492,17 +492,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 
 	var skip int
 	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
-		if skip == 0 {
-			// These are always the same number of bytes, since it's the same label name each time.
-			// It's faster to skip than parse.
-			skip = d.Len()
-			d.Uvarint()          // Keycount.
-			d.SkipUvarintBytes() // Label name.
-			skip -= d.Len()
-		} else {
-			d.Skip(skip)
-		}
-
+		skipNAndName(&d, &skip)
 		unsafeValue := yoloString(d.UnsafeUvarintBytes())
 
 		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)

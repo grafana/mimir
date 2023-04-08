@@ -702,12 +702,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	ps, deferredMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	iterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -723,6 +724,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 		chunkRangesPerSeries,
 		logger,
 	)
+	if len(deferredMatchers) > 0 {
+		iterator = newMatchingSeriesChunkRefsSetIterator(iterator, deferredMatchers)
+	}
 
 	// Track the time spent loading series and chunk refs.
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
@@ -730,6 +734,59 @@ func openBlockSeriesChunkRefsSetsIterator(
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
 	}), nil
+}
+
+type matchingSeriesChunkRefsSetIterator struct {
+	from     seriesChunkRefsSetIterator
+	matchers []*labels.Matcher
+
+	current seriesChunkRefsSet
+}
+
+func (m *matchingSeriesChunkRefsSetIterator) Next() bool {
+	if !m.from.Next() {
+		return false
+	}
+
+	next := m.from.At()
+	writeIdx := 0
+
+	for _, series := range next.series {
+		matches := true
+		for _, matcher := range m.matchers {
+			if !matcher.Matches(series.lset.Get(matcher.Name)) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			next.series[writeIdx] = series
+			writeIdx++
+		}
+	}
+	next.series = next.series[:writeIdx]
+
+	if next.len() == 0 {
+		next.release()
+		return m.Next()
+	}
+	m.current = next
+	return true
+}
+
+func (m *matchingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return m.current
+}
+
+func (m *matchingSeriesChunkRefsSetIterator) Err() error {
+	return m.from.Err()
+}
+
+func newMatchingSeriesChunkRefsSetIterator(iterator seriesChunkRefsSetIterator, matchers []*labels.Matcher) seriesChunkRefsSetIterator {
+	return &matchingSeriesChunkRefsSetIterator{
+		from:     iterator,
+		matchers: matchers,
+	}
 }
 
 func newLoadingSeriesChunkRefsSetIterator(

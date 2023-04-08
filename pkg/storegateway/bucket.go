@@ -1201,9 +1201,12 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 		return allValues, nil
 	}
 
-	p, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	p, deferredMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
+	}
+	if len(deferredMatchers) > 0 {
+		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(deferredMatchers), indexcache.CanonicalLabelMatchersKey(matchers))
 	}
 
 	keys := make([]labels.Label, len(allValues))
@@ -1483,7 +1486,7 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 func (b *bucketBlock) indexReader() *bucketIndexReader {
 	b.pendingReaders.Add(1)
 	// This will be replaced with a strategy selected via a CLI flag.
-	return newBucketIndexReader(b, selectAllStrategy{})
+	return newBucketIndexReader(b, minimizeWorstCaseFetchedDataStrategy{})
 }
 
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {

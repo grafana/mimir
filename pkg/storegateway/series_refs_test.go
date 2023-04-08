@@ -1261,7 +1261,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			// Setup
 			block := newTestBlock()
 			indexr := block.indexReader()
-			postings, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
+			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
 			postingsIterator := newPostingsSetsIterator(
 				postings,

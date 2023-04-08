@@ -49,13 +49,13 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
-type selectSomeStrategy struct{}
+type minimizeWorstCaseFetchedDataStrategy struct{}
 
-func (s selectSomeStrategy) name() string {
-	return "selectSome"
+func (s minimizeWorstCaseFetchedDataStrategy) name() string {
+	return "minimizeWorstCase"
 }
 
-func (s selectSomeStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+func (s minimizeWorstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
 	const (
 		postingsPerByteInPostingList = 4
 		bytesPerSeries               = 512
@@ -69,8 +69,10 @@ func (s selectSomeStrategy) selectPostings(groups []postingGroup) (selected, omi
 
 	var minGroupSize int64
 	for _, g := range groups {
-		if !g.isSubtract {
-			minGroupSize = g.totalSize
+		// The size of each posting list contains 4 bytes with the number of entries.
+		// We shouldn't count these as series.
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
+			minGroupSize = g.totalSize - int64(len(g.keys)*4)
 			break
 		}
 	}
@@ -82,16 +84,16 @@ func (s selectSomeStrategy) selectPostings(groups []postingGroup) (selected, omi
 	}
 
 	var (
-		selectedSize                  int64
-		maxPossibleSelectedSeriesSize = int64(float64(minGroupSize) * seriesBytesPerPostingByte)
+		selectedSize               int64
+		atLeastOneAdditiveSelected bool
+		maxSelectedSize            = minGroupSize * seriesBytesPerPostingByte
 	)
 	for i, g := range groups {
-		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
-			selectedSize += g.totalSize
-		} else {
-			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
+		if atLeastOneAdditiveSelected && selectedSize+g.totalSize > maxSelectedSize {
 			return groups[:i], groups[i:]
 		}
+		selectedSize += g.totalSize
+		atLeastOneAdditiveSelected = atLeastOneAdditiveSelected || !g.isSubtract
 	}
 	return groups, nil
 
@@ -125,12 +127,11 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
-func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
+func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, deferredMatchers []*labels.Matcher, returnErr error) {
 	var (
-		loaded           bool
-		cached           bool
-		promise          expandedPostingsPromise
-		deferredMatchers []*labels.Matcher
+		loaded  bool
+		cached  bool
+		promise expandedPostingsPromise
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
@@ -142,14 +143,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, deferredMatchers, cached, returnErr = promise(ctx)
-	if len(deferredMatchers) > 0 {
-		// This shouldn't be reached since we do not have any postingsSelectionStrategy at the moment
-		// and all matchers should be applied via posting lists.
-		// This will change once the clients of ExpandedPostings can work with deferred matchers.
-		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(deferredMatchers), indexcache.CanonicalLabelMatchersKey(ms))
-	}
-
-	return returnRefs, returnErr
+	return returnRefs, deferredMatchers, returnErr
 }
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
@@ -322,6 +316,11 @@ func extractLabels(groups []postingGroup) []labels.Label {
 	return keys
 }
 
+var allPostingsKey = func() labels.Label {
+	n, v := index.AllPostingsKey()
+	return labels.Label{Name: n, Value: v}
+}()
+
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index.
 func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
@@ -385,11 +384,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
 	// special All postings completely.
 	if allRequested && !hasAdds {
-		// add group with label to fetch "special All postings".
-		name, value := index.AllPostingsKey()
-		allPostingsLabel := labels.Label{Name: name, Value: value}
-
-		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
+		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsKey}})
 	}
 
 	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.
