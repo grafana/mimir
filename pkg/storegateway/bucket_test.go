@@ -1050,9 +1050,13 @@ func seriesSelectionTestCases(
 
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+labelLongSuffix)
+	nAnyPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", ".+")
+	nAnyStar := labels.MustNewMatcher(labels.MatchRegexp, "n", ".*")
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
+	jAnyStar := labels.MustNewMatcher(labels.MatchRegexp, "j", ".*")
+	jAnyPlus := labels.MustNewMatcher(labels.MatchRegexp, "j", ".+")
 
 	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
 	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
@@ -1072,6 +1076,7 @@ func seriesSelectionTestCases(
 	iRegexClass := labels.MustNewMatcher(labels.MatchRegexp, "i", "[0-2]"+labelLongSuffix)
 	iRegexNotSetMatches := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(0|1|2)"+labelLongSuffix)
 	pNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "p", "")
+	pFoo := labels.MustNewMatcher(labels.MatchEqual, "p", "foo")
 
 	// Just make sure that we're testing what we think we're testing.
 	require.NotEmpty(t, iRegexNotSetMatches.SetMatches(), "Should have non empty SetMatches to test the proper path.")
@@ -1113,6 +1118,11 @@ func seriesSelectionTestCases(
 		{`i=~"<unique_prefix>.+"`, []*labels.Matcher{iUniquePrefixPlus}, 50},
 		{`n="1",i=~"<unique_prefix>.+"`, []*labels.Matcher{n1, iUniquePrefixPlus}, 2},
 		{`n="1",i!~"<unique_prefix>.+"`, []*labels.Matcher{n1, iNotUniquePrefixPlus}, int(float64(series)*0.2) - 2},
+		{`j="foo",p="foo",i=~"<unique_prefix>.+"`, []*labels.Matcher{jFoo, pFoo, iUniquePrefixPlus}, 10},
+		{`j="foo",n=~".+",i=~"<unique_prefix>.+"`, []*labels.Matcher{jFoo, nAnyPlus, iUniquePrefixPlus}, 20},
+		{`j="foo",n=~".*",i=~"<unique_prefix>.+"`, []*labels.Matcher{jFoo, nAnyStar, iUniquePrefixPlus}, 20},
+		{`j=~".*",n=~".*",i=~"<unique_prefix>.+"`, []*labels.Matcher{jAnyStar, nAnyStar, iUniquePrefixPlus}, 50},
+		{`j=~".+",n=~".+",i=~"<unique_prefix>.+"`, []*labels.Matcher{jAnyPlus, nAnyPlus, iUniquePrefixPlus}, 50},
 		{`p!=""`, []*labels.Matcher{pNotEmpty}, series},
 	}
 }

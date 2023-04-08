@@ -49,6 +49,54 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
+type selectSomeStrategy struct{}
+
+func (s selectSomeStrategy) name() string {
+	return "selectSome"
+}
+
+func (s selectSomeStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	const (
+		postingsPerByteInPostingList = 4
+		bytesPerSeries               = 512
+
+		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+	)
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int64
+	for _, g := range groups {
+		if !g.isSubtract {
+			minGroupSize = g.totalSize
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all postings group. all postings is requested only when there is no
+		// additive group.
+		return groups, nil
+	}
+
+	var (
+		selectedSize                  int64
+		maxPossibleSelectedSeriesSize = int64(float64(minGroupSize) * seriesBytesPerPostingByte)
+	)
+	for i, g := range groups {
+		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
+			selectedSize += g.totalSize
+		} else {
+			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
+			return groups[:i], groups[i:]
+		}
+	}
+	return groups, nil
+
+}
+
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
