@@ -330,7 +330,7 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 		atLeastOneIntersectingSelected bool
 	)
 	for i, g := range groups {
-		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*10 {
+		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*100 {
 			return groups[:i], groups[i:]
 		}
 		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
