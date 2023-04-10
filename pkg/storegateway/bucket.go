@@ -623,7 +623,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		readers = newChunkReaders(chunkReaders)
 	}
 
-	// Gabriel: This is were `stats` is passed in in `Series` method
 	seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
@@ -768,7 +767,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				err  error
 			)
 
-			// Gabriel: This method calls the same method (the one below) the one called in `blockLabelNames`
 			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				s.maxSeriesPerBatch,
@@ -972,10 +970,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
 	}
 
-	stats := newSafeQueryStats()
-	defer s.recordLabelNamesCallResult(stats)
+	var (
+		stats    = newSafeQueryStats()
+		begin    = time.Now()
+		resHints = &hintspb.LabelNamesResponseHints{}
+	)
 
-	resHints := &hintspb.LabelNamesResponseHints{}
+	defer s.recordLabelNamesCallResult(stats)
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.Hints != nil {
@@ -1039,6 +1040,12 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
+	})
+	s.metrics.seriesBlocksQueried.Observe(float64(len(sets)))
 
 	anyHints, err := types.MarshalAny(resHints)
 	if err != nil {
