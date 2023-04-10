@@ -341,7 +341,7 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 		// We assume that every intersecting posting list after the first one will
 		// filter out half of the postings.
 		if i > 0 && !g.isSubtract {
-			maxSelectedSize /= 2
+			maxSelectedSize = int(float64(maxSelectedSize) * 0.75)
 		}
 	}
 	return groups, nil
