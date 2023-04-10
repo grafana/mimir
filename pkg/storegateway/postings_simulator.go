@@ -278,8 +278,8 @@ func (s sizeBasedStrategy) SelectPostingGroups(groups []postingGroup) ([]posting
 		maxPossibleSelectedSeriesSize = int(float64(minGroupSize) * seriesBytesPerPostingByte)
 	)
 	for i, g := range groups {
-		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
-			selectedSize += g.totalSize
+		if selectedSize+int(0.3*float64(g.totalSize)) <= maxPossibleSelectedSeriesSize {
+			selectedSize += int(0.3 * float64(g.totalSize))
 		} else {
 			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
 			return groups[:i], groups[i:]
@@ -287,6 +287,55 @@ func (s sizeBasedStrategy) SelectPostingGroups(groups []postingGroup) ([]posting
 	}
 	return groups, nil
 
+}
+
+// fixedFactorStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
+// except it speculates on the size of the actual series after intersecting the selected posting lists.
+// Right now it assumes that each posting list will
+type fixedFactorStrategy struct{}
+
+func (s fixedFactorStrategy) name() string {
+	return "speculative"
+}
+
+func (s fixedFactorStrategy) SelectPostingGroups(groups []postingGroup) (selected, omitted []postingGroup) {
+	const (
+		postingsPerByteInPostingList = 4
+		bytesPerSeries               = 512
+
+		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+	)
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int
+	for _, g := range groups {
+		// The size of each posting list contains 4 bytes with the number of entries.
+		// We shouldn't count these as series.
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" || g.keys[0].Value == "") {
+			minGroupSize = g.totalSize - len(g.keys)*4
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all-postings group. All-postings is only included when there is no
+		// other intersecting group.
+		return groups, nil
+	}
+
+	var (
+		atLeastOneIntersectingSelected bool
+	)
+	for i, g := range groups {
+		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*100 {
+			return groups[:i], groups[i:]
+		}
+		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
+	}
+	return groups, nil
 }
 
 // speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
@@ -314,7 +363,7 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 	for _, g := range groups {
 		// The size of each posting list contains 4 bytes with the number of entries.
 		// We shouldn't count these as series.
-		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" && g.keys[0].Value == "") {
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" || g.keys[0].Value == "") {
 			minGroupSize = g.totalSize - len(g.keys)*4
 			break
 		}
@@ -327,13 +376,22 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 	}
 
 	var (
+		selectedSize                   int
 		atLeastOneIntersectingSelected bool
+		maxSelectedSize                = minGroupSize * seriesBytesPerPostingByte
 	)
 	for i, g := range groups {
-		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*100 {
+		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
 			return groups[:i], groups[i:]
 		}
+		selectedSize += g.totalSize
 		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
+
+		// We assume that every intersecting posting list after the first one will
+		// filter out half of the postings.
+		if i > 0 && !g.isSubtract {
+			maxSelectedSize = int(float64(maxSelectedSize) * 0.75)
+		}
 	}
 	return groups, nil
 }
@@ -378,7 +436,7 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 	//	return series, nil, err
 	//})
 	shortcutStats, _ := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
-		return indexr.expandedPostingsShortcut(ctx, matchers, speculativeFetchedDataStrategy{}, s)
+		return indexr.expandedPostingsShortcut(ctx, matchers, sizeBasedStrategy{}, s)
 	})
 
 	//assert.Equal(panicer{}, selectedRegularSeries, selectedShortcutSeries)
