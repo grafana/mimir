@@ -478,18 +478,25 @@ func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blo
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
-type omitMatcherStrategy struct {
-	m *labels.Matcher
+type omitMatchersStrategy struct {
+	m []*labels.Matcher
 }
 
-func (o omitMatcherStrategy) name() string {
+func (o omitMatchersStrategy) name() string {
 	return "omitExact"
 }
 
-func (o omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
 	for _, g := range groups {
 		m := g.matcher
-		if m.Value == o.m.Value && m.Name == o.m.Name && m.Type == o.m.Type {
+		shouldOmit := false
+		for _, ommittableMatcher := range o.m {
+			if m.Value == ommittableMatcher.Value && m.Name == ommittableMatcher.Name && m.Type == ommittableMatcher.Type {
+				shouldOmit = true
+				break
+			}
+		}
+		if shouldOmit {
 			omitted = append(omitted, g)
 		} else {
 			selected = append(selected, g)
@@ -777,7 +784,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				matchers := []*labels.Matcher{matcher, inverseMatcher}
 
-				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).ExpandedPostings(ctx, matchers, stats)
+				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
 				require.NoError(t, err)
 				if assert.Len(t, pendingMatchers, 1) {
 					assert.Equal(t, inverseMatcher, pendingMatchers[0])
