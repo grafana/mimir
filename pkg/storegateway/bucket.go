@@ -1206,7 +1206,7 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 		return nil, errors.Wrap(err, "expanded postings")
 	}
 	if len(deferredMatchers) > 0 {
-		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(deferredMatchers), indexcache.CanonicalLabelMatchersKey(matchers))
+		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", util.MatchersStringer(deferredMatchers), util.MatchersStringer(matchers))
 	}
 
 	keys := make([]labels.Label, len(allValues))

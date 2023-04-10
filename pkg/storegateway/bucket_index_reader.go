@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,7 +29,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
@@ -177,6 +181,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
+	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
 	if err != nil {
@@ -225,6 +230,22 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	return ps, extractLabelMatchers(omittedPostingGroups), nil
+}
+
+func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ulid.ULID, selectedGroups, omittedGroups []postingGroup) {
+	numKeyvals := 2 /* msg */ + 2 /* ulid */ + 4*(len(selectedGroups)+len(omittedGroups))
+	keyvals := make([]any, 0, numKeyvals)
+	keyvals = append(keyvals, "msg", "select posting groups")
+	keyvals = append(keyvals, "ulid", blockID.String())
+	for i, g := range selectedGroups {
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d", i), g.matcher.String())
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), g.totalSize)
+	}
+	for i, g := range omittedGroups {
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), g.matcher.String())
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), g.totalSize)
+	}
+	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
 }
 
 func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
@@ -385,7 +406,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			l, deferredMatchers, err := r.decodePostings(b, stats)
 			if len(deferredMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, indexcache.CanonicalLabelMatchersKey(deferredMatchers))
+					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(deferredMatchers))
 			}
 			if err == nil {
 				output[ix] = l
