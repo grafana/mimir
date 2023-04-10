@@ -252,13 +252,23 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 	keyvals := make([]any, 0, numKeyvals)
 	keyvals = append(keyvals, "msg", "select posting groups")
 	keyvals = append(keyvals, "ulid", blockID.String())
+
+	formatGroup := func(g postingGroup) (string, int64) {
+		if g.matcher == nil {
+			return "ALL_POSTINGS", -1
+		}
+		return g.matcher.String(), g.totalSize
+	}
+
 	for i, g := range selectedGroups {
-		keyvals = append(keyvals, fmt.Sprintf("selected_%d", i), g.matcher.String())
-		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), g.totalSize)
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), groupSize)
 	}
 	for i, g := range omittedGroups {
-		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), g.matcher.String())
-		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), g.totalSize)
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
 	}
 	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
 }
