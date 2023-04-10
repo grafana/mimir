@@ -247,7 +247,7 @@ func (n fetchAllStrategy) SelectPostingGroups(groups []postingGroup) (selectedGr
 
 const (
 	postingsPerByteInPostingList = 4
-	bytesPerSeries               = 512
+	bytesPerSeries               = 256
 
 	seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
 )
@@ -278,8 +278,8 @@ func (s sizeBasedStrategy) SelectPostingGroups(groups []postingGroup) ([]posting
 		maxPossibleSelectedSeriesSize = int(float64(minGroupSize) * seriesBytesPerPostingByte)
 	)
 	for i, g := range groups {
-		if selectedSize+int(0.3*float64(g.totalSize)) <= maxPossibleSelectedSeriesSize {
-			selectedSize += int(0.3 * float64(g.totalSize))
+		if selectedSize+g.totalSize <= maxPossibleSelectedSeriesSize {
+			selectedSize += g.totalSize
 		} else {
 			// TODO dimitarvdimitrov add check for if the rest of the postings are more than half of maxPossibleSelectedSeriesSize; if not, don't apply shortcuts
 			return groups[:i], groups[i:]
