@@ -49,13 +49,13 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
-type minimizeWorstCaseFetchedDataStrategy struct{}
+type worstCaseFetchedDataStrategy struct{}
 
-func (s minimizeWorstCaseFetchedDataStrategy) name() string {
-	return "minimizeWorstCase"
+func (s worstCaseFetchedDataStrategy) name() string {
+	return "worstCase"
 }
 
-func (s minimizeWorstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
 	const (
 		postingsPerByteInPostingList = 4
 		bytesPerSeries               = 512
@@ -94,6 +94,65 @@ func (s minimizeWorstCaseFetchedDataStrategy) selectPostings(groups []postingGro
 		}
 		selectedSize += g.totalSize
 		atLeastOneAdditiveSelected = atLeastOneAdditiveSelected || !g.isSubtract
+	}
+	return groups, nil
+
+}
+
+// speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
+// except it speculates on the size of the actual series after intersecting the selected posting lists.
+// Right now it assumes that each posting list will
+type speculativeFetchedDataStrategy struct{}
+
+func (s speculativeFetchedDataStrategy) name() string {
+	return "speculative"
+}
+
+func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	const (
+		postingsPerByteInPostingList = 4
+		bytesPerSeries               = 512
+
+		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+	)
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int64
+	for _, g := range groups {
+		// The size of each posting list contains 4 bytes with the number of entries.
+		// We shouldn't count these as series.
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
+			minGroupSize = g.totalSize - int64(len(g.keys)*4)
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all-postings group. All-postings is only included when there is no
+		// other intersecting group.
+		return groups, nil
+	}
+
+	var (
+		selectedSize                   int64
+		atLeastOneIntersectingSelected bool
+		maxSelectedSize                = minGroupSize * seriesBytesPerPostingByte
+	)
+	for i, g := range groups {
+		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
+			return groups[:i], groups[i:]
+		}
+		selectedSize += g.totalSize
+		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
+
+		// We assume that every intersecting posting list after the first one will
+		// filter out half of the postings.
+		if i > 0 && !g.isSubtract {
+			maxSelectedSize /= 2
+		}
 	}
 	return groups, nil
 

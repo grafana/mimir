@@ -1486,7 +1486,7 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 func (b *bucketBlock) indexReader() *bucketIndexReader {
 	b.pendingReaders.Add(1)
 	// This will be replaced with a strategy selected via a CLI flag.
-	return newBucketIndexReader(b, minimizeWorstCaseFetchedDataStrategy{})
+	return newBucketIndexReader(b, speculativeFetchedDataStrategy{})
 }
 
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
