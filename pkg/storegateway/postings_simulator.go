@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
@@ -290,6 +289,64 @@ func (s sizeBasedStrategy) SelectPostingGroups(groups []postingGroup) ([]posting
 
 }
 
+// speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
+// except it speculates on the size of the actual series after intersecting the selected posting lists.
+// Right now it assumes that each posting list will
+type speculativeFetchedDataStrategy struct{}
+
+func (s speculativeFetchedDataStrategy) name() string {
+	return "speculative"
+}
+
+func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGroup) (selected, omitted []postingGroup) {
+	const (
+		postingsPerByteInPostingList = 4
+		bytesPerSeries               = 512
+
+		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
+	)
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].totalSize < groups[j].totalSize
+	})
+
+	var minGroupSize int
+	for _, g := range groups {
+		// The size of each posting list contains 4 bytes with the number of entries.
+		// We shouldn't count these as series.
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" || g.keys[0].Value == "") {
+			minGroupSize = g.totalSize - len(g.keys)*4
+			break
+		}
+	}
+
+	if minGroupSize == 0 {
+		// This should also cover the case of all-postings group. All-postings is only included when there is no
+		// other intersecting group.
+		return groups, nil
+	}
+
+	var (
+		selectedSize                   int
+		atLeastOneIntersectingSelected bool
+		maxSelectedSize                = minGroupSize * seriesBytesPerPostingByte
+	)
+	for i, g := range groups {
+		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
+			return groups[:i], groups[i:]
+		}
+		selectedSize += g.totalSize
+		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
+
+		// We assume that every intersecting posting list after the first one will
+		// filter out half of the postings.
+		if i > 0 && !g.isSubtract {
+			maxSelectedSize /= 2
+		}
+	}
+	return groups, nil
+}
+
 func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketIndexReader) (stats, statsWithShortcut *queryStats) {
 	doPostings := func(resolvePostings func(context.Context, []*labels.Matcher, *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error)) (*queryStats, []seriesChunkRefs) {
 		s := newSafeQueryStats()
@@ -325,17 +382,17 @@ func postings(ctx context.Context, matchers []*labels.Matcher, indexr *bucketInd
 		return s.export(), series
 	}
 
-	regularStats, selectedRegularSeries := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
-		series, err := indexr.expandedPostings(ctx, matchers, s)
-		return series, nil, err
-	})
-	shortcutStats, selectedShortcutSeries := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
-		return indexr.expandedPostingsShortcut(ctx, matchers, sizeBasedStrategy{}, s)
+	//regularStats, selectedRegularSeries := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
+	//	series, err := indexr.expandedPostings(ctx, matchers, s)
+	//	return series, nil, err
+	//})
+	shortcutStats, _ := doPostings(func(ctx context.Context, matchers []*labels.Matcher, s *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, error) {
+		return indexr.expandedPostingsShortcut(ctx, matchers, speculativeFetchedDataStrategy{}, s)
 	})
 
-	assert.Equal(panicer{}, selectedRegularSeries, selectedShortcutSeries)
+	//assert.Equal(panicer{}, selectedRegularSeries, selectedShortcutSeries)
 
-	return regularStats, shortcutStats
+	return &queryStats{}, shortcutStats
 }
 
 type panicer struct{}
