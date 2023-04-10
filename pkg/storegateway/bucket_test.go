@@ -276,7 +276,7 @@ func TestBlockLabelNames(t *testing.T) {
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelNames(context.Background(), b.indexReader(), nil, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 	})
@@ -289,7 +289,7 @@ func TestBlockLabelNames(t *testing.T) {
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelNames{t: t}
 
-		_, err := blockLabelNames(context.Background(), b.indexReader(), nil, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
 		require.Error(t, err)
 	})
 
@@ -308,12 +308,12 @@ func TestBlockLabelNames(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelNames(context.Background(), b.indexReader(), nil, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 
 		// hit the cache now
-		names, err = blockLabelNames(context.Background(), b.indexReader(), nil, sl, 5000, log.NewNopLogger())
+		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 	})
@@ -329,7 +329,7 @@ func TestBlockLabelNames(t *testing.T) {
 		// This test relies on the fact that j!=foo has to call LabelValues(j).
 		// We make that call fail in order to make the entire LabelNames(j!=foo) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "j", "foo.*bar")}
-		_, err := blockLabelNames(context.Background(), b.indexReader(), matchers, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), matchers, sl, 5000, log.NewNopLogger())
 		require.Error(t, err)
 	})
 
@@ -352,17 +352,17 @@ func TestBlockLabelNames(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		jFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "foo")}
-		_, err := blockLabelNames(context.Background(), b.indexReader(), jFooMatchers, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		jNotFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")}
-		_, err = blockLabelNames(context.Background(), b.indexReader(), jNotFooMatchers, sl, 5000, log.NewNopLogger())
+		_, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 
 		// hit the cache now
-		names, err := blockLabelNames(context.Background(), b.indexReader(), jFooMatchers, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, jFooLabelNames, names)
-		names, err = blockLabelNames(context.Background(), b.indexReader(), jNotFooMatchers, sl, 5000, log.NewNopLogger())
+		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, jNotFooLabelNames, names)
 	})
@@ -384,7 +384,7 @@ func TestBlockLabelValues(t *testing.T) {
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -397,7 +397,7 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
-		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -416,12 +416,12 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 
 		// hit the cache now
-		names, err = blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -437,7 +437,7 @@ func TestBlockLabelValues(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -446,18 +446,18 @@ func TestBlockLabelValues(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
-		values, err := blockLabelValues(context.Background(), b.indexReader(), "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 
 		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
-		values, err = blockLabelValues(context.Background(), b.indexReader(), "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 
 		// we remove the indexHeaderReader to ensure that results come from a cache
 		// if this panics, then we know that it's trying to read actual values
-		indexrWithoutHeaderReader := b.indexReader()
+		indexrWithoutHeaderReader := b.indexReader(selectAllStrategy{})
 		indexrWithoutHeaderReader.block.indexHeaderReader = nil
 
 		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
@@ -519,7 +519,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				// cache provides undecodable values
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 			})
@@ -573,7 +573,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				// first call will create the promise
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[0], _, errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
@@ -585,7 +585,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[1], _, errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
@@ -598,7 +598,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[2], _, errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
@@ -611,7 +611,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				// fourth call will create its own promise
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[3], _, errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
@@ -622,7 +622,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				// fifth call will create its own promise which will fail
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[4], _, errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
@@ -634,7 +634,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
 				go func() {
 					defer results.Done()
-					indexr := b.indexReader()
+					indexr := b.indexReader(selectAllStrategy{})
 					defer indexr.Close()
 
 					ress[5], _, errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
@@ -681,20 +681,20 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				// first call succeeds and caches value
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
 
 				// second call uses cached value, so it doesn't call LabelValues again
-				refs, _, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
 
 				// different matcher on same label should not be cached
 				differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-				refs, _, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
+				refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
@@ -705,7 +705,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				b.indexCache = corruptedExpandedPostingsCache{}
 
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 			})
@@ -721,7 +721,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				_, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				_, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.Error(t, err)
 			})
 
@@ -737,7 +737,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
 					labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
 				}
-				postings, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Empty(t, postings)
 				mockBucket.Mock.AssertNotCalled(t, "Get")
@@ -755,7 +755,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
 					labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
 				}
-				postings, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Empty(t, postings)
 				mockBucket.Mock.AssertNotCalled(t, "Get")
@@ -777,15 +777,13 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				matchers := []*labels.Matcher{matcher, inverseMatcher}
 
-				// We're using the unexported method expandedPostings because currently ExpandedPostings doesn't support
-				// deferred matchers. We can switch to that method once it does.
-				refsWithDeferredMatchers, deferredMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).expandedPostings(ctx, matchers, stats)
+				refsWithDeferredMatchers, deferredMatchers, err := b.indexReader(omitMatcherStrategy{inverseMatcher}).ExpandedPostings(ctx, matchers, stats)
 				require.NoError(t, err)
 				if assert.Len(t, deferredMatchers, 1) {
 					assert.Equal(t, inverseMatcher, deferredMatchers[0])
 				}
 
-				refsWithoutDeferredMatchers, deferredMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).expandedPostings(ctx, matchers[:1], stats)
+				refsWithoutDeferredMatchers, deferredMatchers, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
 				require.NoError(t, err)
 				assert.Empty(t, deferredMatchers)
 				assert.Equal(t, refsWithoutDeferredMatchers, refsWithDeferredMatchers)
@@ -1332,6 +1330,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			tmpDir,
 			testData.maxSeriesPerBatch,
 			1,
+			selectAllStrategy{},
 			newStaticChunksLimiterFactory(0),
 			newStaticSeriesLimiterFactory(0),
 			newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1458,6 +1457,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 				tmpDir,
 				batchSize,
 				1,
+				selectAllStrategy{},
 				newStaticChunksLimiterFactory(0),
 				newStaticSeriesLimiterFactory(0),
 				newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1800,6 +1800,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		tmpDir,
 		5000,
 		1,
+		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1854,6 +1855,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		tmpDir,
 		5000,
 		1,
+		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1908,6 +1910,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		tmpDir,
 		5000,
 		1,
+		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -2028,6 +2031,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		tmpDir,
 		5000,
 		1,
+		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -2184,6 +2188,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						tmpDir,
 						batchSize,
 						1,
+						selectAllStrategy{},
 						newStaticChunksLimiterFactory(testData.chunksLimit),
 						newStaticSeriesLimiterFactory(testData.seriesLimit),
 						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -2315,6 +2320,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		tmpDir,
 		maxSeriesPerBatch,
 		1,
+		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
