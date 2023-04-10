@@ -363,7 +363,7 @@ type BucketStoreConfig struct {
 var validSeriesSelectionStrategies = []string{
 	"speculative",
 	"worstCase",
-	"fixedFactor",
+	"worstCaseSmallPostingLists",
 	"all",
 }
 

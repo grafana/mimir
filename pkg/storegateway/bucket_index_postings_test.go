@@ -112,7 +112,7 @@ func TestWorstCaseFetchedDataStrategy(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			actualSelected, actualOmitted := worstCaseFetchedDataStrategy{}.selectPostings(testCase.input)
+			actualSelected, actualOmitted := worstCaseFetchedDataStrategy{1.0}.selectPostings(testCase.input)
 			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
 			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
 		})

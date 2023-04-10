@@ -1751,7 +1751,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 				b.Cleanup(cancel)
 
 				var block = newTestBlock()
-				indexReader := block.indexReader(worstCaseFetchedDataStrategy{})
+				indexReader := block.indexReader(worstCaseFetchedDataStrategy{1.0})
 				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
 
 				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())

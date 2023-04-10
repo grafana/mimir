@@ -513,9 +513,9 @@ func selectPostingsStrategy(l log.Logger, name string) postingsSelectionStrategy
 	case "speculative":
 		return speculativeFetchedDataStrategy{}
 	case "worstCase":
-		return worstCaseFetchedDataStrategy{}
-	case "fixedFactor":
-		return fixedFactorStrategy{}
+		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 1.0}
+	case "worstCaseSmallPostingLists":
+		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.3}
 	default:
 		// This should only be reached if the tsdb package has mismatching names for these strategies.
 		// Prefer keeping the store-gateway running as opposed to failing, since strategies are still an experimental feature anyway.

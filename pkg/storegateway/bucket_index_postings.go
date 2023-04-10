@@ -7,7 +7,7 @@ package storegateway
 
 import (
 	"encoding/binary"
-	"math"
+	"fmt"
 	"sort"
 
 	"github.com/pkg/errors"
@@ -339,10 +339,16 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
-type worstCaseFetchedDataStrategy struct{}
+type worstCaseFetchedDataStrategy struct {
+	// postingListActualSizeFactor affects how
+	// posting lists are summed together.
+	// This factor is multiplied by the size of posting lists
+	// in the block index.
+	postingListActualSizeFactor float64
+}
 
 func (s worstCaseFetchedDataStrategy) name() string {
-	return "worstCase"
+	return fmt.Sprintf("worstCase%0.1f", s.postingListActualSizeFactor)
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
@@ -379,14 +385,14 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 		maxSelectedSize            = minGroupSize * seriesBytesPerPostingByte
 	)
 	for i, g := range groups {
-		if atLeastOneAdditiveSelected && selectedSize+g.totalSize > maxSelectedSize {
+		postingListSize := int64(float64(g.totalSize) * s.postingListActualSizeFactor)
+		if atLeastOneAdditiveSelected && selectedSize+postingListSize > maxSelectedSize {
 			return groups[:i], groups[i:]
 		}
-		selectedSize += g.totalSize
+		selectedSize += postingListSize
 		atLeastOneAdditiveSelected = atLeastOneAdditiveSelected || !g.isSubtract
 	}
 	return groups, nil
-
 }
 
 // speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
@@ -443,37 +449,6 @@ func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (s
 		if i > 0 && !g.isSubtract {
 			maxSelectedSize /= 2
 		}
-	}
-	return groups, nil
-}
-
-// fixedFactorStrategy selects postings that are no larger than 10x the smallest posting list.
-type fixedFactorStrategy struct{}
-
-func (s fixedFactorStrategy) name() string {
-	return "fixedFactor"
-}
-
-func (s fixedFactorStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	var minGroupSize int64 = math.MaxInt64
-	for _, g := range groups {
-		if g.totalSize < minGroupSize && !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
-			minGroupSize = g.totalSize
-		}
-	}
-
-	if minGroupSize == math.MaxInt64 {
-		// This should also cover the case of all-postings group. All-postings is only included when there is no
-		// other intersecting group.
-		return groups, nil
-	}
-
-	var atLeastOneIntersectingSelected bool
-	for i, g := range groups {
-		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*100 {
-			return groups[:i], groups[i:]
-		}
-		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
 	}
 	return groups, nil
 }
