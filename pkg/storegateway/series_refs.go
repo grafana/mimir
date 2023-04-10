@@ -725,7 +725,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(deferredMatchers) > 0 {
-		iterator = &matchingSeriesChunkRefsSetIterator{from: iterator, matchers: deferredMatchers}
+		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: deferredMatchers}
 	}
 
 	// Track the time spent loading series and chunk refs.
@@ -1034,14 +1034,14 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 	return lset, s.chunkMetasBuffer, nil
 }
 
-type matchingSeriesChunkRefsSetIterator struct {
+type filteringSeriesChunkRefsSetIterator struct {
 	from     seriesChunkRefsSetIterator
 	matchers []*labels.Matcher
 
 	current seriesChunkRefsSet
 }
 
-func (m *matchingSeriesChunkRefsSetIterator) Next() bool {
+func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 	if !m.from.Next() {
 		return false
 	}
@@ -1072,11 +1072,11 @@ func (m *matchingSeriesChunkRefsSetIterator) Next() bool {
 	return true
 }
 
-func (m *matchingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+func (m *filteringSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 	return m.current
 }
 
-func (m *matchingSeriesChunkRefsSetIterator) Err() error {
+func (m *filteringSeriesChunkRefsSetIterator) Err() error {
 	return m.from.Err()
 }
 
