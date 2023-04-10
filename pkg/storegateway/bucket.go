@@ -898,7 +898,6 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouchedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
 
-	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
 	s.metrics.cachedPostingsCompressionErrors.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressionErrors))
