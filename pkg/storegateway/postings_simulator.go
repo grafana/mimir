@@ -314,7 +314,7 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 	for _, g := range groups {
 		// The size of each posting list contains 4 bytes with the number of entries.
 		// We shouldn't count these as series.
-		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" || g.keys[0].Value == "") {
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0].Name == "" && g.keys[0].Value == "") {
 			minGroupSize = g.totalSize - len(g.keys)*4
 			break
 		}
@@ -327,22 +327,13 @@ func (s speculativeFetchedDataStrategy) SelectPostingGroups(groups []postingGrou
 	}
 
 	var (
-		selectedSize                   int
 		atLeastOneIntersectingSelected bool
-		maxSelectedSize                = minGroupSize * seriesBytesPerPostingByte
 	)
 	for i, g := range groups {
-		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
+		if atLeastOneIntersectingSelected && g.totalSize > minGroupSize*10 {
 			return groups[:i], groups[i:]
 		}
-		selectedSize += g.totalSize
 		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
-
-		// We assume that every intersecting posting list after the first one will
-		// filter out half of the postings.
-		if i > 0 && !g.isSubtract {
-			maxSelectedSize = int(float64(maxSelectedSize) * 0.75)
-		}
 	}
 	return groups, nil
 }
