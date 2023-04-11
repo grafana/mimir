@@ -86,8 +86,15 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
 externalConfigVersion: '0'
 
-# -- Enables Vault Agent to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
-useVaultAgent: false
+# --Vault Agent config to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
+vaultAgent:
+  enabled: true
+  roleName: ""
+  clientCertPath: ""
+  clientKeyPath: ""
+  serverCertPath: ""
+  serverKeyPath: ""
+  caCertPath: ""
 
 mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.

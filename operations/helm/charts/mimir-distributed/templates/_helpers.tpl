@@ -298,9 +298,8 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
-{{- if .ctx.Values.useVaultAgent }}
-{{- $vaultAgentAnnotations := include "mimir.vaultAgent.annotations" .component }}
-{{- $vaultAgentAnnotations }}
+{{- if .ctx.Values.vaultAgent.enabled }}
+{{- include "mimir.vaultAgent.annotations" (dict "ctx" .ctx "component" .component) }}
 {{- end }}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
 {{- with ($componentSection).podAnnotations }}
@@ -435,6 +434,9 @@ Examples:
 
 {{/*
 Return the Vault Agent pod annotations if enabled and required by the component
+mimir.vaultAgent.annotations takes 2 arguments
+  .ctx = the root context of the chart
+  .component = the name of the component
 */}}
 {{- define "mimir.vaultAgent.annotations" -}}
 {{- $vaultEnabledComponents := dict
@@ -451,14 +453,14 @@ Return the Vault Agent pod annotations if enabled and required by the component
   "ruler" true
   "store-gateway" true
 -}}
-{{- if hasKey $vaultEnabledComponents . }}
+{{- if hasKey $vaultEnabledComponents .component }}
 vault.hashicorp.com/agent-inject: 'true'
-vault.hashicorp.com/role: 'gem'
-vault.hashicorp.com/agent-inject-secret-client.crt: 'secret/data/config/client.crt'
-vault.hashicorp.com/agent-inject-secret-client.key: 'secret/data/config/client.key'
-vault.hashicorp.com/agent-inject-secret-server.crt: 'secret/data/config/server.crt'
-vault.hashicorp.com/agent-inject-secret-server.key: 'secret/data/config/server.key'
-vault.hashicorp.com/agent-inject-secret-root.crt: 'secret/data/config/root.crt'
+vault.hashicorp.com/role: '{{ .ctx.Values.vaultAgent.roleName }}'
+vault.hashicorp.com/agent-inject-secret-client.crt: '{{ .ctx.Values.vaultAgent.clientCertPath }}'
+vault.hashicorp.com/agent-inject-secret-client.key: '{{ .ctx.Values.vaultAgent.clientKeyPath }}'
+vault.hashicorp.com/agent-inject-secret-server.crt: '{{ .ctx.Values.vaultAgent.serverCertPath }}'
+vault.hashicorp.com/agent-inject-secret-server.key: '{{ .ctx.Values.vaultAgent.serverKeyPath }}'
+vault.hashicorp.com/agent-inject-secret-root.crt: '{{ .ctx.Values.vaultAgent.caCertPath }}'
 {{- end}}
 {{- end -}}
 
