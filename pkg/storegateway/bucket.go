@@ -147,10 +147,10 @@ func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULI
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
-func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
+func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string, _ []byte) {
 }
 
-func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
+func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string) ([]byte, bool) {
 	return nil, false
 }
 
@@ -1482,7 +1482,8 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 
 func (b *bucketBlock) indexReader() *bucketIndexReader {
 	b.pendingReaders.Add(1)
-	return newBucketIndexReader(b)
+	// This will be replaced with a strategy selected via a CLI flag.
+	return newBucketIndexReader(b, selectAllStrategy{})
 }
 
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {

@@ -62,6 +62,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -320,8 +321,8 @@ func TestBlockLabelNames(t *testing.T) {
 	t.Run("error with matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: func(_ string) error { return context.DeadlineExceeded },
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(_ string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelNames{t: t}
 
@@ -340,7 +341,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelNamesCalled: func() error {
 				return fmt.Errorf("not expected the LabelNames() calls with matchers")
 			},
-			onLabelValuesCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(name string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -405,7 +406,7 @@ func TestBlockLabelValues(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
-			onLabelValuesCalled: func(name string) error {
+			onLabelValuesOffsetsCalled: func(name string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
 					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
@@ -428,8 +429,8 @@ func TestBlockLabelValues(t *testing.T) {
 	t.Run("error with matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: func(_ string) error { return context.DeadlineExceeded },
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(_ string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
@@ -475,6 +476,26 @@ type cacheNotExpectingToStoreLabelValues struct {
 
 func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
+}
+
+type omitMatcherStrategy struct {
+	m *labels.Matcher
+}
+
+func (o omitMatcherStrategy) name() string {
+	return "omitExact"
+}
+
+func (o omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	for _, g := range groups {
+		m := g.matcher
+		if m.Value == o.m.Value && m.Name == o.m.Name && m.Type == o.m.Type {
+			omitted = append(omitted, g)
+		} else {
+			selected = append(selected, g)
+		}
+	}
+	return
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
@@ -525,8 +546,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				b := newTestBucketBlock()
 				b.indexHeaderReader = &interceptedIndexReader{
-					Reader:              b.indexHeaderReader,
-					onLabelValuesCalled: onlabelValuesCalled,
+					Reader:                     b.indexHeaderReader,
+					onLabelValuesOffsetsCalled: onlabelValuesCalled,
 				}
 
 				// we're building a scenario where:
@@ -653,8 +674,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				b := newTestBucketBlock()
 				b.indexHeaderReader = &interceptedIndexReader{
-					Reader:              b.indexHeaderReader,
-					onLabelValuesCalled: onLabelValuesCalled,
+					Reader:                     b.indexHeaderReader,
+					onLabelValuesOffsetsCalled: onLabelValuesCalled,
 				}
 				b.indexCache = newInMemoryIndexCache(t)
 
@@ -693,7 +714,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				b := newTestBucketBlock()
 				b.indexHeaderReader = &interceptedIndexReader{
 					Reader: b.indexHeaderReader,
-					onLabelValuesCalled: func(_ string) error {
+					onLabelValuesOffsetsCalled: func(_ string) error {
 						return context.Canceled // alwaysFails
 					},
 				}
@@ -740,6 +761,36 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				mockBucket.Mock.AssertNotCalled(t, "Get")
 				mockBucket.Mock.AssertNotCalled(t, "GetRange")
 			})
+
+			t.Run("postings selection strategy is respected", func(t *testing.T) {
+				b := newTestBucketBlock()
+				ctx := context.Background()
+				stats := newSafeQueryStats()
+
+				// Construct two matchers that select inverse series.
+				// When combined they should select 0 series.
+				// But our selection strategy will omit the inverted one, so we will get some series.
+				// They should be the same series as if we passed only the non-inverted one.
+				matcher := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+				inverseMatcher, err := matcher.Inverse()
+				require.NoError(t, err)
+
+				matchers := []*labels.Matcher{matcher, inverseMatcher}
+
+				// We're using the unexported method expandedPostings because currently ExpandedPostings doesn't support
+				// pending matchers. We can switch to that method once it does.
+				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).expandedPostings(ctx, matchers, stats)
+				require.NoError(t, err)
+				if assert.Len(t, pendingMatchers, 1) {
+					assert.Equal(t, inverseMatcher, pendingMatchers[0])
+				}
+
+				refsWithoutpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).expandedPostings(ctx, matchers[:1], stats)
+				require.NoError(t, err)
+				assert.Empty(t, pendingMatchers)
+				assert.Equal(t, refsWithoutpendingMatchers, refsWithpendingMatchers)
+			})
+
 		})
 	}
 }
@@ -752,8 +803,9 @@ func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
 
 type interceptedIndexReader struct {
 	indexheader.Reader
-	onLabelNamesCalled  func() error
-	onLabelValuesCalled func(name string) error
+	onLabelNamesCalled         func() error
+	onLabelValuesCalled        func(name string) error
+	onLabelValuesOffsetsCalled func(name string) error
 }
 
 func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
@@ -774,6 +826,15 @@ func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filte
 	return iir.Reader.LabelValues(name, prefix, filter)
 }
 
+func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
+	if iir.onLabelValuesOffsetsCalled != nil {
+		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
+			return nil, err
+		}
+	}
+	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
+}
+
 type contextNotifyingOnDoneWaiting struct {
 	context.Context
 	once        sync.Once
@@ -789,7 +850,7 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
@@ -808,7 +869,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -953,7 +1014,7 @@ func benchmarkExpandedPostings(
 
 	for _, testCase := range seriesSelectionTestCases(tb, series) {
 		tb.Run(testCase.name, func(tb test.TB) {
-			indexr := newBucketIndexReader(newTestBucketBlock())
+			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()

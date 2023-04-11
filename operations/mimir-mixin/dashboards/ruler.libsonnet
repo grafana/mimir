@@ -28,7 +28,17 @@ local filename = 'mimir-ruler.json';
       )
       .addPanel(
         $.panel('Read from ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps')
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
+        $.panelDescription(
+          'Read from ingesters - QPS',
+          |||
+            Note: Even while operating in Remote ruler mode you will still see values for this panel.
+
+            This is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.
+
+            For a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Write to ingesters - QPS') +

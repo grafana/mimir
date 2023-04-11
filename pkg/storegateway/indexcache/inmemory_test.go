@@ -162,10 +162,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeExpandedPostings,
 			set: func(id uint64, b []byte) {
-				cache.StoreExpandedPostings(user, uid(id), CanonicalLabelMatchersKey(matchers), b)
+				cache.StoreExpandedPostings(user, uid(id), CanonicalLabelMatchersKey(matchers), "strategy", b)
 			},
 			get: func(id uint64) ([]byte, bool) {
-				return cache.FetchExpandedPostings(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers))
+				return cache.FetchExpandedPostings(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), "strategy")
 			},
 		},
 		{
