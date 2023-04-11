@@ -26,6 +26,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 type PrometheusAnalyzeCommand struct {
@@ -105,8 +106,9 @@ func (cmd *PrometheusAnalyzeCommand) parseUsedMetrics() (model.LabelValues, erro
 
 func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
+	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
 	if cmd.username != "" {
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", api.DefaultRoundTripper)
+		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", rt)
 	}
 
 	client, err := api.NewClient(api.Config{

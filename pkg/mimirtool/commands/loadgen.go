@@ -29,6 +29,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 var (
@@ -136,6 +138,9 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
 			URL:     &config.URL{URL: writeURL},
 			Timeout: model.Duration(c.writeTimeout),
+			Headers: map[string]string{
+				"User-Agent": client.UserAgent,
+			},
 		})
 		if err != nil {
 			return err

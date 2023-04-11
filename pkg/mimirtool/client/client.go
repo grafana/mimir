@@ -18,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
@@ -26,6 +28,7 @@ const (
 )
 
 var (
+	UserAgent           = fmt.Sprintf("mimirtool/%s %s", version.Version, version.Info())
 	ErrResourceNotFound = errors.New("requested resource not found")
 	errConflict         = errors.New("conflict with current state of target resource")
 	errTooManyRequests  = errors.New("too many requests")
@@ -243,5 +246,6 @@ func buildRequest(ctx context.Context, p, m string, endpoint url.URL, payload io
 	if contentLength >= 0 {
 		r.ContentLength = contentLength
 	}
+	r.Header.Add("User-Agent", UserAgent)
 	return r, nil
 }
