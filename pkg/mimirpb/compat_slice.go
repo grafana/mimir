@@ -69,6 +69,16 @@ func copyStringToBuffer(in string, buf []byte) (string, []byte) {
 	return yoloString(buf[0:l]), buf[l:]
 }
 
+// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
+	builder.Reset(FromLabelAdaptersToLabels(ls))
+}
+
+// FromBuilderToLabelAdapters converts labels.Builder to []LabelAdapter.
+func FromBuilderToLabelAdapters(builder *labels.Builder, _ []LabelAdapter) []LabelAdapter {
+	return FromLabelsToLabelAdapters(builder.Labels())
+}
+
 // FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
 // It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
 // This allows us to use labels.Labels directly in protos.
