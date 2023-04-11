@@ -1640,71 +1640,49 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 		matchers        []*labels.Matcher
 		pendingMatchers []*labels.Matcher
 		batchSize       int
-
-		expectedSeries []seriesChunkRefsSet
 	}{
 		"applies pending matchers": {
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*")},
-			batchSize:       100,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_1"+labelLongSuffix, "s", "foo")},
-				}},
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
 			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"),
+			},
+			batchSize: 100,
 		},
 		"applies pending matchers when they match all series": {
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
-			batchSize:       100,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_0"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_1"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_2"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_3"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_4"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_5"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_6"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_7"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_8"+labelLongSuffix, "s", "foo")},
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_9"+labelLongSuffix, "s", "foo")},
-				}},
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
 			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+			},
+			batchSize: 100,
 		},
 		"applies pending matchers when they match all series (with some completely empty batches)": {
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
-			batchSize:       1,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_0"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_1"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_2"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_3"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_4"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_5"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_6"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_7"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_8"+labelLongSuffix, "s", "foo")},
-				}}, {series: []seriesChunkRefs{
-					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_9"+labelLongSuffix, "s", "foo")},
-				}},
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
 			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+			},
+			batchSize: 1,
 		},
 		"applies pending matchers when they match no series": {
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
-			batchSize:       100,
-			expectedSeries:  []seriesChunkRefsSet{},
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
+			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+			},
+			batchSize: 100,
 		},
 	}
 
@@ -1714,35 +1692,39 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			require.Subset(t, testCase.matchers, testCase.pendingMatchers, "pending matchers should be a subset of all matchers")
 
 			var block = newTestBlock()
-			block.pendingReaders.Add(1) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
-			indexReader := newBucketIndexReader(block, omitMatchersStrategy{testCase.pendingMatchers})
+			block.pendingReaders.Add(2) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
+			querySeries := func(indexReader *bucketIndexReader) []seriesChunkRefsSet {
+				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+				iterator, err := openBlockSeriesChunkRefsSetsIterator(
+					ctx,
+					testCase.batchSize,
+					"",
+					indexReader,
+					newInMemoryIndexCache(t),
+					block.meta,
+					testCase.matchers,
+					nil,
+					cachedSeriesHasher{hashCache},
+					true, // skip chunks since we are testing labels filtering
+					block.meta.MinTime,
+					block.meta.MaxTime,
+					2,
+					newSafeQueryStats(),
+					nil,
+				)
+				require.NoError(t, err)
+				allSets := readAllSeriesChunkRefsSet(iterator)
+				assert.NoError(t, iterator.Err())
+				return allSets
+			}
+
+			indexReaderOmittingMatchers := newBucketIndexReader(block, omitMatchersStrategy{testCase.pendingMatchers})
+			defer indexReaderOmittingMatchers.Close()
+
+			indexReader := newBucketIndexReader(block, selectAllStrategy{})
 			defer indexReader.Close()
 
-			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
-
-			minT, maxT := block.meta.MinTime, block.meta.MaxTime
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(
-				ctx,
-				testCase.batchSize,
-				"",
-				indexReader,
-				newInMemoryIndexCache(t),
-				block.meta,
-				testCase.matchers,
-				nil,
-				cachedSeriesHasher{hashCache},
-				true, // skip chunks since we are testing labels filtering
-				minT,
-				maxT,
-				2,
-				newSafeQueryStats(),
-				nil,
-			)
-			require.NoError(t, err)
-
-			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, testCase.expectedSeries, actualSeriesSets)
-			assert.NoError(t, iterator.Err())
+			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
 		})
 	}
 
