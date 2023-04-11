@@ -111,7 +111,7 @@ In a terminal, run one of the following commands:
 
   ```bash
   docker network create grafanet
-  
+
   docker run \
     --rm \
     --name mimir \
@@ -190,9 +190,9 @@ docker run --rm --name=grafana --network=grafanet -p 3000:3000 grafana/grafana
 1. Sign in using the default username `admin` and password `admin`.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
-   | Field | Value                                                                |
-   | ----- | -------------------------------------------------------------------- |
-   | Name  | Mimir                                                                |
+   | Field | Value                                                                                                                                                                           |
+   | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Name  | Mimir                                                                                                                                                                           |
    | URL   | [http://mimir:9009/prometheus](http://mimir:9009/prometheus) if you used Docker / [http://localhost:9009/prometheus](http://localhost:9009/prometheus) if you used local binary |
 
 To add a data source, refer to [Add a data source](/docs/grafana/latest/administration/data-source-management/#add-a-data-source).
