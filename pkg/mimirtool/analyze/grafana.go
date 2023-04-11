@@ -198,6 +198,7 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
+	// replace standard Grafana Prometheus macros
 	query = strings.ReplaceAll(query, `$__interval`, "5m")
 	query = strings.ReplaceAll(query, `$interval`, "5m")
 	query = strings.ReplaceAll(query, `$resolution`, "5s")
@@ -205,8 +206,18 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 	query = strings.ReplaceAll(query, "$__range", "1d")
 	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
 	query = strings.ReplaceAll(query, "${__range_s}", "30")
-	re := regexp.MustCompile(`\[\$.*\]`)
+	// replace duration variable, e.g. [$agregation_window]
+	re := regexp.MustCompile(`\[\$.+\]`)
 	query = re.ReplaceAllString(query, "[5m]")
+	// replace variable, e.g. metric{label=${value}}
+	re = regexp.MustCompile(`\${[a-zA-Z0-9_]+}`)
+	query = re.ReplaceAllString(query, "variable")
+	// replace variable, e.g. metric{label=${value:format}}
+	re = regexp.MustCompile(`\${[a-zA-Z0-9_]+:[a-zA-Z0-9]+}`)
+	query = re.ReplaceAllString(query, "variable")
+	// replace variable, e.g. metric{label=$value}
+	re = regexp.MustCompile(`\$[a-zA-Z0-9_]+`)
+	query = re.ReplaceAllString(query, "variable")
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
