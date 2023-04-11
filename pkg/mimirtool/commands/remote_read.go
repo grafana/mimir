@@ -32,6 +32,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 type RemoteReadCommand struct {
@@ -201,6 +202,9 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 				Username: c.tenantID,
 				Password: config_util.Secret(c.apiKey),
 			},
+		},
+		Headers: map[string]string{
+			"User-Agent": client.UserAgent,
 		},
 	})
 	if err != nil {
