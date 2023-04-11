@@ -725,7 +725,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
-		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+		iterator = newFilteringSeriesChunkRefsSetIterator(iterator, pendingMatchers)
 	}
 
 	// Track the time spent loading series and chunk refs.
@@ -1036,15 +1036,19 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 
 type filteringSeriesChunkRefsSetIterator struct {
 	from     seriesChunkRefsSetIterator
-	matchers []*labels.Matcher
+	matchers map[string]*labels.Matcher
 
 	current seriesChunkRefsSet
 }
 
 func newFilteringSeriesChunkRefsSetIterator(from seriesChunkRefsSetIterator, matchers []*labels.Matcher) *filteringSeriesChunkRefsSetIterator {
+	matcherMap := make(map[string]*labels.Matcher, len(matchers))
+	for _, m := range matchers {
+		matcherMap[m.Name] = m
+	}
 	return &filteringSeriesChunkRefsSetIterator{
 		from:     from,
-		matchers: matchers,
+		matchers: matcherMap,
 	}
 }
 
@@ -1058,12 +1062,11 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 
 	for _, series := range next.series {
 		matches := true
-		for _, matcher := range m.matchers {
-			if !matcher.Matches(series.lset.Get(matcher.Name)) {
-				matches = false
-				break
+		series.lset.Range(func(l labels.Label) {
+			if matcher, ok := m.matchers[l.Name]; ok {
+				matches = matches && matcher.Matches(l.Value)
 			}
-		}
+		})
 		if matches {
 			next.series[writeIdx] = series
 			writeIdx++
