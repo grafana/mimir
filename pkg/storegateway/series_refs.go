@@ -1062,11 +1062,14 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 
 	for _, series := range next.series {
 		matches := true
-		series.lset.Range(func(l labels.Label) {
+		for _, l := range series.lset {
 			if matcher, ok := m.matchers[l.Name]; ok {
-				matches = matches && matcher.Matches(l.Value)
+				if !matcher.Matches(l.Value) {
+					matches = false
+					break
+				}
 			}
-		})
+		}
 		if matches {
 			next.series[writeIdx] = series
 			writeIdx++
