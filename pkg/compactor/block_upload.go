@@ -35,11 +35,11 @@ import (
 )
 
 const (
-	uploadingMetaFilename       = "uploading-meta.json"  // Name of the file that stores a block's meta file while it's being uploaded
-	validationFilename          = "validation.json"      // Name of the file that stores a heartbeat time and possibly an error message
-	validationHeartbeatInterval = 1 * time.Minute        // Duration of time between heartbeats of an in-progress block upload validation
-	validationHeartbeatTimeout  = 5 * time.Minute        // Maximum duration of time to wait until a validation is able to be restarted
-	maximumMetaSizeBytes        = int64(1 * 1024 * 1024) // 1 MiB, maximum allowed size of an uploaded block's meta.json file
+	uploadingMetaFilename       = "uploading-meta.json" // Name of the file that stores a block's meta file while it's being uploaded
+	validationFilename          = "validation.json"     // Name of the file that stores a heartbeat time and possibly an error message
+	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
+	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
+	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -71,7 +71,7 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 	if err != nil {
 		if errors.As(err, new(*http.MaxBytesError)) {
 			err = httpError{
-				message:    fmt.Sprintf("The request body was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
+				message:    fmt.Sprintf("The block metadata was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
 				statusCode: http.StatusRequestEntityTooLarge,
 			}
 		}

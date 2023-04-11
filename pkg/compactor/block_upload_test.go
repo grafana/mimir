@@ -417,7 +417,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			tenantID:          tenantID,
 			blockID:           blockID,
 			setUpBucketMock:   setUpPartialBlock,
-			body:              strings.Repeat("A", int(maximumMetaSizeBytes)+1),
+			body:              strings.Repeat("A", maximumMetaSizeBytes+1),
 			expEntityTooLarge: fmt.Sprintf("The request body was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
 		},
 		{
