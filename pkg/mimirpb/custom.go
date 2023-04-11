@@ -8,17 +8,7 @@ import (
 
 func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
-	// _, ok := h.GetZeroCount().(*Histogram_ZeroCountFloat)
 	return ok
-	// spanTotalPos := 0
-	// for _, sp := range h.GetPositiveSpans() {
-	// 	spanTotalPos += int(sp.Length)
-	// }
-	// spanTotalNeg := 0
-	// for _, sp := range h.GetNegativeSpans() {
-	// 	spanTotalNeg += int(sp.Length)
-	// }
-	// return spanTotalPos == len(h.GetPositiveCounts()) && spanTotalNeg == len(h.GetNegativeCounts())
 }
 
 func (h Histogram) IsGauge() bool {
