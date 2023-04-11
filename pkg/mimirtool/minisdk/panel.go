@@ -27,6 +27,7 @@ const (
 	HeatmapType
 	TimeseriesType
 	GaugeType
+	LogsType
 )
 
 type (
@@ -48,6 +49,7 @@ type (
 		*HeatmapPanel
 		*TimeseriesPanel
 		*GaugePanel
+		*LogsPanel
 		*CustomPanel
 	}
 	panelType   int8
@@ -64,21 +66,30 @@ type (
 	TablePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	TextPanel       struct{}
+	TextPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 	SinglestatPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	StatPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	DashlistPanel   struct{}
-	PluginlistPanel struct{}
-	AlertlistPanel  struct{}
+	DashlistPanel   struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	PluginlistPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	AlertlistPanel  struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 	BarGaugePanel   struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	RowPanel struct {
-		Panels []Panel `json:"panels"`
+		Panels  []Panel `json:"panels"`
+		Targets []Target `json:"targets,omitempty"`
 	}
 	HeatmapPanel struct {
 		Targets []Target `json:"targets,omitempty"`
@@ -89,7 +100,12 @@ type (
 	GaugePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	CustomPanel map[string]interface{}
+	LogsPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	CustomPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 )
 
 // for an any panel
@@ -118,6 +134,20 @@ func (p *Panel) GetTargets() *[]Target {
 		return &p.TimeseriesPanel.Targets
 	case GaugeType:
 		return &p.GaugePanel.Targets
+	case RowType:
+		return &p.RowPanel.Targets
+	case TextType:
+		return &p.TextPanel.Targets
+	case LogsType:
+		return &p.LogsPanel.Targets
+	case DashlistType:
+		return &p.DashlistPanel.Targets
+	case PluginlistType:
+		return &p.PluginlistPanel.Targets
+	case AlertlistType:
+		return &p.AlertlistPanel.Targets
+	case CustomType:
+		return &p.CustomPanel.Targets
 	default:
 		return nil
 	}
@@ -202,8 +232,14 @@ func (p *Panel) UnmarshalJSON(b []byte) (err error) {
 		if err = json.Unmarshal(b, &gauge); err == nil {
 			p.GaugePanel = &gauge
 		}
+	case "logs":
+		var logs LogsPanel
+		p.OfType = LogsType
+		if err = json.Unmarshal(b, &logs); err == nil {
+			p.LogsPanel = &logs
+		}
 	default:
-		var custom = make(CustomPanel)
+		var custom CustomPanel
 		p.OfType = CustomType
 		if err = json.Unmarshal(b, &custom); err == nil {
 			p.CustomPanel = &custom
