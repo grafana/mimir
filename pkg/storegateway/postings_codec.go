@@ -110,17 +110,17 @@ func isDiffVarintSnappyWithMatchersEncodedPostings(input []byte) bool {
 }
 
 // diffVarintSnappyWithMatchersEncode encodes postings into snappy-encoded diff+varint representation,
-// prepended with any deferred matchers to the result.
+// prepended with any pending matchers to the result.
 // Returned byte slice starts with codecHeaderSnappyWithMatchers header.
 // Length argument is expected number of postings, used for preallocating buffer.
-func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, deferredMatchers []*labels.Matcher) ([]byte, error) {
+func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, pendingMatchers []*labels.Matcher) ([]byte, error) {
 	varintPostings, err := diffVarintEncodeNoHeader(p, length)
 	if err != nil {
 		return nil, err
 	}
 
 	// Estimate sizes
-	estimatedMatchersLen := encodedMatchersLen(deferredMatchers)
+	estimatedMatchersLen := encodedMatchersLen(pendingMatchers)
 	codecLen := len(codecHeaderSnappyWithMatchers)
 
 	// Preallocate buffer
@@ -130,7 +130,7 @@ func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, deferredMa
 	copy(result, codecHeaderSnappyWithMatchers)
 
 	// Matchers size + matchers
-	actualMatchersLen, err := encodeMatchers(estimatedMatchersLen, deferredMatchers, result[codecLen:])
+	actualMatchersLen, err := encodeMatchers(estimatedMatchersLen, pendingMatchers, result[codecLen:])
 	if err != nil {
 		return nil, err
 	}

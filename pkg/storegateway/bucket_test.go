@@ -778,17 +778,17 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				matchers := []*labels.Matcher{matcher, inverseMatcher}
 
 				// We're using the unexported method expandedPostings because currently ExpandedPostings doesn't support
-				// deferred matchers. We can switch to that method once it does.
-				refsWithDeferredMatchers, deferredMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).expandedPostings(ctx, matchers, stats)
+				// pending matchers. We can switch to that method once it does.
+				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).expandedPostings(ctx, matchers, stats)
 				require.NoError(t, err)
-				if assert.Len(t, deferredMatchers, 1) {
-					assert.Equal(t, inverseMatcher, deferredMatchers[0])
+				if assert.Len(t, pendingMatchers, 1) {
+					assert.Equal(t, inverseMatcher, pendingMatchers[0])
 				}
 
-				refsWithoutDeferredMatchers, deferredMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).expandedPostings(ctx, matchers[:1], stats)
+				refsWithoutpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).expandedPostings(ctx, matchers[:1], stats)
 				require.NoError(t, err)
-				assert.Empty(t, deferredMatchers)
-				assert.Equal(t, refsWithoutDeferredMatchers, refsWithDeferredMatchers)
+				assert.Empty(t, pendingMatchers)
+				assert.Equal(t, refsWithoutpendingMatchers, refsWithpendingMatchers)
 			})
 
 		})

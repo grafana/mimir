@@ -148,7 +148,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		`i!~"2.*"`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
 	}
 
-	deferredMatchersList := [][]*labels.Matcher{
+	pendingMatchersList := [][]*labels.Matcher{
 		nil,
 		{},
 		{{}},
@@ -169,7 +169,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		assert.NoError(t, err)
 
 		t.Run(postingsName, func(t *testing.T) {
-			for _, matchers := range deferredMatchersList {
+			for _, matchers := range pendingMatchersList {
 				t.Run(string(indexcache.CanonicalLabelMatchersKey(matchers)), func(t *testing.T) {
 
 					t.Log("postings entries:", p.len())
