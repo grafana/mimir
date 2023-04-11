@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )
 
 func TestDiffVarintCodec(t *testing.T) {
@@ -53,7 +55,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		`i=~".+"`:  matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")),
 		`i=~"1.+"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")),
 		`i=~"^$"'`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")),
-		`i!~""`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "i", "")),
+		`i!=""`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "i", "")),
 		`n!="2"`:   matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)),
 		`i!~"2.*"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
 	}
@@ -91,6 +93,106 @@ func TestDiffVarintCodec(t *testing.T) {
 				comparePostings(t, p, decodedPostings)
 			})
 		}
+	}
+}
+
+func TestLabelMatchersTypeValues(t *testing.T) {
+	expectedValues := map[labels.MatchType]int{
+		labels.MatchEqual:     0,
+		labels.MatchNotEqual:  1,
+		labels.MatchRegexp:    2,
+		labels.MatchNotRegexp: 3,
+	}
+
+	for matcherType, val := range expectedValues {
+		assert.Equal(t, int(labels.MustNewMatcher(matcherType, "", "").Type), val,
+			"diffVarintSnappyWithMatchersEncode relies on the number values of hte matchers not changing. "+
+				"It caches each matcher type as these integer values. "+
+				"If the integer values change, then the already cached values in the index cache will be improperly decoded.")
+	}
+}
+
+func TestDiffVarintMatchersCodec(t *testing.T) {
+	chunksDir := t.TempDir()
+
+	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.ChunkDirRoot = chunksDir
+	headOpts.ChunkRange = 1000
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, h.Close())
+		assert.NoError(t, os.RemoveAll(chunksDir))
+	})
+
+	appendTestSeries(1e4)(t, h.Appender(context.Background()))
+
+	idx, err := h.Index()
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, idx.Close())
+	})
+
+	postingsMap := map[string]index.Postings{
+		`no postings`:    index.EmptyPostings(),
+		`single posting`: index.NewListPostings([]storage.SeriesRef{123}),
+		`n="1"`:          matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)),
+		`j="foo"`:        matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "j", "foo")),
+		`j!="foo"`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")),
+		`i=~".*"`:        matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")),
+		`i=~".+"`:        matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")),
+		`i=~"1.+"`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")),
+		`i=~"^$"'`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")),
+		`i!=""`:          matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "i", "")),
+		`n!="2"`:         matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)),
+		`i!~"2.*"`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
+	}
+
+	pendingMatchersList := [][]*labels.Matcher{
+		nil,
+		{},
+		{{}},
+		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "cpu_seconds")},
+		{labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds")},
+		{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$")},
+		{labels.MustNewMatcher(labels.MatchNotRegexp, labels.MetricName, "^cpu_.*$")},
+		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)},
+		{labels.MustNewMatcher(labels.MatchEqual, labelLongSuffix, "1"+labelLongSuffix)},
+		{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
+		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchEqual, "i", "2")},
+		{labels.MustNewMatcher(labels.MatchRegexp, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "i", "1")},
+		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "\n")},
+	}
+
+	for postingsName, postings := range postingsMap {
+		p, err := toUint64Postings(postings)
+		assert.NoError(t, err)
+
+		t.Run(postingsName, func(t *testing.T) {
+			for _, matchers := range pendingMatchersList {
+				t.Run(string(indexcache.CanonicalLabelMatchersKey(matchers)), func(t *testing.T) {
+
+					t.Log("postings entries:", p.len())
+					t.Log("original size (4*entries):", 4*p.len(), "bytes")
+					p.reset() // We reuse postings between runs, so we need to reset iterator.
+
+					data, err := diffVarintSnappyWithMatchersEncode(p, p.len(), matchers)
+					assert.NoError(t, err)
+
+					t.Log("encoded size", len(data), "bytes")
+					t.Logf("ratio: %0.3f", float64(len(data))/float64(4*p.len()))
+
+					decodedPostings, decodedMatchers, err := diffVarintSnappyMatchersDecode(data)
+					assert.NoError(t, err)
+					if assert.Len(t, decodedMatchers, len(matchers)) && len(matchers) > 0 {
+						assert.Equal(t, matchers, decodedMatchers)
+					}
+
+					p.reset()
+					comparePostings(t, p, decodedPostings)
+				})
+			}
+		})
 	}
 }
 

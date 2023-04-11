@@ -70,18 +70,19 @@ func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID 
 	return hits, misses
 }
 
-func (t *TracingIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	t.c.StoreExpandedPostings(userID, blockID, key, v)
+func (t *TracingIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	t.c.StoreExpandedPostings(userID, blockID, key, postingsSelectionStrategy, v)
 }
 
-func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
+func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
 	t0 := time.Now()
-	data, found := t.c.FetchExpandedPostings(ctx, userID, blockID, key)
+	data, found := t.c.FetchExpandedPostings(ctx, userID, blockID, key, postingsSelectionStrategy)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchExpandedPostings",
 		"requested key", key,
+		"postings selection strategy", postingsSelectionStrategy,
 		"found", found,
 		"time elapsed", time.Since(t0),
 		"returned bytes", len(data),
