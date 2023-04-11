@@ -784,16 +784,16 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				matchers := []*labels.Matcher{matcher, inverseMatcher}
 
-				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
+				refsWithPendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
 				require.NoError(t, err)
 				if assert.Len(t, pendingMatchers, 1) {
 					assert.Equal(t, inverseMatcher, pendingMatchers[0])
 				}
 
-				refsWithoutpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
+				refsWithoutPendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
 				require.NoError(t, err)
 				assert.Empty(t, pendingMatchers)
-				assert.Equal(t, refsWithoutpendingMatchers, refsWithpendingMatchers)
+				assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
 			})
 
 		})
