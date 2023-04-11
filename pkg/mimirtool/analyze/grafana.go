@@ -205,6 +205,8 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 	query = strings.ReplaceAll(query, "$__range", "1d")
 	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
 	query = strings.ReplaceAll(query, "${__range_s}", "30")
+	re := regexp.MustCompile(`\[\$.*\]`)
+	query = re.ReplaceAllString(query, "[5m]")
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
