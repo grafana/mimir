@@ -108,6 +108,24 @@ func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []Label
 	builder.Overwrite(dest)
 }
 
+// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
+	builder.Reset(labels.EmptyLabels())
+	for _, v := range ls {
+		builder.Set(v.Name, v.Value)
+	}
+}
+
+// FromBuilderToLabelAdapters converts labels.Builder to []LabelAdapter, reusing ls.
+// Note the result may not be sorted.
+func FromBuilderToLabelAdapters(builder *labels.Builder, ls []LabelAdapter) []LabelAdapter {
+	ls = ls[:0]
+	builder.Range(func(l labels.Label) {
+		ls = append(ls, LabelAdapter{Name: l.Name, Value: l.Value})
+	})
+	return ls
+}
+
 // FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
 // For now it's doing an expensive conversion: TODO figure out a faster way.
 func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
