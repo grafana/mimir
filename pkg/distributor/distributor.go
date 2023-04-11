@@ -775,7 +775,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			ts := req.Timeseries[tsIdx]
 
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				lb.Reset(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
 				lb.Set(metaLabelTenantID, userID)
 				keep := relabel.ProcessBuilder(lb, mrc...)
 				if !keep {
@@ -783,7 +783,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 					continue
 				}
 				lb.Del(metaLabelTenantID)
-				req.Timeseries[tsIdx].SetLabels(lb.Labels())
+				req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
