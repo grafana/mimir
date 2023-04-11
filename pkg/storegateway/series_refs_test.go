@@ -1588,7 +1588,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 			var block = newTestBlock()
 			// All test cases have a single matcher, so the strategy wouldn't really make a difference.
-			// Deferred matchers are tested in other tests.
+			// Pending matchers are tested in other tests.
 			indexReader := block.indexReader(selectAllStrategy{})
 			defer indexReader.Close()
 
@@ -2304,7 +2304,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 
 					statsColdCache := newSafeQueryStats()
 					// All test cases have a single matcher, so the strategy wouldn't really make a difference.
-					// Deferred matchers are tested in other tests.
+					// Pending matchers are tested in other tests.
 					indexReader := b.indexReader(selectAllStrategy{})
 					ss, err := openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),

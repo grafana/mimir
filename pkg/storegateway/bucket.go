@@ -1136,7 +1136,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		// We cannot deal with deferred matchers in LabelValues yet, so we should fetch all postings.
+		// We cannot deal with pending matchers in LabelValues yet, so we should fetch all postings.
 		indexr := b.indexReader(selectAllStrategy{})
 
 		g.Go(func() error {
