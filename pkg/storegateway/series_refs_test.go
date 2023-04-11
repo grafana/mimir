@@ -1803,6 +1803,75 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	}
 }
 
+func BenchmarkFilteringSeriesChunkRefsSetIterator(b *testing.B) {
+	testCases := map[string]struct {
+		matchers []*labels.Matcher
+	}{
+		"1 simple matcher": {
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "label_0", "0"+labelLongSuffix)},
+		},
+		"1 regex matcher": {
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "label_0", "\\da{2}.*bb(b+)?c")},
+		},
+		"1 regex matcher which doesn't correspond to any labels": {
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "label_a", "\\da{2}.*bb(b+)?c")},
+		},
+
+		"5 simple matchers": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "label_0", "0"+labelLongSuffix),
+				labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"+labelLongSuffix),
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"+labelLongSuffix),
+				labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"+labelLongSuffix),
+				labels.MustNewMatcher(labels.MatchEqual, "label_4", "0"+labelLongSuffix),
+			},
+		},
+		"5 regex matchers": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "label_0", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_1", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_2", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_3", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_4", "\\da{2}.*bb(b+)?c"),
+			},
+		},
+		"5 regex matchers which doesn't correspond to any labels": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "label_a", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_b", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_c", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_d", "\\da{2}.*bb(b+)?c"),
+				labels.MustNewMatcher(labels.MatchRegexp, "label_e", "\\da{2}.*bb(b+)?c"),
+			},
+		},
+	}
+
+	lsetsToMatch := generateSeries([]int{10, 10, 10, 10, 10})
+	unalteredSeries := make([]seriesChunkRefs, len(lsetsToMatch))
+	for i := range lsetsToMatch {
+		// add some more strings, so regular expressions matching can be somewhat demanding
+		lsetsToMatch[i].Range(func(l labels.Label) {
+			l.Value += labelLongSuffix
+			unalteredSeries[i].lset = append(unalteredSeries[i].lset, l)
+		})
+	}
+	scratch := make([]seriesChunkRefs, len(lsetsToMatch))
+	copy(scratch, unalteredSeries)
+
+	for testName, testCase := range testCases {
+		iterator := newFilteringSeriesChunkRefsSetIterator(nil, testCase.matchers)
+		b.Run(testName, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer() // stopping the timer also excludes allocated bytes
+				copy(scratch, unalteredSeries)
+				iterator.from = newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{series: scratch})
+				b.StartTimer()
+				readAllSeriesChunkRefsSet(iterator)
+			}
+		})
+	}
+}
+
 func TestMetasToRanges(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	testCases := map[string]struct {

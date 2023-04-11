@@ -1041,6 +1041,13 @@ type filteringSeriesChunkRefsSetIterator struct {
 	current seriesChunkRefsSet
 }
 
+func newFilteringSeriesChunkRefsSetIterator(from seriesChunkRefsSetIterator, matchers []*labels.Matcher) *filteringSeriesChunkRefsSetIterator {
+	return &filteringSeriesChunkRefsSetIterator{
+		from:     from,
+		matchers: matchers,
+	}
+}
+
 func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 	if !m.from.Next() {
 		return false
