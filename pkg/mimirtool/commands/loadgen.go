@@ -17,6 +17,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -136,6 +137,9 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
 			URL:     &config.URL{URL: writeURL},
 			Timeout: model.Duration(c.writeTimeout),
+			Headers: map[string]string{
+				"User-Agent": client.UserAgent,
+			},
 		})
 		if err != nil {
 			return err
