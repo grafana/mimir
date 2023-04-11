@@ -83,9 +83,9 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
-		loaded          bool
-		cached          bool
-		promise         expandedPostingsPromise
+		loaded  bool
+		cached  bool
+		promise expandedPostingsPromise
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
