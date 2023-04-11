@@ -702,7 +702,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	ps, deferredMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
@@ -724,8 +724,8 @@ func openBlockSeriesChunkRefsSetsIterator(
 		chunkRangesPerSeries,
 		logger,
 	)
-	if len(deferredMatchers) > 0 {
-		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: deferredMatchers}
+	if len(pendingMatchers) > 0 {
+		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
 	}
 
 	// Track the time spent loading series and chunk refs.

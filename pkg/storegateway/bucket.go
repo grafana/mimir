@@ -1201,12 +1201,12 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 		return allValues, nil
 	}
 
-	p, deferredMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	p, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
-	if len(deferredMatchers) > 0 {
-		return nil, fmt.Errorf("there are deferred matchers (%s) for query (%s)", util.MatchersStringer(deferredMatchers), util.MatchersStringer(matchers))
+	if len(pendingMatchers) > 0 {
+		return nil, fmt.Errorf("there are pending matchers (%s) for query (%s)", util.MatchersStringer(pendingMatchers), util.MatchersStringer(matchers))
 	}
 
 	keys := make([]labels.Label, len(allValues))

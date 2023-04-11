@@ -1630,33 +1630,33 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
-func TestOpenBlockSeriesChunkRefsSetsIterator_DeferredMatchers(t *testing.T) {
+func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(10_000))
 
 	testCases := map[string]struct {
-		matchers         []*labels.Matcher
-		deferredMatchers []*labels.Matcher
-		batchSize        int
+		matchers        []*labels.Matcher
+		pendingMatchers []*labels.Matcher
+		batchSize       int
 
 		expectedSeries []seriesChunkRefsSet
 	}{
-		"applies deferred matchers": {
-			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			deferredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*")},
-			batchSize:        100,
+		"applies pending matchers": {
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
+			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*")},
+			batchSize:       100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_1"+labelLongSuffix, "s", "foo")},
 				}},
 			},
 		},
-		"applies deferred matchers when they match all series": {
-			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			deferredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
-			batchSize:        100,
+		"applies pending matchers when they match all series": {
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
+			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
+			batchSize:       100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_0"+labelLongSuffix, "s", "foo")},
@@ -1672,10 +1672,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_DeferredMatchers(t *testing.T) {
 				}},
 			},
 		},
-		"applies deferred matchers when they match all series (with some completely empty batches)": {
-			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			deferredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
-			batchSize:        1,
+		"applies pending matchers when they match all series (with some completely empty batches)": {
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
+			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "")},
+			batchSize:       1,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("i", "100"+labelLongSuffix, "j", "bar", "n", "1_0"+labelLongSuffix, "s", "foo")},
@@ -1700,22 +1700,22 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_DeferredMatchers(t *testing.T) {
 				}},
 			},
 		},
-		"applies deferred matchers when they match no series": {
-			matchers:         []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
-			deferredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
-			batchSize:        100,
-			expectedSeries:   []seriesChunkRefsSet{},
+		"applies pending matchers when they match no series": {
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "s", "foo"), labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*")},
+			pendingMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
+			batchSize:       100,
+			expectedSeries:  []seriesChunkRefsSet{},
 		},
 	}
 
 	for testName, testCase := range testCases {
 		testName, testCase := testName, testCase
 		t.Run(testName, func(t *testing.T) {
-			require.Subset(t, testCase.matchers, testCase.deferredMatchers, "deferred matchers should be a subset of all matchers")
+			require.Subset(t, testCase.matchers, testCase.pendingMatchers, "pending matchers should be a subset of all matchers")
 
 			var block = newTestBlock()
 			block.pendingReaders.Add(1) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
-			indexReader := newBucketIndexReader(block, omitMatchersStrategy{testCase.deferredMatchers})
+			indexReader := newBucketIndexReader(block, omitMatchersStrategy{testCase.pendingMatchers})
 			defer indexReader.Close()
 
 			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
