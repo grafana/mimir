@@ -418,7 +418,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			blockID:           blockID,
 			setUpBucketMock:   setUpPartialBlock,
 			body:              strings.Repeat("A", maximumMetaSizeBytes+1),
-			expEntityTooLarge: fmt.Sprintf("The request body was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
+			expEntityTooLarge: fmt.Sprintf("The block metadata was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
 		},
 		{
 			name:               "block upload disabled",
