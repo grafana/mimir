@@ -139,7 +139,7 @@ func (p *Panel) GetTargets() *[]Target {
 	case TextType:
 		return &p.TextPanel.Targets
 	case LogsType:
-		return &p.LogsPanel.Targets
+		return &[]Target{}
 	case DashlistType:
 		return &p.DashlistPanel.Targets
 	case PluginlistType:
