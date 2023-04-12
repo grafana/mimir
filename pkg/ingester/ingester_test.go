@@ -3845,6 +3845,38 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
+		"prepareShutdownHandler": {
+			setupIngester: func(cfg *Config) {
+				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
+				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
+			},
+
+			action: func(t *testing.T, i *Ingester, reg *prometheus.Registry) {
+				pushSingleSampleWithMetadata(t, i)
+
+				// Nothing shipped yet.
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+		# TYPE cortex_ingester_shipper_uploads_total counter
+		cortex_ingester_shipper_uploads_total 0
+	`), "cortex_ingester_shipper_uploads_total"))
+
+				// Preparing for shutdown shouldn't actually compact or ship anything.
+				i.PrepareShutdownHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
+				verifyCompactedHead(t, i, false)
+
+				// Shutdown ingester. This triggers compaction and flushing of the block.
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+				verifyCompactedHead(t, i, true)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+		# TYPE cortex_ingester_shipper_uploads_total counter
+		cortex_ingester_shipper_uploads_total 1
+	`), "cortex_ingester_shipper_uploads_total"))
+			},
+		},
+
 		"shutdownHandler": {
 			setupIngester: func(cfg *Config) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false

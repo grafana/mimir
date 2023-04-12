@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -113,6 +114,8 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	shutdownMarkerFile = "shutdown-requested.txt"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -253,6 +256,8 @@ type Ingester struct {
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
 
+	shutdownMarker *ShutdownMarker
+
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
 	memoryTenantsStats                 *expvar.Int
@@ -333,6 +338,9 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 
 	i.shipperIngesterID = i.lifecycler.ID
 
+	// Shutdown marker is part of the process of gracefully scaling down ingesters
+	i.shutdownMarker = NewShutdownMarker(path.Join(cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFile))
+
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
@@ -407,7 +415,17 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	var err error
+	marker, err := i.shutdownMarker.Exists()
+	if err != nil {
+		return errors.Wrap(err, "failed to check ingester shutdown marker")
+	}
+
+	if marker {
+		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", i.shutdownMarker.Path)
+		i.lifecycler.SetUnregisterOnShutdown(true)
+		i.lifecycler.SetFlushOnShutdown(true)
+	}
+
 	i.subservices, err = services.NewManager(servs...)
 	if err == nil {
 		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
@@ -2283,7 +2301,7 @@ func (i *Ingester) TransferOut(_ context.Context) error {
 	return ring.ErrTransferDisabled
 }
 
-// This method will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
+// Flush will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
 //
 // When called as during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
 // Samples are not received at this stage. Compaction and Shipping loops have already been stopped as well.
@@ -2438,6 +2456,25 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	}
 
 	return l
+}
+
+// PrepareShutdownHandler changes the configuration of the ingester such that when
+// it is stopped, it will:
+//   - Change the state of ring to stop accepting writes.
+//   - Flush all the chunks to long-term storage.
+//
+// It also creates a file on disk which is used to re-apply the configuration if the
+// ingester crashes and restarts before being permanently shutdown.
+func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, _ *http.Request) {
+	if err := i.shutdownMarker.Create(); err != nil {
+		level.Error(i.logger).Log("msg", "unable to create prepare-shutdown marker file", "path", i.shutdownMarker.Path, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	i.lifecycler.SetUnregisterOnShutdown(true)
+	i.lifecycler.SetFlushOnShutdown(true)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ShutdownHandler triggers the following set of operations in order:
