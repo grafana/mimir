@@ -121,6 +121,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 		expBadRequest          string
 		expConflict            string
 		expUnprocessableEntity string
+		expEntityTooLarge      string
 		expInternalServerError bool
 		setUpBucketMock        func(bkt *bucket.ClientMock)
 		verifyUpload           func(*testing.T, *bucket.ClientMock)
@@ -412,6 +413,14 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expInternalServerError: true,
 		},
 		{
+			name:              "too large of a request body",
+			tenantID:          tenantID,
+			blockID:           blockID,
+			setUpBucketMock:   setUpPartialBlock,
+			body:              strings.Repeat("A", maximumMetaSizeBytes+1),
+			expEntityTooLarge: fmt.Sprintf("The block metadata was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
+		},
+		{
 			name:               "block upload disabled",
 			tenantID:           tenantID,
 			blockID:            blockID,
@@ -580,6 +589,9 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			case tc.expUnprocessableEntity != "":
 				assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 				assert.Equal(t, fmt.Sprintf("%s\n", tc.expUnprocessableEntity), string(body))
+			case tc.expEntityTooLarge != "":
+				assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expEntityTooLarge), string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
