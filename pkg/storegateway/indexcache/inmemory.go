@@ -336,13 +336,13 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID s
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *InMemoryIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	c.set(cacheKeyExpandedPostings{userID, blockID, key}, v)
+func (c *InMemoryIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	c.set(cacheKeyExpandedPostings{userID, blockID, key, postingsSelectionStrategy}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
-	return c.get(cacheKeyExpandedPostings{userID, blockID, key})
+func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+	return c.get(cacheKeyExpandedPostings{userID, blockID, key, postingsSelectionStrategy})
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
@@ -412,15 +412,16 @@ func (c cacheKeySeriesForRef) size() uint64 {
 
 // cacheKeyPostings implements cacheKey and is used to reference an expanded postings cache entry in the inmemory cache.
 type cacheKeyExpandedPostings struct {
-	userID      string
-	block       ulid.ULID
-	matchersKey LabelMatchersKey
+	userID                    string
+	block                     ulid.ULID
+	matchersKey               LabelMatchersKey
+	postingsSelectionStrategy string
 }
 
 func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
 
 func (c cacheKeyExpandedPostings) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey))
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.postingsSelectionStrategy)
 }
 
 type cacheKeySeriesForPostings struct {

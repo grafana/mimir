@@ -241,15 +241,18 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 	value1 := []byte{1}
 	value2 := []byte{2}
 	value3 := []byte{3}
+	postingsStrategy1 := "s1"
+	postingsStrategy2 := "s2"
 
 	tests := map[string]struct {
-		setup        []mockedExpandedPostings
-		mockedErr    error
-		fetchUserID  string
-		fetchBlockID ulid.ULID
-		fetchKey     LabelMatchersKey
-		expectedData []byte
-		expectedOk   bool
+		setup         []mockedExpandedPostings
+		mockedErr     error
+		fetchUserID   string
+		fetchBlockID  ulid.ULID
+		fetchKey      LabelMatchersKey
+		fetchStrategy string
+		expectedData  []byte
+		expectedOk    bool
 	}{
 		"should return no hit on empty cache": {
 			setup:        []mockedExpandedPostings{},
@@ -261,16 +264,18 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedExpandedPostings{
-				{userID: user1, block: block1, matchers: matchers1, value: value1},
-				{userID: user2, block: block1, matchers: matchers1, value: value2},
-				{userID: user1, block: block1, matchers: matchers2, value: value2},
-				{userID: user1, block: block2, matchers: matchers1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, value: value1, postingsStrategy: postingsStrategy1},
+				{userID: user2, block: block1, matchers: matchers1, value: value2, postingsStrategy: postingsStrategy1},
+				{userID: user1, block: block1, matchers: matchers2, value: value2, postingsStrategy: postingsStrategy1},
+				{userID: user1, block: block2, matchers: matchers1, value: value3, postingsStrategy: postingsStrategy1},
+				{userID: user1, block: block1, matchers: matchers1, value: value1, postingsStrategy: postingsStrategy2},
 			},
-			fetchUserID:  user1,
-			fetchBlockID: block1,
-			fetchKey:     CanonicalLabelMatchersKey(matchers1),
-			expectedData: value1,
-			expectedOk:   true,
+			fetchUserID:   user1,
+			fetchBlockID:  block1,
+			fetchKey:      CanonicalLabelMatchersKey(matchers1),
+			fetchStrategy: postingsStrategy1,
+			expectedData:  value1,
+			expectedOk:    true,
 		},
 		"should return no hit on remote cache error": {
 			setup: []mockedExpandedPostings{
@@ -296,11 +301,11 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreExpandedPostings(p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreExpandedPostings(p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), testData.fetchStrategy, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchExpandedPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey)
+			data, ok := c.FetchExpandedPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchStrategy)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -700,7 +705,7 @@ func BenchmarkStringCacheKeys(b *testing.B) {
 
 	b.Run("expanded postings", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			expandedPostingsCacheKey(userID, uid, lmKey)
+			expandedPostingsCacheKey(userID, uid, lmKey, "strategy")
 		}
 	})
 }
@@ -720,10 +725,11 @@ type mockedSeriesForRef struct {
 }
 
 type mockedExpandedPostings struct {
-	userID   string
-	block    ulid.ULID
-	matchers []*labels.Matcher
-	value    []byte
+	userID           string
+	block            ulid.ULID
+	matchers         []*labels.Matcher
+	postingsStrategy string
+	value            []byte
 }
 
 type mockedLabelNames struct {
