@@ -113,7 +113,7 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genS
 	c2, err := e2emimir.NewClient(mimir2.HTTPEndpoint(), mimir2.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	// Push some series to Mimir2
+	// Push some series to Mimir 2
 	now := time.Now()
 	series, expectedVector, _ := genSeries(seriesName, now)
 

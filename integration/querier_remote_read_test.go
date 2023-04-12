@@ -154,11 +154,24 @@ func isEqualSampleAndHistogram(t *testing.T, expectedVector *model.Sample, histo
 	for it.Next() {
 		bucket := it.At()
 		if bucket.Count == 0 {
-			continue
+			continue // ignore empty buckets if they somehow exist (maybe in a gauge), as our expected histogram has no empty buckets
 		}
 		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Lower), bucket.Lower)
 		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Upper), bucket.Upper)
 		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Count), bucket.Count)
+		boundaries := 2 // Exclusive on both sides AKA open interval.
+		if bucket.LowerInclusive {
+			if bucket.UpperInclusive {
+				boundaries = 3 // Inclusive on both sides AKA closed interval.
+			} else {
+				boundaries = 1 // Inclusive only on lower end AKA right open.
+			}
+		} else {
+			if bucket.UpperInclusive {
+				boundaries = 0 // Inclusive only on upper end AKA left open.
+			}
+		}
+		require.Equal(t, int(expectedVector.Histogram.Buckets[idx].Boundaries), boundaries)
 		idx++
 	}
 	require.Equal(t, len(expectedVector.Histogram.Buckets), idx)

@@ -784,20 +784,20 @@ func TestRulerFederatedRules(t *testing.T) {
 		tc = isolatedTestCase(tc, i)
 		t.Run(tc.name, func(t *testing.T) {
 			// Generate some series under different tenants
-			sampleTime := time.Now()
-			sampleTime2 := sampleTime.Add(time.Second)
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series1, _, _ := generateFloatSeries("metric", sampleTime)
-				series2, _, _ := generateHistogramSeries("metric", sampleTime2)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series1)
+				res, err := client.Push(seriesFloat)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 
-				res, err = client.Push(series2)
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
@@ -937,20 +937,20 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 			// Generate some series under different tenants
-			sampleTime := time.Now()
-			sampleTime2 := sampleTime.Add(time.Second)
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series1, _, _ := generateFloatSeries("metric", sampleTime)
-				series2, _, _ := generateHistogramSeries("metric", sampleTime2)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series1)
+				res, err := client.Push(seriesFloat)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 
-				res, err = client.Push(series2)
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
