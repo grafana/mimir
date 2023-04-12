@@ -49,7 +49,7 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.PushOTLP(series)
 	require.NoError(t, err)

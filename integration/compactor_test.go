@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
@@ -73,16 +74,16 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{10, 0, tsdbutil.GenerateTestHistogram(1), nil},
-					sample{20, 0, tsdbutil.GenerateTestHistogram(2), nil},
+					sample{10, 0, test.GenerateTestHistogram(1), nil},
+					sample{20, 0, test.GenerateTestHistogram(2), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{30, 0, tsdbutil.GenerateTestHistogram(3), nil},
-					sample{40, 0, tsdbutil.GenerateTestHistogram(4), nil},
+					sample{30, 0, test.GenerateTestHistogram(3), nil},
+					sample{40, 0, test.GenerateTestHistogram(4), nil},
 				}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-					sample{50, 0, tsdbutil.GenerateTestHistogram(5), nil},
-					sample{2*time.Hour.Milliseconds() - 1, 0, tsdbutil.GenerateTestHistogram(6), nil},
+					sample{50, 0, test.GenerateTestHistogram(5), nil},
+					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
 				}),
 			},
 		}

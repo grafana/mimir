@@ -26,7 +26,7 @@ func runPrometheus(name string, args ...string) *e2e.HTTPService {
 	port := 9090
 	cmd := e2e.NewCommandWithoutEntrypoint(
 		"/bin/prometheus",
-		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"}, args...)...,
+		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=native-histograms"}, args...)...,
 	)
 	readiness := e2e.NewHTTPReadinessProbe(port, "/-/ready", http.StatusOK, http.StatusOK)
 	service := e2e.NewHTTPService(name, "prom/prometheus:latest", cmd, readiness, port)
@@ -151,9 +151,15 @@ func TestDistributorForwarding(t *testing.T) {
 
 			// Submit metrics to Mimir.
 			now := time.Now()
+			now2 := now.Add(time.Second)
 			for _, metric := range tc.submitMetrics {
-				series, _, _ := generateSeries(metric, now)
+				series, _, _ := generateFloatSeries(metric, now)
 				res, err := mimirClient.Push(series)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				series, _, _ = generateHistogramSeries(metric, now2)
+				res, err = mimirClient.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}

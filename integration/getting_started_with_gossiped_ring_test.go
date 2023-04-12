@@ -22,6 +22,14 @@ import (
 )
 
 func TestGettingStartedWithGossipedRing(t *testing.T) {
+	runTestGettingStartedWithGossipedRing(t, "series_1", generateFloatSeries)
+}
+
+func TestGettingStartedWithGossipedRingHistogram(t *testing.T) {
+	runTestGettingStartedWithGossipedRing(t, "hseries_1", generateHistogramSeries)
+}
+
+func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genSeries generateSeriesFunc) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -47,6 +55,9 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 		"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
 		"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
 		"-blocks-storage.s3.insecure":                       "true",
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	}
 
 	// This mimir will fail to join the cluster configured in yaml file. That's fine.
@@ -107,14 +118,14 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Push some series to Mimir2
 	now := time.Now()
-	series, expectedVector, _ := generateSeries("series_1", now)
+	series, expectedVector, _ := genSeries(seriesName, now)
 
 	res, err := c2.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
 	// Query the series via Mimir 1
-	result, err := c1.Query("series_1", now)
+	result, err := c1.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -125,7 +136,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Flush blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
-		res, err = e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
+		res, err := e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
 		require.NoError(t, err)
 		require.Equal(t, 204, res.StatusCode)
 	}

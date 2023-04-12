@@ -30,9 +30,6 @@ var (
 	// with the package name in tests.
 	mergeFlags = e2e.MergeFlags
 
-	// Temporary alias to split up merging in native histogram tests
-	generateSeries = e2e.GenerateSeries
-
 	generateAllTypeSeries = GenerateAllTypeSeries
 
 	generateFloatSeries  = e2e.GenerateSeries

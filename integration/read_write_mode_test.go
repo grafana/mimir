@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -25,23 +26,33 @@ func TestReadWriteModeQueryingIngester(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	client, _ := startReadWriteModeCluster(t, s)
+	flags := map[string]string{
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
+	}
 
+	client, _ := startReadWriteModeCluster(t, s, flags)
+
+	runQueryingIngester(t, client, "test_series_1", generateFloatSeries)
+	runQueryingIngester(t, client, "test_hseries_1", generateHistogramSeries)
+}
+
+func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName string, genSeries generateSeriesFunc) {
 	// Push some data to the cluster.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := genSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := client.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
 	// Verify we can read the data we just pushed, both with an instant query and a range query.
-	queryResult, err := client.Query("test_series_1", now)
+	queryResult, err := client.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, queryResult.Type())
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
 
-	rangeResult, err := client.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+	rangeResult, err := client.QueryRange(seriesName, now.Add(-5*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -67,11 +78,19 @@ func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
 		"-blocks-storage.tsdb.ship-interval":                "1s",
 		"-blocks-storage.tsdb.retention-period":             "3s",
 		"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
+
+		// Enable protobuf format so that we can use native histograms.
+		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
+	runQueryingStoreGateway(t, client, cluster, "test_series_1", generateFloatSeries)
+	runQueryingStoreGateway(t, client, cluster, "test_hseries_1", generateHistogramSeries)
+}
+
+func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster readWriteModeCluster, seriesName string, genSeries generateSeriesFunc) {
 	// Push some data to the cluster.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := genSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := client.Push(series)
 	require.NoError(t, err)
@@ -84,12 +103,12 @@ func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
 	require.NoError(t, cluster.backendInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_bucket_store_blocks_loaded"))
 
 	// Verify we can read the data we just pushed, both with an instant query and a range query.
-	queryResult, err := client.Query("test_series_1", now)
+	queryResult, err := client.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, queryResult.Type())
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
 
-	rangeResult, err := client.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+	rangeResult, err := client.QueryRange(seriesName, now.Add(-5*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -120,31 +139,40 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 		},
 	)
 
-	// Push data that should be captured by the recording rule
-	pushTime := time.Now()
-	series, _, _ := generateSeries("test_series", pushTime, prompb.Label{Name: "foo", Value: "bar"})
+	seriesNameFloat := "test_series"
+	seriesNameHisto := "test_hseries"
+	aggFuncFloat := "sum"
+	aggFuncHisto := "histogram_sum"
+	testRuleNameFloat := "test_rule"
+	testRuleNameHisto := "test_hrule"
 
-	res, err := client.Push(series)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+	seriesFloat := runRecordingRulePush(t, client, seriesNameFloat, generateFloatSeries)
+	seriesHisto := runRecordingRulePush(t, client, seriesNameHisto, generateHistogramSeries)
 
 	// Create recording rule
 	// (we create the rule after pushing the data to avoid race conditions around pushing the data and evaluating the rule -
 	// Mimir guarantees that previously pushed data will be captured by the recording rule evaluation)
-	record := yaml.Node{}
-	testRuleName := "test_rule"
-	record.SetString(testRuleName)
+	recordFloat := yaml.Node{}
+	recordFloat.SetString(testRuleNameFloat)
+	recordHisto := yaml.Node{}
+	recordHisto.SetString(testRuleNameHisto)
 
-	expr := yaml.Node{}
-	expr.SetString("sum(test_series)")
+	exprFloat := yaml.Node{}
+	exprFloat.SetString(fmt.Sprintf("%s(%s)", aggFuncFloat, seriesNameFloat))
+	exprHisto := yaml.Node{}
+	exprHisto.SetString(fmt.Sprintf("%s(%s)", aggFuncHisto, seriesNameHisto))
 
 	ruleGroup := rulefmt.RuleGroup{
 		Name:     "test_rule_group",
 		Interval: 1,
 		Rules: []rulefmt.RuleNode{
 			{
-				Record: record,
-				Expr:   expr,
+				Record: recordFloat,
+				Expr:   exprFloat,
+			},
+			{
+				Record: recordHisto,
+				Expr:   exprHisto,
 			},
 		},
 	}
@@ -154,18 +182,44 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	// Wait for recording rule to evaluate
 	require.NoError(t, cluster.backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
+	runRecordingRuleQuery(t, client, testRuleNameFloat, seriesFloat)
+	runRecordingRuleQuery(t, client, testRuleNameHisto, seriesHisto)
+}
+
+func runRecordingRulePush(t *testing.T, client *e2emimir.Client, seriesName string, genSeries generateSeriesFunc) []prompb.TimeSeries {
+	// Push data that should be captured by the recording rule
+	pushTime := time.Now()
+	series, _, _ := genSeries(seriesName, pushTime, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	return series
+}
+
+func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName string, series []prompb.TimeSeries) {
 	// Verify recorded series is as expected
 	queryTime := time.Now()
 	queryResult, err := client.Query(testRuleName, queryTime)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, queryResult.Type())
 
+	metric := model.Metric{
+		labels.MetricName: model.LabelValue(testRuleName),
+	}
+	var sum float64
+	if len(series[0].Samples) > 0 {
+		sum = series[0].Samples[0].Value
+	} else {
+		sum = series[0].Histograms[0].Sum
+		metric["foo"] = model.LabelValue("bar") // TODO(histograms): why is this necessary?
+	}
+
 	expectedVector := model.Vector{
 		&model.Sample{
-			Metric: model.Metric{
-				labels.MetricName: model.LabelValue(testRuleName),
-			},
-			Value:     model.SampleValue(series[0].Samples[0].Value),
+			Metric:    metric,
+			Value:     model.SampleValue(sum),
 			Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
 		},
 	}
@@ -174,6 +228,11 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 }
 
 func TestReadWriteModeAlertingRule(t *testing.T) {
+	runAlertingRule(t, "test_alert", "test_series", "sum", generateFloatSeries)
+	runAlertingRule(t, "test_halert", "test_hseries", "histogram_sum", generateHistogramSeries)
+}
+
+func runAlertingRule(t *testing.T, testAlertName, seriesName, aggFunc string, genSeries generateSeriesFunc) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -201,11 +260,10 @@ receivers:
 
 	// Create alerting rule
 	alert := yaml.Node{}
-	testAlertName := "test_alert"
 	alert.SetString(testAlertName)
 
 	expr := yaml.Node{}
-	expr.SetString("sum(test_series) > 0")
+	expr.SetString(fmt.Sprintf("%s(%s) > 0", aggFunc, seriesName))
 
 	ruleGroup := rulefmt.RuleGroup{
 		Name:     "test_rule_group",
@@ -223,7 +281,7 @@ receivers:
 
 	// Push data that should trigger the alerting rule
 	pushTime := time.Now()
-	series, _, _ := generateSeries("test_series", pushTime, prompb.Label{Name: "foo", Value: "bar"})
+	series, _, _ := genSeries(seriesName, pushTime, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := client.Push(series)
 	require.NoError(t, err)
@@ -257,8 +315,13 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		"-compactor.blocks-retention-period": "5s",
 	})
 
+	runCompaction(t, client, cluster, "test_series_1", generateFloatSeries)
+	runCompaction(t, client, cluster, "test_hseries_1", generateHistogramSeries)
+}
+
+func runCompaction(t *testing.T, client *e2emimir.Client, cluster readWriteModeCluster, seriesName string, genSeries generateSeriesFunc) {
 	// Push some data to the cluster.
-	series, _, _ := generateSeries("test_series_1", time.Now(), prompb.Label{Name: "foo", Value: "bar"})
+	series, _, _ := genSeries(seriesName, time.Now(), prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := client.Push(series)
 	require.NoError(t, err)
