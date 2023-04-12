@@ -22,14 +22,6 @@ import (
 )
 
 func TestGettingStartedWithGossipedRing(t *testing.T) {
-	runTestGettingStartedWithGossipedRing(t, "series_1", generateFloatSeries)
-}
-
-func TestGettingStartedWithGossipedRingHistogram(t *testing.T) {
-	runTestGettingStartedWithGossipedRing(t, "hseries_1", generateHistogramSeries)
-}
-
-func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genSeries generateSeriesFunc) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -107,6 +99,11 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genS
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	runTestGettingStartedWithGossipedRing(t, mimir1, mimir2, "series_1", generateFloatSeries, 0)
+	runTestGettingStartedWithGossipedRing(t, mimir1, mimir2, "hseries_1", generateHistogramSeries, 1)
+}
+
+func runTestGettingStartedWithGossipedRing(t *testing.T, mimir1 *e2emimir.MimirService, mimir2 *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc, blocksLoadedOffset float64) {
 	c1, err := e2emimir.NewClient(mimir1.HTTPEndpoint(), mimir1.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
@@ -128,8 +125,8 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genS
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
 	// Before flushing the blocks we expect no store-gateway has loaded any block.
-	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(0), "cortex_bucket_store_blocks_loaded"))
-	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(0), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(0+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(0+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
 
 	// Flush blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
@@ -141,8 +138,8 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, seriesName string, genS
 	// Given store-gateway blocks sharding is enabled with the default replication factor of 3,
 	// and ingestion replication factor is 1, we do expect the series has been ingested by 1
 	// single ingester and so we have 1 block shipped from ingesters and loaded by both store-gateways.
-	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(1), "cortex_bucket_store_blocks_loaded"))
-	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(1), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(1+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(1+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
 
 	// Make sure that no DNS failures occurred.
 	// No actual DNS lookups are necessarily performed, so we can't really assert on that.
