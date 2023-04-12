@@ -3249,7 +3249,7 @@ bucket_store:
   # less posting lists at the cost of more series. This is useful when querying
   # large blocks in which many series share the same label name and value. Valid
   # values are (most aggressive to least aggressive): speculative, worstCase,
-  # fixedFactor, all.
+  # worstCaseSmallPostingLists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
   [series_selection_strategy: <string> | default = "all"]
 
