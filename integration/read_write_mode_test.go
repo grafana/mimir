@@ -15,10 +15,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestReadWriteModeQueryingIngester(t *testing.T) {
@@ -133,8 +135,7 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 
 	seriesNameFloat := "test_series"
 	seriesNameHisto := "test_hseries"
-	aggFuncFloat := "sum"
-	aggFuncHisto := "histogram_sum"
+	aggFunc := "sum"
 	testRuleNameFloat := "test_rule"
 	testRuleNameHisto := "test_hrule"
 
@@ -150,9 +151,9 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	recordHisto.SetString(testRuleNameHisto)
 
 	exprFloat := yaml.Node{}
-	exprFloat.SetString(fmt.Sprintf("%s(%s)", aggFuncFloat, seriesNameFloat))
+	exprFloat.SetString(fmt.Sprintf("%s(%s)", aggFunc, seriesNameFloat))
 	exprHisto := yaml.Node{}
-	exprHisto.SetString(fmt.Sprintf("%s(%s)", aggFuncHisto, seriesNameHisto))
+	exprHisto.SetString(fmt.Sprintf("%s(%s)", aggFunc, seriesNameHisto))
 
 	ruleGroup := rulefmt.RuleGroup{
 		Name:     "test_rule_group",
@@ -200,20 +201,23 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 	metric := model.Metric{
 		labels.MetricName: model.LabelValue(testRuleName),
 	}
-	var sum float64
+	var expectedVector model.Vector
 	if len(series[0].Samples) > 0 {
-		sum = series[0].Samples[0].Value
+		expectedVector = model.Vector{
+			&model.Sample{
+				Metric:    metric,
+				Value:     model.SampleValue(series[0].Samples[0].Value),
+				Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
+			},
+		}
 	} else {
-		sum = series[0].Histograms[0].Sum
-		metric["foo"] = model.LabelValue("bar") // TODO(histograms): why is this necessary?
-	}
-
-	expectedVector := model.Vector{
-		&model.Sample{
-			Metric:    metric,
-			Value:     model.SampleValue(sum),
-			Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
-		},
+		expectedVector = model.Vector{
+			&model.Sample{
+				Metric:    metric,
+				Histogram: mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(series[0].Histograms[0])),
+				Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
+			},
+		}
 	}
 
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
