@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,7 +29,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
@@ -77,12 +81,11 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
-func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
+func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
-		loaded          bool
-		cached          bool
-		promise         expandedPostingsPromise
-		pendingMatchers []*labels.Matcher
+		loaded  bool
+		cached  bool
+		promise expandedPostingsPromise
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
@@ -94,14 +97,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)
-	if len(pendingMatchers) > 0 {
-		// This shouldn't be reached since we do not have any postingsSelectionStrategy at the moment
-		// and all matchers should be applied via posting lists.
-		// This will change once the clients of ExpandedPostings can work with pending matchers.
-		return nil, fmt.Errorf("there are pending matchers (%s) for query (%s)", indexcache.CanonicalLabelMatchersKey(pendingMatchers), indexcache.CanonicalLabelMatchersKey(ms))
-	}
-
-	return returnRefs, returnErr
+	return returnRefs, pendingMatchers, returnErr
 }
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
@@ -200,6 +196,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
+	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
 	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
 	if err != nil {
@@ -248,6 +245,32 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	return ps, extractLabelMatchers(omittedPostingGroups), nil
+}
+
+func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ulid.ULID, selectedGroups, omittedGroups []postingGroup) {
+	numKeyvals := 2 /* msg */ + 2 /* ulid */ + 4*(len(selectedGroups)+len(omittedGroups))
+	keyvals := make([]any, 0, numKeyvals)
+	keyvals = append(keyvals, "msg", "select posting groups")
+	keyvals = append(keyvals, "ulid", blockID.String())
+
+	formatGroup := func(g postingGroup) (string, int64) {
+		if g.matcher == nil {
+			return "ALL_POSTINGS", -1
+		}
+		return g.matcher.String(), g.totalSize
+	}
+
+	for i, g := range selectedGroups {
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), groupSize)
+	}
+	for i, g := range omittedGroups {
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
+	}
+	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
 }
 
 func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
@@ -407,7 +430,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			l, pendingMatchers, err := r.decodePostings(b, stats)
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, indexcache.CanonicalLabelMatchersKey(pendingMatchers))
+					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
 			}
 			if err == nil {
 				output[ix] = l

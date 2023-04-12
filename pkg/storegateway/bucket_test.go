@@ -478,18 +478,25 @@ func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blo
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
-type omitMatcherStrategy struct {
-	m *labels.Matcher
+type omitMatchersStrategy struct {
+	m []*labels.Matcher
 }
 
-func (o omitMatcherStrategy) name() string {
+func (o omitMatchersStrategy) name() string {
 	return "omitExact"
 }
 
-func (o omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
 	for _, g := range groups {
 		m := g.matcher
-		if m.Value == o.m.Value && m.Name == o.m.Name && m.Type == o.m.Type {
+		shouldOmit := false
+		for _, ommittableMatcher := range o.m {
+			if m.Value == ommittableMatcher.Value && m.Name == ommittableMatcher.Name && m.Type == ommittableMatcher.Type {
+				shouldOmit = true
+				break
+			}
+		}
+		if shouldOmit {
 			omitted = append(omitted, g)
 		} else {
 			selected = append(selected, g)
@@ -519,7 +526,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				// cache provides undecodable values
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 			})
@@ -576,7 +583,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
+					ress[0], _, errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
 				}()
 				// wait for this call to actually create a promise and call LabelValues
 				labelValuesCalls["i"].Wait()
@@ -588,7 +595,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
+					ress[1], _, errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
 				}()
 				// wait until this is waiting on the promise
 				<-secondContext.waitingDone
@@ -601,7 +608,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
+					ress[2], _, errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
 				}()
 				// wait until this is waiting on the promise
 				<-thirdContext.waitingDone
@@ -614,7 +621,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
+					ress[3], _, errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
 				}()
 				// wait for this call to actually create a promise and call LabelValues
 				labelValuesCalls["n"].Wait()
@@ -625,7 +632,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
+					ress[4], _, errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
 				}()
 				// wait for this call to actually create a promise and call LabelValues
 				labelValuesCalls["fail"].Wait()
@@ -637,7 +644,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					indexr := b.indexReader()
 					defer indexr.Close()
 
-					ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
+					ress[5], _, errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
 				}()
 				// wait until this is waiting on the promise
 				<-sixthContext.waitingDone
@@ -681,20 +688,20 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				// first call succeeds and caches value
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
 
 				// second call uses cached value, so it doesn't call LabelValues again
-				refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
 
 				// different matcher on same label should not be cached
 				differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-				refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
+				refs, _, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 				require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
@@ -705,7 +712,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				b.indexCache = corruptedExpandedPostingsCache{}
 
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				refs, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Equal(t, series, len(refs))
 			})
@@ -721,7 +728,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				_, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.Error(t, err)
 			})
 
@@ -737,7 +744,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
 					labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
 				}
-				postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				postings, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Empty(t, postings)
 				mockBucket.Mock.AssertNotCalled(t, "Get")
@@ -755,7 +762,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
 					labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
 				}
-				postings, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				postings, _, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 				require.NoError(t, err)
 				require.Empty(t, postings)
 				mockBucket.Mock.AssertNotCalled(t, "Get")
@@ -777,18 +784,16 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 				matchers := []*labels.Matcher{matcher, inverseMatcher}
 
-				// We're using the unexported method expandedPostings because currently ExpandedPostings doesn't support
-				// pending matchers. We can switch to that method once it does.
-				refsWithpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatcherStrategy{inverseMatcher}).expandedPostings(ctx, matchers, stats)
+				refsWithPendingMatchers, pendingMatchers, err := newBucketIndexReader(b, omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
 				require.NoError(t, err)
 				if assert.Len(t, pendingMatchers, 1) {
 					assert.Equal(t, inverseMatcher, pendingMatchers[0])
 				}
 
-				refsWithoutpendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).expandedPostings(ctx, matchers[:1], stats)
+				refsWithoutPendingMatchers, pendingMatchers, err := newBucketIndexReader(b, selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
 				require.NoError(t, err)
 				assert.Empty(t, pendingMatchers)
-				assert.Equal(t, refsWithoutpendingMatchers, refsWithpendingMatchers)
+				assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
 			})
 
 		})
@@ -1019,7 +1024,7 @@ func benchmarkExpandedPostings(
 
 			tb.ResetTimer()
 			for i := 0; i < tb.N(); i++ {
-				p, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
+				p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
 
 				if err != nil {
 					tb.Fatal(err.Error())
