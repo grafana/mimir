@@ -115,6 +115,7 @@
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Autoscaling: Add `autoscaling_query_frontend_memory_target_utilization`, `autoscaling_ruler_query_frontend_memory_target_utilization`, and `autoscaling_ruler_memory_target_utilization` configuration options, for controlling the corresponding autoscaler memory thresholds. Each has a default of 1, i.e. 100%. #4612
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_instance_limits` using runtime configuration. #4627
+* [ENHANCEMENT] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. #4713  
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
