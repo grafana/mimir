@@ -731,12 +731,13 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	// Build a read-only ring for the shard.
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
+	shardTokens := mergeTokenGroups(shardTokensByZone)
 
 	return &Ring{
 		cfg:              r.cfg,
 		strategy:         r.strategy,
 		ringDesc:         shardDesc,
-		ringTokens:       shardDesc.GetTokens(),
+		ringTokens:       shardTokens,
 		ringTokensByZone: shardTokensByZone,
 		ringZones:        getZones(shardTokensByZone),
 
@@ -750,6 +751,56 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// For caching to work, remember these values.
 		lastTopologyChange: r.lastTopologyChange,
 	}
+}
+
+// mergeTokenGroups returns a sorted list of all tokens in each entry in groupsByName.
+// Each element of groupsByName is assumed to already be sorted.
+func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
+	tokenCount := 0
+	groupsByIndex := make([][]uint32, 0, len(groupsByName))
+	nextIndex := make([]int, 0, len(groupsByName))
+
+	for _, group := range groupsByName {
+		// If there's only one group, there's nothing to merge.
+		if len(groupsByName) == 1 {
+			return group
+		}
+
+		tokenCount += len(group)
+		groupsByIndex = append(groupsByIndex, group)
+		nextIndex = append(nextIndex, 0)
+	}
+
+	merged := make([]uint32, 0, tokenCount)
+
+	for i := 0; i < tokenCount; i++ {
+		haveSeenGroupWithRemainingToken := false
+		lowestToken := uint32(0)
+		lowestTokenGroupIndex := 0
+
+		for groupIndex, group := range groupsByIndex {
+			nextIndexInGroup := nextIndex[groupIndex]
+
+			if nextIndexInGroup >= len(group) {
+				continue
+			}
+
+			if group[nextIndexInGroup] < lowestToken || !haveSeenGroupWithRemainingToken {
+				lowestToken = group[nextIndexInGroup]
+				lowestTokenGroupIndex = groupIndex
+				haveSeenGroupWithRemainingToken = true
+			}
+		}
+
+		if !haveSeenGroupWithRemainingToken {
+			return merged
+		}
+
+		merged = append(merged, lowestToken)
+		nextIndex[lowestTokenGroupIndex]++
+	}
+
+	return merged
 }
 
 // GetInstanceState returns the current state of an instance or an error if the
