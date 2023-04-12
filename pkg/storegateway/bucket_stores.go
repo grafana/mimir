@@ -508,18 +508,18 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 
 func selectPostingsStrategy(l log.Logger, name string) postingsSelectionStrategy {
 	switch name {
-	case "all":
+	case tsdb.AllPostingsStrategy:
 		return selectAllStrategy{}
-	case "speculative":
+	case tsdb.SpeculativePostingsStrategy:
 		return speculativeFetchedDataStrategy{}
-	case "worstCase":
+	case tsdb.WorstCasePostingsStrategy:
 		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 1.0}
-	case "worstCaseSmallPostingLists":
+	case tsdb.WorstCaseSmallPostingListsPostingsStrategy:
 		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.3}
 	default:
 		// This should only be reached if the tsdb package has mismatching names for these strategies.
 		// Prefer keeping the store-gateway running as opposed to failing, since strategies are still an experimental feature anyway.
-		level.Warn(l).Log("msg", "unknown posting strategy; using selectAllStrategy instead", "strategy", name)
+		level.Warn(l).Log("msg", "unknown posting strategy; using "+tsdb.AllPostingsStrategy+" instead", "strategy", name)
 		return selectAllStrategy{}
 	}
 }

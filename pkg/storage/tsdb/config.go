@@ -360,11 +360,18 @@ type BucketStoreConfig struct {
 	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
 }
 
+const (
+	SpeculativePostingsStrategy                = "speculative"
+	WorstCasePostingsStrategy                  = "worst-case"
+	WorstCaseSmallPostingListsPostingsStrategy = "worst-case-small-posting-lists"
+	AllPostingsStrategy                        = "all"
+)
+
 var validSeriesSelectionStrategies = []string{
-	"speculative",
-	"worstCase",
-	"worstCaseSmallPostingLists",
-	"all",
+	SpeculativePostingsStrategy,
+	WorstCasePostingsStrategy,
+	WorstCaseSmallPostingListsPostingsStrategy,
+	AllPostingsStrategy,
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -416,7 +423,7 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
 	}
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
-		return errors.New("invalid series_selection_strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
+		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
 	}
 	return nil
 }
