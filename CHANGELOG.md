@@ -108,6 +108,7 @@
   * Renamed `memcached_*_enabled` config options to `cache_*_enabled`
   * Renamed `memcached_*_max_item_size_mb` config options to `cache_*_max_item_size_mb`
   * Added `cache_*_backend` config options
+* [CHANGE] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. This eliminated resharding during rollouts, at the cost of extra effort during scaling down store-gateways. For more information see [Scaling down store-gateways](https://grafana.com/docs/mimir/v2.7.x/operators-guide/run-production-environment/scaling-out/#scaling-down-store-gateways). #4713
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
@@ -115,7 +116,6 @@
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Autoscaling: Add `autoscaling_query_frontend_memory_target_utilization`, `autoscaling_ruler_query_frontend_memory_target_utilization`, and `autoscaling_ruler_memory_target_utilization` configuration options, for controlling the corresponding autoscaler memory thresholds. Each has a default of 1, i.e. 100%. #4612
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_instance_limits` using runtime configuration. #4627
-* [ENHANCEMENT] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. #4713
 * [BUGFIX] Add missing query sharding settings for user_24M and user_32M plans. #4374
 
 ### Mimirtool
