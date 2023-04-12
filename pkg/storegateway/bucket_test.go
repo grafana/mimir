@@ -1655,6 +1655,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			b1.meta.ULID: b1,
 			b2.meta.ULID: b2,
 		},
+		postingsStrategy:         selectAllStrategy{},
 		queryGate:                gate.NewNoop(),
 		chunksLimiterFactory:     newStaticChunksLimiterFactory(0),
 		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
