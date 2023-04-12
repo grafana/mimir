@@ -59,6 +59,16 @@ const (
 	// EstimatedMaxChunkSize is average max of chunk size. This can be exceeded though in very rare (valid) cases.
 	EstimatedMaxChunkSize = 16000
 
+	// EstimatedSeriesP99Size is the size in bytes of a single series in the TSDB index. This includes the symbol IDs in
+	// the symbols table (not the actual label strings) and the chunk refs (min time, max time, offset).
+	// This is an estimation that should cover >99% of series with less than 30 labels and around 50 chunks per series.
+	EstimatedSeriesP99Size = 512
+
+	// BytesPerPostingInAPostingList is the number of bytes that each posting (series ID) takes in a
+	// posting list in the index. Since each posting is a uint64 and is not compressed in the index,
+	// it takes 4 bytes.
+	BytesPerPostingInAPostingList = 4
+
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
 	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
 

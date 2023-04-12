@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
 
@@ -325,7 +326,11 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 }
 
 type postingsSelectionStrategy interface {
+	// name should be a static string which identifies this strategy.
+	// The return value can be later used to find the strategy which yielded a partitioning of postingGroups.
 	name() string
+
+	// selectPostings can modify the passed slice of posting groups.
 	selectPostings([]postingGroup) (selected, omitted []postingGroup)
 }
 
@@ -339,6 +344,18 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
+// worstCaseFetchedDataStrategy select a few of the posting groups such that their total size
+// does not exceed the size of series in the worst case. The worst case is fetching all series
+// in the smallest non-subtractive posting group - this is effectively the
+// upper bound on how many series all the posting groups can select after being intersected/subtracted.
+//
+// This strategy is meant to prevent fetching some the largest posting lists in an index. Those are usually
+// less selective the smaller ones and only add cost to fetching.
+//
+// The strategy greedily selects the first N posting groups (sorted in ascending order by their size)
+// whose combined size doesn't exceed the size of series in the worst case. The rest of the posting groups
+// are omitted.
+// worstCaseFetchedDataStrategy uses a fixed estimation about the size of series in the index (tsdb.EstimatedSeriesP99Size).
 type worstCaseFetchedDataStrategy struct {
 	// postingListActualSizeFactor affects how
 	// posting lists are summed together.
@@ -352,12 +369,7 @@ func (s worstCaseFetchedDataStrategy) name() string {
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	const (
-		postingsPerByteInPostingList = 4
-		bytesPerSeries               = 512
-
-		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
-	)
+	const seriesBytesPerPostingByte = tsdb.EstimatedSeriesP99Size / tsdb.BytesPerPostingInAPostingList
 
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].totalSize < groups[j].totalSize
