@@ -20,7 +20,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -28,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -141,40 +141,8 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Results[0].Timeseries[0].Samples[0].Timestamp)
 		require.Equal(t, float64(expectedVectors[0].Value), resp.Results[0].Timeseries[0].Samples[0].Value)
 	} else if isSeriesHistogram {
-		isEqualSampleAndHistogram(t, expectedVectors[0], resp.Results[0].Timeseries[0].Histograms[0])
+		require.Equal(t, expectedVectors[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Results[0].Timeseries[0].Histograms[0])))
 	}
-}
-
-func isEqualSampleAndHistogram(t *testing.T, expectedVector *model.Sample, histogram prompb.Histogram) {
-	require.Equal(t, int64(expectedVector.Timestamp), histogram.Timestamp)
-	require.Equal(t, uint64(expectedVector.Histogram.Count), histogram.GetCountInt())
-	require.Equal(t, float64(expectedVector.Histogram.Sum), histogram.Sum)
-	idx := 0
-	it := remote.HistogramProtoToHistogram(histogram).ToFloat().AllBucketIterator()
-	for it.Next() {
-		bucket := it.At()
-		if bucket.Count == 0 {
-			continue // ignore empty buckets if they somehow exist (maybe in a gauge), as our expected histogram has no empty buckets
-		}
-		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Lower), bucket.Lower)
-		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Upper), bucket.Upper)
-		require.Equal(t, float64(expectedVector.Histogram.Buckets[idx].Count), bucket.Count)
-		boundaries := 2 // Exclusive on both sides AKA open interval.
-		if bucket.LowerInclusive {
-			if bucket.UpperInclusive {
-				boundaries = 3 // Inclusive on both sides AKA closed interval.
-			} else {
-				boundaries = 1 // Inclusive only on lower end AKA right open.
-			}
-		} else {
-			if bucket.UpperInclusive {
-				boundaries = 0 // Inclusive only on upper end AKA left open.
-			}
-		}
-		require.Equal(t, int(expectedVector.Histogram.Buckets[idx].Boundaries), boundaries)
-		idx++
-	}
-	require.Equal(t, len(expectedVector.Histogram.Buckets), idx)
 }
 
 func TestQuerierStreamingRemoteRead(t *testing.T) {
