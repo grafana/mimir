@@ -2,14 +2,18 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
-	"os"
 	"sort"
 
 	"github.com/grafana/dskit/ring"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 )
+
+type ingesterOwnership struct {
+	id         string
+	percentage float64
+}
 
 func analyseRing(ringStatus ringStatusDesc) error {
 	const (
@@ -43,11 +47,6 @@ func analyseRing(ringStatus ringStatusDesc) error {
 	}
 
 	// Compute the per-ingester % of owned tokens.
-	type ingesterOwnership struct {
-		id         string
-		percentage float64
-	}
-
 	ownership := []ingesterOwnership{}
 	for id, numTokens := range ownedTokens {
 		ownership = append(ownership, ingesterOwnership{
@@ -60,23 +59,29 @@ func analyseRing(ringStatus ringStatusDesc) error {
 		return a.percentage < b.percentage
 	})
 
-	f, err := os.OpenFile(fmt.Sprintf("ingesters-ring-tokens-ownership-with-rf-%d.csv", replicationFactor), os.O_TRUNC|os.O_CREATE|os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return errors.Wrap(err, "unable to create output file")
-	}
-	if _, err := f.WriteString("pod,tokens ownership percentage\n"); err != nil {
-		return errors.Wrap(err, "error while writing to output file")
-	}
-	for _, ingester := range ownership {
-		if _, err := f.WriteString(fmt.Sprintf("%s,%.3f\n", ingester.id, ingester.percentage)); err != nil {
-			return errors.Wrap(err, "error while writing to output file")
-		}
-	}
-	if err := f.Close(); err != nil {
-		return errors.Wrap(err, "error while closing output file")
+	w := newCSVWriter[ingesterOwnership]()
+	w.setHeader([]string{"pod", "tokens ownership percentage"})
+	w.setData(ownership, func(entry ingesterOwnership) []string {
+		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
+	})
+	if err := w.writeCSV(fmt.Sprintf("ingesters-ring-tokens-ownership-with-rf-%d.csv", replicationFactor)); err != nil {
+		return err
 	}
 
-	// TODO analyse the registered tokens percentage (with no RF)
+	// Analyze the registered tokens percentage (no replication factor or zone-aware replication
+	// taken in account).
+	registeredTokens := analyzeRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
+
+	w = newCSVWriter[ingesterOwnership]()
+	w.setHeader([]string{"pod", "registered tokens percentage"})
+	w.setData(registeredTokens, func(entry ingesterOwnership) []string {
+		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
+	})
+	if err := w.writeCSV("ingesters-ring-registered-tokens.csv"); err != nil {
+		return err
+	}
+
+	// TODO analyze whether zone-aware replication got things worse
 
 	return nil
 }
@@ -168,4 +173,41 @@ func getRingInstanceByToken(desc *ring.Desc) map[uint32]instanceInfo {
 	}
 
 	return out
+}
+
+// analyzeRegisteredTokensOwnership returns the number tokens within the range for each instance.
+func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) []ingesterOwnership {
+	var (
+		owned = map[string]uint32{}
+	)
+
+	for i, token := range ringTokens {
+		var diff uint32
+
+		// Compute how many tokens are within the range.
+		if i+1 == len(ringTokens) {
+			diff = (math.MaxUint32 - token) + ringTokens[0]
+		} else {
+			diff = ringTokens[i+1] - token
+		}
+
+		info := ringInstanceByToken[token]
+		owned[info.InstanceID] = owned[info.InstanceID] + diff
+	}
+
+	// Convert to a slice.
+	result := make([]ingesterOwnership, 0, len(owned))
+	for id, numTokens := range owned {
+		result = append(result, ingesterOwnership{
+			id:         id,
+			percentage: (float64(numTokens) / float64(math.MaxUint32)) * 100,
+		})
+	}
+
+	// Sort by ingester ID.
+	slices.SortFunc(result, func(a, b ingesterOwnership) bool {
+		return a.id < b.id
+	})
+
+	return result
 }
