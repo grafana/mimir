@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
+* [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
 * [FEATURE] Add documentation to use external Redis support for chunks-cache, metadata-cache and results-cache. #4348
 * [FEATURE] Allow for deploying mixin dashboards as part of the helm chart. #4618
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524

@@ -345,6 +345,7 @@ mimir:
           prefix: multi-zone/
         {{- end }}
         tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
         {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
         zone_awareness_enabled: true
         {{- end }}
