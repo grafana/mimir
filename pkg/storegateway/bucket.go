@@ -804,7 +804,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 		stats.blocksQueried = len(batches)
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
-	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 
@@ -841,6 +840,8 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
+
+	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 
 	if s.fineGrainedChunksCachingEnabled {
 		s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksProcessed))
@@ -895,6 +896,8 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouchedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+
+	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
 	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
@@ -1045,7 +1048,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		stats.blocksQueried = len(sets)
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
-	s.metrics.seriesBlocksQueried.Observe(float64(len(sets)))
 
 	anyHints, err := types.MarshalAny(resHints)
 	if err != nil {
