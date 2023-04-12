@@ -37,6 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.1`. #4659
+* [ENHANCEMENT] Update minio subchart to `5.0.7`. #4705
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
 * [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
