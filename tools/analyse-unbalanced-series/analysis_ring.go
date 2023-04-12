@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"sort"
 
 	"github.com/grafana/dskit/ring"
+	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 )
 
@@ -58,9 +60,23 @@ func analyseRing(ringStatus ringStatusDesc) error {
 		return a.percentage < b.percentage
 	})
 
-	for _, ingester := range ownership {
-		fmt.Println(fmt.Sprintf("%s,%.3f", ingester.id, ingester.percentage))
+	f, err := os.OpenFile(fmt.Sprintf("ingesters-ring-tokens-ownership-with-rf-%d.csv", replicationFactor), os.O_TRUNC|os.O_CREATE|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "unable to create output file")
 	}
+	if _, err := f.WriteString("pod,tokens ownership percentage\n"); err != nil {
+		return errors.Wrap(err, "error while writing to output file")
+	}
+	for _, ingester := range ownership {
+		if _, err := f.WriteString(fmt.Sprintf("%s,%.3f\n", ingester.id, ingester.percentage)); err != nil {
+			return errors.Wrap(err, "error while writing to output file")
+		}
+	}
+	if err := f.Close(); err != nil {
+		return errors.Wrap(err, "error while closing output file")
+	}
+
+	// TODO analyse the registered tokens percentage (with no RF)
 
 	return nil
 }
