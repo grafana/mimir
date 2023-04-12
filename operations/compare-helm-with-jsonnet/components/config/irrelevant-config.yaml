@@ -43,7 +43,6 @@ config:
     sharding_ring:
       kvstore:
         prefix:
-      unregister_on_shutdown:
   frontend:
     scheduler_address:
     results_cache:
