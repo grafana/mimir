@@ -28,6 +28,7 @@ var (
 	logConfig             commands.LoggerConfig
 	pushGateway           commands.PushGatewayConfig
 	remoteReadCommand     commands.RemoteReadCommand
+	remoteWriteCommand    commands.RemoteWriteCommand
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
 )
@@ -46,6 +47,7 @@ func main() {
 	logConfig.Register(app, envVars)
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
+	remoteWriteCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	backfillCommand.Register(app, envVars)
 
