@@ -34,10 +34,13 @@ var (
 	generateNFloatSeries = e2e.GenerateNSeries
 
 	// These are local, because e2e is used by non metric products that do not have native histograms
-	generateHistogramSeries     = GenerateHistogramSeries
-	generateNHistogramSeries    = GenerateNHistogramSeries
-	generateTestHistogram       = test.GenerateTestHistogram
-	generateTestSampleHistogram = test.GenerateTestSampleHistogram
+	generateHistogramSeries         = GenerateHistogramSeries
+	generateNHistogramSeries        = GenerateNHistogramSeries
+	generateTestHistogram           = test.GenerateTestHistogram
+	generateTestFloatHistogram      = test.GenerateTestFloatHistogram
+	generateTestGaugeHistogram      = test.GenerateTestGaugeHistogram
+	generateTestGaugeFloatHistogram = test.GenerateTestGaugeFloatHistogram
+	generateTestSampleHistogram     = test.GenerateTestSampleHistogram
 
 	// These are the earliest and latest possible timestamps supported by the Prometheus API -
 	// the Prometheus API does not support omitting a time range from query requests,
@@ -54,10 +57,20 @@ type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prom
 // Generates different typed series based on an index in i.
 // Use with a large enough number of series, e.g. i>100
 func generateAlternatingSeries(i int) generateSeriesFunc {
-	if i%2 == 0 {
+	switch i % 5 {
+	case 0:
 		return generateFloatSeries
+	case 1:
+		return generateHistogramSeries
+	case 2:
+		return GenerateFloatHistogramSeries
+	case 3:
+		return GenerateGaugeHistogramSeries
+	case 4:
+		return GenerateGaugeFloatHistogramSeries
+	default:
+		return nil
 	}
-	return generateHistogramSeries
 }
 
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
@@ -137,7 +150,34 @@ func getTLSFlagsWithPrefix(prefix string, servername string, http bool) map[stri
 	return flags
 }
 
+// generateHistogramFunc defines what kind of native histograms to generate: float/integer, counter/gauge
+type generateHistogramFunc func(tsMillis int64, value int) prompb.Histogram
+
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestGaugeHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestGaugeFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := e2e.TimeToMilliseconds(ts)
 
 	value := rand.Intn(1000)
@@ -157,7 +197,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 				{Name: "trace_id", Value: "1234"},
 			}},
 		},
-		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))},
+		Histograms: []prompb.Histogram{generateHistogram(tsMillis, value)},
 	})
 
 	// Generate the expected vector and matrix when querying it
