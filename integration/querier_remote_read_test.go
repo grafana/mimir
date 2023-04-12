@@ -345,8 +345,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 						enc = chunkenc.EncXOR
 					case prompb.Chunk_HISTOGRAM:
 						enc = chunkenc.EncHistogram
-					// TODO: Once prompb.Chunk_FLOAT_HISTOGRAM gets added in https://github.com/prometheus/prometheus/pull/12085 we can switch to using that
-					case prompb.Chunk_Encoding(3):
+					case prompb.Chunk_FLOAT_HISTOGRAM:
 						enc = chunkenc.EncFloatHistogram
 					default:
 						require.Fail(t, "unrecognized chunk type")
