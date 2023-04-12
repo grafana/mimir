@@ -141,13 +141,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				var genSeries generateSeriesFunc
-				if i%2 == 0 {
-					genSeries = generateFloatSeries
-				} else {
-					genSeries = generateHistogramSeries
-				}
-				series, _, _ := genSeries(metricName, now,
+				series, _, _ := generateAlternatingSeries(i)(metricName, now,
 					prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
 					prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
 				)
@@ -370,13 +364,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				var genSeries generateSeriesFunc
-				if i%2 == 0 {
-					genSeries = generateFloatSeries
-				} else {
-					genSeries = generateHistogramSeries
-				}
-				series, _, _ := genSeries(metricName, now,
+				series, _, _ := generateAlternatingSeries(i)(metricName, now,
 					prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
 					prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
 				)

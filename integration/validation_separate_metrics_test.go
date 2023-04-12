@@ -158,13 +158,7 @@ func TestPushMultipleInvalidLabels(t *testing.T) {
 
 	// Push invalid series with different groups
 	for i := 0; i < 9; i++ {
-		var genSeries generateSeriesFunc
-		if i%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
-			genSeries = generateHistogramSeries
-		}
-		series, _, _ := genSeries("TestMetric", time.Now(), prompb.Label{
+		series, _, _ := generateAlternatingSeries(i)("TestMetric", time.Now(), prompb.Label{
 			Name:  "separate_metrics_group",
 			Value: strconv.Itoa(i % 2),
 		}, prompb.Label{
@@ -223,13 +217,7 @@ func TestSeparateMetricsGroupLimitExceeded(t *testing.T) {
 	// Push invalid series with different groups
 	now := time.Now()
 	for i := 0; i < 10; i++ {
-		var genSeries generateSeriesFunc
-		if i%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
-			genSeries = generateHistogramSeries
-		}
-		series, _, _ := genSeries("TestMetric", now, prompb.Label{
+		series, _, _ := generateAlternatingSeries(i)("TestMetric", now, prompb.Label{
 			Name:  "separate_metrics_group",
 			Value: strconv.Itoa(i),
 		}, prompb.Label{

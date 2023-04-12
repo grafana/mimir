@@ -30,8 +30,6 @@ var (
 	// with the package name in tests.
 	mergeFlags = e2e.MergeFlags
 
-	generateAllTypeSeries = GenerateAllTypeSeries
-
 	generateFloatSeries  = e2e.GenerateSeries
 	generateNFloatSeries = e2e.GenerateNSeries
 
@@ -50,20 +48,17 @@ var (
 	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 )
 
-// Generates different typed series based on an index in i.
-// Use with a large enough number of series, e.g. i>100
-func GenerateAllTypeSeries(i int, name string, ts time.Time, additionalLabels ...prompb.Label) ([]prompb.TimeSeries, model.Vector, model.Matrix) {
-	switch i % 2 {
-	case 0:
-		return generateFloatSeries(name, ts, additionalLabels...)
-	case 1:
-		return generateHistogramSeries(name, ts, additionalLabels...)
-	}
-	return nil, nil, nil
-}
-
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+// Generates different typed series based on an index in i.
+// Use with a large enough number of series, e.g. i>100
+func generateAlternatingSeries(i int) generateSeriesFunc {
+	if i%2 == 0 {
+		return generateFloatSeries
+	}
+	return generateHistogramSeries
+}
 
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
 type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)

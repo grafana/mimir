@@ -95,13 +95,7 @@ func TestIngesterSharding(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				var genSeries generateSeriesFunc
-				if i%2 == 0 {
-					genSeries = generateFloatSeries
-				} else {
-					genSeries = generateHistogramSeries
-				}
-				series, expectedVector, _ := genSeries(metricName, now)
+				series, expectedVector, _ := generateAlternatingSeries(i)(metricName, now)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)

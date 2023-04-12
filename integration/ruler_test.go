@@ -597,13 +597,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Push some series to Mimir -- enough so that we can hit some limits.
 	for i := 0; i < 10; i++ {
-		var genSeries generateSeriesFunc
-		if i%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
-			genSeries = generateHistogramSeries
-		}
-		series, _, _ := genSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
+		series, _, _ := generateAlternatingSeries(i)("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
 
 		res, err := c.Push(series)
 		require.NoError(t, err)

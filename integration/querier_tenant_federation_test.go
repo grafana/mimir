@@ -131,13 +131,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		var genSeries generateSeriesFunc
-		if u%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
-			genSeries = generateHistogramSeries
-		}
-		series, expectedVectors[u], _ = genSeries("series_1", now)
+		series, expectedVectors[u], _ = generateAlternatingSeries(u)("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
