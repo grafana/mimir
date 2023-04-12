@@ -26,12 +26,7 @@ func TestReadWriteModeQueryingIngester(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := map[string]string{
-		// Enable protobuf format so that we can use native histograms.
-		"-query-frontend.query-result-response-format": "protobuf",
-	}
-
-	client, _ := startReadWriteModeCluster(t, s, flags)
+	client, _ := startReadWriteModeCluster(t, s)
 
 	runQueryingIngester(t, client, "test_series_1", generateFloatSeries)
 	runQueryingIngester(t, client, "test_hseries_1", generateHistogramSeries)
@@ -78,9 +73,6 @@ func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
 		"-blocks-storage.tsdb.ship-interval":                "1s",
 		"-blocks-storage.tsdb.retention-period":             "3s",
 		"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
-
-		// Enable protobuf format so that we can use native histograms.
-		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	runQueryingStoreGateway(t, client, cluster, "test_series_1", generateFloatSeries)

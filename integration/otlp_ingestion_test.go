@@ -35,10 +35,6 @@ func TestOTLPIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
-		map[string]string{
-			// Enable protobuf format so that we can use native histograms.
-			"-query-frontend.query-result-response-format": "protobuf",
-		},
 	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))

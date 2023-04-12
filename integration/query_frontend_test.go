@@ -250,12 +250,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
-	if cfg.withHistograms {
-		flags = mergeFlags(flags, map[string]string{
-			"-query-frontend.query-result-response-format": "protobuf",
-		})
-	}
-
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
