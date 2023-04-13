@@ -3198,6 +3198,40 @@ func TestRelabelMiddleware(t *testing.T) {
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
 			expectErrs: []bool{false, false, false, false},
+		}, {
+			name: "__meta_tenant_id available and cleaned up afterwards",
+			ctx:  ctxWithUser,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels: []model.LabelName{"__meta_tenant_id"},
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					TargetLabel:  "tenant_id",
+					Replacement:  "$1",
+				},
+			},
+			reqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectedReqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+						{Name: "tenant_id", Value: "user"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectErrs: []bool{false},
 		},
 	}
 

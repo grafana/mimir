@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -818,12 +819,19 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			ts := req.Timeseries[tsIdx]
 
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				l, keep := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				lb := labels.NewBuilder(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+				lb.Set(model.MetaLabelPrefix+"tenant_id", userID)
+				keep := relabel.ProcessBuilder(lb, mrc...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
 				}
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
+				lb.Range(func(x labels.Label) {
+					if strings.HasPrefix(x.Name, model.MetaLabelPrefix) {
+						lb.Del(x.Name)
+					}
+				})
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels(nil))
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
