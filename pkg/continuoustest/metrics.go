@@ -24,31 +24,31 @@ func NewTestMetrics(testName string, reg prometheus.Registerer) *TestMetrics {
 			Name:        "mimir_continuous_test_writes_total",
 			Help:        "Total number of attempted write requests.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"metric_name"}),
+		}, []string{"type"}),
 		writesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_writes_failed_total",
 			Help:        "Total number of failed write requests.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"status_code", "metric_name"}),
+		}, []string{"status_code", "type"}),
 		queriesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_queries_total",
 			Help:        "Total number of attempted query requests.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"metric_name"}),
+		}, []string{"type"}),
 		queriesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_queries_failed_total",
 			Help:        "Total number of failed query requests.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"metric_name"}),
+		}, []string{"type"}),
 		queryResultChecksTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_query_result_checks_total",
 			Help:        "Total number of query results checked for correctness.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"metric_name"}),
+		}, []string{"type"}),
 		queryResultChecksFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_query_result_checks_failed_total",
 			Help:        "Total number of query results failed when checking for correctness.",
 			ConstLabels: map[string]string{"test": testName},
-		}, []string{"metric_name"}),
+		}, []string{"type"}),
 	}
 }
