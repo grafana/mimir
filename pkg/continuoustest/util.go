@@ -296,18 +296,24 @@ func generateSineWaveValue(t time.Time) float64 {
 }
 
 func generateHistogramIntValue(t time.Time, gauge bool) int64 {
-	v := t.Unix()
-	if gauge && t.Minute()%2 == 0 {
-		return -v
+	if gauge {
+		return int64(generateSineWaveValue(t) * 100)
 	}
+	v := t.Unix()
+	// if gauge && t.Minute()%2 == 0 {
+	// 	return -v
+	// }
 	return v
 }
 
 func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
-	v := float64(t.Unix()) / 500000
-	if gauge && t.Minute()%2 == 0 {
-		return -v
+	if gauge {
+		return generateSineWaveValue(t) / 10
 	}
+	v := float64(t.Unix()) / 500000
+	// if gauge && t.Minute()%2 == 0 {
+	// 	return -v
+	// }
 	return v
 }
 
