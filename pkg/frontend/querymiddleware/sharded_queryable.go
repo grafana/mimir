@@ -249,7 +249,16 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 			}
 
 			// same logic as samples above
-			histograms := make([]mimirpb.Histogram, len(stream.Histograms)+10)
+			var histograms []mimirpb.Histogram
+			if len(stream.Histograms) > 0 {
+				// If there are histograms, which is less likely currently,
+				// we add an extra 10 items to account for some stale markers that could be injected.
+				// We're trading a lower chance of reallocation in case stale markers are added for a
+				// slightly higher memory utilisation.
+				histograms = make([]mimirpb.Histogram, 0, len(stream.Histograms)+10)
+			} else {
+				histograms = make([]mimirpb.Histogram, 0)
+			}
 
 			for idx, histogram := range stream.Histograms {
 				if step > 0 && idx > 0 && histogram.TimestampMs > stream.Histograms[idx-1].TimestampMs+step {

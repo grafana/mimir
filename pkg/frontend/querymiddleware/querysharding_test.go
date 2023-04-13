@@ -2078,7 +2078,7 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 }
 
 func generateTestHistogram(v float64) *histogram.FloatHistogram {
-	h := util_test.GenerateTestGaugeFloatHistogram(int(v))
+	h := util_test.GenerateTestFloatHistogram(int(v))
 	if value.IsStaleNaN(v) {
 		h.Sum = v
 	}
