@@ -22,5 +22,5 @@ func main() {
 	level.Info(logger).Log("msg", "Successfully built dataset")
 
 	// Run analysis.
-	analyseRing(ringStatus)
+	analyseRing(ringStatus, logger)
 }
