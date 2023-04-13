@@ -5,8 +5,6 @@ package continuoustest
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 type getMetricHistoryFunc func(test *WriteReadSeriesTest) *MetricHistory
@@ -35,6 +35,7 @@ var (
 	cfgHist         WriteReadSeriesTestConfig
 	floatTestTuples []WriteReadSeriesTestTuple
 	histTestTuples  []WriteReadSeriesTestTuple
+	emCtx           util_test.ExpectedMetricsContext
 )
 
 func init() {
@@ -71,6 +72,14 @@ func init() {
 			},
 		}
 	}
+
+	emCtx = util_test.NewExpectedMetricsContext()
+	emCtx.Add("mimir_continuous_test_writes_total", "Total number of attempted write requests.", "counter")
+	emCtx.Add("mimir_continuous_test_writes_failed_total", "Total number of failed write requests.", "counter")
+	emCtx.Add("mimir_continuous_test_queries_total", "Total number of attempted query requests.", "counter")
+	emCtx.Add("mimir_continuous_test_queries_failed_total", "Total number of failed query requests.", "counter")
+	emCtx.Add("mimir_continuous_test_query_result_checks_total", "Total number of query results checked for correctness.", "counter")
+	emCtx.Add("mimir_continuous_test_query_result_checks_failed_total", "Total number of query results failed when checking for correctness.", "counter")
 }
 
 func TestWriteReadSeriesTest_Run(t *testing.T) {
@@ -110,21 +119,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
-			# TYPE mimir_continuous_test_queries_failed_total counter
-			mimir_continuous_test_queries_failed_total{test="write-read-series"} %d
-		`, 1*multiplier, 8*multiplier, 0*multiplier)),
-			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
-			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_queries_failed_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should write series with timestamp aligned to write interval", func(t *testing.T) {
@@ -155,21 +154,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), mock.Anything)
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
-			# TYPE mimir_continuous_test_queries_failed_total counter
-			mimir_continuous_test_queries_failed_total{test="write-read-series"} %d
-		`, 1*multiplier, 8*multiplier, 0*multiplier)),
-			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
-			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_queries_failed_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should write series from last written timestamp until now", func(t *testing.T) {
@@ -207,21 +196,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
-			# TYPE mimir_continuous_test_queries_failed_total counter
-			mimir_continuous_test_queries_failed_total{test="write-read-series"} %d
-		`, 3*multiplier, 8*multiplier, 0*multiplier)),
-			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
-			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 3*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_queries_failed_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should stop remote writing on network error", func(t *testing.T) {
@@ -248,19 +227,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_writes_failed_total Total number of failed write requests.
-			# TYPE mimir_continuous_test_writes_failed_total counter
-			mimir_continuous_test_writes_failed_total{status_code="0",test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-		`, 1*multiplier, 1*multiplier, 0*multiplier)), "mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total", "mimir_continuous_test_queries_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_writes_failed_total", `status_code="0",test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should stop remote writing on 5xx error", func(t *testing.T) {
@@ -287,19 +258,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_writes_failed_total Total number of failed write requests.
-			# TYPE mimir_continuous_test_writes_failed_total counter
-			mimir_continuous_test_writes_failed_total{status_code="500",test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-		`, 1*multiplier, 1*multiplier, 0*multiplier)), "mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total", "mimir_continuous_test_queries_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_writes_failed_total", `status_code="500",test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should keep remote writing next intervals on 4xx error", func(t *testing.T) {
@@ -329,19 +292,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_writes_failed_total Total number of failed write requests.
-			# TYPE mimir_continuous_test_writes_failed_total counter
-			mimir_continuous_test_writes_failed_total{status_code="400",test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-		`, 3*multiplier, 3*multiplier, 0*multiplier)), "mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total", "mimir_continuous_test_queries_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 3*multiplier)
+		em.Add("mimir_continuous_test_writes_failed_total", `status_code="400",test="write-read-series"`, 3*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should query written series, compare results and track no failure if results match", func(t *testing.T) {
@@ -380,30 +335,13 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
-			# TYPE mimir_continuous_test_queries_failed_total counter
-			mimir_continuous_test_queries_failed_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
-			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
-			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
-			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} %d
-		`, 1*multiplier, 8*multiplier, 0*multiplier, 8*multiplier, 0*multiplier)),
-			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
-			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total",
-			"mimir_continuous_test_query_result_checks_total", "mimir_continuous_test_query_result_checks_failed_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_queries_failed_total", `test="write-read-series"`, 0)
+		em.Add("mimir_continuous_test_query_result_checks_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_query_result_checks_failed_total", `test="write-read-series"`, 0)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should query written series, compare results and track failure if results don't match", func(t *testing.T) {
@@ -440,30 +378,13 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP mimir_continuous_test_writes_total Total number of attempted write requests.
-			# TYPE mimir_continuous_test_writes_total counter
-			mimir_continuous_test_writes_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_total Total number of attempted query requests.
-			# TYPE mimir_continuous_test_queries_total counter
-			mimir_continuous_test_queries_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_queries_failed_total Total number of failed query requests.
-			# TYPE mimir_continuous_test_queries_failed_total counter
-			mimir_continuous_test_queries_failed_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_query_result_checks_total Total number of query results checked for correctness.
-			# TYPE mimir_continuous_test_query_result_checks_total counter
-			mimir_continuous_test_query_result_checks_total{test="write-read-series"} %d
-
-			# HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
-			# TYPE mimir_continuous_test_query_result_checks_failed_total counter
-			mimir_continuous_test_query_result_checks_failed_total{test="write-read-series"} %d
-		`, 1*multiplier, 8*multiplier, 0*multiplier, 8*multiplier, 8*multiplier)),
-			"mimir_continuous_test_writes_total", "mimir_continuous_test_writes_failed_total",
-			"mimir_continuous_test_queries_total", "mimir_continuous_test_queries_failed_total",
-			"mimir_continuous_test_query_result_checks_total", "mimir_continuous_test_query_result_checks_failed_total"))
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.Add("mimir_continuous_test_writes_total", `test="write-read-series"`, 1*multiplier)
+		em.Add("mimir_continuous_test_queries_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_queries_failed_total", `test="write-read-series"`, 0)
+		em.Add("mimir_continuous_test_query_result_checks_total", `test="write-read-series"`, 8*multiplier)
+		em.Add("mimir_continuous_test_query_result_checks_failed_total", `test="write-read-series"`, 8*multiplier)
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 }
 
