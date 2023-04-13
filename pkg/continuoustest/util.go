@@ -146,13 +146,7 @@ func generatePosIntHistogram(value int64) *histogram.Histogram {
 			{Offset: 3, Length: 1},
 			{Offset: 2, Length: 2},
 		},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-			{Offset: 3, Length: 1},
-			{Offset: 2, Length: 2},
-		},
 		PositiveBuckets: []int64{value, 0, 0, 0},
-		NegativeBuckets: []int64{0, 0, 0, 0},
 	}
 }
 
@@ -162,17 +156,11 @@ func generateNegIntHistogram(value int64) *histogram.Histogram {
 		Count:         uint64(value * 4),
 		ZeroThreshold: 0.001,
 		Schema:        2,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-			{Offset: 3, Length: 1},
-			{Offset: 2, Length: 2},
-		},
 		NegativeSpans: []histogram.Span{
 			{Offset: 0, Length: 1},
 			{Offset: 3, Length: 1},
 			{Offset: 2, Length: 2},
 		},
-		PositiveBuckets: []int64{0, 0, 0, 0},
 		NegativeBuckets: []int64{value, 0, 0, 0},
 	}
 }
@@ -188,13 +176,7 @@ func generatePosFloatHistogram(value float64) *histogram.FloatHistogram {
 			{Offset: 3, Length: 1},
 			{Offset: 2, Length: 2},
 		},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-			{Offset: 3, Length: 1},
-			{Offset: 2, Length: 2},
-		},
 		PositiveBuckets: []float64{value, value, value, value},
-		NegativeBuckets: []float64{0, 0, 0, 0},
 	}
 }
 
@@ -204,17 +186,11 @@ func generateNegFloatHistogram(value float64) *histogram.FloatHistogram {
 		Count:         value * 4,
 		ZeroThreshold: 0.001,
 		Schema:        2,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-			{Offset: 3, Length: 1},
-			{Offset: 2, Length: 2},
-		},
 		NegativeSpans: []histogram.Span{
 			{Offset: 0, Length: 1},
 			{Offset: 3, Length: 1},
 			{Offset: 2, Length: 2},
 		},
-		PositiveBuckets: []float64{0, 0, 0, 0},
 		NegativeBuckets: []float64{value, value, value, value},
 	}
 }
@@ -300,22 +276,14 @@ func generateHistogramIntValue(t time.Time, gauge bool) int64 {
 	if gauge {
 		return int64(generateSineWaveValue(t) * 100)
 	}
-	v := t.Unix()
-	// if gauge && t.Minute()%2 == 0 {
-	// 	return -v
-	// }
-	return v
+	return t.Unix()
 }
 
 func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 	if gauge {
 		return generateSineWaveValue(t) / 10
 	}
-	v := float64(t.Unix()) / 500000
-	// if gauge && t.Minute()%2 == 0 {
-	// 	return -v
-	// }
-	return v
+	return float64(t.Unix()) / 500000
 }
 
 // verifySamplesSum assumes the input matrix is the result of a range query summing the values
