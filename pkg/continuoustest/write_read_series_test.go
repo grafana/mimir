@@ -46,10 +46,12 @@ func init() {
 	flagext.DefaultValues(&cfgFloat)
 	cfgFloat.NumSeries = 2
 	cfgFloat.WithFloats = true
+	cfgFloat.WithHistograms = false
 
 	cfgHist = WriteReadSeriesTestConfig{}
 	flagext.DefaultValues(&cfgHist)
 	cfgHist.NumSeries = 2
+	cfgHist.WithFloats = false
 	cfgHist.WithHistograms = true
 
 	floatTestTuples = []WriteReadSeriesTestTuple{{
