@@ -80,11 +80,11 @@ func init() {
 }
 
 func TestWriteReadSeriesTest_Run(t *testing.T) {
-	testWriteReadSeriesTest_Run(t, cfgSample, sampleTestTuples)
-	testWriteReadSeriesTest_Run(t, cfgHist, histTestTuples)
+	testWriteReadSeriesTestRun(t, cfgSample, sampleTestTuples)
+	testWriteReadSeriesTestRun(t, cfgHist, histTestTuples)
 }
 
-func testWriteReadSeriesTest_Run(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
+func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
 	logger := log.NewNopLogger()
 	multiplier := len(testTuples)
 
@@ -474,11 +474,11 @@ func testWriteReadSeriesTest_Run(t *testing.T, cfg WriteReadSeriesTestConfig, te
 }
 
 func TestWriteReadSeriesTest_Init(t *testing.T) {
-	testWriteReadSeriesTest_Init(t, cfgSample, sampleTestTuples)
-	testWriteReadSeriesTest_Init(t, cfgHist, histTestTuples)
+	testWriteReadSeriesTestInit(t, cfgSample, sampleTestTuples)
+	testWriteReadSeriesTestInit(t, cfgHist, histTestTuples)
 }
 
-func testWriteReadSeriesTest_Init(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
+func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
 	logger := log.NewNopLogger()
 	multiplier := len(testTuples)
 	cfg.MaxQueryAge = 3 * 24 * time.Hour
