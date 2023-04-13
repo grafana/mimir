@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	maxComparisonDelta = 0.001
+	maxComparisonDeltaFloat     = 0.001
+	maxComparisonDeltaHistogram = 0.01
 
 	floatMetricName = "mimir_continuous_test_sine_wave"
 	floatTypeLabel  = "float"
@@ -348,7 +349,7 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
-			if !compareHistogramValues(histogram.Histogram, expectedHistogram) {
+			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
 				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
 			}
 
@@ -374,7 +375,7 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 		// Assert on value.
 		expectedValue := generateValue(ts) * float64(expectedSeries)
-		if !compareSampleValues(float64(sample.Value), expectedValue) {
+		if !compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat) {
 			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
 		}
 
@@ -395,30 +396,31 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 }
 
 // accounts for float imprecision
-func compareSampleValues(actual, expected float64) bool {
-	delta := math.Abs((actual - expected) / maxComparisonDelta)
-	return delta < maxComparisonDelta
+func compareFloatValues(actual, expected, tolerance float64) bool {
+	delta := math.Abs((actual - expected) / tolerance)
+	return delta < tolerance
 }
 
-func compareHistogramValues(actual, expected *model.SampleHistogram) bool {
-	return compareSampleValues(float64(actual.Count), float64(expected.Count)) && compareSampleValues(float64(actual.Sum), float64(expected.Sum)) && compareHistogramBuckets(actual.Buckets, expected.Buckets)
+func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) bool {
+	return compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
 }
 
-func compareHistogramBuckets(actual, expected model.HistogramBuckets) bool {
+func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) bool {
 	if len(actual) != len(expected) {
 		return false
 	}
 
 	for i, bucket := range actual {
-		if !compareHistogramBucketValues(bucket, expected[i]) {
+		if !compareHistogramBucketValues(bucket, expected[i], tolerance) {
 			return false
 		}
 	}
 	return true
 }
 
-func compareHistogramBucketValues(actual, expected *model.HistogramBucket) bool {
-	return actual.Boundaries == expected.Boundaries && compareSampleValues(float64(actual.Lower), float64(expected.Lower)) && compareSampleValues(float64(actual.Upper), float64(expected.Upper)) && compareSampleValues(float64(actual.Count), float64(expected.Count))
+func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) bool {
+	// the precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count
+	return actual.Boundaries == expected.Boundaries && compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
 }
 
 func minTime(first, second time.Time) time.Time {

@@ -246,6 +246,35 @@ func TestRandTime(t *testing.T) {
 	}
 }
 
+func TestCompareSampleValues(t *testing.T) {
+	tests := map[string]struct {
+		actual    float64
+		expected  float64
+		tolerance float64
+		result    bool
+	}{
+		"histogram_float_counter shouldn't work with float tolerance": {
+			actual:    336157191.999972,
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaFloat,
+			result:    false,
+		},
+		"histogram_float_counter should work with histogram tolerance": {
+			actual:    336157191.999972,
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaHistogram,
+			result:    true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			res := compareFloatValues(testData.actual, testData.expected, testData.tolerance)
+			assert.Equal(t, testData.result, res)
+		})
+	}
+}
+
 func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	return model.SamplePair{
 		Timestamp: model.Time(ts.UnixMilli()),
