@@ -134,7 +134,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -169,7 +168,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -211,7 +209,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
 		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -242,7 +239,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_writes_failed_total", makeExpectedMetricsMap(testTuples, `status_code="0",test="write-read-series",type="%s"`, 1))
-		// em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -273,7 +269,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_writes_failed_total", makeExpectedMetricsMap(testTuples, `status_code="500",test="write-read-series",type="%s"`, 1))
-		// em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -307,7 +302,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
 		em.AddMultiple("mimir_continuous_test_writes_failed_total", makeExpectedMetricsMap(testTuples, `status_code="400",test="write-read-series",type="%s"`, 3))
-		// em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -350,9 +344,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -393,7 +385,6 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
 		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		// em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
 		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
 		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
