@@ -198,20 +198,24 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
 	}
 
+	// Compute the latest queriable timestamp
+	// t.queryMaxTime shouldn't be after now but we want to be sure of it !
+	adjustedQueryMaxTime := minTime(t.queryMaxTime, now)
+
 	// Last 1h.
 	if t.queryMaxTime.After(now.Add(-1 * time.Hour)) {
 		ranges = append(ranges, [2]time.Time{
 			maxTime(adjustedQueryMinTime, now.Add(-1*time.Hour)),
-			minTime(t.queryMaxTime, now),
+			adjustedQueryMaxTime,
 		})
-		instants = append(instants, minTime(t.queryMaxTime, now))
+		instants = append(instants, adjustedQueryMaxTime)
 	}
 
 	// Last 24h (only if the actual time range is not already covered by "Last 1h").
 	if t.queryMaxTime.After(now.Add(-24*time.Hour)) && adjustedQueryMinTime.Before(now.Add(-1*time.Hour)) {
 		ranges = append(ranges, [2]time.Time{
 			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
-			minTime(t.queryMaxTime, now),
+			adjustedQueryMaxTime,
 		})
 		instants = append(instants, maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)))
 	}
@@ -220,13 +224,13 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time) (ranges [][2]tim
 	if adjustedQueryMinTime.Before(now.Add(-23*time.Hour)) && t.queryMaxTime.After(now.Add(-23*time.Hour)) {
 		ranges = append(ranges, [2]time.Time{
 			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
-			minTime(t.queryMaxTime, now.Add(-23*time.Hour)),
+			minTime(adjustedQueryMaxTime, now.Add(-23*time.Hour)),
 		})
 	}
 
 	// A random time range.
-	randMinTime := randTime(adjustedQueryMinTime, t.queryMaxTime)
-	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, t.queryMaxTime)})
+	randMinTime := randTime(adjustedQueryMinTime, adjustedQueryMaxTime)
+	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, adjustedQueryMaxTime)})
 	instants = append(instants, randMinTime)
 
 	return ranges, instants, nil

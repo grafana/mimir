@@ -128,6 +128,10 @@
 
 * [ENHANCEMENT] Added a new metric `mimir_continuous_test_build_info` that reports version information, similar to the existing `cortex_build_info` metric exposed by other Mimir components. #4712
 
+### Mimir Continuous Test
+
+* [ENHANCEMENT] Add coherency for the selected ranges and instants of test queries. #4704
+
 ### Query-tee
 
 ### Documentation
