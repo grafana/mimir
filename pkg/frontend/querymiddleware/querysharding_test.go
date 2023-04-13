@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -2053,7 +2054,7 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 		if histogram {
 			point = promql.Point{
 				T: t,
-				H: util_test.GenerateTestFloatHistogram(int(v)),
+				H: generateTestHistogram(v),
 			}
 		} else {
 			point = promql.Point{
@@ -2071,6 +2072,14 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 		Metric: metric,
 		Points: points,
 	})
+}
+
+func generateTestHistogram(v float64) *histogram.FloatHistogram {
+	h := util_test.GenerateTestGaugeFloatHistogram(int(v))
+	if value.IsStaleNaN(v) {
+		h.Sum = v
+	}
+	return h
 }
 
 // newTestCounterLabels generates series labels for a counter metric used in tests.
