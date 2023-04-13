@@ -79,14 +79,14 @@ func (t *WriteReadSeriesTest) Name() string {
 func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
 	if t.cfg.WithFloats {
-		err := t.recoverPast(ctx, now, floatMetricName, querySumFloat, generateSineWaveValue, &t.floatMetric)
+		err := t.recoverPast(ctx, now, floatMetricName, querySumFloat, generateSineWaveValue, nil, &t.floatMetric)
 		if err != nil {
 			return err
 		}
 	}
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
-			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, &t.histMetrics[i])
+			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 			if err != nil {
 				return err
 			}
@@ -95,8 +95,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-func (t *WriteReadSeriesTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, records *MetricHistory) error {
-	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, metricName, querySum, generateValue)
+func (t *WriteReadSeriesTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
+	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, metricName, querySum, generateValue, generateSampleHistogram)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
@@ -124,19 +124,19 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	errs := new(multierror.MultiError)
 
 	if t.cfg.WithFloats {
-		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, querySumFloat, generateSineWaveSeries, generateSineWaveValue, &t.floatMetric)
+		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, querySumFloat, generateSineWaveSeries, generateSineWaveValue, nil, &t.floatMetric)
 	}
 
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
-			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, querySumHist, histProfile.generateSeries, histProfile.generateValue, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 		}
 	}
 
 	return errs.Err()
 }
 
-func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, records *MetricHistory) {
+func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
@@ -159,15 +159,15 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 
 	queryMetric := querySum(metricName)
 	for _, timeRange := range queryRanges {
-		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, typeLabel, queryMetric, generateValue, records)
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
-		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, queryMetric, generateValue, records)
+		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
 	}
 	for _, ts := range queryInstants {
-		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, typeLabel, queryMetric, generateValue, records)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
-		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, records)
+		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
 	}
 }
@@ -271,7 +271,7 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 	return ranges, instants, nil
 }
 
-func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, writeInterval))
@@ -297,7 +297,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue)
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err, "type", typeLabel)
@@ -306,7 +306,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	return nil
 }
 
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, writeInterval))
@@ -349,7 +349,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue)
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err, "type", typeLabel)
@@ -366,7 +366,7 @@ func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time, records *MetricH
 	return records.lastWrittenTimestamp.Add(writeInterval)
 }
 
-func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc) (from, to time.Time) {
+func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (from, to time.Time) {
 	end := alignTimestampToInterval(now, writeInterval)
 	step := writeInterval
 
@@ -415,7 +415,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither", "query", query)
 			return
 		}
-		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue)
+		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 		if lastMatchingIdx == -1 {
 			return
 		}

@@ -24,12 +24,13 @@ import (
 type getMetricHistoryFunc func(test *WriteReadSeriesTest) *MetricHistory
 
 type WriteReadSeriesTestTuple struct {
-	metricName       string
-	typeLabel        string
-	querySum         querySumFunc
-	generateSeries   generateSeriesFunc
-	generateValue    generateValueFunc
-	getMetricHistory getMetricHistoryFunc
+	metricName              string
+	typeLabel               string
+	querySum                querySumFunc
+	generateSeries          generateSeriesFunc
+	generateValue           generateValueFunc
+	generateSampleHistogram generateSampleHistogramFunc
+	getMetricHistory        getMetricHistoryFunc
 }
 
 var (
@@ -52,11 +53,12 @@ func init() {
 	cfgHist.WithHistograms = true
 
 	floatTestTuples = []WriteReadSeriesTestTuple{{
-		metricName:     floatMetricName,
-		typeLabel:      floatTypeLabel,
-		querySum:       querySumFloat,
-		generateSeries: generateSineWaveSeries,
-		generateValue:  generateSineWaveValue,
+		metricName:              floatMetricName,
+		typeLabel:               floatTypeLabel,
+		querySum:                querySumFloat,
+		generateSeries:          generateSineWaveSeries,
+		generateValue:           generateSineWaveValue,
+		generateSampleHistogram: nil,
 		getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
 			return &test.floatMetric
 		},
@@ -66,11 +68,12 @@ func init() {
 	for i, histProfile := range histogramProfiles {
 		i := i // shadowing it to ensure it's properly updated in the closure
 		histTestTuples[i] = WriteReadSeriesTestTuple{
-			metricName:     histProfile.metricName,
-			typeLabel:      histProfile.typeLabel,
-			querySum:       querySumHist,
-			generateSeries: histProfile.generateSeries,
-			generateValue:  histProfile.generateValue,
+			metricName:              histProfile.metricName,
+			typeLabel:               histProfile.typeLabel,
+			querySum:                querySumHist,
+			generateSeries:          histProfile.generateSeries,
+			generateValue:           histProfile.generateValue,
+			generateSampleHistogram: histProfile.generateSampleHistogram,
 			getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
 				return &test.histMetrics[i]
 			},
@@ -312,12 +315,21 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
-				{Values: []model.SamplePair{newSamplePair(now, tt.generateValue(now)*float64(cfg.NumSeries))}},
-			}, nil)
-			client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
-				{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(tt.generateValue(now) * float64(cfg.NumSeries))},
-			}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+					{Values: []model.SamplePair{newSamplePair(now, tt.generateValue(now)*float64(cfg.NumSeries))}},
+				}, nil)
+				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(tt.generateValue(now) * float64(cfg.NumSeries))},
+				}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, cfg.NumSeries))}},
+				}, nil)
+				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, cfg.NumSeries)},
+				}, nil)
+			}
 		}
 
 		reg := prometheus.NewPedanticRegistry()
@@ -353,13 +365,23 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
-		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
-			{Values: []model.SamplePair{{Timestamp: model.Time(now.UnixMilli()), Value: 12345}}},
-		}, nil)
-
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{
-			{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
-		}, nil)
+		for _, tt := range testTuples {
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+					{Values: []model.SamplePair{{Timestamp: model.Time(now.UnixMilli()), Value: 12345}}},
+				}, nil)
+				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
+				}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
+					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, 1))}},
+				}, nil)
+				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, 1)},
+				}, nil)
+			}
+		}
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -427,9 +449,15 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("previously written data points are in the range [-2h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -449,12 +477,21 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("previously written data points are in the range [-36h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -474,13 +511,23 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("previously written data points are in the range [-36h, -1m] but last data point of previous 24h period is missing", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				// Last data point is missing.
-				Values: generateSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour).Add(-writeInterval), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					// Last data point is missing.
+					Values: generateFloatSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour).Add(-writeInterval), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					// Last data point is missing.
+					Histograms: generateHistogramSamplesSum(now.Add(-36*time.Hour), now.Add(-24*time.Hour).Add(-writeInterval), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -500,9 +547,15 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("previously written data points are in the range [-24h, -1m]", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, nil)
 		}
 
@@ -523,15 +576,27 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the configured query max age is > 24h", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-72*time.Hour).Add(writeInterval), now.Add(-48*time.Hour), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -551,9 +616,15 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the configured query max age is < 24h", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-2*time.Hour), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-2*time.Hour), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-2*time.Hour), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		testCfg := cfg
@@ -575,9 +646,15 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the most recent previously written data point is older than 1h ago", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-2*time.Hour).Add(writeInterval), now.Add(-1*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-2*time.Hour).Add(writeInterval), now.Add(-1*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-2*time.Hour).Add(writeInterval), now.Add(-1*time.Hour), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -617,9 +694,15 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("a subsequent query fails", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, errors.New("failed"))
 		}
 
@@ -640,12 +723,21 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the last 24h period", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: append(
-					generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-67*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
-					generateSamplesSum(now.Add(-67*time.Minute).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue)...,
-				),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: append(
+						generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-67*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
+						generateFloatSamplesSum(now.Add(-67*time.Minute).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue)...,
+					),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: append(
+						generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-67*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateSampleHistogram),
+						generateHistogramSamplesSum(now.Add(-67*time.Minute).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram)...,
+					),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -665,15 +757,27 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the previous 24h period", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: append(
-					generateSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-36*time.Hour).Add(time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
-					generateSamplesSum(now.Add(-36*time.Hour).Add(time.Minute+writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue)...,
-				),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: append(
+						generateFloatSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-36*time.Hour).Add(time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
+						generateFloatSamplesSum(now.Add(-36*time.Hour).Add(time.Minute+writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateValue)...,
+					),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: append(
+						generateHistogramSamplesSum(now.Add(-48*time.Hour).Add(writeInterval), now.Add(-36*time.Hour).Add(time.Minute), cfg.NumSeries-1, writeInterval, tt.generateSampleHistogram),
+						generateHistogramSamplesSum(now.Add(-36*time.Hour).Add(time.Minute+writeInterval), now.Add(-24*time.Hour), cfg.NumSeries, writeInterval, tt.generateSampleHistogram)...,
+					),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
@@ -693,12 +797,21 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	t.Run("the testing tool has been restarted with a different number of series exactly at the beginning of this 24h period", func(t *testing.T) {
 		client := &ClientMock{}
 		for _, tt := range testTuples {
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
-			}}, nil)
-			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
-				Values: generateSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
-			}}, nil)
+			if tt.querySum("") == querySumFloat("") {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateValue),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Values: generateFloatSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateValue),
+				}}, nil)
+			} else {
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{
+					Histograms: generateHistogramSamplesSum(now.Add(-24*time.Hour).Add(writeInterval), now.Add(-1*time.Minute), cfg.NumSeries-1, writeInterval, tt.generateSampleHistogram),
+				}}, nil)
+			}
 		}
 
 		test := NewWriteReadSeriesTest(cfg, client, logger, nil)

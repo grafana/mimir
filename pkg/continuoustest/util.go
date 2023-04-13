@@ -33,7 +33,7 @@ type histogramProfile struct {
 	metricName              string
 	typeLabel               string
 	generateHistogram       generateHistogramFunc
-	generateSampleHistogram generateSampleHistogramFunc // this is only used for testing
+	generateSampleHistogram generateSampleHistogramFunc
 	generateValue           generateValueFunc
 	generateSeries          generateSeriesFunc
 }
@@ -50,9 +50,6 @@ var (
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat())
 			},
-			generateValue: func(t time.Time) float64 {
-				return generateExpHistogramIntValue(t, false)
-			},
 		},
 		{
 			metricName: "mimir_continuous_test_histogram_float_counter",
@@ -63,9 +60,6 @@ var (
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), numSeries, false))
-			},
-			generateValue: func(t time.Time) float64 {
-				return generateExpHistogramFloatValue(t, false)
 			},
 		},
 		{
@@ -78,9 +72,6 @@ var (
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat())
 			},
-			generateValue: func(t time.Time) float64 {
-				return generateExpHistogramIntValue(t, true)
-			},
 		},
 		{
 			metricName: "mimir_continuous_test_histogram_float_gauge",
@@ -92,9 +83,6 @@ var (
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
 			},
-			generateValue: func(t time.Time) float64 {
-				return generateExpHistogramFloatValue(t, true)
-			},
 		},
 	}
 )
@@ -102,6 +90,7 @@ var (
 func init() {
 	for i, histProfile := range histogramProfiles {
 		histProfile := histProfile // shadowing it to ensure it's properly updated in the closure
+		histogramProfiles[i].generateValue = nil
 		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)
 		}
@@ -322,19 +311,11 @@ func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 	return v
 }
 
-func generateExpHistogramIntValue(t time.Time, gauge bool) float64 {
-	return float64(generateHistogramIntValue(t, gauge)) * 10
-}
-
-func generateExpHistogramFloatValue(t time.Time, gauge bool) float64 {
-	return generateHistogramFloatValue(t, gauge) * 10
-}
-
 // verifySamplesSum assumes the input matrix is the result of a range query summing the values
 // of expectedSeries and checks whether the actual values match the expected ones.
 // Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
-func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc) (lastMatchingIdx int, err error) {
+func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (lastMatchingIdx int, err error) {
 	lastMatchingIdx = -1
 	if len(matrix) != 1 {
 		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
@@ -360,9 +341,9 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
 
 			// Assert on value.
-			expectedValue := generateValue(ts) * float64(expectedSeries)
-			if !compareSampleValues(float64(histogram.Histogram.Sum), expectedValue) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedValue)
+			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
+			if !compareHistogramValues(histogram.Histogram, expectedHistogram) {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
@@ -407,9 +388,31 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	return lastMatchingIdx, nil
 }
 
+// accounts for float imprecision
 func compareSampleValues(actual, expected float64) bool {
 	delta := math.Abs((actual - expected) / maxComparisonDelta)
 	return delta < maxComparisonDelta
+}
+
+func compareHistogramValues(actual, expected *model.SampleHistogram) bool {
+	return compareSampleValues(float64(actual.Count), float64(expected.Count)) && compareSampleValues(float64(actual.Sum), float64(expected.Sum)) && compareHistogramBuckets(actual.Buckets, expected.Buckets)
+}
+
+func compareHistogramBuckets(actual, expected model.HistogramBuckets) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+
+	for i, bucket := range actual {
+		if !compareHistogramBucketValues(bucket, expected[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func compareHistogramBucketValues(actual, expected *model.HistogramBucket) bool {
+	return actual.Boundaries == expected.Boundaries && compareSampleValues(float64(actual.Lower), float64(expected.Lower)) && compareSampleValues(float64(actual.Upper), float64(expected.Upper)) && compareSampleValues(float64(actual.Count), float64(expected.Count))
 }
 
 func minTime(first, second time.Time) time.Time {

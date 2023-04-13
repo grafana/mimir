@@ -125,7 +125,7 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
@@ -207,7 +207,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Histograms: testData.histograms}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
@@ -260,13 +260,25 @@ func newSampleHistogramPair(ts time.Time, hist *model.SampleHistogram) model.Sam
 	}
 }
 
-// generateSamplesSum generates a list of samples whose timestamps range between from and to (both included),
-// where each sample value is numSeries multiplied by the expected value at the sample's timestamp.
-func generateSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateValue generateValueFunc) []model.SamplePair {
+// generateFloatSamplesSum generates a list of float samples whose timestamps range between from and to
+// (both inclusive), where each sample value is numSeries multiplied by the expected value at the sample's timestamp.
+func generateFloatSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateValue generateValueFunc) []model.SamplePair {
 	var samples []model.SamplePair
 
 	for ts := from; !ts.After(to); ts = ts.Add(step) {
 		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateValue(ts)))
+	}
+
+	return samples
+}
+
+// generateHistogramSamplesSum generates a list of histogram samples whose timestamps range between from and to
+// (both inclusive), where each histogram is the sum of numSeries instances of the expected histogram for its timestamp.
+func generateHistogramSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateSampleHistogram generateSampleHistogramFunc) []model.SampleHistogramPair {
+	var samples []model.SampleHistogramPair
+
+	for ts := from; !ts.After(to); ts = ts.Add(step) {
+		samples = append(samples, newSampleHistogramPair(ts, generateSampleHistogram(ts, numSeries)))
 	}
 
 	return samples
