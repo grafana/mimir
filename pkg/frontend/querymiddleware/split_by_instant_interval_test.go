@@ -324,7 +324,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					expectedSplitQueries: 3,
 				},
 				// // Native Histograms
-				// // TODO(histograms): fix wonky tests and add more
+				// // TODO(histograms): enable when https://github.com/prometheus/prometheus/issues/12250 is resolved
 				// "sum(rate) for native histogram": {
 				// 	query:                `sum(rate(metric_native_histogram[3m]))`,
 				// 	expectedSplitQueries: 3,
