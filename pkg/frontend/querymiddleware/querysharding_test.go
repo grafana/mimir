@@ -527,6 +527,9 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `scalar(sum(metric_counter)) < bool 1`,
 			expectedShardedQueries: 1,
 		},
+                // Summing floats and native histograms together makes no sense, see 
+                // https://prometheus.io/docs/prometheus/latest/querying/operators/#operators-for-native-histograms
+                // so we exclude native histograms here and in some subsequent tests
 		`sum({__name__!=""}) excluding native histograms`: {
 			query:                  `sum({__name__!="",__name__!="metric_native_histogram"})`,
 			expectedShardedQueries: 1,
