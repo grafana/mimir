@@ -237,7 +237,7 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 	}
 
 	// Compute the latest queriable timestamp
-	// t.queryMaxTime shouldn't be after now but we want to be sure of it !
+	// records.queryMaxTime shouldn't be after now but we want to be sure of it
 	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
 
 	// Last 1h.
