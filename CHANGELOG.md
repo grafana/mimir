@@ -124,6 +124,10 @@
 * [ENHANCEMENT] `gauge` panel type is supported now in `mimirtool analyze dashboard`. #4679
 * [ENHANCEMENT] Set a `User-Agent` header on requests to Mimir or Prometheus servers. #4700
 
+### Mimir Continuous Test
+
+* [ENHANCEMENT] Added a new metric `mimir_continuous_test_build_info` that reports version information, similar to the existing `cortex_build_info` metric exposed by other Mimir components. #4712
+
 ### Query-tee
 
 ### Documentation

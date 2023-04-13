@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 type Config struct {
@@ -56,6 +57,7 @@ func main() {
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(version.NewCollector("mimir_continuous_test"))
 	registry.MustRegister(collectors.NewGoCollector())
 
 	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
