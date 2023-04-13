@@ -19,6 +19,44 @@ const (
 	maxComparisonDelta = 0.001
 )
 
+type generateHistogramFunc func(t time.Time) prompb.Histogram
+type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+
+var (
+	generateHistogramArr = []generateHistogramFunc{
+		func(t time.Time) prompb.Histogram {
+			// int counter
+			ts := t.UnixMilli()
+			return remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), false))
+		},
+		func(t time.Time) prompb.Histogram {
+			// float counter
+			ts := t.UnixMilli()
+			return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), false))
+		},
+		func(t time.Time) prompb.Histogram {
+			// int gauge
+			ts := t.UnixMilli()
+			return remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), true))
+		},
+		func(t time.Time) prompb.Histogram {
+			// float gauge
+			ts := t.UnixMilli()
+			return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), true))
+		},
+	}
+	generateHistogramSeries = make([]generateSeriesFunc, 4)
+)
+
+func init() {
+	for i := 0; i < 4; i++ {
+		i := i
+		generateHistogramSeries[i] = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+			return generateHistogramSeriesInner(name, t, numSeries, generateHistogramArr[i])
+		}
+	}
+}
+
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {
 	return ts.Truncate(interval)
 }
@@ -76,8 +114,6 @@ func generateFloatHistogram(value float64, gauge bool) *histogram.FloatHistogram
 	return h
 }
 
-type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
-
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 	value := generateSineWaveValue(t)
@@ -102,28 +138,8 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 	return out
 }
 
-func generateHistogramSeries(histogramType int) generateSeriesFunc {
-	return func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
-		return generateHistogramSeriesInner(name, t, numSeries, histogramType)
-	}
-}
-
-func generateHistogramSeriesInner(name string, t time.Time, numSeries, histogramType int) []prompb.TimeSeries {
+func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histogramGenerator generateHistogramFunc) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
-	ts := t.UnixMilli()
-	var hist prompb.Histogram
-	switch histogramType {
-	case 0: // int counter
-		hist = remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), false))
-	case 1: // float counter
-		hist = remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), false))
-	case 2: // int gauge
-		hist = remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), true))
-	case 3: // float gauge
-		hist = remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), true))
-	default:
-		panic(fmt.Sprintf("invalid histogram type: %d", histogramType))
-	}
 
 	for i := 0; i < numSeries; i++ {
 		out = append(out, prompb.TimeSeries{
@@ -134,7 +150,7 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries, histogram
 				Name:  "series_id",
 				Value: strconv.Itoa(i),
 			}},
-			Histograms: []prompb.Histogram{hist},
+			Histograms: []prompb.Histogram{histogramGenerator(t)},
 		})
 	}
 

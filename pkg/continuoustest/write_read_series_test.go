@@ -70,7 +70,7 @@ func init() {
 		histTestTuples[i] = WriteReadSeriesTestTuple{
 			metricName:     histogramMetricNames[i],
 			querySum:       querySumHist,
-			generateSeries: generateHistogramSeries(i),
+			generateSeries: generateHistogramSeries[i],
 			generateValue:  generateValue,
 			getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
 				return &test.histMetrics[i]

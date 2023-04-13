@@ -166,7 +166,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 			} else {
 				generateValue = generateHistogramFloatValue
 			}
-			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], querySumHist, generateHistogramSeries(i), generateValue, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], querySumHist, generateHistogramSeries[i], generateValue, &t.histMetrics[i])
 		}
 	}
 
