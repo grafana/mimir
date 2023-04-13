@@ -42,6 +42,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
 * [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
+* [BUGFIX] Add missing imagePullSecrets configuration to the `graphite-web` deployment template. #4716
 
 ## 4.3.0
 
