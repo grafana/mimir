@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"golang.org/x/exp/slices"
 )
@@ -15,7 +17,7 @@ type ingesterOwnership struct {
 	percentage float64
 }
 
-func analyseRing(ringStatus ringStatusDesc) error {
+func analyseRing(ringStatus ringStatusDesc, logger log.Logger) error {
 	var (
 		ringDesc            = ringStatus.toRingModel()
 		ringTokens          = ringDesc.GetTokens()
@@ -23,13 +25,13 @@ func analyseRing(ringStatus ringStatusDesc) error {
 	)
 
 	// Analyze owned tokens.
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false); err != nil {
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false); err != nil {
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true); err != nil {
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true, logger); err != nil {
 		return err
 	}
 
@@ -42,9 +44,9 @@ func analyseRing(ringStatus ringStatusDesc) error {
 	return nil
 }
 
-func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool) error {
+func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool, logger log.Logger) error {
 	const (
-		numIterations = 10000000
+		numIterations = 10_000_000
 	)
 
 	var (
@@ -52,6 +54,8 @@ func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstan
 		bufHosts [ring.GetBufferSize]string
 		bufZones [ring.GetBufferSize]string
 	)
+
+	level.Info(logger).Log("msg", "Analyzing ring tokens ownership", "replication factor", replicationFactor, "zone awareness enabled", zoneAwarenessEnabled)
 
 	ownedTokens := map[string]int{}
 
@@ -78,7 +82,7 @@ func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstan
 	}
 
 	slices.SortFunc(ownership, func(a, b ingesterOwnership) bool {
-		return a.percentage < b.percentage
+		return a.id < b.id
 	})
 
 	w := newCSVWriter[ingesterOwnership]()
