@@ -25,13 +25,13 @@ func analyseRing(ringStatus ringStatusDesc, logger log.Logger) error {
 	)
 
 	// Analyze owned tokens.
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false, logger); err != nil {
+	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false, logger); err != nil {
+	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true, logger); err != nil {
+	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true, logger); err != nil {
 		return err
 	}
 
@@ -44,7 +44,7 @@ func analyseRing(ringStatus ringStatusDesc, logger log.Logger) error {
 	return nil
 }
 
-func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool, logger log.Logger) error {
+func getActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool) ([]ingesterOwnership, error) {
 	const (
 		numIterations = 10_000_000
 	)
@@ -55,8 +55,6 @@ func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstan
 		bufZones [ring.GetBufferSize]string
 	)
 
-	level.Info(logger).Log("msg", "Analyzing ring tokens ownership", "replication factor", replicationFactor, "zone awareness enabled", zoneAwarenessEnabled)
-
 	ownedTokens := map[string]int{}
 
 	for i := 0; i < numIterations; i++ {
@@ -64,7 +62,7 @@ func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstan
 
 		ingesterIDs, err := ringGet(key, ringDesc, ringTokens, ringInstanceByToken, ring.WriteNoExtend, replicationFactor, zoneAwarenessEnabled, bufDescs[:0], bufHosts[:0], bufZones[:0])
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, ingesterID := range ingesterIDs {
@@ -73,21 +71,32 @@ func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstan
 	}
 
 	// Compute the per-ingester % of owned tokens.
-	ownership := []ingesterOwnership{}
+	result := []ingesterOwnership{}
 	for id, numTokens := range ownedTokens {
-		ownership = append(ownership, ingesterOwnership{
+		result = append(result, ingesterOwnership{
 			id:         id,
 			percentage: (float64(numTokens) / numIterations) * 100,
 		})
 	}
 
-	slices.SortFunc(ownership, func(a, b ingesterOwnership) bool {
+	slices.SortFunc(result, func(a, b ingesterOwnership) bool {
 		return a.id < b.id
 	})
 
+	return result, nil
+}
+
+func analyzeActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool, logger log.Logger) error {
+	level.Info(logger).Log("msg", "Analyzing ring tokens ownership", "replication factor", replicationFactor, "zone awareness enabled", zoneAwarenessEnabled)
+
+	result, err := getActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, replicationFactor, zoneAwarenessEnabled)
+	if err != nil {
+		return err
+	}
+
 	w := newCSVWriter[ingesterOwnership]()
 	w.setHeader([]string{"pod", fmt.Sprintf("Ring tokens ownership zone-aware=%s RF=%d", formatEnabled(zoneAwarenessEnabled), replicationFactor)})
-	w.setData(ownership, func(entry ingesterOwnership) []string {
+	w.setData(result, func(entry ingesterOwnership) []string {
 		// To make the percentage easy to compare with different RFs, we divide it by the RF.
 		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage/float64(replicationFactor))}
 	})
