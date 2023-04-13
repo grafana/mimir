@@ -111,13 +111,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	}
 	if t.cfg.WithHistograms {
 		for i := 0; i < 4; i++ {
-			var generateValue generateValueFunc
-			if i%2 == 0 {
-				generateValue = generateHistogramIntValueAsFloat
-			} else {
-				generateValue = generateHistogramFloatValue
-			}
-			err := t.recoverPast(ctx, now, histogramMetricNames[i], querySumHist, generateValue, &t.histMetrics[i])
+			err := t.recoverPast(ctx, now, histogramMetricNames[i], querySumHist, generateHistogramValue[i], &t.histMetrics[i])
 			if err != nil {
 				return err
 			}
@@ -160,13 +154,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 
 	if t.cfg.WithHistograms {
 		for i := 0; i < 4; i++ {
-			var generateValue generateValueFunc
-			if i%2 == 0 {
-				generateValue = generateHistogramIntValueAsFloat
-			} else {
-				generateValue = generateHistogramFloatValue
-			}
-			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], querySumHist, generateHistogramSeries[i], generateValue, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], querySumHist, generateHistogramSeries[i], generateHistogramValue[i], &t.histMetrics[i])
 		}
 	}
 

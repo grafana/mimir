@@ -21,13 +21,14 @@ const (
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+type generateValueFunc func(t time.Time) float64
 
 var (
-	generateHistogramArr = []generateHistogramFunc{
+	generateHistogram = []generateHistogramFunc{
 		func(t time.Time) prompb.Histogram {
 			// int counter
 			ts := t.UnixMilli()
-			return remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), false))
+			return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t), false))
 		},
 		func(t time.Time) prompb.Histogram {
 			// float counter
@@ -37,7 +38,7 @@ var (
 		func(t time.Time) prompb.Histogram {
 			// int gauge
 			ts := t.UnixMilli()
-			return remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), true))
+			return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t), true))
 		},
 		func(t time.Time) prompb.Histogram {
 			// float gauge
@@ -46,13 +47,19 @@ var (
 		},
 	}
 	generateHistogramSeries = make([]generateSeriesFunc, 4)
+	generateHistogramValue  = []generateValueFunc{
+		generateExpHistogramIntValue,
+		generateExpHistogramFloatValue,
+		generateExpHistogramIntValue,
+		generateExpHistogramFloatValue,
+	}
 )
 
 func init() {
 	for i := 0; i < 4; i++ {
 		i := i
 		generateHistogramSeries[i] = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
-			return generateHistogramSeriesInner(name, t, numSeries, generateHistogramArr[i])
+			return generateHistogramSeriesInner(name, t, numSeries, generateHistogram[i])
 		}
 	}
 }
@@ -80,17 +87,68 @@ func getQueryStep(start, end time.Time, alignInterval time.Duration) time.Durati
 	return step
 }
 
-func generateHistogram(value int64, gauge bool) *histogram.Histogram {
-	h := &histogram.Histogram{
-		Sum:           float64(value),
-		Count:         uint64(value),
+func generatePosIntHistogram(value int64) *histogram.Histogram {
+	return &histogram.Histogram{
+		Sum:           float64(value * 10),
+		Count:         uint64(value * 4),
 		ZeroThreshold: 0.001,
-		Schema:        1,
+		Schema:        2,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 2, Length: 2},
 		},
-		PositiveBuckets: []int64{value},
+		PositiveBuckets: []int64{value, 0, 0, 0},
 	}
+}
+
+func generateNegIntHistogram(value int64) *histogram.Histogram {
+	return &histogram.Histogram{
+		Sum:           float64(value * -10),
+		Count:         uint64(value * 4),
+		ZeroThreshold: 0.001,
+		Schema:        2,
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 2, Length: 2},
+		},
+		NegativeBuckets: []int64{value, 0, 0, 0},
+	}
+}
+
+func generatePosFloatHistogram(value float64) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Sum:           value * 10,
+		Count:         value * 4,
+		ZeroThreshold: 0.001,
+		Schema:        2,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []float64{value, value, value, value},
+	}
+}
+
+func generateNegFloatHistogram(value float64) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Sum:           value * -10,
+		Count:         value * 4,
+		ZeroThreshold: 0.001,
+		Schema:        2,
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 2, Length: 2},
+		},
+		NegativeBuckets: []float64{value, value, value, value},
+	}
+}
+
+func generateIntHistogram(value int64, gauge bool) *histogram.Histogram {
+	h := generatePosIntHistogram(value)
 	if gauge {
 		h.CounterResetHint = histogram.GaugeType
 	}
@@ -98,16 +156,7 @@ func generateHistogram(value int64, gauge bool) *histogram.Histogram {
 }
 
 func generateFloatHistogram(value float64, gauge bool) *histogram.FloatHistogram {
-	h := &histogram.FloatHistogram{
-		Sum:           value,
-		Count:         value,
-		ZeroThreshold: 0.001,
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-		},
-		PositiveBuckets: []float64{value},
-	}
+	h := generatePosFloatHistogram(value)
 	if gauge {
 		h.CounterResetHint = histogram.GaugeType
 	}
@@ -157,8 +206,6 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histo
 	return out
 }
 
-type generateValueFunc func(t time.Time) float64
-
 func generateSineWaveValue(t time.Time) float64 {
 	period := 10 * time.Minute
 	radians := 2 * math.Pi * float64(t.UnixNano()) / float64(period.Nanoseconds())
@@ -169,12 +216,16 @@ func generateHistogramIntValue(t time.Time) int64 {
 	return t.Unix()
 }
 
-func generateHistogramIntValueAsFloat(t time.Time) float64 {
-	return float64(t.Unix())
-}
-
 func generateHistogramFloatValue(t time.Time) float64 {
 	return float64(t.Unix()) / 500000
+}
+
+func generateExpHistogramIntValue(t time.Time) float64 {
+	return float64(generateHistogramIntValue(t)) * 10
+}
+
+func generateExpHistogramFloatValue(t time.Time) float64 {
+	return generateHistogramFloatValue(t) * 10
 }
 
 // verifySamplesSum assumes the input matrix is the result of a range query summing the values

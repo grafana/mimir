@@ -61,17 +61,11 @@ func init() {
 	histTestTuples = make([]WriteReadSeriesTestTuple, 4)
 	for i := range histTestTuples {
 		i := i // shadowing it to ensure it's properly updated in the closure
-		var generateValue generateValueFunc
-		if i%2 == 0 {
-			generateValue = generateHistogramIntValueAsFloat
-		} else {
-			generateValue = generateHistogramFloatValue
-		}
 		histTestTuples[i] = WriteReadSeriesTestTuple{
 			metricName:     histogramMetricNames[i],
 			querySum:       querySumHist,
 			generateSeries: generateHistogramSeries[i],
-			generateValue:  generateValue,
+			generateValue:  generateHistogramValue[i],
 			getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
 				return &test.histMetrics[i]
 			},
