@@ -5,7 +5,6 @@ package continuoustest
 import (
 	"context"
 	"flag"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -23,40 +22,9 @@ import (
 )
 
 const (
-	writeInterval   = 20 * time.Second
-	writeMaxAge     = 50 * time.Minute
-	floatMetricName = "mimir_continuous_test_sine_wave"
-	floatTypeLabel  = "float"
+	writeInterval = 20 * time.Second
+	writeMaxAge   = 50 * time.Minute
 )
-
-var (
-	histogramMetricNames = []string{
-		"mimir_continuous_test_histogram_int_counter",
-		"mimir_continuous_test_histogram_float_counter",
-		"mimir_continuous_test_histogram_int_gauge",
-		"mimir_continuous_test_histogram_float_gauge",
-	}
-	histogramTypeLabels = []string{
-		"histogram_int_counter",
-		"histogram_float_counter",
-		"histogram_int_gauge",
-		"histogram_float_gauge",
-	}
-)
-
-type querySumFunc func(metricName string) string
-
-func querySumSample(metricName string) string {
-	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
-	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
-	// false positives when finding the last written sample, or when restarting the testing tool with
-	// a different number of configured series to write and read.
-	return fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
-}
-
-func querySumHist(metricName string) string {
-	return fmt.Sprintf("sum(%s)", metricName)
-}
 
 type WriteReadSeriesTestConfig struct {
 	NumSeries      int
@@ -98,7 +66,7 @@ func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, l
 		client:      client,
 		logger:      log.With(logger, "test", name),
 		metrics:     NewTestMetrics(name, reg),
-		histMetrics: make([]MetricHistory, 4),
+		histMetrics: make([]MetricHistory, len(histogramProfiles)),
 	}
 }
 
@@ -117,8 +85,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 		}
 	}
 	if t.cfg.WithHistograms {
-		for i := 0; i < 4; i++ {
-			err := t.recoverPast(ctx, now, histogramMetricNames[i], querySumHist, generateHistogramValue[i], &t.histMetrics[i])
+		for i, histProfile := range histogramProfiles {
+			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, &t.histMetrics[i])
 			if err != nil {
 				return err
 			}
@@ -160,8 +128,8 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	}
 
 	if t.cfg.WithHistograms {
-		for i := 0; i < 4; i++ {
-			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], histogramTypeLabels[i], querySumHist, generateHistogramSeries[i], generateHistogramValue[i], &t.histMetrics[i])
+		for i, histProfile := range histogramProfiles {
+			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, querySumHist, histProfile.generateSeries, histProfile.generateValue, &t.histMetrics[i])
 		}
 	}
 

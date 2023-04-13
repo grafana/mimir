@@ -19,6 +19,9 @@ import (
 
 const (
 	maxComparisonDelta = 0.001
+
+	floatMetricName = "mimir_continuous_test_sine_wave"
+	floatTypeLabel  = "float"
 )
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
@@ -26,71 +29,97 @@ type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.T
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time) *model.SampleHistogram
 
+type histogramProfile struct {
+	metricName              string
+	typeLabel               string
+	generateHistogram       generateHistogramFunc
+	generateSampleHistogram generateSampleHistogramFunc // this is only used for testing
+	generateValue           generateValueFunc
+	generateSeries          generateSeriesFunc
+}
+
 var (
-	generateHistogram = []generateHistogramFunc{
-		func(t time.Time) prompb.Histogram {
-			// int counter
-			ts := t.UnixMilli()
-			return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), false))
+	histogramProfiles = []histogramProfile{
+		{
+			metricName: "mimir_continuous_test_histogram_int_counter",
+			typeLabel:  "histogram_int_counter",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), false))
+			},
+			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), false).ToFloat())
+			},
+			generateValue: func(t time.Time) float64 {
+				return generateExpHistogramIntValue(t, false)
+			},
 		},
-		func(t time.Time) prompb.Histogram {
-			// float counter
-			ts := t.UnixMilli()
-			return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+		{
+			metricName: "mimir_continuous_test_histogram_float_counter",
+			typeLabel:  "histogram_float_counter",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+			},
+			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+			},
+			generateValue: func(t time.Time) float64 {
+				return generateExpHistogramFloatValue(t, false)
+			},
 		},
-		func(t time.Time) prompb.Histogram {
-			// int gauge
-			ts := t.UnixMilli()
-			return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), true))
+		{
+			metricName: "mimir_continuous_test_histogram_int_gauge",
+			typeLabel:  "histogram_int_gauge",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), true))
+			},
+			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), true).ToFloat())
+			},
+			generateValue: func(t time.Time) float64 {
+				return generateExpHistogramIntValue(t, true)
+			},
 		},
-		func(t time.Time) prompb.Histogram {
-			// float gauge
-			ts := t.UnixMilli()
-			return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), true))
-		},
-	}
-	generateHistogramSeries = make([]generateSeriesFunc, 4)
-	generateHistogramValue  = []generateValueFunc{
-		func(t time.Time) float64 {
-			return generateExpHistogramIntValue(t, false)
-		},
-		func(t time.Time) float64 {
-			return generateExpHistogramFloatValue(t, false)
-		},
-		func(t time.Time) float64 {
-			return generateExpHistogramIntValue(t, true)
-		},
-		func(t time.Time) float64 {
-			return generateExpHistogramFloatValue(t, true)
-		},
-	}
-	generateSampleHistogram = []generateSampleHistogramFunc{ // this is only used for testing and the order has to match generateHistogram
-		func(t time.Time) *model.SampleHistogram {
-			// int counter
-			return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), false).ToFloat())
-		},
-		func(t time.Time) *model.SampleHistogram {
-			// float counter
-			return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), false))
-		},
-		func(t time.Time) *model.SampleHistogram {
-			// int gauge
-			return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), true).ToFloat())
-		},
-		func(t time.Time) *model.SampleHistogram {
-			// float gauge
-			return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), true))
+		{
+			metricName: "mimir_continuous_test_histogram_float_gauge",
+			typeLabel:  "histogram_float_gauge",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), true))
+			},
+			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), true))
+			},
+			generateValue: func(t time.Time) float64 {
+				return generateExpHistogramFloatValue(t, true)
+			},
 		},
 	}
 )
 
 func init() {
-	for i := 0; i < 4; i++ {
-		i := i
-		generateHistogramSeries[i] = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
-			return generateHistogramSeriesInner(name, t, numSeries, generateHistogram[i])
+	for i, histProfile := range histogramProfiles {
+		histProfile := histProfile // shadowing it to ensure it's properly updated in the closure
+		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)
 		}
 	}
+}
+
+type querySumFunc func(metricName string) string
+
+func querySumSample(metricName string) string {
+	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
+	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
+	// false positives when finding the last written sample, or when restarting the testing tool with
+	// a different number of configured series to write and read.
+	return fmt.Sprintf("sum(max_over_time(%s[1s]))", metricName)
+}
+
+func querySumHist(metricName string) string {
+	return fmt.Sprintf("sum(%s)", metricName)
 }
 
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {

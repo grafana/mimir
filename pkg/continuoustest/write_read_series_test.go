@@ -62,15 +62,15 @@ func init() {
 		},
 	}}
 
-	histTestTuples = make([]WriteReadSeriesTestTuple, 4)
-	for i := range histTestTuples {
+	histTestTuples = make([]WriteReadSeriesTestTuple, len(histogramProfiles))
+	for i, histProfile := range histogramProfiles {
 		i := i // shadowing it to ensure it's properly updated in the closure
 		histTestTuples[i] = WriteReadSeriesTestTuple{
-			metricName:     histogramMetricNames[i],
-			typeLabel:      histogramTypeLabels[i],
+			metricName:     histProfile.metricName,
+			typeLabel:      histProfile.typeLabel,
 			querySum:       querySumHist,
-			generateSeries: generateHistogramSeries[i],
-			generateValue:  generateHistogramValue[i],
+			generateSeries: histProfile.generateSeries,
+			generateValue:  histProfile.generateValue,
 			getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
 				return &test.histMetrics[i]
 			},
