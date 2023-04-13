@@ -48,7 +48,7 @@ func querySumSample(metricName string) string {
 }
 
 func querySumHist(metricName string) string {
-	return fmt.Sprintf("sum(histogram_sum(%s))", metricName)
+	return fmt.Sprintf("sum(%s)", metricName)
 }
 
 type WriteReadSeriesTestConfig struct {
@@ -396,6 +396,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 	step := writeInterval
 
 	var samples []model.SamplePair
+	var histograms []model.SampleHistogramPair
 	query := querySum(metricName)
 
 	for {
@@ -425,20 +426,37 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 		}
 
 		samples = append(matrix[0].Values, samples...)
+		histograms = append(matrix[0].Histograms, histograms...)
 		end = start.Add(-step)
 
-		lastMatchingIdx, _ := verifySamplesSum(model.Matrix{{Values: samples}}, t.cfg.NumSeries, step, generateValue)
+		var fullMatrix model.Matrix
+		useHistograms := false
+		if len(samples) > 0 && len(histograms) == 0 {
+			fullMatrix = model.Matrix{{Values: samples}}
+		} else if len(histograms) > 0 && len(samples) == 0 {
+			fullMatrix = model.Matrix{{Histograms: histograms}}
+			useHistograms = true
+		} else {
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither", "query", query)
+			return
+		}
+		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue)
 		if lastMatchingIdx == -1 {
 			return
 		}
 
 		// Update the previously written time range.
-		from = samples[lastMatchingIdx].Timestamp.Time()
-		to = samples[len(samples)-1].Timestamp.Time()
+		if useHistograms {
+			from = histograms[lastMatchingIdx].Timestamp.Time()
+			to = histograms[len(histograms)-1].Timestamp.Time()
+		} else {
+			from = samples[lastMatchingIdx].Timestamp.Time()
+			to = samples[len(samples)-1].Timestamp.Time()
+		}
 
 		// If the last matching sample is not the one at the beginning of the queried time range
 		// then it means we've found the oldest previously written sample and we can stop searching it.
-		if lastMatchingIdx != 0 || !samples[0].Timestamp.Time().Equal(start) {
+		if lastMatchingIdx != 0 || (!useHistograms && !samples[0].Timestamp.Time().Equal(start)) || (useHistograms && !histograms[0].Timestamp.Time().Equal(start)) {
 			return
 		}
 	}

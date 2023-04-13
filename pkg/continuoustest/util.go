@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -22,6 +24,7 @@ const (
 type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64
+type generateSampleHistogramFunc func(t time.Time) *model.SampleHistogram
 
 var (
 	generateHistogram = []generateHistogramFunc{
@@ -59,6 +62,24 @@ var (
 		},
 		func(t time.Time) float64 {
 			return generateExpHistogramFloatValue(t, true)
+		},
+	}
+	generateSampleHistogram = []generateSampleHistogramFunc{ // this is only used for testing and the order has to match generateHistogram
+		func(t time.Time) *model.SampleHistogram {
+			// int counter
+			return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), false).ToFloat())
+		},
+		func(t time.Time) *model.SampleHistogram {
+			// float counter
+			return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+		},
+		func(t time.Time) *model.SampleHistogram {
+			// int gauge
+			return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), true).ToFloat())
+		},
+		func(t time.Time) *model.SampleHistogram {
+			// float gauge
+			return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), true))
 		},
 	}
 )
@@ -279,7 +300,7 @@ func generateExpHistogramFloatValue(t time.Time, gauge bool) float64 {
 }
 
 // verifySamplesSum assumes the input matrix is the result of a range query summing the values
-// of expectedSeries sine wave series and checks whether the actual values match the expected ones.
+// of expectedSeries and checks whether the actual values match the expected ones.
 // Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
 func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc) (lastMatchingIdx int, err error) {
@@ -289,6 +310,45 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	}
 
 	samples := matrix[0].Values
+	histograms := matrix[0].Histograms
+	haveSamples := len(samples) > 0
+	haveHistograms := len(histograms) > 0
+	if haveSamples && haveHistograms {
+		return lastMatchingIdx, fmt.Errorf("expected only floats or histograms in the result but got both")
+	}
+	if !haveSamples && !haveHistograms {
+		return lastMatchingIdx, fmt.Errorf("expected either floats or histograms in the result but got neither")
+	}
+
+	if haveHistograms {
+		for idx := len(histograms) - 1; idx >= 0; idx-- {
+			histogram := histograms[idx]
+			if histogram.Histogram == nil {
+				return lastMatchingIdx, fmt.Errorf("found null pointer in histogram")
+			}
+			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
+
+			// Assert on value.
+			expectedValue := generateValue(ts) * float64(expectedSeries)
+			if !compareSampleValues(float64(histogram.Histogram.Sum), expectedValue) {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has value %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedValue)
+			}
+
+			// Assert on histogram timestamp. We expect no gaps.
+			if idx < len(histograms)-1 {
+				nextTs := time.UnixMilli(int64(histograms[idx+1].Timestamp)).UTC()
+				expectedTs := nextTs.Add(-expectedStep)
+
+				if ts.UnixMilli() != expectedTs.UnixMilli() {
+					return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) was expected to have timestamp %d (%s) because next histogram has timestamp %d (%s)",
+						histogram.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
+				}
+			}
+
+			lastMatchingIdx = idx
+		}
+		return lastMatchingIdx, nil
+	}
 
 	for idx := len(samples) - 1; idx >= 0; idx-- {
 		sample := samples[idx]
@@ -313,7 +373,6 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 		lastMatchingIdx = idx
 	}
-
 	return lastMatchingIdx, nil
 }
 

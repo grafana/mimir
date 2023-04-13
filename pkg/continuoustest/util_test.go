@@ -49,13 +49,13 @@ func TestGetQueryStep(t *testing.T) {
 }
 
 func TestVerifySamplesSum(t *testing.T) {
-	testVerifySamplesSum(t, generateSineWaveValue, "generateSineWaveValue")
-	for i, generateValue := range generateHistogramValue {
-		testVerifySamplesSum(t, generateValue, fmt.Sprintf("generateHistogramValue[%d]", i))
+	testVerifySamplesSumFloats(t, generateSineWaveValue, "generateSineWaveValue")
+	for i := 0; i < 4; i++ {
+		testVerifySamplesSumHistograms(t, generateHistogramValue[i], generateSampleHistogram[i], fmt.Sprintf("generateHistogramValue[%d]", i))
 	}
 }
 
-func testVerifySamplesSum(t *testing.T, generateValue generateValueFunc, testLabel string) {
+func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
 
@@ -137,6 +137,66 @@ func testVerifySamplesSum(t *testing.T, generateValue generateValueFunc, testLab
 	}
 }
 
+func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, testLabel string) {
+	// Round to millis since that's the precision of Prometheus timestamps.
+	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+
+	tests := map[string]struct {
+		histograms              []model.SampleHistogramPair
+		expectedSeries          int
+		expectedStep            time.Duration
+		expectedLastMatchingIdx int
+		expectedErr             string
+	}{
+		"should return no error if all histograms value and timestamp match the expected one (1 series)": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second))),
+				newSampleHistogramPair(now.Add(20*time.Second), generateSampleHistogram(now.Add(20*time.Second))),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second))),
+			},
+			expectedSeries:          1,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 0,
+			expectedErr:             "",
+		},
+		"should return error if there's a missing histogram": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second))),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second))),
+			},
+			expectedSeries:          1,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 1,
+			expectedErr:             "histogram at timestamp .* was expected to have timestamp .*",
+		},
+		"should return error if the 2nd last histogram has an unexpected timestamp": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second))),
+				newSampleHistogramPair(now.Add(21*time.Second), generateSampleHistogram(now.Add(21*time.Second))),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second))),
+			},
+			expectedSeries:          1,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 2,
+			expectedErr:             "histogram at timestamp .* was expected to have timestamp .*",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
+			matrix := model.Matrix{{Histograms: testData.histograms}}
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue)
+			if testData.expectedErr == "" {
+				assert.NoError(t, actualErr)
+			} else {
+				assert.Error(t, actualErr)
+				assert.Regexp(t, testData.expectedErr, actualErr.Error())
+			}
+			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
+		})
+	}
+}
+
 func TestMinTime(t *testing.T) {
 	first := time.Now()
 	second := first.Add(time.Second)
@@ -168,6 +228,13 @@ func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	return model.SamplePair{
 		Timestamp: model.Time(ts.UnixMilli()),
 		Value:     model.SampleValue(value),
+	}
+}
+
+func newSampleHistogramPair(ts time.Time, hist *model.SampleHistogram) model.SampleHistogramPair {
+	return model.SampleHistogramPair{
+		Timestamp: model.Time(ts.UnixMilli()),
+		Histogram: hist,
 	}
 }
 
