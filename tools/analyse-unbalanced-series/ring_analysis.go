@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -17,27 +18,26 @@ type ingesterOwnership struct {
 	percentage float64
 }
 
-func analyseRing(ringStatus ringStatusDesc, logger log.Logger) error {
+func analyseRing(analysisName string, ringDesc *ring.Desc, logger log.Logger) error {
 	var (
-		ringDesc            = ringStatus.toRingModel()
 		ringTokens          = ringDesc.GetTokens()
 		ringInstanceByToken = getRingInstanceByToken(ringDesc)
 	)
 
 	// Analyze owned tokens.
-	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false, logger); err != nil {
+	if err := analyzeActualTokensOwnership(analysisName, ringDesc, ringTokens, ringInstanceByToken, 1, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false, logger); err != nil {
+	if err := analyzeActualTokensOwnership(analysisName, ringDesc, ringTokens, ringInstanceByToken, 3, false, logger); err != nil {
 		return err
 	}
-	if err := analyzeActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true, logger); err != nil {
+	if err := analyzeActualTokensOwnership(analysisName, ringDesc, ringTokens, ringInstanceByToken, 3, true, logger); err != nil {
 		return err
 	}
 
 	// Analyze the registered tokens percentage (no replication factor or zone-aware replication
 	// taken in account).
-	if err := analyzeRegisteredTokensOwnership(ringTokens, ringInstanceByToken); err != nil {
+	if err := analyzeRegisteredTokensOwnership(analysisName, ringTokens, ringInstanceByToken, logger); err != nil {
 		return err
 	}
 
@@ -86,8 +86,8 @@ func getActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInst
 	return result, nil
 }
 
-func analyzeActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool, logger log.Logger) error {
-	level.Info(logger).Log("msg", "Analyzing ring tokens ownership", "replication factor", replicationFactor, "zone awareness enabled", zoneAwarenessEnabled)
+func analyzeActualTokensOwnership(analysisName string, ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool, logger log.Logger) error {
+	level.Info(logger).Log("msg", "Analyzing ring tokens ownership", "analysis", analysisName, "replication factor", replicationFactor, "zone awareness enabled", zoneAwarenessEnabled)
 
 	result, err := getActualTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, replicationFactor, zoneAwarenessEnabled)
 	if err != nil {
@@ -100,7 +100,7 @@ func analyzeActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ring
 		// To make the percentage easy to compare with different RFs, we divide it by the RF.
 		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage/float64(replicationFactor))}
 	})
-	if err := w.writeCSV(fmt.Sprintf("ingesters-ring-tokens-ownership-with-zone-aware-%s-and-rf-%d.csv", formatEnabled(zoneAwarenessEnabled), replicationFactor)); err != nil {
+	if err := w.writeCSV(fmt.Sprintf("%s-tokens-ownership-with-zone-aware-%s-and-rf-%d.csv", analysisName, formatEnabled(zoneAwarenessEnabled), replicationFactor)); err != nil {
 		return err
 	}
 
@@ -233,16 +233,18 @@ func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[u
 	return result
 }
 
-func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) error {
+func analyzeRegisteredTokensOwnership(analysisName string, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, logger log.Logger) error {
+	level.Info(logger).Log("msg", "Analyzing registered ring tokens", "analysis", analysisName)
+
 	result := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
 
 	// Write result to CSV.
 	w := newCSVWriter[ingesterOwnership]()
-	w.setHeader([]string{"pod", "registered tokens percentage"})
+	w.setHeader([]string{"Pod", "Registered tokens percentage"})
 	w.setData(result, func(entry ingesterOwnership) []string {
 		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
 	})
-	if err := w.writeCSV("ingesters-ring-registered-tokens.csv"); err != nil {
+	if err := w.writeCSV(fmt.Sprintf("%s-registered-tokens.csv", analysisName)); err != nil {
 		return err
 	}
 
@@ -254,4 +256,33 @@ func formatEnabled(enabled bool) string {
 		return "enabled"
 	}
 	return "disabled"
+}
+
+func generateRingWithPerfectlySpacedTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
+	desc := &ring.Desc{Ingesters: map[string]ring.InstanceDesc{}}
+
+	for i := 0; i < numIngesters; i++ {
+		// Get the zone letter starting from "a".
+		zoneID := "zone-" + string(rune('a'+(i%numZones)))
+		ingesterID := fmt.Sprintf("ingester-%s-%d", zoneID, i/numZones)
+
+		// Generate the tokens.
+		tokens := make([]uint32, 0, numTokensPerIngester)
+		tokensOffset := maxTokenValue / uint32(numTokensPerIngester)
+		startToken := (tokensOffset / uint32(numIngesters)) * uint32(i)
+		for t := uint32(0); t < uint32(numTokensPerIngester); t++ {
+			tokens = append(tokens, startToken+(t*tokensOffset))
+		}
+
+		desc.Ingesters[ingesterID] = ring.InstanceDesc{
+			Addr:                ingesterID,
+			Timestamp:           now.Unix(),
+			State:               ring.ACTIVE,
+			Tokens:              tokens,
+			Zone:                zoneID,
+			RegisteredTimestamp: now.Unix(),
+		}
+	}
+
+	return desc
 }
