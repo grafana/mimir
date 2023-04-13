@@ -3847,6 +3847,7 @@ func TestIngester_flushing(t *testing.T) {
 
 		"prepareShutdownHandler": {
 			setupIngester: func(cfg *Config) {
+				cfg.IngesterRing.UnregisterOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
 			},
@@ -3879,6 +3880,7 @@ func TestIngester_flushing(t *testing.T) {
 
 		"shutdownHandler": {
 			setupIngester: func(cfg *Config) {
+				cfg.IngesterRing.UnregisterOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
 			},

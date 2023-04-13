@@ -415,15 +415,14 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	marker, err := i.shutdownMarker.Exists()
+	shutdownMarker, err := i.shutdownMarker.Exists()
 	if err != nil {
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
 	}
 
-	if marker {
+	if shutdownMarker {
 		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", i.shutdownMarker.Path)
-		i.lifecycler.SetUnregisterOnShutdown(true)
-		i.lifecycler.SetFlushOnShutdown(true)
+		i.setPrepareShutdown()
 	}
 
 	i.subservices, err = services.NewManager(servs...)
@@ -2465,16 +2464,22 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 //
 // It also creates a file on disk which is used to re-apply the configuration if the
 // ingester crashes and restarts before being permanently shutdown.
-func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, _ *http.Request) {
+func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	if err := i.shutdownMarker.Create(); err != nil {
 		level.Error(i.logger).Log("msg", "unable to create prepare-shutdown marker file", "path", i.shutdownMarker.Path, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
+	i.setPrepareShutdown()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setPrepareShutdown toggles ingester lifecycler config to prepare for shutdown
+func (i *Ingester) setPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(true)
 	i.lifecycler.SetFlushOnShutdown(true)
-	w.WriteHeader(http.StatusNoContent)
+	i.metrics.shutdownMarker.Set(1)
 }
 
 // ShutdownHandler triggers the following set of operations in order:
