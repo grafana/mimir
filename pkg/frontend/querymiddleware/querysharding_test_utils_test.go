@@ -239,7 +239,7 @@ func TestGenLabelsSize(t *testing.T) {
 	}
 }
 
-func TestNewMockShardedqueryable(t *testing.T) {
+func TestNewMockShardedQueryable(t *testing.T) {
 	for _, tc := range []struct {
 		shards                              uint64
 		nSamples, nHistograms, labelBuckets int
@@ -291,7 +291,7 @@ func TestNewMockShardedqueryable(t *testing.T) {
 					}
 				}
 				require.Equal(t, tc.nSamples, samples)
-				// require.Equal(t, tc.nHistograms, histograms) // TODO(histograms): ignoring this as it is expected for now since we currently do NOT support query sharding for histograms
+				require.Equal(t, tc.nHistograms, histograms)
 			}
 
 		}
