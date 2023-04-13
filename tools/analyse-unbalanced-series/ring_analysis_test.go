@@ -3,7 +3,9 @@ package main
 import (
 	"math"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -93,4 +95,37 @@ func TestSearchToken(t *testing.T) {
 
 	offset = searchToken(ringTokens, 0)
 	assert.Equal(t, "ingester-1", ringInstanceByToken[ringTokens[offset]].InstanceID)
+}
+
+func TestGenerateRingWithPerfectlySpacedTokens(t *testing.T) {
+	now := time.Now()
+
+	mockInstanceDesc := func(addr, zone string, tokens []uint32) ring.InstanceDesc {
+		return ring.InstanceDesc{
+			Addr:                addr,
+			Timestamp:           now.Unix(),
+			State:               ring.ACTIVE,
+			Tokens:              tokens,
+			Zone:                zone,
+			RegisteredTimestamp: now.Unix(),
+		}
+	}
+
+	// To simplify the test and make it easier to understand, we reduce
+	// the max token value to 120, which is a multiple of 6 ingesters * 2
+	// tokens per ingester.
+	actual := generateRingWithPerfectlySpacedTokens(6, 3, 2, 120, now)
+
+	expected := &ring.Desc{
+		Ingesters: map[string]ring.InstanceDesc{
+			"ingester-zone-a-0": mockInstanceDesc("ingester-zone-a-0", "zone-a", []uint32{0, 60}),
+			"ingester-zone-b-0": mockInstanceDesc("ingester-zone-b-0", "zone-b", []uint32{10, 70}),
+			"ingester-zone-c-0": mockInstanceDesc("ingester-zone-c-0", "zone-c", []uint32{20, 80}),
+			"ingester-zone-a-1": mockInstanceDesc("ingester-zone-a-1", "zone-a", []uint32{30, 90}),
+			"ingester-zone-b-1": mockInstanceDesc("ingester-zone-b-1", "zone-b", []uint32{40, 100}),
+			"ingester-zone-c-1": mockInstanceDesc("ingester-zone-c-1", "zone-c", []uint32{50, 110}),
+		},
+	}
+
+	assert.Equal(t, expected, actual)
 }

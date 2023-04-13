@@ -1,7 +1,9 @@
 package main
 
 import (
+	"math"
 	"os"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -21,6 +23,10 @@ func main() {
 	}
 	level.Info(logger).Log("msg", "Successfully built dataset")
 
-	// Run analysis.
-	analyseRing(ringStatus, logger)
+	// Run analysis on real ring.
+	analyseRing("real-ingesters-ring", ringStatus.toRingModel(), logger)
+
+	// Run analysis on simulated ring.
+	ringDesc := generateRingWithPerfectlySpacedTokens(444, 3, 512, math.MaxUint32, time.Now())
+	analyseRing("simulated-ingesters-ring-with-perfectly-spaced-tokens", ringDesc, logger)
 }
