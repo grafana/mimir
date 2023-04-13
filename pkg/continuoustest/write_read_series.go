@@ -23,13 +23,13 @@ import (
 )
 
 const (
-	writeInterval    = 20 * time.Second
-	writeMaxAge      = 50 * time.Minute
-	metricNameSample = "mimir_continuous_test_sine_wave"
+	writeInterval   = 20 * time.Second
+	writeMaxAge     = 50 * time.Minute
+	floatMetricName = "mimir_continuous_test_sine_wave"
 )
 
 var (
-	metricNamesHist = []string{
+	histogramMetricNames = []string{
 		"mimir_continuous_test_histogram_int_counter",
 		"mimir_continuous_test_histogram_float_counter",
 		"mimir_continuous_test_histogram_int_gauge",
@@ -54,14 +54,14 @@ func querySumHist(metricName string) string {
 type WriteReadSeriesTestConfig struct {
 	NumSeries      int
 	MaxQueryAge    time.Duration
-	WithSamples    bool
+	WithFloats     bool
 	WithHistograms bool
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 10000, "Number of series used for the test.")
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
-	f.BoolVar(&cfg.WithSamples, "tests.write-read-series-test.with-samples", false, "Include sample series in the tests?")
+	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.with-samples", false, "Include sample series in the tests?")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.with-histograms", false, "Include histogram series in the tests?")
 }
 
@@ -72,8 +72,8 @@ type WriteReadSeriesTest struct {
 	logger  log.Logger
 	metrics *TestMetrics
 
-	sampleMetric MetricHistory
-	histMetrics  []MetricHistory
+	floatMetric MetricHistory
+	histMetrics []MetricHistory
 }
 
 type MetricHistory struct {
@@ -103,8 +103,8 @@ func (t *WriteReadSeriesTest) Name() string {
 // Init implements Test.
 func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
-	if t.cfg.WithSamples {
-		err := t.recoverPast(ctx, now, metricNameSample, querySumSample, generateSineWaveValue, &t.sampleMetric)
+	if t.cfg.WithFloats {
+		err := t.recoverPast(ctx, now, floatMetricName, querySumSample, generateSineWaveValue, &t.floatMetric)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 			} else {
 				generateValue = generateHistogramFloatValue
 			}
-			err := t.recoverPast(ctx, now, metricNamesHist[i], querySumHist, generateValue, &t.histMetrics[i])
+			err := t.recoverPast(ctx, now, histogramMetricNames[i], querySumHist, generateValue, &t.histMetrics[i])
 			if err != nil {
 				return err
 			}
@@ -154,8 +154,8 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	// Collect all errors on this test run
 	errs := new(multierror.MultiError)
 
-	if t.cfg.WithSamples {
-		t.RunInner(ctx, now, writeLimiter, errs, metricNameSample, querySumSample, generateSineWaveSeries, generateSineWaveValue, &t.sampleMetric)
+	if t.cfg.WithFloats {
+		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, querySumSample, generateSineWaveSeries, generateSineWaveValue, &t.floatMetric)
 	}
 
 	if t.cfg.WithHistograms {
@@ -166,7 +166,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 			} else {
 				generateValue = generateHistogramFloatValue
 			}
-			t.RunInner(ctx, now, writeLimiter, errs, metricNamesHist[i], querySumHist, generateHistogramSeries(i), generateValue, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histogramMetricNames[i], querySumHist, generateHistogramSeries(i), generateValue, &t.histMetrics[i])
 		}
 	}
 
