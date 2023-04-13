@@ -110,7 +110,7 @@ func init() {
 
 type querySumFunc func(metricName string) string
 
-func querySumSample(metricName string) string {
+func querySumFloat(metricName string) string {
 	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
 	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
 	// false positives when finding the last written sample, or when restarting the testing tool with

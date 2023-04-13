@@ -54,7 +54,7 @@ func init() {
 	floatTestTuples = []WriteReadSeriesTestTuple{{
 		metricName:     floatMetricName,
 		typeLabel:      floatTypeLabel,
-		querySum:       querySumSample,
+		querySum:       querySumFloat,
 		generateSeries: generateSineWaveSeries,
 		generateValue:  generateSineWaveValue,
 		getMetricHistory: func(test *WriteReadSeriesTest) *MetricHistory {
