@@ -71,7 +71,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.14.0
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
-	google.golang.org/api v0.111.0
+	google.golang.org/api v0.114.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
 )
@@ -156,7 +156,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20230228050547-1710fef4ab10 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.7.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9 // indirect
 	github.com/hashicorp/consul/api v1.20.0 // indirect
@@ -184,7 +184,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/miekg/dns v1.1.51 // indirect
+	github.com/miekg/dns v1.1.53 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -241,7 +241,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230401063535-ae170f644c62
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230413082406-8ef48ad9a7f0
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
