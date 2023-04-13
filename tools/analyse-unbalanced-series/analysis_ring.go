@@ -16,19 +16,41 @@ type ingesterOwnership struct {
 }
 
 func analyseRing(ringStatus ringStatusDesc) error {
-	const (
-		replicationFactor    = 3
-		zoneAwarenessEnabled = true
-		numIterations        = 1000000
-	)
-
 	var (
 		ringDesc            = ringStatus.toRingModel()
 		ringTokens          = ringDesc.GetTokens()
 		ringInstanceByToken = getRingInstanceByToken(ringDesc)
-		bufDescs            [ring.GetBufferSize]string
-		bufHosts            [ring.GetBufferSize]string
-		bufZones            [ring.GetBufferSize]string
+	)
+
+	// Analyze owned tokens.
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 1, false); err != nil {
+		return err
+	}
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, false); err != nil {
+		return err
+	}
+	if err := analyzeTokensOwnership(ringDesc, ringTokens, ringInstanceByToken, 3, true); err != nil {
+		return err
+	}
+
+	// Analyze the registered tokens percentage (no replication factor or zone-aware replication
+	// taken in account).
+	if err := analyzeRegisteredTokensOwnership(ringTokens, ringInstanceByToken); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func analyzeTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool) error {
+	const (
+		numIterations = 10000000
+	)
+
+	var (
+		bufDescs [ring.GetBufferSize]string
+		bufHosts [ring.GetBufferSize]string
+		bufZones [ring.GetBufferSize]string
 	)
 
 	ownedTokens := map[string]int{}
@@ -60,28 +82,14 @@ func analyseRing(ringStatus ringStatusDesc) error {
 	})
 
 	w := newCSVWriter[ingesterOwnership]()
-	w.setHeader([]string{"pod", "tokens ownership percentage"})
+	w.setHeader([]string{"pod", fmt.Sprintf("Ring tokens ownership zone-aware=%s RF=%d", formatEnabled(zoneAwarenessEnabled), replicationFactor)})
 	w.setData(ownership, func(entry ingesterOwnership) []string {
-		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
+		// To make the percentage easy to compare with different RFs, we divide it by the RF.
+		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage/float64(replicationFactor))}
 	})
-	if err := w.writeCSV(fmt.Sprintf("ingesters-ring-tokens-ownership-with-rf-%d.csv", replicationFactor)); err != nil {
+	if err := w.writeCSV(fmt.Sprintf("ingesters-ring-tokens-ownership-with-zone-aware-%s-and-rf-%d.csv", formatEnabled(zoneAwarenessEnabled), replicationFactor)); err != nil {
 		return err
 	}
-
-	// Analyze the registered tokens percentage (no replication factor or zone-aware replication
-	// taken in account).
-	registeredTokens := analyzeRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
-
-	w = newCSVWriter[ingesterOwnership]()
-	w.setHeader([]string{"pod", "registered tokens percentage"})
-	w.setData(registeredTokens, func(entry ingesterOwnership) []string {
-		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
-	})
-	if err := w.writeCSV("ingesters-ring-registered-tokens.csv"); err != nil {
-		return err
-	}
-
-	// TODO analyze whether zone-aware replication got things worse
 
 	return nil
 }
@@ -175,8 +183,7 @@ func getRingInstanceByToken(desc *ring.Desc) map[uint32]instanceInfo {
 	return out
 }
 
-// analyzeRegisteredTokensOwnership returns the number tokens within the range for each instance.
-func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) []ingesterOwnership {
+func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) error {
 	var (
 		owned = map[string]uint32{}
 	)
@@ -209,5 +216,22 @@ func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken m
 		return a.id < b.id
 	})
 
-	return result
+	// Write result to CSV.
+	w := newCSVWriter[ingesterOwnership]()
+	w.setHeader([]string{"pod", "registered tokens percentage"})
+	w.setData(result, func(entry ingesterOwnership) []string {
+		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
+	})
+	if err := w.writeCSV("ingesters-ring-registered-tokens.csv"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func formatEnabled(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
