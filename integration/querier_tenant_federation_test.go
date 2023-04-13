@@ -69,9 +69,6 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-tenant-federation.enabled":                        "true",
 		"-ingester.max-global-exemplars-per-user":           "10000",
-
-		// Enable protobuf format so that we can use native histograms.
-		"-query-frontend.query-result-response-format": "protobuf",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -134,13 +131,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		var genSeries generateSeriesFunc
-		if u%2 == 0 {
-			genSeries = generateFloatSeries
-		} else {
-			genSeries = generateHistogramSeries
-		}
-		series, expectedVectors[u], _ = genSeries("series_1", now)
+		series, expectedVectors[u], _ = generateAlternatingSeries(u)("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)

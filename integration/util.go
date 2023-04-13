@@ -30,19 +30,17 @@ var (
 	// with the package name in tests.
 	mergeFlags = e2e.MergeFlags
 
-	// Temporary alias to split up merging in native histogram tests
-	generateSeries = e2e.GenerateSeries
-
-	generateAllTypeSeries = GenerateAllTypeSeries
-
 	generateFloatSeries  = e2e.GenerateSeries
 	generateNFloatSeries = e2e.GenerateNSeries
 
 	// These are local, because e2e is used by non metric products that do not have native histograms
-	generateHistogramSeries     = GenerateHistogramSeries
-	generateNHistogramSeries    = GenerateNHistogramSeries
-	generateTestHistogram       = test.GenerateTestHistogram
-	generateTestSampleHistogram = test.GenerateTestSampleHistogram
+	generateHistogramSeries         = GenerateHistogramSeries
+	generateNHistogramSeries        = GenerateNHistogramSeries
+	generateTestHistogram           = test.GenerateTestHistogram
+	generateTestFloatHistogram      = test.GenerateTestFloatHistogram
+	generateTestGaugeHistogram      = test.GenerateTestGaugeHistogram
+	generateTestGaugeFloatHistogram = test.GenerateTestGaugeFloatHistogram
+	generateTestSampleHistogram     = test.GenerateTestSampleHistogram
 
 	// These are the earliest and latest possible timestamps supported by the Prometheus API -
 	// the Prometheus API does not support omitting a time range from query requests,
@@ -53,20 +51,27 @@ var (
 	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 )
 
-// Generates different typed series based on an index in i.
-// Use with a large enough number of series, e.g. i>100
-func GenerateAllTypeSeries(i int, name string, ts time.Time, additionalLabels ...prompb.Label) ([]prompb.TimeSeries, model.Vector, model.Matrix) {
-	switch i % 2 {
-	case 0:
-		return generateFloatSeries(name, ts, additionalLabels...)
-	case 1:
-		return generateHistogramSeries(name, ts, additionalLabels...)
-	}
-	return nil, nil, nil
-}
-
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+// Generates different typed series based on an index in i.
+// Use with a large enough number of series, e.g. i>100
+func generateAlternatingSeries(i int) generateSeriesFunc {
+	switch i % 5 {
+	case 0:
+		return generateFloatSeries
+	case 1:
+		return generateHistogramSeries
+	case 2:
+		return GenerateFloatHistogramSeries
+	case 3:
+		return GenerateGaugeHistogramSeries
+	case 4:
+		return GenerateGaugeFloatHistogramSeries
+	default:
+		return nil
+	}
+}
 
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
 type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
@@ -145,7 +150,34 @@ func getTLSFlagsWithPrefix(prefix string, servername string, http bool) map[stri
 	return flags
 }
 
+// generateHistogramFunc defines what kind of native histograms to generate: float/integer, counter/gauge
+type generateHistogramFunc func(tsMillis int64, value int) prompb.Histogram
+
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestGaugeHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestGaugeFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := e2e.TimeToMilliseconds(ts)
 
 	value := rand.Intn(1000)
@@ -165,7 +197,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 				{Name: "trace_id", Value: "1234"},
 			}},
 		},
-		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))},
+		Histograms: []prompb.Histogram{generateHistogram(tsMillis, value)},
 	})
 
 	// Generate the expected vector and matrix when querying it
