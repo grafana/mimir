@@ -22,18 +22,19 @@ vaultAgent:
 ```
 
 Example deployment yaml:
+
 ```yaml
 spec:
   template:
     metadata:
       annotations:
-        vault.hashicorp.com/agent-inject: 'true'
-        vault.hashicorp.com/role: 'test-role'
-        vault.hashicorp.com/agent-inject-secret-client.crt: 'client/cert/path'
-        vault.hashicorp.com/agent-inject-secret-client.key: 'client/key/path'
-        vault.hashicorp.com/agent-inject-secret-server.crt: 'server/cert/path'
-        vault.hashicorp.com/agent-inject-secret-server.key: 'server/key/path'
-        vault.hashicorp.com/agent-inject-secret-root.crt: 'ca/cert/path'
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "test-role"
+        vault.hashicorp.com/agent-inject-secret-client.crt: "client/cert/path"
+        vault.hashicorp.com/agent-inject-secret-client.key: "client/key/path"
+        vault.hashicorp.com/agent-inject-secret-server.crt: "server/cert/path"
+        vault.hashicorp.com/agent-inject-secret-server.key: "server/key/path"
+        vault.hashicorp.com/agent-inject-secret-root.crt: "ca/cert/path"
 ```
 
 `vault.hashicorp.com/agent-inject-secret-<FILENAME>: '<PATH>'` tells the Vault Agent where to find the secret, and the name of the file to write the secret to. For example: `vault.hashicorp.com/agent-inject-secret-client.crt: 'client/cert/path'` will look for the secret at the path `client/cert/path` within Vault, and mount this secret to the pod as `client.crt` in the `/vault/secrets/` directory.
