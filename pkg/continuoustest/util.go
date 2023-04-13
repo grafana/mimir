@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 const (
@@ -40,9 +42,46 @@ func getQueryStep(start, end time.Time, alignInterval time.Duration) time.Durati
 	return step
 }
 
+func generateHistogram(value int64, gauge bool) *histogram.Histogram {
+	h := &histogram.Histogram{
+		Sum:           float64(value),
+		Count:         uint64(value),
+		ZeroThreshold: 0.001,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+		},
+		PositiveBuckets: []int64{value},
+	}
+	if gauge {
+		h.CounterResetHint = histogram.GaugeType
+	}
+	return h
+}
+
+func generateFloatHistogram(value float64, gauge bool) *histogram.FloatHistogram {
+	h := &histogram.FloatHistogram{
+		Sum:           value,
+		Count:         value,
+		ZeroThreshold: 0.001,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+		},
+		PositiveBuckets: []float64{value},
+	}
+	if gauge {
+		h.CounterResetHint = histogram.GaugeType
+	}
+	return h
+}
+
+type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 	value := generateSineWaveValue(t)
+	ts := t.UnixMilli()
 
 	for i := 0; i < numSeries; i++ {
 		out = append(out, prompb.TimeSeries{
@@ -55,7 +94,7 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 			}},
 			Samples: []prompb.Sample{{
 				Value:     value,
-				Timestamp: t.UnixMilli(),
+				Timestamp: ts,
 			}},
 		})
 	}
@@ -63,17 +102,70 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 	return out
 }
 
+func generateHistogramSeries(histogramType int) generateSeriesFunc {
+	return func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+		return generateHistogramSeriesInner(name, t, numSeries, histogramType)
+	}
+}
+
+func generateHistogramSeriesInner(name string, t time.Time, numSeries, histogramType int) []prompb.TimeSeries {
+	out := make([]prompb.TimeSeries, 0, numSeries)
+	ts := t.UnixMilli()
+	var hist prompb.Histogram
+	switch histogramType {
+	case 0: // int counter
+		hist = remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), false))
+	case 1: // float counter
+		hist = remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), false))
+	case 2: // int gauge
+		hist = remote.HistogramToHistogramProto(ts, generateHistogram(generateHistogramIntValue(t), true))
+	case 3: // float gauge
+		hist = remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t), true))
+	default:
+		panic(fmt.Sprintf("invalid histogram type: %d", histogramType))
+	}
+
+	for i := 0; i < numSeries; i++ {
+		out = append(out, prompb.TimeSeries{
+			Labels: []prompb.Label{{
+				Name:  "__name__",
+				Value: name,
+			}, {
+				Name:  "series_id",
+				Value: strconv.Itoa(i),
+			}},
+			Histograms: []prompb.Histogram{hist},
+		})
+	}
+
+	return out
+}
+
+type generateValueFunc func(t time.Time) float64
+
 func generateSineWaveValue(t time.Time) float64 {
 	period := 10 * time.Minute
 	radians := 2 * math.Pi * float64(t.UnixNano()) / float64(period.Nanoseconds())
 	return math.Sin(radians)
 }
 
-// verifySineWaveSamplesSum assumes the input matrix is the result of a range query summing the values
+func generateHistogramIntValue(t time.Time) int64 {
+	return t.Unix()
+}
+
+func generateHistogramIntValueAsFloat(t time.Time) float64 {
+	return float64(t.Unix())
+}
+
+func generateHistogramFloatValue(t time.Time) float64 {
+	return float64(t.Unix()) / 500000
+}
+
+// verifySamplesSum assumes the input matrix is the result of a range query summing the values
 // of expectedSeries sine wave series and checks whether the actual values match the expected ones.
 // Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
-func verifySineWaveSamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration) (lastMatchingIdx int, err error) {
+func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc) (lastMatchingIdx int, err error) {
 	lastMatchingIdx = -1
 	if len(matrix) != 1 {
 		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
@@ -86,7 +178,7 @@ func verifySineWaveSamplesSum(matrix model.Matrix, expectedSeries int, expectedS
 		ts := time.UnixMilli(int64(sample.Timestamp)).UTC()
 
 		// Assert on value.
-		expectedValue := generateSineWaveValue(ts) * float64(expectedSeries)
+		expectedValue := generateValue(ts) * float64(expectedSeries)
 		if !compareSampleValues(float64(sample.Value), expectedValue) {
 			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
 		}

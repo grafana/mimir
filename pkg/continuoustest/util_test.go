@@ -3,6 +3,7 @@
 package continuoustest
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -47,7 +48,13 @@ func TestGetQueryStep(t *testing.T) {
 	}
 }
 
-func TestVerifySineWaveSamplesSum(t *testing.T) {
+func TestVerifySamplesSum(t *testing.T) {
+	testVerifySamplesSum(t, generateSineWaveValue, "generateSineWaveValue")
+	testVerifySamplesSum(t, generateHistogramIntValueAsFloat, "generateHistogramIntValueAsFloat")
+	testVerifySamplesSum(t, generateHistogramFloatValue, "generateHistogramFloatValue")
+}
+
+func testVerifySamplesSum(t *testing.T, generateValue generateValueFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
 
@@ -60,9 +67,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 	}{
 		"should return no error if all samples value and timestamp match the expected one (1 series)": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          1,
 			expectedStep:            10 * time.Second,
@@ -71,9 +78,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return no error if all samples value and timestamp match the expected one (multiple series)": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 5*generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 5*generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -82,9 +89,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if there's a missing series": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 4*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 4*generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 4*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 4*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 4*generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 4*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -93,8 +100,8 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if there's a missing sample": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -103,9 +110,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if the 2nd last sample has an unexpected timestamp": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(21*time.Second), 5*generateSineWaveValue(now.Add(21*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(21*time.Second), 5*generateValue(now.Add(21*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -115,9 +122,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actualLastMatchingIdx, actualErr := verifySineWaveSamplesSum(matrix, testData.expectedSeries, testData.expectedStep)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
@@ -163,13 +170,13 @@ func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	}
 }
 
-// generateSineWaveSamplesSum generates a list of samples whose timestamps range between from and to (both included),
-// where each sample value is numSeries multiplied by the expected sine wave value at the sample's timestamp.
-func generateSineWaveSamplesSum(from, to time.Time, numSeries int, step time.Duration) []model.SamplePair {
+// generateSamplesSum generates a list of samples whose timestamps range between from and to (both included),
+// where each sample value is numSeries multiplied by the expected value at the sample's timestamp.
+func generateSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateValue generateValueFunc) []model.SamplePair {
 	var samples []model.SamplePair
 
 	for ts := from; !ts.After(to); ts = ts.Add(step) {
-		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateSineWaveValue(ts)))
+		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateValue(ts)))
 	}
 
 	return samples
