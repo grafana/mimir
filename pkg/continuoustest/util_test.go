@@ -50,8 +50,9 @@ func TestGetQueryStep(t *testing.T) {
 
 func TestVerifySamplesSum(t *testing.T) {
 	testVerifySamplesSum(t, generateSineWaveValue, "generateSineWaveValue")
-	testVerifySamplesSum(t, generateExpHistogramIntValue, "generateExpHistogramIntValue")
-	testVerifySamplesSum(t, generateExpHistogramFloatValue, "generateExpHistogramFloatValue")
+	for i, generateValue := range generateHistogramValue {
+		testVerifySamplesSum(t, generateValue, fmt.Sprintf("generateHistogramValue[%d]", i))
+	}
 }
 
 func testVerifySamplesSum(t *testing.T, generateValue generateValueFunc, testLabel string) {
