@@ -205,10 +205,11 @@ func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[u
 		var diff uint32
 
 		// Compute how many tokens are within the range.
-		if i+1 == len(ringTokens) {
-			diff = (math.MaxUint32 - token) + ringTokens[0]
+		if i == 0 {
+			lastToken := ringTokens[len(ringTokens)-1]
+			diff = token + (math.MaxUint32 - lastToken)
 		} else {
-			diff = ringTokens[i+1] - token
+			diff = token - ringTokens[i-1]
 		}
 
 		info := ringInstanceByToken[token]
