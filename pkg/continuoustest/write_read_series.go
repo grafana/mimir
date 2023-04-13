@@ -171,7 +171,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
-		if err := t.writeSamples(ctx, timestamp, series, records); err != nil {
+		if err := t.writeSamples(ctx, metricName, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
 		}
@@ -184,29 +184,29 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 
 	queryMetric := querySum(metricName)
 	for _, timeRange := range queryRanges {
-		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, queryMetric, generateValue, records)
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, metricName, queryMetric, generateValue, records)
 		errs.Add(err)
-		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, queryMetric, generateValue, records)
+		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, metricName, queryMetric, generateValue, records)
 		errs.Add(err)
 	}
 	for _, ts := range queryInstants {
-		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, queryMetric, generateValue, records)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, metricName, queryMetric, generateValue, records)
 		errs.Add(err)
-		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, queryMetric, generateValue, records)
+		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, metricName, queryMetric, generateValue, records)
 		errs.Add(err)
 	}
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, metricName string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
 
 	statusCode, err := t.client.WriteSeries(ctx, series)
 
-	t.metrics.writesTotal.Inc()
+	t.metrics.writesTotal.WithLabelValues(metricName).Inc()
 	if statusCode/100 != 2 {
-		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
+		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), metricName).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
 	} else {
 		level.Debug(logger).Log("msg", "Remote write series succeeded")
@@ -296,7 +296,7 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 	return ranges, instants, nil
 }
 
-func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, metricName, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, writeInterval))
@@ -313,25 +313,25 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running range query")
 
-	t.metrics.queriesTotal.Inc()
+	t.metrics.queriesTotal.WithLabelValues(metricName).Inc()
 	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
-		t.metrics.queriesFailedTotal.Inc()
+		t.metrics.queriesFailedTotal.WithLabelValues(metricName).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
 		return errors.Wrap(err, "failed to execute range query")
 	}
 
-	t.metrics.queryResultChecksTotal.Inc()
+	t.metrics.queryResultChecksTotal.WithLabelValues(metricName).Inc()
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue)
 	if err != nil {
-		t.metrics.queryResultChecksFailedTotal.Inc()
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(metricName).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
 		return errors.Wrap(err, "range query result check failed")
 	}
 	return nil
 }
 
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, metricName, metricSumQuery string, generateValue generateValueFunc, records *MetricHistory) error {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
 	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, writeInterval))
@@ -345,10 +345,10 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
 	level.Debug(logger).Log("msg", "Running instant query")
 
-	t.metrics.queriesTotal.Inc()
+	t.metrics.queriesTotal.WithLabelValues(metricName).Inc()
 	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	if err != nil {
-		t.metrics.queriesFailedTotal.Inc()
+		t.metrics.queriesFailedTotal.WithLabelValues(metricName).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
 		return errors.Wrap(err, "failed to execute instant query")
 	}
@@ -373,10 +373,10 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 		matrix = append(matrix, ss)
 	}
 
-	t.metrics.queryResultChecksTotal.Inc()
+	t.metrics.queryResultChecksTotal.WithLabelValues(metricName).Inc()
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue)
 	if err != nil {
-		t.metrics.queryResultChecksFailedTotal.Inc()
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(metricName).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
 		return errors.Wrap(err, "instant query result check failed")
 	}
