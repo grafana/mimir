@@ -78,6 +78,9 @@ func (t *WriteReadSeriesTest) Name() string {
 // Init implements Test.
 func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
+	if !t.cfg.WithFloats && !t.cfg.WithHistograms {
+		return errors.New("should test either floats or histograms or both, currently testing nothing")
+	}
 	if t.cfg.WithFloats {
 		err := t.recoverPast(ctx, now, floatMetricName, querySumFloat, generateSineWaveValue, nil, &t.floatMetric)
 		if err != nil {
