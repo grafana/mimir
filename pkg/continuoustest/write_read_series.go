@@ -332,7 +332,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
+		level.Warn(logger).Log("msg", "Range query result check failed", "err", err, "type", typeLabel)
 		return errors.Wrap(err, "range query result check failed")
 	}
 	return nil
@@ -384,7 +384,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err, "type", typeLabel)
 		return errors.Wrap(err, "instant query result check failed")
 	}
 	return nil
