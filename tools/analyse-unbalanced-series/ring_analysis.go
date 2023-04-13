@@ -183,7 +183,7 @@ func getRingInstanceByToken(desc *ring.Desc) map[uint32]instanceInfo {
 	return out
 }
 
-func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) error {
+func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) []ingesterOwnership {
 	var (
 		owned = map[string]uint32{}
 	)
@@ -215,6 +215,12 @@ func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken m
 	slices.SortFunc(result, func(a, b ingesterOwnership) bool {
 		return a.id < b.id
 	})
+
+	return result
+}
+
+func analyzeRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) error {
+	result := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
 
 	// Write result to CSV.
 	w := newCSVWriter[ingesterOwnership]()
