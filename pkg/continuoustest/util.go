@@ -27,7 +27,7 @@ const (
 type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64
-type generateSampleHistogramFunc func(t time.Time) *model.SampleHistogram
+type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
 
 type histogramProfile struct {
 	metricName              string
@@ -45,10 +45,10 @@ var (
 			typeLabel:  "histogram_int_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), false))
+				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
 			},
-			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), false).ToFloat())
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat())
 			},
 			generateValue: func(t time.Time) float64 {
 				return generateExpHistogramIntValue(t, false)
@@ -59,10 +59,10 @@ var (
 			typeLabel:  "histogram_float_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
 			},
-			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), false))
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), numSeries, false))
 			},
 			generateValue: func(t time.Time) float64 {
 				return generateExpHistogramFloatValue(t, false)
@@ -73,10 +73,10 @@ var (
 			typeLabel:  "histogram_int_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), true))
+				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
 			},
-			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), true).ToFloat())
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat())
 			},
 			generateValue: func(t time.Time) float64 {
 				return generateExpHistogramIntValue(t, true)
@@ -87,10 +87,10 @@ var (
 			typeLabel:  "histogram_float_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), true))
+				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
 			},
-			generateSampleHistogram: func(t time.Time) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), true))
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
 			},
 			generateValue: func(t time.Time) float64 {
 				return generateExpHistogramFloatValue(t, true)
@@ -229,8 +229,9 @@ func generateNegFloatHistogram(value float64) *histogram.FloatHistogram {
 	}
 }
 
-func generateIntHistogram(value int64, gauge bool) *histogram.Histogram {
+func generateIntHistogram(value int64, numSeries int, gauge bool) *histogram.Histogram {
 	var h *histogram.Histogram
+	value *= int64(numSeries)
 	if value >= 0 {
 		h = generatePosIntHistogram(value)
 	} else {
@@ -242,8 +243,9 @@ func generateIntHistogram(value int64, gauge bool) *histogram.Histogram {
 	return h
 }
 
-func generateFloatHistogram(value float64, gauge bool) *histogram.FloatHistogram {
+func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram.FloatHistogram {
 	var h *histogram.FloatHistogram
+	value *= float64(numSeries)
 	if value >= 0 {
 		h = generatePosFloatHistogram(value)
 	} else {
@@ -360,7 +362,7 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 			// Assert on value.
 			expectedValue := generateValue(ts) * float64(expectedSeries)
 			if !compareSampleValues(float64(histogram.Histogram.Sum), expectedValue) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has value %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedValue)
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedValue)
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
