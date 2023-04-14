@@ -116,7 +116,7 @@ const (
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
 
-	shutdownMarkerFile = "shutdown-requested.txt"
+	shutdownMarkerFilename = "shutdown-requested.txt"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -411,7 +411,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFile)
+	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
 	shutdownMarker, err := shutdownMarkerExists(shutdownMarkerPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
@@ -2454,15 +2454,19 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	return l
 }
 
-// PrepareShutdownHandler changes the configuration of the ingester such that when
+// PrepareShutdownHandler inspects or changes the configuration of the ingester such that when
 // it is stopped, it will:
 //   - Change the state of ring to stop accepting writes.
 //   - Flush all the chunks to long-term storage.
 //
 // It also creates a file on disk which is used to re-apply the configuration if the
 // ingester crashes and restarts before being permanently shutdown.
+//
+// * `GET` shows the status of this configuration
+// * `POST` enables this configuration
+// * `DELETE` disables this configuration
 func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
-	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFile)
+	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
 
 	switch r.Method {
 	case http.MethodGet:
