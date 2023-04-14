@@ -92,6 +92,7 @@
 * [BUGFIX] Store-gateway & query-frontend: report more consistent statistics for fetched index bytes. #4671
 * [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
 * [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
+* [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
 
 ### Mixin
 
