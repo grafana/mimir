@@ -65,8 +65,7 @@ const (
 	EstimatedSeriesP99Size = 512
 
 	// BytesPerPostingInAPostingList is the number of bytes that each posting (series ID) takes in a
-	// posting list in the index. Since each posting is a uint64 and is not compressed in the index,
-	// it takes 4 bytes.
+	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
 	BytesPerPostingInAPostingList = 4
 
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
