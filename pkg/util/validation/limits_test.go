@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -648,7 +649,7 @@ metric_relabel_configs:
 }
 
 type structExtension struct {
-	Foo int `yaml:"foo"`
+	Foo int `yaml:"foo" json:"foo"`
 }
 
 func (te structExtension) Default() structExtension {
@@ -749,5 +750,78 @@ func TestExtensions(t *testing.T) {
 
 	t.Run("getter works with nil Limits returning default values", func(t *testing.T) {
 		require.Equal(t, structExtension{}.Default(), getExtensionStruct(nil))
+	})
+}
+
+func TestExtensionMarshalling(t *testing.T) {
+	t.Cleanup(func() {
+		registeredExtensions = map[string]registeredExtension{}
+		limitsExtensionsFields = nil
+	})
+
+	MustRegisterExtension[structExtension]("test_extension_struct")
+	MustRegisterExtension[stringExtension]("test_extension_string")
+
+	t.Run("marshal limits with no extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{
+			"test": {},
+		}
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		fmt.Println(string(val))
+		require.Contains(t, string(val),
+			`test:
+    test_extension_struct:
+        foo: 0
+    test_extension_string: ""
+    request_rate: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","request_rate":0,`)
+	})
+
+	t.Run("marshal limits with partial extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{
+			"test": {
+				extensions: map[string]interface{}{
+					"test_extension_struct": structExtension{Foo: 421237},
+				},
+			},
+		}
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val),
+			`test:
+    test_extension_struct:
+        foo: 421237
+    test_extension_string: ""
+    request_rate: 0
+    request_burst_size: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","request_rate":0,"request_burst_size":0,`)
+	})
+
+	t.Run("marshal limits with default extension values", func(t *testing.T) {
+		overrides := map[string]*Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(`{"user": {}}`), &overrides), "parsing overrides")
+
+		val, err := yaml.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val),
+			`user:
+    test_extension_struct:
+        foo: 42
+    test_extension_string: default string extension value
+    request_rate: 0
+    request_burst_size: 0`)
+
+		val, err = json.Marshal(overrides)
+		require.NoError(t, err)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
 	})
 }
