@@ -356,6 +356,11 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // whose combined size doesn't exceed the size of series in the worst case. The rest of the posting groups
 // are omitted.
 // worstCaseFetchedDataStrategy uses a fixed estimation about the size of series in the index (tsdb.EstimatedSeriesP99Size).
+//
+// For example, given the query `cpu_seconds_total{namespace="ns1"}`, if `namespace="ns1"` selects 1M series and
+// `__name__="cpu_seconds_total"` selects 500K series, then the strategy calculates that the whole query will
+// select no more than 500K series. It uses this to calculate that in the worst case we will fetch 500K * tsdb.EstimatedSeriesP99Size
+// bytes for the series = 256 MB. So it will not fetch more than 256 MB of posting lists.
 type worstCaseFetchedDataStrategy struct {
 	// postingListActualSizeFactor affects how posting lists are summed together.
 	// Postings lists have different sizes in the bucket and the cache.
@@ -374,17 +379,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 		return groups[i].totalSize < groups[j].totalSize
 	})
 
-	var maxSelectedSeriesCount int64
-	for _, g := range groups {
-		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
-			// The size of each posting list contains 4 bytes with the number of entries.
-			// We shouldn't count these as series.
-			groupSize := g.totalSize - int64(len(g.keys)*4)
-			maxSelectedSeriesCount = groupSize / tsdb.BytesPerPostingInAPostingList
-			break
-		}
-	}
-
+	maxSelectedSeriesCount := numSeriesInSmallestIntersectingPostingGroup(groups)
 	if maxSelectedSeriesCount == 0 {
 		// This should also cover the case of all postings group. all postings is requested only when there is no
 		// additive group.
@@ -407,9 +402,29 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 	return groups, nil
 }
 
+// numSeriesInSmallestIntersectingPostingGroup receives a sorted slice of posting groups by their totalSize.
+// It returns the number of postings in the smallest intersecting (non-subtractive) postingGroup.
+// It returns 0 if there was no intersecting posting group that also wasn't the all-postings group.
+func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
+	for _, g := range groups {
+		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
+			// The size of each posting list contains 4 bytes with the number of entries.
+			// We shouldn't count these as series.
+			groupSize := g.totalSize - int64(len(g.keys)*4)
+			return groupSize / tsdb.BytesPerPostingInAPostingList
+		}
+	}
+	return 0
+}
+
 // speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
 // except it speculates on the size of the actual series after intersecting the selected posting lists.
-// Right now it assumes that each posting list will
+// Right now it assumes that each intersecting posting list will halve the number of series selected by the query.
+//
+// For example, given the query `cpu_seconds_total{namespace="ns1"}`, if `namespace="ns1"` selects 1M series and
+// `__name__="cpu_seconds_total"` selects 500K series, then the speculative strategy assumes the whole query will
+// select 250K series. It uses this to calculate that in the worst case we will fetch 250K * tsdb.EstimatedSeriesP99Size
+// bytes for the series = 128 MB. So it will not fetch more than 128 MB of posting lists.
 type speculativeFetchedDataStrategy struct{}
 
 func (s speculativeFetchedDataStrategy) name() string {
@@ -421,17 +436,7 @@ func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (s
 		return groups[i].totalSize < groups[j].totalSize
 	})
 
-	var maxSelectedSeriesCount int64
-	for _, g := range groups {
-		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
-			// The size of each posting list contains 4 bytes with the number of entries.
-			// We shouldn't count these as series.
-			groupSize := g.totalSize - int64(len(g.keys)*4)
-			maxSelectedSeriesCount = groupSize / tsdb.BytesPerPostingInAPostingList
-			break
-		}
-	}
-
+	maxSelectedSeriesCount := numSeriesInSmallestIntersectingPostingGroup(groups)
 	if maxSelectedSeriesCount == 0 {
 		// This should also cover the case of all postings group. all postings is requested only when there is no
 		// additive group.
