@@ -7403,6 +7403,17 @@
               "fieldFlag": "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series",
               "fieldType": "int",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "series_selection_strategy",
+              "required": false,
+              "desc": "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all.",
+              "fieldValue": null,
+              "fieldDefaultValue": "all",
+              "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

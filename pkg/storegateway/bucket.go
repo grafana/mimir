@@ -133,6 +133,9 @@ type BucketStore struct {
 
 	// Additional configuration for experimental indexheader.BinaryReader behaviour.
 	indexHeaderCfg indexheader.Config
+
+	// postingsStrategy is a strategy shared among all tenants.
+	postingsStrategy postingsSelectionStrategy
 }
 
 type noopCache struct{}
@@ -225,6 +228,7 @@ func NewBucketStore(
 	dir string,
 	maxSeriesPerBatch int,
 	numChunksRangesPerSeries int,
+	postingsStrategy postingsSelectionStrategy,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioners blockPartitioners,
@@ -259,6 +263,7 @@ func NewBucketStore(
 		userID:                      userID,
 		maxSeriesPerBatch:           maxSeriesPerBatch,
 		numChunksRangesPerSeries:    numChunksRangesPerSeries,
+		postingsStrategy:            postingsStrategy,
 	}
 
 	for _, option := range options {
@@ -894,7 +899,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
-		indexReaders[b.meta.ULID] = b.indexReader()
+		indexReaders[b.meta.ULID] = b.indexReader(s.postingsStrategy)
 	}
 	if skipChunks {
 		return blocks, indexReaders, nil
@@ -950,7 +955,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		indexr := b.indexReader()
+		indexr := b.indexReader(s.postingsStrategy)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
@@ -1131,7 +1136,8 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		indexr := b.indexReader()
+		// We cannot deal with pending matchers in LabelValues yet, so we should fetch all postings.
+		indexr := b.indexReader(selectAllStrategy{})
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label values")
@@ -1483,10 +1489,9 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) indexReader() *bucketIndexReader {
+func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	b.pendingReaders.Add(1)
-	// This will be replaced with a strategy selected via a CLI flag.
-	return newBucketIndexReader(b, selectAllStrategy{})
+	return newBucketIndexReader(b, postingsStrategy)
 }
 
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
