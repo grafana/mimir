@@ -285,7 +285,6 @@ func newIngesterMetrics(
 		}),
 	}
 
-	m.shutdownMarker.Set(0)
 	return m
 }
 

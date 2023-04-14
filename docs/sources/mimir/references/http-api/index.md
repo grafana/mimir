@@ -360,7 +360,7 @@ GET,POST /ingester/prepare-shutdown
 This endpoint changes in-memory ingester configuration to prepare for permanently stopping an ingester instance
 but does not actually stop any part of the ingester.
 
-After the prepare-shutdown endpoint returns, when the ingester process is stopped with `SIGINT` / `SIGTERM`, the
+After the `prepare-shutdown` endpoint returns, when the ingester process is stopped with `SIGINT` / `SIGTERM`, the
 ingester will be unregistered from the ring and in-memory time series data will be flushed to long-term storage.
 This endpoint causes the ingester to be unregistered from the ring when stopped even if you disable
 `-ingester.ring.unregister-on-shutdown`.
