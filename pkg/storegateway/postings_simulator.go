@@ -88,10 +88,6 @@ func RunPostingsSimulator() {
 	indexReader := block.indexReader()
 	defer indexReader.Close()
 
-	queriesFile, err := os.OpenFile(queriesDump, os.O_RDONLY, 0)
-	noErr(err)
-	defer queriesFile.Close()
-
 	resultsFile, err := os.OpenFile(resultsLocation, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0660)
 	noErr(err)
 	defer resultsFile.Close()
@@ -107,6 +103,24 @@ func RunPostingsSimulator() {
 	wg.Add(1)
 	go processQueries(wg, queriesChan, indexReader, resultSink)
 
+	readHardcodedQueries(ctx, queriesChan)
+	readQueriesFromFile(ctx, queriesChan)
+}
+
+func readHardcodedQueries(ctx context.Context, queriesChan chan query_stat.QueryStat) {
+	queries := [...]query_stat.QueryStat{}
+	for _, q := range queries {
+		if ctx.Err() != nil {
+			return
+		}
+		queriesChan <- q
+	}
+}
+
+func readQueriesFromFile(ctx context.Context, queriesChan chan query_stat.QueryStat) {
+	queriesFile, err := os.OpenFile(queriesDump, os.O_RDONLY, 0)
+	noErr(err)
+	defer queriesFile.Close()
 	queryDecoder := json.NewDecoder(queriesFile)
 
 	q := &query_stat.QueryStat{}
