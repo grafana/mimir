@@ -357,10 +357,11 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // are omitted.
 // worstCaseFetchedDataStrategy uses a fixed estimation about the size of series in the index (tsdb.EstimatedSeriesP99Size).
 type worstCaseFetchedDataStrategy struct {
-	// postingListActualSizeFactor affects how
-	// posting lists are summed together.
-	// This factor is multiplied by the size of posting lists
-	// in the block index.
+	// postingListActualSizeFactor affects how posting lists are summed together.
+	// Postings lists have different sizes in the bucket and the cache.
+	// The size in a postingGroup is the size in the block.
+	// Since we don't know whether we will fetch the lists from the cache
+	// or the bucket we can adjust the size we sum by a factor.
 	postingListActualSizeFactor float64
 }
 
