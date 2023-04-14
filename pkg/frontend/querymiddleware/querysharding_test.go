@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -40,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -86,36 +88,50 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		b := bs[i]
 		require.Equal(t, a.Labels, b.Labels)
 		require.Equal(t, len(a.Samples), len(b.Samples), "expected same number of samples for series %s", a.Labels)
+		require.Equal(t, len(a.Histograms), len(b.Histograms), "expected same number of histograms for series %s", a.Labels)
+		require.NotEqual(t, len(a.Samples) > 0, len(a.Histograms) > 0, "expected either samples or histogram but not both for series %s, got %d samples and %d histograms", a.Labels, len(a.Samples), len(a.Histograms))
 
 		for j := 0; j < len(a.Samples); j++ {
 			expected := a.Samples[j]
 			actual := b.Samples[j]
-			require.Equalf(t, expected.TimestampMs, actual.TimestampMs, "sample timestamp at position %d for series %s", j, a.Labels)
-
-			if value.IsStaleNaN(expected.Value) {
-				require.Truef(t, value.IsStaleNaN(actual.Value), "sample value at position %d is expected to be stale marker for series %s", j, a.Labels)
-			} else if math.IsNaN(expected.Value) {
-				require.Truef(t, math.IsNaN(actual.Value), "sample value at position %d is expected to be NaN for series %s", j, a.Labels)
-			} else {
-				if expected.Value == 0 {
-					require.Zero(t, actual.Value, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
-					continue
-				}
-				// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
-				// The relative error is calculated using: abs(actual-expected) / abs(expected)
-				require.InEpsilonf(t, expected.Value, actual.Value, 1e-12, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
-			}
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample")
 		}
+
+		for j := 0; j < len(a.Histograms); j++ {
+			expected := a.Histograms[j]
+			actual := b.Histograms[j]
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram")
+		}
+	}
+}
+
+func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string) {
+	require.Equalf(t, expectedTs, actualTs, "%s timestamp at position %d for series %s", sampleType, j, labels)
+
+	if value.IsStaleNaN(expectedVal) {
+		require.Truef(t, value.IsStaleNaN(actualVal), "%s value at position %d is expected to be stale marker for series %s", sampleType, j, labels)
+	} else if math.IsNaN(expectedVal) {
+		require.Truef(t, math.IsNaN(actualVal), "%s value at position %d is expected to be NaN for series %s", sampleType, j, labels)
+	} else {
+		if expectedVal == 0 {
+			require.Zero(t, actualVal, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+			return
+		}
+		// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
+		// The relative error is calculated using: abs(actual-expected) / abs(expected)
+		require.InEpsilonf(t, expectedVal, actualVal, 1e-12, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
 	}
 }
 
 func TestQueryShardingCorrectness(t *testing.T) {
 	var (
-		numSeries          = 1000
-		numStaleSeries     = 100
-		numHistograms      = 1000
-		numStaleHistograms = 100
-		histogramBuckets   = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+		numSeries                = 1000
+		numStaleSeries           = 100
+		numConvHistograms        = 1000
+		numStaleConvHistograms   = 100
+		histogramBuckets         = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+		numNativeHistograms      = 1000
+		numStaleNativeHistograms = 100
 	)
 
 	tests := map[string]struct {
@@ -511,21 +527,64 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `scalar(sum(metric_counter)) < bool 1`,
 			expectedShardedQueries: 1,
 		},
-		`sum({__name__!=""})`: {
-			query:                  `sum({__name__!=""})`,
+		// Summing floats and native histograms together makes no sense, see
+		// https://prometheus.io/docs/prometheus/latest/querying/operators/#operators-for-native-histograms
+		// so we exclude native histograms here and in some subsequent tests
+		`sum({__name__!=""}) excluding native histograms`: {
+			query:                  `sum({__name__!="",__name__!="metric_native_histogram"})`,
 			expectedShardedQueries: 1,
 		},
-		`sum by (group_1) ({__name__!=""})`: {
-			query:                  `sum by (group_1) ({__name__!=""})`,
+		`sum by (group_1) ({__name__!=""}) excluding native histograms`: {
+			query:                  `sum by (group_1) ({__name__!="",__name__!="metric_native_histogram"})`,
 			expectedShardedQueries: 1,
 		},
-		`sum by (group_1) (count_over_time({__name__!=""}[1m]))`: {
-			query:                  `sum by (group_1) (count_over_time({__name__!=""}[1m]))`,
+		`sum by (group_1) (count_over_time({__name__!=""}[1m])) excluding native histograms`: {
+			query:                  `sum by (group_1) (count_over_time({__name__!="",__name__!="metric_native_histogram"}[1m]))`,
+			expectedShardedQueries: 1,
+		},
+		`sum(metric_native_histogram)`: {
+			query:                  `sum(metric_native_histogram)`,
+			expectedShardedQueries: 1,
+		},
+		`sum by (group_1) (metric_native_histogram)`: {
+			query:                  `sum by (group_1) (metric_native_histogram)`,
+			expectedShardedQueries: 1,
+		},
+		`sum by (group_1) (count_over_time(metric_native_histogram[1m]))`: {
+			query:                  `sum by (group_1) (count_over_time(metric_native_histogram[1m]))`,
+			expectedShardedQueries: 1,
+		},
+		`count(metric_native_histogram)`: {
+			query:                  `count(metric_native_histogram)`,
+			expectedShardedQueries: 1,
+		},
+		`count by (group_1) (metric_native_histogram)`: {
+			query:                  `count by (group_1) (metric_native_histogram)`,
+			expectedShardedQueries: 1,
+		},
+		`count by (group_1) (count_over_time(metric_native_histogram[1m]))`: {
+			query:                  `count by (group_1) (count_over_time(metric_native_histogram[1m]))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_sum(sum(metric_native_histogram))`: {
+			query:                  `histogram_sum(sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_count(sum(metric_native_histogram))`: {
+			query:                  `histogram_count(sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_quantile(0.5, sum(metric_native_histogram))`: {
+			query:                  `histogram_quantile(0.5, sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_fraction(0, 0.5, sum(metric_native_histogram))`: {
+			query:                  `histogram_fraction(0, 0.5, sum(metric_native_histogram))`,
 			expectedShardedQueries: 1,
 		},
 	}
 
-	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
+	series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
 	seriesID := 0
 
 	// Add counter series.
@@ -557,21 +616,33 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		start.Add(5*time.Minute), end, step, factor(2)))
 	seriesID++
 
-	// Add histogram series.
-	for i := 0; i < numHistograms; i++ {
+	// Add conventional histogram series.
+	for i := 0; i < numConvHistograms; i++ {
 		for bucketIdx, bucketLe := range histogramBuckets {
 			// We expect each bucket to have a value higher than the previous one.
 			gen := factor(float64(i) * float64(bucketIdx) * 0.1)
-			if i >= numHistograms-numStaleHistograms {
+			if i >= numConvHistograms-numStaleConvHistograms {
 				// Wrap the generator to inject the staleness marker between minute 10 and 20.
 				gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 			}
 
-			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
+			series = append(series, newSeries(newTestConventionalHistogramLabels(seriesID, bucketLe),
 				start.Add(-lookbackDelta), end, step, gen))
 		}
 
 		// Increase the series ID after all per-bucket series have been created.
+		seriesID++
+	}
+
+	// Add native histogram series.
+	for i := 0; i < numNativeHistograms; i++ {
+		gen := factor(float64(i) * 0.1)
+		if i >= numNativeHistograms-numStaleNativeHistograms {
+			// Wrap the generator to inject the staleness marker between minute 10 and 20.
+			gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+		}
+
+		series = append(series, newNativeHistogramSeries(newTestNativeHistogramLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
 		seriesID++
 	}
 
@@ -681,6 +752,11 @@ func requireValidSamples(t *testing.T, result []SampleStream) {
 				return
 			}
 		}
+		for _, histogram := range stream.Histograms {
+			if !math.IsNaN(histogram.Histogram.Sum) {
+				return
+			}
+		}
 	}
 	t.Fatalf("Result should have some not-NaN samples")
 }
@@ -773,10 +849,44 @@ func labelsForShardsGenerator(base labels.Labels, shards uint64) func(shard uint
 	}
 }
 
+type queryShardingFunctionCorrectnessTest struct {
+	fn         string
+	args       []string
+	rangeQuery bool
+	tpl        string
+}
+
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
-	mkQueries, tests := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
+	queryableFloats := storageSeriesQueryable([]*promql.StorageSeries{
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
+		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+	})
+	queryableNativeHistograms := storageSeriesQueryable([]*promql.StorageSeries{
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+	})
+
+	testQueryShardingFunctionCorrectness(t, queryableFloats, []queryShardingFunctionCorrectnessTest{})
+	testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_count"},
+		{fn: "histogram_sum"},
+		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
+		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
+	})
+}
+
+func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Queryable, extraTests []queryShardingFunctionCorrectnessTest) {
+	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
 		if tpl == "" {
 			tpl = `(<fn>(bar1{}<args>))`
 		}
@@ -801,12 +911,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 			"count" + result,
 			"count by (bar)" + result,
 		}
-	}, []struct {
-		fn         string
-		args       []string
-		rangeQuery bool
-		tpl        string
-	}{
+	}
+	tests := append([]queryShardingFunctionCorrectnessTest{
 		{fn: "abs"},
 		{fn: "avg_over_time", rangeQuery: true},
 		{fn: "ceil"},
@@ -868,21 +974,12 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
-	}
+	}, extraTests...)
 
 	for _, tc := range tests {
 		const numShards = 4
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
 			t.Run(query, func(t *testing.T) {
-				queryable := storageSeriesQueryable([]*promql.StorageSeries{
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
-					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
-				})
-
 				req := &PrometheusRangeQueryRequest{
 					Path:  "/query_range",
 					Start: util.TimeToMillis(start),
@@ -934,7 +1031,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		"scalar": {},
 		"vector": {},
 		"pi":     {},
-		// Until support is added for querying histograms, these can be ignored:
+		// These are tested only for native histograms but not for floats:
 		"histogram_count":    {},
 		"histogram_sum":      {},
 		"histogram_fraction": {},
@@ -1931,6 +2028,14 @@ func filterSeriesByShard(series []*promql.StorageSeries, shard *sharding.ShardSe
 }
 
 func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) *promql.StorageSeries {
+	return newSeriesInner(metric, from, to, step, gen, false)
+}
+
+func newNativeHistogramSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) *promql.StorageSeries {
+	return newSeriesInner(metric, from, to, step, gen, true)
+}
+
+func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration, gen generator, histogram bool) *promql.StorageSeries {
 	var (
 		points    []promql.Point
 		prevValue *float64
@@ -1948,10 +2053,19 @@ func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen
 			continue
 		}
 
-		points = append(points, promql.Point{
-			T: t,
-			V: v,
-		})
+		var point promql.Point
+		if histogram {
+			point = promql.Point{
+				T: t,
+				H: generateTestHistogram(v),
+			}
+		} else {
+			point = promql.Point{
+				T: t,
+				V: v,
+			}
+		}
+		points = append(points, point)
 	}
 
 	// Ensure series labels are sorted.
@@ -1961,6 +2075,14 @@ func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen
 		Metric: metric,
 		Points: points,
 	})
+}
+
+func generateTestHistogram(v float64) *histogram.FloatHistogram {
+	h := util_test.GenerateTestFloatHistogram(int(v))
+	if value.IsStaleNaN(v) {
+		h.Sum = v
+	}
+	return h
 }
 
 // newTestCounterLabels generates series labels for a counter metric used in tests.
@@ -1974,11 +2096,22 @@ func newTestCounterLabels(id int) labels.Labels {
 	)
 }
 
-// newTestCounterLabels generates series labels for an histogram metric used in tests.
-func newTestHistogramLabels(id int, bucketLe float64) labels.Labels {
+// newTestConventionalHistogramLabels generates series labels for a conventional histogram metric used in tests.
+func newTestConventionalHistogramLabels(id int, bucketLe float64) labels.Labels {
 	return labels.FromStrings(
 		"__name__", "metric_histogram_bucket",
 		"le", fmt.Sprintf("%f", bucketLe),
+		"const", "fixed", // A constant label.
+		"unique", strconv.Itoa(id), // A unique label.
+		"group_1", strconv.Itoa(id%10), // A first grouping label.
+		"group_2", strconv.Itoa(id%3), // A second grouping label.
+	)
+}
+
+// newTestNativeHistogramLabels generates series labels for a native histogram metric used in tests.
+func newTestNativeHistogramLabels(id int) labels.Labels {
+	return labels.FromStrings(
+		"__name__", "metric_native_histogram",
 		"const", "fixed", // A constant label.
 		"unique", strconv.Itoa(id), // A unique label.
 		"group_1", strconv.Itoa(id%10), // A first grouping label.
