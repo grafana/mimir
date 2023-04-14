@@ -566,3 +566,12 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 
 	test.RequireSameShape(t, prometheusType, protoType)
 }
+
+// Check that Promtheus Label and MimirPb LabelAdapter types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
+	protoType := reflect.TypeOf(LabelAdapter{})
+	prometheusType := reflect.TypeOf(labels.Label{})
+
+	test.RequireSameShape(t, prometheusType, protoType)
+}
