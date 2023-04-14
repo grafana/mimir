@@ -3244,6 +3244,15 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series
   [fine_grained_chunks_caching_ranges_per_series: <int> | default = 1]
 
+  # (experimental) This option controls the strategy to selection of series and
+  # deferring application of matchers. A more aggressive strategy will fetch
+  # less posting lists at the cost of more series. This is useful when querying
+  # large blocks in which many series share the same label name and value.
+  # Supported values (most aggressive to least aggressive): speculative,
+  # worst-case, worst-case-small-posting-lists, all.
+  # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
+  [series_selection_strategy: <string> | default = "all"]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
