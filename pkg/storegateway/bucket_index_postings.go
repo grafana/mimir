@@ -337,7 +337,7 @@ type postingsSelectionStrategy interface {
 type selectAllStrategy struct{}
 
 func (selectAllStrategy) name() string {
-	return "all"
+	return tsdb.AllPostingsStrategy
 }
 
 func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
@@ -365,7 +365,7 @@ type worstCaseFetchedDataStrategy struct {
 }
 
 func (s worstCaseFetchedDataStrategy) name() string {
-	return fmt.Sprintf("worstCase%0.1f", s.postingListActualSizeFactor)
+	return fmt.Sprintf(tsdb.WorstCasePostingsStrategy+"%0.1f", s.postingListActualSizeFactor)
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
@@ -413,7 +413,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 type speculativeFetchedDataStrategy struct{}
 
 func (s speculativeFetchedDataStrategy) name() string {
-	return "speculative"
+	return tsdb.SpeculativePostingsStrategy
 }
 
 func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
