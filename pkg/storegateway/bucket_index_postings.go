@@ -370,40 +370,39 @@ func (s worstCaseFetchedDataStrategy) name() string {
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	const seriesBytesPerPostingByte = tsdb.EstimatedSeriesP99Size / tsdb.BytesPerPostingInAPostingList
-
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].totalSize < groups[j].totalSize
 	})
 
-	var minGroupSize int64
+	var maxSelectedSeriesCount int64
 	for _, g := range groups {
-		// The size of each posting list contains 4 bytes with the number of entries.
-		// We shouldn't count these as series.
 		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
-			minGroupSize = g.totalSize - int64(len(g.keys)*4)
+			// The size of each posting list contains 4 bytes with the number of entries.
+			// We shouldn't count these as series.
+			groupSize := g.totalSize - int64(len(g.keys)*4)
+			maxSelectedSeriesCount = groupSize / tsdb.BytesPerPostingInAPostingList
 			break
 		}
 	}
 
-	if minGroupSize == 0 {
+	if maxSelectedSeriesCount == 0 {
 		// This should also cover the case of all postings group. all postings is requested only when there is no
 		// additive group.
 		return groups, nil
 	}
 
 	var (
-		selectedSize               int64
-		atLeastOneAdditiveSelected bool
-		maxSelectedSize            = minGroupSize * seriesBytesPerPostingByte
+		selectedSize                   int64
+		atLeastOneIntersectingSelected bool
+		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
 	)
 	for i, g := range groups {
 		postingListSize := int64(float64(g.totalSize) * s.postingListActualSizeFactor)
-		if atLeastOneAdditiveSelected && selectedSize+postingListSize > maxSelectedSize {
+		if atLeastOneIntersectingSelected && selectedSize+postingListSize > maxSelectedSize {
 			return groups[:i], groups[i:]
 		}
 		selectedSize += postingListSize
-		atLeastOneAdditiveSelected = atLeastOneAdditiveSelected || !g.isSubtract
+		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
 	}
 	return groups, nil
 }
@@ -418,37 +417,31 @@ func (s speculativeFetchedDataStrategy) name() string {
 }
 
 func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	const (
-		postingsPerByteInPostingList = 4
-		bytesPerSeries               = 512
-
-		seriesBytesPerPostingByte = bytesPerSeries / postingsPerByteInPostingList
-	)
-
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].totalSize < groups[j].totalSize
 	})
 
-	var minGroupSize int64
+	var maxSelectedSeriesCount int64
 	for _, g := range groups {
-		// The size of each posting list contains 4 bytes with the number of entries.
-		// We shouldn't count these as series.
 		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
-			minGroupSize = g.totalSize - int64(len(g.keys)*4)
+			// The size of each posting list contains 4 bytes with the number of entries.
+			// We shouldn't count these as series.
+			groupSize := g.totalSize - int64(len(g.keys)*4)
+			maxSelectedSeriesCount = groupSize / tsdb.BytesPerPostingInAPostingList
 			break
 		}
 	}
 
-	if minGroupSize == 0 {
-		// This should also cover the case of all-postings group. All-postings is only included when there is no
-		// other intersecting group.
+	if maxSelectedSeriesCount == 0 {
+		// This should also cover the case of all postings group. all postings is requested only when there is no
+		// additive group.
 		return groups, nil
 	}
 
 	var (
 		selectedSize                   int64
 		atLeastOneIntersectingSelected bool
-		maxSelectedSize                = minGroupSize * seriesBytesPerPostingByte
+		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
 	)
 	for i, g := range groups {
 		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
