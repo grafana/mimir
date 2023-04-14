@@ -75,20 +75,20 @@ type (
 	StatPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	DashlistPanel   struct {
+	DashlistPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	PluginlistPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	AlertlistPanel  struct {
+	AlertlistPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	BarGaugePanel   struct {
+	BarGaugePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	RowPanel struct {
-		Panels  []Panel `json:"panels"`
+		Panels  []Panel  `json:"panels"`
 		Targets []Target `json:"targets,omitempty"`
 	}
 	HeatmapPanel struct {

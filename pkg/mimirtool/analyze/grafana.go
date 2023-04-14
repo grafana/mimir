@@ -21,8 +21,11 @@ import (
 )
 
 var (
-	lvRegexp = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
-	qrRegexp = regexp.MustCompile(`query_result\((.+)\)`)
+	lvRegexp       = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
+	qrRegexp       = regexp.MustCompile(`query_result\((.+)\)`)
+	durationRegexp = regexp.MustCompile(`\[\$.+\]`)
+	var1Regexp     = regexp.MustCompile(`\${[a-zA-Z0-9_]+(:[a-zA-Z0-9]+)?}`)
+	var2Regexp     = regexp.MustCompile(`\$[a-zA-Z0-9_]+`)
 )
 
 type MetricsInGrafana struct {
@@ -207,17 +210,11 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
 	query = strings.ReplaceAll(query, "${__range_s}", "30")
 	// replace duration variable, e.g. [$agregation_window]
-	re := regexp.MustCompile(`\[\$.+\]`)
-	query = re.ReplaceAllString(query, "[5m]")
-	// replace variable, e.g. metric{label=${value}}
-	re = regexp.MustCompile(`\${[a-zA-Z0-9_]+}`)
-	query = re.ReplaceAllString(query, "variable")
-	// replace variable, e.g. metric{label=${value:format}}
-	re = regexp.MustCompile(`\${[a-zA-Z0-9_]+:[a-zA-Z0-9]+}`)
-	query = re.ReplaceAllString(query, "variable")
+	query = durationRegexp.ReplaceAllString(query, "[5m]")
+	// replace variable, e.g. metric{label=${value}} or metric{label=${value:format}}
+	query = var1Regexp.ReplaceAllString(query, "variable")
 	// replace variable, e.g. metric{label=$value}
-	re = regexp.MustCompile(`\$[a-zA-Z0-9_]+`)
-	query = re.ReplaceAllString(query, "variable")
+	query = var2Regexp.ReplaceAllString(query, "variable")
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err

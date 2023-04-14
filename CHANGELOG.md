@@ -6,6 +6,10 @@
 
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 
+### Mimirtool
+
+* [ENHANCEMENT] Generic panel type support in `mimirtool analyze dashboard` + support for queries with variables. #4726
+
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
@@ -141,7 +145,6 @@
 * [ENHANCEMENT] Backfill: mimirtool will now sleep and retry if it receives a 429 response while trying to finish an upload due to validation concurrency limits. #4598
 * [ENHANCEMENT] `gauge` panel type is supported now in `mimirtool analyze dashboard`. #4679
 * [ENHANCEMENT] Set a `User-Agent` header on requests to Mimir or Prometheus servers. #4700
-* [ENHANCEMENT] Generic panel type support in `mimirtool analyze dashboard` + support for queries with variables. #4726
 
 ### Mimir Continuous Test
 
