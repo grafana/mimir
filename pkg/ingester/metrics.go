@@ -61,6 +61,9 @@ type ingesterMetrics struct {
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
 	discardedMetadataPerMetricMetadataLimit *prometheus.CounterVec
+
+	// Shutdown marker for ingester scale down
+	shutdownMarker prometheus.Gauge
 }
 
 func newIngesterMetrics(
@@ -275,6 +278,11 @@ func newIngesterMetrics(
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
+
+		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_prepare_shutdown_requested",
+			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
+		}),
 	}
 
 	return m

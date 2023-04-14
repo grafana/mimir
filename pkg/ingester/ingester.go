@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -113,6 +115,8 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	shutdownMarkerFilename = "shutdown-requested.txt"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -407,7 +411,17 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	var err error
+	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
+	shutdownMarker, err := shutdownMarkerExists(shutdownMarkerPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to check ingester shutdown marker")
+	}
+
+	if shutdownMarker {
+		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownMarkerPath)
+		i.setPrepareShutdown()
+	}
+
 	i.subservices, err = services.NewManager(servs...)
 	if err == nil {
 		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
@@ -2285,7 +2299,7 @@ func (i *Ingester) TransferOut(_ context.Context) error {
 	return ring.ErrTransferDisabled
 }
 
-// This method will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
+// Flush will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
 //
 // When called as during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
 // Samples are not received at this stage. Compaction and Shipping loops have already been stopped as well.
@@ -2440,6 +2454,74 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	}
 
 	return l
+}
+
+// PrepareShutdownHandler inspects or changes the configuration of the ingester such that when
+// it is stopped, it will:
+//   - Change the state of ring to stop accepting writes.
+//   - Flush all the chunks to long-term storage.
+//
+// It also creates a file on disk which is used to re-apply the configuration if the
+// ingester crashes and restarts before being permanently shutdown.
+//
+// * `GET` shows the status of this configuration
+// * `POST` enables this configuration
+// * `DELETE` disables this configuration
+func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
+	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
+
+	switch r.Method {
+	case http.MethodGet:
+		exists, err := shutdownMarkerExists(shutdownMarkerPath)
+		if err != nil {
+			level.Error(i.logger).Log("msg", "unable to check for prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if exists {
+			util.WriteTextResponse(w, "set")
+		} else {
+			util.WriteTextResponse(w, "unset")
+		}
+	case http.MethodPost:
+		if err := createShutdownMarker(shutdownMarkerPath); err != nil {
+			level.Error(i.logger).Log("msg", "unable to create prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		i.setPrepareShutdown()
+		level.Info(i.logger).Log("msg", "created prepare-shutdown marker file", "path", shutdownMarkerPath)
+
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if err := removeShutdownMarker(shutdownMarkerPath); err != nil {
+			level.Error(i.logger).Log("msg", "unable to remove prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		i.unsetPrepareShutdown()
+		level.Info(i.logger).Log("msg", "removed prepare-shutdown marker file", "path", shutdownMarkerPath)
+
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// setPrepareShutdown toggles ingester lifecycler config to prepare for shutdown
+func (i *Ingester) setPrepareShutdown() {
+	i.lifecycler.SetUnregisterOnShutdown(true)
+	i.lifecycler.SetFlushOnShutdown(true)
+	i.metrics.shutdownMarker.Set(1)
+}
+
+func (i *Ingester) unsetPrepareShutdown() {
+	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
+	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
+	i.metrics.shutdownMarker.Set(0)
 }
 
 // ShutdownHandler triggers the following set of operations in order:
@@ -2671,4 +2753,72 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// createShutdownMarker writes a marker file to disk to indicate that an ingester is
+// going to be scaled down in the future. The presence of this file means that an ingester
+// should flush and upload all data when stopping.
+func createShutdownMarker(p string) error {
+	// Write the file, fsync it, then fsync the containing directory in order to guarantee
+	// it is persisted to disk. From https://man7.org/linux/man-pages/man2/fsync.2.html
+	//
+	// > Calling fsync() does not necessarily ensure that the entry in the
+	// > directory containing the file has also reached disk.  For that an
+	// > explicit fsync() on a file descriptor for the directory is also
+	// > needed.
+	file, err := os.Create(p)
+	if err != nil {
+		return err
+	}
+
+	merr := multierror.New()
+	_, err = file.WriteString(time.Now().UTC().Format(time.RFC3339))
+	merr.Add(err)
+	merr.Add(file.Sync())
+	merr.Add(file.Close())
+
+	if err := merr.Err(); err != nil {
+		return err
+	}
+
+	dir, err := os.OpenFile(path.Dir(p), os.O_RDONLY, 0777)
+	if err != nil {
+		return err
+	}
+
+	merr.Add(dir.Sync())
+	merr.Add(dir.Close())
+	return merr.Err()
+}
+
+// removeShutdownMarker removes the shutdown marker file if it exists.
+func removeShutdownMarker(p string) error {
+	err := os.Remove(p)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	dir, err := os.OpenFile(path.Dir(p), os.O_RDONLY, 0777)
+	if err != nil {
+		return err
+	}
+
+	merr := multierror.New()
+	merr.Add(dir.Sync())
+	merr.Add(dir.Close())
+	return merr.Err()
+}
+
+// shutdownMarkerExists returns true if the shutdown marker file exists, false otherwise
+func shutdownMarkerExists(p string) (bool, error) {
+	s, err := os.Stat(p)
+	if err != nil && os.IsNotExist(err) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return s.Mode().IsRegular(), nil
 }

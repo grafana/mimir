@@ -44,6 +44,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Tenants stats](#tenants-stats)                                                       | Distributor                    | `GET /distributor/all_user_stats`                                         |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor                    | `GET /distributor/ha_tracker`                                             |
 | [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                       | `GET,POST /ingester/flush`                                                |
+| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Ingester                       | `GET,POST /ingester/prepare-shutdown`                                     |
 | [Shutdown](#shutdown)                                                                 | Ingester                       | `GET,POST /ingester/shutdown`                                             |
 | [Ingesters ring status](#ingesters-ring-status)                                       | Distributor,Ingester           | `GET /ingester/ring`                                                      |
 | [Instant query](#instant-query)                                                       | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/query`                          |
@@ -349,6 +350,28 @@ If no tenant is specified, all tenants are flushed.
 The flush endpoint also accepts a `wait=true` parameter, which makes the call synchronous, and only returns a status code after flushing completes.
 
 > **Note**: The returned status code does not reflect the result of flush operation.
+
+### Prepare for Shutdown
+
+```
+GET,POST,DELETE /ingester/prepare-shutdown
+```
+
+This endpoint inspects or changes in-memory ingester configuration to prepare for permanently stopping an ingester
+instance but does not actually stop any part of the ingester.
+
+After a `POST` to the `prepare-shutdown` endpoint returns, when the ingester process is stopped with `SIGINT` / `SIGTERM`,
+the ingester will be unregistered from the ring and in-memory time series data will be flushed to long-term storage.
+This endpoint causes the ingester to be unregistered from the ring when stopped even if you disable
+`-ingester.ring.unregister-on-shutdown`.
+
+A `GET` to the `prepare-shutdown` endpoint returns the status of this configuration, either `set` or `unset`.
+
+A `DELETE` to the `prepare-shutdown` endpoint reverts the configuration of the ingester to its previous state
+(with respect to unregistering on shutdown and flushing of in-memory time series data to long-term storage).
+
+This API endpoint is usually used by Kubernetes-specific scale down automations such as the
+[rollout-operator](https://github.com/grafana/rollout-operator).
 
 ### Shutdown
 

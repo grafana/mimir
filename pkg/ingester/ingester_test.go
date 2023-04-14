@@ -3845,8 +3845,72 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
+		"prepareShutdownHandler": {
+			setupIngester: func(cfg *Config) {
+				cfg.IngesterRing.UnregisterOnShutdown = false
+				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
+				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
+			},
+
+			action: func(t *testing.T, i *Ingester, reg *prometheus.Registry) {
+				pushSingleSampleWithMetadata(t, i)
+
+				// Nothing shipped yet.
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 0
+				`), "cortex_ingester_shipper_uploads_total"))
+
+				response1 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, "unset", response1.Body.String())
+				require.Equal(t, 200, response1.Code)
+
+				response2 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response2, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 204, response2.Code)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
+					# TYPE cortex_ingester_prepare_shutdown_requested gauge
+					cortex_ingester_prepare_shutdown_requested 1
+				`), "cortex_ingester_prepare_shutdown_requested"))
+
+				response3 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response3, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, "set", response3.Body.String())
+				require.Equal(t, 200, response3.Code)
+
+				response4 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response4, httptest.NewRequest("DELETE", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 204, response4.Code)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
+					# TYPE cortex_ingester_prepare_shutdown_requested gauge
+					cortex_ingester_prepare_shutdown_requested 0
+				`), "cortex_ingester_prepare_shutdown_requested"))
+
+				response5 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response5, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 204, response5.Code)
+
+				// Shutdown ingester. This triggers compaction and flushing of the block.
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+				verifyCompactedHead(t, i, true)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 1
+				`), "cortex_ingester_shipper_uploads_total"))
+			},
+		},
+
 		"shutdownHandler": {
 			setupIngester: func(cfg *Config) {
+				cfg.IngesterRing.UnregisterOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
 			},
