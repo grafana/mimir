@@ -13,7 +13,6 @@ import (
 	"math"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +63,9 @@ const (
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 10
+
+	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
+	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 )
 
 const (
@@ -815,23 +817,20 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 		}
 
 		var removeTsIndexes []int
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				lb := labels.NewBuilder(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
-				lb.Set(model.MetaLabelPrefix+"tenant_id", userID)
+				lb.Reset(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+				lb.Set(metaLabelTenantID, userID)
 				keep := relabel.ProcessBuilder(lb, mrc...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
 				}
-				lb.Range(func(x labels.Label) {
-					if strings.HasPrefix(x.Name, model.MetaLabelPrefix) {
-						lb.Del(x.Name)
-					}
-				})
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels(nil))
+				lb.Del(metaLabelTenantID)
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels(labels.EmptyLabels()))
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {

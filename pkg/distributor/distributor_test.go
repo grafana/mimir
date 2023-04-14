@@ -3199,11 +3199,11 @@ func TestRelabelMiddleware(t *testing.T) {
 			},
 			expectErrs: []bool{false, false, false, false},
 		}, {
-			name: "__meta_tenant_id available and cleaned up afterwards",
+			name: metaLabelTenantID + " available and cleaned up afterwards",
 			ctx:  ctxWithUser,
 			relabelConfigs: []*relabel.Config{
 				{
-					SourceLabels: []model.LabelName{"__meta_tenant_id"},
+					SourceLabels: []model.LabelName{metaLabelTenantID},
 					Action:       relabel.DefaultRelabelConfig.Action,
 					Regex:        relabel.DefaultRelabelConfig.Regex,
 					TargetLabel:  "tenant_id",
