@@ -26,7 +26,7 @@ func runPrometheus(name string, args ...string) *e2e.HTTPService {
 	port := 9090
 	cmd := e2e.NewCommandWithoutEntrypoint(
 		"/bin/prometheus",
-		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"}, args...)...,
+		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=native-histograms"}, args...)...,
 	)
 	readiness := e2e.NewHTTPReadinessProbe(port, "/-/ready", http.StatusOK, http.StatusOK)
 	service := e2e.NewHTTPService(name, "prom/prometheus:latest", cmd, readiness, port)
@@ -150,10 +150,16 @@ func TestDistributorForwarding(t *testing.T) {
 			require.NoError(t, err)
 
 			// Submit metrics to Mimir.
-			now := time.Now()
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, metric := range tc.submitMetrics {
-				series, _, _ := generateSeries(metric, now)
+				series, _, _ := generateFloatSeries(metric, floatTs)
 				res, err := mimirClient.Push(series)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				series, _, _ = generateHistogramSeries(metric, histTs)
+				res, err = mimirClient.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
@@ -170,16 +176,8 @@ func TestDistributorForwarding(t *testing.T) {
 					}
 				}
 
-				promVal, _, err := promClient.Query(context.Background(), checkMetric, now)
-				require.NoError(t, err)
-
-				if expectedInPrometheus {
-					// The metric "checkMetric" should be present on this forwarding target.
-					require.Contains(t, promVal.String(), checkMetric)
-				} else {
-					// The metric "checkMetric" should not be present on this forwarding target.
-					require.NotContains(t, promVal.String(), checkMetric)
-				}
+				checkMetricInProm(t, promClient, checkMetric, floatTs, expectedInPrometheus)
+				checkMetricInProm(t, promClient, checkMetric, histTs, expectedInPrometheus)
 
 				// Check Mimir for the metric.
 				expectedInMimir := false
@@ -190,16 +188,35 @@ func TestDistributorForwarding(t *testing.T) {
 					}
 				}
 
-				val, err := mimirClient.Query(checkMetric, now)
-				require.NoError(t, err)
-				if expectedInMimir {
-					// The metric "checkMetric" is expected to have been ingested by Mimir.
-					require.Contains(t, val.String(), checkMetric)
-				} else {
-					// The metric "checkMetric" is expected to not have been ingested by Mimir.
-					require.NotContains(t, val.String(), checkMetric)
-				}
+				checkMetricInMimir(t, mimirClient, checkMetric, floatTs, expectedInMimir)
+				checkMetricInMimir(t, mimirClient, checkMetric, histTs, expectedInMimir)
 			}
 		})
+	}
+}
+
+func checkMetricInProm(t *testing.T, client promv1.API, checkMetric string, ts time.Time, expected bool) {
+	val, _, err := client.Query(context.Background(), checkMetric, ts)
+	require.NoError(t, err)
+
+	if expected {
+		// The metric "checkMetric" should be present on this forwarding target.
+		require.Contains(t, val.String(), checkMetric)
+	} else {
+		// The metric "checkMetric" should not be present on this forwarding target.
+		require.NotContains(t, val.String(), checkMetric)
+	}
+}
+
+func checkMetricInMimir(t *testing.T, client *e2emimir.Client, checkMetric string, ts time.Time, expected bool) {
+	val, err := client.Query(checkMetric, ts)
+	require.NoError(t, err)
+
+	if expected {
+		// The metric "checkMetric" is expected to have been ingested by Mimir.
+		require.Contains(t, val.String(), checkMetric)
+	} else {
+		// The metric "checkMetric" is expected to not have been ingested by Mimir.
+		require.NotContains(t, val.String(), checkMetric)
 	}
 }

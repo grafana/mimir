@@ -80,6 +80,7 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 			t.Cleanup(r.Stop)
 
 			r.SyncRuleGroups(context.Background(), existingRules)
+			r.Start()
 
 			var loadedGroupsNames []string
 			for _, g := range r.GetRules(userID) {

@@ -117,8 +117,6 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-- Protobuf internal query result payload format for rule evaluation (`-ruler.query-frontend.query-result-response-format=protobuf`)
-  - Note that using the protobuf format for the query path (`-query-frontend.query-result-response-format=protobuf`) is not considered experimental
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 

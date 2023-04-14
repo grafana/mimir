@@ -29,12 +29,20 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
+* [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
+* [FEATURE] Add documentation to use external Redis support for chunks-cache, metadata-cache and results-cache. #4348
+* [FEATURE] Allow for deploying mixin dashboards as part of the helm chart. #4618
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
+* [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.1`. #4659
+* [ENHANCEMENT] Update minio subchart to `5.0.7`. #4705
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
+* [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
+* [BUGFIX] Add missing imagePullSecrets configuration to the `graphite-web` deployment template. #4716
 
 ## 4.3.0
 

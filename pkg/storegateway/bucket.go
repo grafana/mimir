@@ -147,10 +147,10 @@ func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULI
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
-func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
+func (c noopCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string, _ []byte) {
 }
 
-func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
+func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string) ([]byte, bool) {
 	return nil, false
 }
 
@@ -713,7 +713,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 
 	unsafeStats := stats.export()
-	if err = srv.Send(storepb.NewStatsResponse(unsafeStats.postingsFetchedSizeSum + unsafeStats.seriesFetchedSizeSum)); err != nil {
+	if err = srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesTouchedSizeSum)); err != nil {
 		err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
 		return
 	}
@@ -1252,9 +1252,12 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 		return allValues, nil
 	}
 
-	p, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	p, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
+	}
+	if len(pendingMatchers) > 0 {
+		return nil, fmt.Errorf("there are pending matchers (%s) for query (%s)", util.MatchersStringer(pendingMatchers), util.MatchersStringer(matchers))
 	}
 
 	keys := make([]labels.Label, len(allValues))
@@ -1533,7 +1536,8 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 
 func (b *bucketBlock) indexReader() *bucketIndexReader {
 	b.pendingReaders.Add(1)
-	return newBucketIndexReader(b)
+	// This will be replaced with a strategy selected via a CLI flag.
+	return newBucketIndexReader(b, selectAllStrategy{})
 }
 
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {

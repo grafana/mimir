@@ -7,9 +7,13 @@ package storegateway
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 
+	"github.com/dennwc/varint"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -24,8 +28,11 @@ import (
 // single byte, values < 16384 are encoded as two bytes). Diff + varint reduces postings size
 // significantly (to about 20% of original), snappy then halves it to ~10% of the original.
 
+type codec string
+
 const (
-	codecHeaderSnappy = "dvs" // As in "diff+varint+snappy".
+	codecHeaderSnappy             codec = "dvs" // As in "diff+varint+snappy".
+	codecHeaderSnappyWithMatchers codec = "dm"  // As in "dvs+matchers"
 )
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
@@ -86,7 +93,7 @@ func diffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
 
 func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
 	if !isDiffVarintSnappyEncodedPostings(input) {
-		return nil, errors.New("header not found")
+		return nil, errors.New(string(codecHeaderSnappy) + " header not found")
 	}
 
 	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappy):])
@@ -95,6 +102,131 @@ func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
 	}
 
 	return newDiffVarintPostings(raw), nil
+}
+
+// isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy+matchers codec.
+func isDiffVarintSnappyWithMatchersEncodedPostings(input []byte) bool {
+	return bytes.HasPrefix(input, []byte(codecHeaderSnappyWithMatchers))
+}
+
+// diffVarintSnappyWithMatchersEncode encodes postings into snappy-encoded diff+varint representation,
+// prepended with any pending matchers to the result.
+// Returned byte slice starts with codecHeaderSnappyWithMatchers header.
+// Length argument is expected number of postings, used for preallocating buffer.
+func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, pendingMatchers []*labels.Matcher) ([]byte, error) {
+	varintPostings, err := diffVarintEncodeNoHeader(p, length)
+	if err != nil {
+		return nil, err
+	}
+
+	// Estimate sizes
+	estimatedMatchersLen := encodedMatchersLen(pendingMatchers)
+	codecLen := len(codecHeaderSnappyWithMatchers)
+
+	// Preallocate buffer
+	result := make([]byte, codecLen+estimatedMatchersLen+snappy.MaxEncodedLen(len(varintPostings)))
+
+	// Codec
+	copy(result, codecHeaderSnappyWithMatchers)
+
+	// Matchers size + matchers
+	actualMatchersLen, err := encodeMatchers(estimatedMatchersLen, pendingMatchers, result[codecLen:])
+	if err != nil {
+		return nil, err
+	}
+	if actualMatchersLen != estimatedMatchersLen {
+		return nil, fmt.Errorf("encoding matchers wrote unexpected number of bytes: wrote %d, expected %d", actualMatchersLen, estimatedMatchersLen)
+	}
+
+	// Compressed postings
+	compressedPostings := snappy.Encode(result[codecLen+actualMatchersLen:], varintPostings)
+
+	result = result[:codecLen+actualMatchersLen+len(compressedPostings)]
+	return result, nil
+}
+
+// encodeMatchers needs to be called with the precomputed length of the encoded matchers from encodedMatchersLen
+func encodeMatchers(expectedLen int, matchers []*labels.Matcher, dest []byte) (written int, _ error) {
+	if len(dest) < expectedLen {
+		return 0, fmt.Errorf("too small buffer to encode matchers: need at least %d, got %d", expectedLen, dest)
+	}
+	written += binary.PutUvarint(dest, uint64(len(matchers)))
+	for _, m := range matchers {
+		written += binary.PutUvarint(dest[written:], uint64(len(m.Name)))
+		written += copy(dest[written:], m.Name)
+
+		dest[written] = byte(m.Type)
+		written++
+
+		written += binary.PutUvarint(dest[written:], uint64(len(m.Value)))
+		written += copy(dest[written:], m.Value)
+	}
+	return written, nil
+}
+
+func encodedMatchersLen(matchers []*labels.Matcher) int {
+	matchersLen := varint.UvarintSize(uint64(len(matchers)))
+	for _, m := range matchers {
+		matchersLen += varint.UvarintSize(uint64(len(m.Name)))
+		matchersLen += len(m.Name)
+		matchersLen++ // 1 byte for the type
+		matchersLen += varint.UvarintSize(uint64(len(m.Value)))
+		matchersLen += len(m.Value)
+	}
+	return matchersLen
+}
+
+func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, []*labels.Matcher, error) {
+	if !isDiffVarintSnappyWithMatchersEncodedPostings(input) {
+		return nil, nil, errors.New(string(codecHeaderSnappyWithMatchers) + " header not found")
+	}
+
+	codecLen := len(codecHeaderSnappyWithMatchers)
+	matchers, matchersLen, err := decodeMatchers(input[codecLen:])
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "decoding matchers")
+	}
+	raw, err := snappy.Decode(nil, input[codecLen+matchersLen:])
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "snappy decode")
+	}
+
+	return newDiffVarintPostings(raw), matchers, nil
+}
+
+func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
+	initialLength := len(src)
+	numMatchers, numMatchersLen := varint.Uvarint(src)
+	src = src[numMatchersLen:]
+	if numMatchers == 0 {
+		return nil, numMatchersLen, nil
+	}
+	matchers := make([]*labels.Matcher, 0, numMatchers)
+
+	for i := uint64(0); i < numMatchers; i++ {
+		n, nLen := varint.Uvarint(src)
+		src = src[nLen:]
+		// We should copy the string so that we don't retain a reference to the original slice, which may be large.
+		labelName := string(src[:n])
+		src = src[n:]
+
+		typ := labels.MatchType(src[0])
+		src = src[1:]
+
+		n, nLen = varint.Uvarint(src)
+		src = src[nLen:]
+		// We should copy the string so that we don't retain a reference to the original slice, which may be large.
+		value := string(src[:n])
+		src = src[n:]
+
+		m, err := labels.NewMatcher(typ, labelName, value)
+		if err != nil {
+			return nil, 0, err
+		}
+		matchers = append(matchers, m)
+	}
+
+	return matchers, initialLength - len(src), nil
 }
 
 func newDiffVarintPostings(input []byte) *diffVarintPostings {

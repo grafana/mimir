@@ -61,7 +61,7 @@ type QueryFrontendConfig struct {
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
-	QueryResultResponseFormat string `yaml:"query_result_response_format" category:"experimental"`
+	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -73,7 +73,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
-	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatJSON, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
 }
 
 func (c *QueryFrontendConfig) Validate() error {

@@ -249,32 +249,34 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 			}
 
 			// same logic as samples above
-			histograms := make([]mimirpb.Histogram, 0) //, len(stream.Histograms)+10)
-			/* // for now we will disable query sharding for tenants who enable native histograms, as the changes to support query sharding with native histograms is non-trivial
+			var histograms []mimirpb.Histogram
+			if len(stream.Histograms) > 0 {
+				// If there are histograms, which is less likely currently,
+				// we add an extra 10 items to account for some stale markers that could be injected.
+				// We're trading a lower chance of reallocation in case stale markers are added for a
+				// slightly higher memory utilisation.
+				histograms = make([]mimirpb.Histogram, 0, len(stream.Histograms)+10)
+			} else {
+				histograms = make([]mimirpb.Histogram, 0)
+			}
+
 			for idx, histogram := range stream.Histograms {
-				if step > 0 && idx > 0 && histogram.Timestamp > stream.Histograms[idx-1].Timestamp+step {
-					histograms = append(histograms, model.SampleHistogramPair{
-						Timestamp: model.Time(stream.Histograms[idx-1].Timestamp + step),
-						Histogram: model.SampleHistogram{
-							Sum: model.FloatString(math.Float64frombits(value.StaleNaN)),
-						},
+				if step > 0 && idx > 0 && histogram.TimestampMs > stream.Histograms[idx-1].TimestampMs+step {
+					histograms = append(histograms, mimirpb.Histogram{
+						Timestamp: stream.Histograms[idx-1].TimestampMs + step,
+						Sum:       math.Float64frombits(value.StaleNaN),
 					})
 				}
 
-				histograms = append(histograms, model.SampleHistogramPair{
-					Timestamp: model.Time(histogram.Timestamp),
-					Histogram: mimirpb.FromMimirSampleToPromCommonHistogram(*histogram.Histogram),
-				})
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel()))
 			}
 
 			if len(histograms) > 0 && step > 0 {
-				histograms = append(histograms, model.SampleHistogramPair{
-					Timestamp: histograms[len(histograms)-1].Timestamp + model.Time(step),
-					Histogram: model.SampleHistogram{
-						Sum: model.FloatString(math.Float64frombits(value.StaleNaN)),
-					},
+				histograms = append(histograms, mimirpb.Histogram{
+					Timestamp: histograms[len(histograms)-1].Timestamp + step,
+					Sum:       math.Float64frombits(value.StaleNaN),
 				})
-			}*/
+			}
 
 			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}

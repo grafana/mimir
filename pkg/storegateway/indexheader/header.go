@@ -11,6 +11,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
@@ -24,10 +26,10 @@ type Reader interface {
 	IndexVersion() (int, error)
 
 	// PostingsOffset returns start and end offsets of postings for given name and value.
-	// The start is inclusive and the end is exclusive.
-	// The end offset might be bigger than the actual posting ending, but not larger than the whole index file.
+	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
+	// The End is exclusive and is typically the byte offset of the CRC32 field.
+	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	// NotFoundRangeErr is returned when no index can be found for given name and value.
-	// TODO(bwplotka): Move to PostingsOffsets(name string, value ...string) []index.Range and benchmark.
 	PostingsOffset(name string, value string) (index.Range, error)
 
 	// LookupSymbol returns string based on given reference.
@@ -35,11 +37,21 @@ type Reader interface {
 	LookupSymbol(o uint32) (string, error)
 
 	// LabelValues returns all label values for given label name or error.
+	// The returned label values are sorted lexicographically.
 	// If no values are found for label name, or label name does not exists,
-	// then empty string is returned and no error.
+	// then empty slice is returned and no error.
 	// If non-empty prefix is provided, only values starting with the prefix are returned.
 	// If non-nil filter is provided, then only values for which filter returns true are returned.
 	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
+
+	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
+	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
+	// The ranges of each posting list are the same as returned by PostingsOffset.
+	// If no values are found for label name, or label name does not exists,
+	// then empty slice is returned and no error.
+	// If non-empty prefix is provided, only posting lists starting with the prefix are returned.
+	// If non-nil filter is provided, then only posting lists for which filter returns true are returned.
+	LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames() ([]string, error)

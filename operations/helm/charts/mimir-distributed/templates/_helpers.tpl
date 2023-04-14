@@ -57,7 +57,7 @@ Calculate image name based on whether enterprise features are requested
 {{- end -}}
 
 {{/*
-For compatiblity and to support upgrade from enterprise-metrics chart calculate minio bucket name
+For compatibility and to support upgrade from enterprise-metrics chart calculate minio bucket name
 */}}
 {{- define "mimir.minioBucketPrefix" -}}
 {{- if .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
@@ -93,14 +93,14 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 {{- end -}}
 
 {{/*
-Calculate the config from structured and unstructred text input
+Calculate the config from structured and unstructured text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
 {{ tpl (mergeOverwrite (include "mimir.unstructuredConfig" . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
 {{- end -}}
 
 {{/*
-Calculate the config from the unstructred text input
+Calculate the config from the unstructured text input
 */}}
 {{- define "mimir.unstructuredConfig" -}}
 {{ include (print $.Template.BasePath "/_config-render.tpl") . }}
@@ -437,7 +437,7 @@ Get the no_auth_tenant from the configuration
 {{- end -}}
 
 {{/*
-Return if we should create a PodSecurityPoliPodSecurityPolicycy. Takes into account user values and supported kubernetes versions.
+Return if we should create a PodSecurityPolicy. Takes into account user values and supported kubernetes versions.
 */}}
 {{- define "mimir.rbac.usePodSecurityPolicy" -}}
 {{- and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) (and .Values.rbac.create (eq .Values.rbac.type "psp")) -}}
@@ -469,7 +469,7 @@ Return value:
     ...
   }
 During migration there is a special case where an extra "zone" is generated with zonaName == "" empty string.
-The empty string evaulates to false in boolean expressions so it is treated as the default (non zone-aware) zone,
+The empty string evaluates to false in boolean expressions so it is treated as the default (non zone-aware) zone,
 which allows us to keep generating everything for the default zone.
 */}}
 {{- define "mimir.zoneAwareReplicationMap" -}}

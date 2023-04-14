@@ -702,12 +702,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	iterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -723,6 +724,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 		chunkRangesPerSeries,
 		logger,
 	)
+	if len(pendingMatchers) > 0 {
+		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+	}
 
 	// Track the time spent loading series and chunk refs.
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
@@ -1028,6 +1032,52 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 	}
 
 	return lset, s.chunkMetasBuffer, nil
+}
+
+type filteringSeriesChunkRefsSetIterator struct {
+	from     seriesChunkRefsSetIterator
+	matchers []*labels.Matcher
+
+	current seriesChunkRefsSet
+}
+
+func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
+	if !m.from.Next() {
+		return false
+	}
+
+	next := m.from.At()
+	writeIdx := 0
+
+	for _, series := range next.series {
+		matches := true
+		for _, matcher := range m.matchers {
+			if !matcher.Matches(series.lset.Get(matcher.Name)) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			next.series[writeIdx] = series
+			writeIdx++
+		}
+	}
+	next.series = next.series[:writeIdx]
+
+	if next.len() == 0 {
+		next.release()
+		return m.Next()
+	}
+	m.current = next
+	return true
+}
+
+func (m *filteringSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return m.current
+}
+
+func (m *filteringSeriesChunkRefsSetIterator) Err() error {
+	return m.from.Err()
 }
 
 // cachedSeriesForPostingsID contains enough information to be able to tell whether a cache entry

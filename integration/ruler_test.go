@@ -597,7 +597,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Push some series to Mimir -- enough so that we can hit some limits.
 	for i := 0; i < 10; i++ {
-		series, _, _ := generateSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
+		series, _, _ := generateAlternatingSeries(i)("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -778,14 +778,20 @@ func TestRulerFederatedRules(t *testing.T) {
 		tc = isolatedTestCase(tc, i)
 		t.Run(tc.name, func(t *testing.T) {
 			// Generate some series under different tenants
-			sampleTime := time.Now()
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _, _ := generateSeries("metric", sampleTime)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series)
+				res, err := client.Push(seriesFloat)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
@@ -846,10 +852,10 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			},
 		},
 		"federated rule group": {
-			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
-			ruleGroupOwner:     "tenant-2",
+			tenantsWithMetrics: []string{"tenant-2", "tenant-3"},
+			ruleGroupOwner:     "tenant-3",
 			ruleExpression:     "count(group by (__tenant_id__) (metric))",
-			groupSourceTenants: []string{"tenant-1", "tenant-2"},
+			groupSourceTenants: []string{"tenant-2", "tenant-3"},
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
@@ -925,14 +931,20 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 			// Generate some series under different tenants
-			sampleTime := time.Now()
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _, _ := generateSeries("metric", sampleTime)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series)
+				res, err := client.Push(seriesFloat)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}

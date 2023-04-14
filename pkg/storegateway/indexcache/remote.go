@@ -206,18 +206,18 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	c.set(cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
+func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	c.set(cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey))
+func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy))
 }
 
-func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey) string {
+func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) string {
 	hash := blake2b.Sum256([]byte(lmKey))
-	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.

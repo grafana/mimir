@@ -87,8 +87,7 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
-	fp := series.Hash()
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, fp uint64, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
 	stripeID := fp % numStripes
 
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)

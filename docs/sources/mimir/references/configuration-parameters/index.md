@@ -1590,10 +1590,10 @@ query_frontend:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
 
-  # (experimental) Format to use when retrieving query results from
-  # query-frontends. Supported values: json, protobuf
+  # Format to use when retrieving query results from query-frontends. Supported
+  # values: json, protobuf
   # CLI flag: -ruler.query-frontend.query-result-response-format
-  [query_result_response_format: <string> | default = "json"]
+  [query_result_response_format: <string> | default = "protobuf"]
 
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
@@ -3490,6 +3490,11 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.symbols-flushers-concurrency
 [symbols_flushers_concurrency: <int> | default = 1]
 
+# (advanced) Max number of uploaded blocks that can be validated concurrently. 0
+# = no limit.
+# CLI flag: -compactor.max-block-upload-validation-concurrency
+[max_block_upload_validation_concurrency: <int> | default = 1]
+
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by compactor, otherwise all
 # tenants can be compacted. Subject to sharding.
@@ -4027,6 +4032,13 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # Supported values are: v4, v2.
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
+
+# (experimental) The S3 storage class to use, not set by default. Details can be
+# found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
+# STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
+# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+# CLI flag: -<prefix>.s3.storage-class
+[storage_class: <string> | default = ""]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

@@ -4924,6 +4924,17 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.storage-class",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -7889,6 +7900,17 @@
         },
         {
           "kind": "field",
+          "name": "max_block_upload_validation_concurrency",
+          "required": false,
+          "desc": "Max number of uploaded blocks that can be validated concurrently. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "compactor.max-block-upload-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.",
@@ -10065,10 +10087,9 @@
               "required": false,
               "desc": "Format to use when retrieving query results from query-frontends. Supported values: json, protobuf",
               "fieldValue": null,
-              "fieldDefaultValue": "json",
+              "fieldDefaultValue": "protobuf",
               "fieldFlag": "ruler.query-frontend.query-result-response-format",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldType": "string"
             }
           ],
           "fieldValue": null,
@@ -10191,6 +10212,17 @@
               "fieldFlag": "ruler-storage.s3.signature-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.storage-class",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -11553,6 +11585,17 @@
               "fieldFlag": "alertmanager-storage.s3.signature-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "storage_class",
+              "required": false,
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.storage-class",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -13692,6 +13735,17 @@
                   "fieldFlag": "common.storage.s3.signature-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "storage_class",
+                  "required": false,
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.storage-class",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "block",
