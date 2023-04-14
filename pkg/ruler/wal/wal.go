@@ -382,7 +382,7 @@ func (w *Storage) MarkSeriesStale(groupKey string) error {
 }
 
 // StartTime always returns 0, nil. It is implemented for compatibility with
-// Prometheus, but is unused in the agent.
+// Prometheus
 func (*Storage) StartTime() (int64, error) {
 	return 0, nil
 }

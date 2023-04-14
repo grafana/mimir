@@ -408,7 +408,6 @@ type RWMultiTenantManager struct {
 
 func NewRWMultiTenantManager(
 	cfg Config,
-	remoteWriteConfig RemoteWriteConfig,
 	managerFactory ManagerFactory,
 	p *RemoteWriteAppendable,
 	reg prometheus.Registerer,
@@ -430,7 +429,7 @@ func NewRWMultiTenantManager(
 	}
 	return &RWMultiTenantManager{
 		DefaultMultiTenantManager: manager,
-		remoteWriteConfig:         remoteWriteConfig,
+		remoteWriteConfig:         cfg.RWConfig,
 		rwAppendable:              p,
 		logger:                    logger,
 		reg:                       reg,

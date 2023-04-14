@@ -25,6 +25,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
@@ -732,6 +733,16 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Registerer,
 	)
 
+	// TODO probably want to change cortex prefix for open source
+	totalWrites := promauto.With(prometheus.DefaultRegisterer).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_ruler_write_requests_total",
+		Help: "Number of write requests to ingesters.",
+	})
+	failedWrites := promauto.With(prometheus.DefaultRegisterer).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_ruler_write_requests_failed_total",
+		Help: "Number of failed write requests to ingesters.",
+	})
+
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
 	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
@@ -743,9 +754,22 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
-	if err != nil {
-		return nil, err
+
+	var manager ruler.MultiTenantManager
+
+	if t.Cfg.Ruler.RWConfig.Enabled {
+		rwAppendable := ruler.NewRemoteWriteAppendable(t.Distributor, t.Overrides, totalWrites, failedWrites)
+		rwManager, err := ruler.NewRWMultiTenantManager(t.Cfg.Ruler, managerFactory, rwAppendable, t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		manager = rwManager
+	} else {
+		defaultManager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+		if err != nil {
+			return nil, err
+		}
+		manager = defaultManager
 	}
 
 	t.Ruler, err = ruler.NewRuler(
