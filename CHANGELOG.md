@@ -83,6 +83,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.2` to `alpine:3.17.3`. #4685
 * [ENHANCEMENT] Querier: improve performance when shuffle sharding is enabled and the shard size is large. #4711
 * [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
+* [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
 * [ENHANCEMENT] Distributor: make `__meta_tenant_id` available in `metric_relabel_configs` #4725
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
@@ -92,6 +93,8 @@
 * [BUGFIX] Query-frontend: don't retry queries which error inside PromQL. #4643
 * [BUGFIX] Store-gateway & query-frontend: report more consistent statistics for fetched index bytes. #4671
 * [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
+* [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
+* [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
 
 ### Mixin
 
@@ -110,6 +113,7 @@
   * Renamed `memcached_*_enabled` config options to `cache_*_enabled`
   * Renamed `memcached_*_max_item_size_mb` config options to `cache_*_max_item_size_mb`
   * Added `cache_*_backend` config options
+* [CHANGE] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. This eliminated resharding during rollouts, at the cost of extra effort during scaling down store-gateways. For more information see [Scaling down store-gateways](https://grafana.com/docs/mimir/v2.7.x/operators-guide/run-production-environment/scaling-out/#scaling-down-store-gateways). #4713
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
@@ -127,10 +131,14 @@
 
 ### Mimir Continuous Test
 
+* [FEATURE] Allow continuous testing of native histograms as well by enabling the flag `-tests.write-read-series-test.histogram-samples-enabled`. The metrics exposed by the tool will now have a new label called `type` with possible values of `float`, `histogram_float_counter`, `histogram_float_gauge`, `histogram_int_counter`, `histogram_int_gauge`, the list of metrics impacted: #4457
+  * `mimir_continuous_test_writes_total`
+  * `mimir_continuous_test_writes_failed_total`
+  * `mimir_continuous_test_queries_total`
+  * `mimir_continuous_test_queries_failed_total`
+  * `mimir_continuous_test_query_result_checks_total`
+  * `mimir_continuous_test_query_result_checks_failed_total`
 * [ENHANCEMENT] Added a new metric `mimir_continuous_test_build_info` that reports version information, similar to the existing `cortex_build_info` metric exposed by other Mimir components. #4712
-
-### Mimir Continuous Test
-
 * [ENHANCEMENT] Add coherency for the selected ranges and instants of test queries. #4704
 
 ### Query-tee

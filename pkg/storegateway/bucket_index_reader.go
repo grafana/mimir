@@ -38,21 +38,6 @@ import (
 // The second return value indicates whether the returned data comes from the cache.
 type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error)
 
-type postingsSelectionStrategy interface {
-	name() string
-	selectPostings([]postingGroup) (selected, omitted []postingGroup)
-}
-
-type selectAllStrategy struct{}
-
-func (selectAllStrategy) name() string {
-	return "all"
-}
-
-func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	return groups, nil
-}
-
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
@@ -297,6 +282,11 @@ func extractLabels(groups []postingGroup) []labels.Label {
 	return keys
 }
 
+var allPostingsKey = func() labels.Label {
+	n, v := index.AllPostingsKey()
+	return labels.Label{Name: n, Value: v}
+}()
+
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index.
 func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
@@ -360,11 +350,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
 	// special All postings completely.
 	if allRequested && !hasAdds {
-		// add group with label to fetch "special All postings".
-		name, value := index.AllPostingsKey()
-		allPostingsLabel := labels.Label{Name: name, Value: value}
-
-		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
+		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsKey}})
 	}
 
 	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.

@@ -29,6 +29,12 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "graphite-web") | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
       containers:
         - name: graphite-web
           image: "{{ .Values.graphite.web.image.repository }}:{{ .Values.graphite.web.image.tag }}"

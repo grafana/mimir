@@ -59,6 +59,15 @@ const (
 	// EstimatedMaxChunkSize is average max of chunk size. This can be exceeded though in very rare (valid) cases.
 	EstimatedMaxChunkSize = 16000
 
+	// EstimatedSeriesP99Size is the size in bytes of a single series in the TSDB index. This includes the symbol IDs in
+	// the symbols table (not the actual label strings) and the chunk refs (min time, max time, offset).
+	// This is an estimation that should cover >99% of series with less than 30 labels and around 50 chunks per series.
+	EstimatedSeriesP99Size = 512
+
+	// BytesPerPostingInAPostingList is the number of bytes that each posting (series ID) takes in a
+	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
+	BytesPerPostingInAPostingList = 4
+
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
 	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
 
@@ -355,8 +364,23 @@ type BucketStoreConfig struct {
 	// Controls experimental options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
 
-	StreamingBatchSize   int `yaml:"streaming_series_batch_size" category:"advanced"`
-	ChunkRangesPerSeries int `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
+	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
+	ChunkRangesPerSeries        int    `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
+	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
+}
+
+const (
+	SpeculativePostingsStrategy                = "speculative"
+	WorstCasePostingsStrategy                  = "worst-case"
+	WorstCaseSmallPostingListsPostingsStrategy = "worst-case-small-posting-lists"
+	AllPostingsStrategy                        = "all"
+)
+
+var validSeriesSelectionStrategies = []string{
+	SpeculativePostingsStrategy,
+	WorstCasePostingsStrategy,
+	WorstCaseSmallPostingListsPostingsStrategy,
+	AllPostingsStrategy,
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -387,6 +411,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
+	f.StringVar(&cfg.SeriesSelectionStrategyName, "blocks-storage.bucket-store.series-selection-strategy", AllPostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
 }
 
 // Validate the config.
@@ -405,6 +430,9 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	}
 	if cfg.DeprecatedConsistencyDelay > 0 {
 		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
+	}
+	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
+		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
 	}
 	return nil
 }
