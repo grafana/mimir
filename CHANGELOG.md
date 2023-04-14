@@ -128,10 +128,14 @@
 
 ### Mimir Continuous Test
 
+* [FEATURE] Allow continuous testing of native histograms as well by enabling the flag `-tests.write-read-series-test.histogram-samples-enabled`. The metrics exposed by the tool will now have a new label called `type` with possible values of `float`, `histogram_float_counter`, `histogram_float_gauge`, `histogram_int_counter`, `histogram_int_gauge`, the list of metrics impacted: #4457
+  * `mimir_continuous_test_writes_total`
+  * `mimir_continuous_test_writes_failed_total`
+  * `mimir_continuous_test_queries_total`
+  * `mimir_continuous_test_queries_failed_total`
+  * `mimir_continuous_test_query_result_checks_total`
+  * `mimir_continuous_test_query_result_checks_failed_total`
 * [ENHANCEMENT] Added a new metric `mimir_continuous_test_build_info` that reports version information, similar to the existing `cortex_build_info` metric exposed by other Mimir components. #4712
-
-### Mimir Continuous Test
-
 * [ENHANCEMENT] Add coherency for the selected ranges and instants of test queries. #4704
 
 ### Query-tee
