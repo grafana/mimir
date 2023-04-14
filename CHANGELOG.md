@@ -72,6 +72,7 @@
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_limits` block in runtime configuration in addition to the existing configuration. #4619
 * [ENHANCEMENT] Querier: reduce peak memory consumption for queries that touch a large number of chunks. #4625
 * [ENHANCEMENT] Query-frontend: added experimental `-query-frontend.query-sharding-max-regexp-size-bytes` limit to query-frontend. When set to a value greater than 0, query-frontend disabled query sharding for any query with a regexp matcher longer than the configured limit. #4632
+* [ENHANCEMENT] Store-gateway: include statistics from LabelValues and LabelNames calls in `cortex_bucket_store_series*` metrics. #4673
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
