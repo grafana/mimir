@@ -30,6 +30,12 @@ func prettyPrintType(t reflect.Type) string {
 }
 
 func addTypeToTree(t reflect.Type, tree treeprint.Tree) {
+	if t.Kind() == reflect.Pointer {
+		name := fmt.Sprintf("%s: *%s", t.Name(), t.Elem().Kind())
+		addTypeToTree(t.Elem(), tree.AddBranch(name))
+		return
+	}
+
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Sprintf("unexpected kind %s", t.Kind()))
 	}
@@ -38,6 +44,9 @@ func addTypeToTree(t reflect.Type, tree treeprint.Tree) {
 		f := t.Field(i)
 
 		switch f.Type.Kind() {
+		case reflect.Pointer:
+			name := fmt.Sprintf("+%v %s: *%s", f.Offset, f.Name, f.Type.Elem().Kind())
+			addTypeToTree(f.Type.Elem(), tree.AddBranch(name))
 		case reflect.Slice:
 			name := fmt.Sprintf("+%v %s: []%s", f.Offset, f.Name, f.Type.Elem().Kind())
 
