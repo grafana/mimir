@@ -36,11 +36,13 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			require.NoError(t, err)
 
 			var (
-				numSeries          = 1000
-				numStaleSeries     = 100
-				numHistograms      = 1000
-				numStaleHistograms = 100
-				histogramBuckets   = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+				numSeries                = 1000
+				numStaleSeries           = 100
+				numConvHistograms        = 1000
+				numStaleConvHistograms   = 100
+				histogramBuckets         = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+				numNativeHistograms      = 1000
+				numStaleNativeHistograms = 100
 			)
 
 			tests := map[string]struct {
@@ -122,10 +124,6 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 				"floor": {
 					query:                `floor(sum_over_time(metric_counter[3m]))`,
-					expectedSplitQueries: 3,
-				},
-				"histogram_quantile": {
-					query:                `histogram_quantile(0.5, rate(metric_histogram_bucket[3m]))`,
 					expectedSplitQueries: 3,
 				},
 				"label_join": {
@@ -304,7 +302,11 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                fmt.Sprintf(`min_over_time(metric_counter[3m] offset 1m @ %v)`, start.Unix()),
 					expectedSplitQueries: 3,
 				},
-				// Histograms
+				// Conventional Histograms
+				"histogram_quantile": {
+					query:                `histogram_quantile(0.5, rate(metric_histogram_bucket[3m]))`,
+					expectedSplitQueries: 3,
+				},
 				"histogram_quantile() grouping only 'by' le": {
 					query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,
 					expectedSplitQueries: 3,
@@ -321,6 +323,16 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[3m])))`,
 					expectedSplitQueries: 3,
 				},
+				// // Native Histograms
+				// // TODO(histograms): enable when https://github.com/prometheus/prometheus/issues/12250 is resolved
+				// "sum(rate) for native histogram": {
+				// 	query:                `sum(rate(metric_native_histogram[3m]))`,
+				// 	expectedSplitQueries: 3,
+				// },
+				// "sum(rate) grouping 'by' for native histogram": {
+				// 	query:                `sum by(group_1) (rate(metric_native_histogram[3m]))`,
+				// 	expectedSplitQueries: 3,
+				// },
 				// Subqueries
 				"subquery sum_over_time": {
 					query:                   `sum_over_time(metric_counter[1h:5m])`,
@@ -423,7 +435,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 			}
 
-			series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
+			series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
 			seriesID := 0
 			end := start.Add(30 * time.Minute)
 
@@ -456,21 +468,33 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				start.Add(5*time.Minute), end, step, factor(2)))
 			seriesID++
 
-			// Add histogram series.
-			for i := 0; i < numHistograms; i++ {
+			// Add conventional histogram series.
+			for i := 0; i < numConvHistograms; i++ {
 				for bucketIdx, bucketLe := range histogramBuckets {
 					// We expect each bucket to have a value higher than the previous one.
 					gen := factor(float64(i) * float64(bucketIdx) * 0.1)
-					if i >= numHistograms-numStaleHistograms {
+					if i >= numConvHistograms-numStaleConvHistograms {
 						// Wrap the generator to inject the staleness marker between minute 10 and 20.
 						gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 					}
 
-					series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
+					series = append(series, newSeries(newTestConventionalHistogramLabels(seriesID, bucketLe),
 						start.Add(-lookbackDelta), end, step, gen))
 				}
 
 				// Increase the series ID after all per-bucket series have been created.
+				seriesID++
+			}
+
+			// Add native histogram series.
+			for i := 0; i < numNativeHistograms; i++ {
+				gen := factor(float64(i) * 0.1)
+				if i >= numNativeHistograms-numStaleNativeHistograms {
+					// Wrap the generator to inject the staleness marker between minute 10 and 20.
+					gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+				}
+
+				series = append(series, newNativeHistogramSeries(newTestNativeHistogramLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
 				seriesID++
 			}
 

@@ -91,6 +91,7 @@
 * [BUGFIX] Query-frontend: don't retry queries which error inside PromQL. #4643
 * [BUGFIX] Store-gateway & query-frontend: report more consistent statistics for fetched index bytes. #4671
 * [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
+* [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
 
 ### Mixin
 
