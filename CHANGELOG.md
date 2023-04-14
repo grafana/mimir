@@ -79,6 +79,7 @@
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_limits` block in runtime configuration in addition to the existing configuration. #4619
 * [ENHANCEMENT] Querier: reduce peak memory consumption for queries that touch a large number of chunks. #4625
 * [ENHANCEMENT] Query-frontend: added experimental `-query-frontend.query-sharding-max-regexp-size-bytes` limit to query-frontend. When set to a value greater than 0, query-frontend disabled query sharding for any query with a regexp matcher longer than the configured limit. #4632
+* [ENHANCEMENT] Store-gateway: include statistics from LabelValues and LabelNames calls in `cortex_bucket_store_series*` metrics. #4673
 * [ENHANCEMENT] Query-frontend: improve readability of distributed tracing spans. #4656
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.2` to `alpine:3.17.3`. #4685
 * [ENHANCEMENT] Querier: improve performance when shuffle sharding is enabled and the shard size is large. #4711

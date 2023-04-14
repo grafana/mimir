@@ -809,7 +809,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 		stats.blocksQueried = len(batches)
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
-	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 
@@ -832,20 +831,22 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	stats := safeStats.export()
-	s.metrics.seriesDataTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetchedSizeSum))
-	s.metrics.seriesDataTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouched))
-	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
-	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouchedSizeSum))
-	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+	s.recordPostingsStats(stats)
+	s.recordSeriesStats(stats)
+	s.recordCachedPostingStats(stats)
+	s.recordSeriesHashCacheStats(stats)
+	s.recordStreamingSeriesStats(stats)
+
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
+
+	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 
 	if s.fineGrainedChunksCachingEnabled {
 		s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksProcessed))
@@ -863,17 +864,41 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	}
 
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
-	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
-	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
-	s.metrics.cachedPostingsCompressionErrors.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressionErrors))
-	s.metrics.cachedPostingsCompressionErrors.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressionErrors))
-	s.metrics.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelEncode).Add(stats.cachedPostingsCompressionTimeSum.Seconds())
-	s.metrics.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelDecode).Add(stats.cachedPostingsDecompressionTimeSum.Seconds())
-	s.metrics.cachedPostingsOriginalSizeBytes.Add(float64(stats.cachedPostingsOriginalSizeSum))
-	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
-	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
-	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
+}
 
+func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
+	stats := safeStats.export()
+	s.recordPostingsStats(stats)
+	s.recordSeriesStats(stats)
+	s.recordCachedPostingStats(stats)
+	s.recordSeriesHashCacheStats(stats)
+	s.recordStreamingSeriesStats(stats)
+
+	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
+}
+
+func (s *BucketStore) recordLabelValuesCallResult(safeStats *safeQueryStats) {
+	stats := safeStats.export()
+	s.recordPostingsStats(stats)
+	s.recordCachedPostingStats(stats)
+
+}
+
+func (s *BucketStore) recordPostingsStats(stats *queryStats) {
+	s.metrics.seriesDataTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("postings", "").Observe(float64(stats.postingsTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("postings", "").Observe(float64(stats.postingsFetchedSizeSum))
+}
+
+func (s *BucketStore) recordSeriesStats(stats *queryStats) {
+	s.metrics.seriesDataTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouched))
+	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
+	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesTouchedSizeSum))
+	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+}
+
+func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	// Track the streaming store-gateway preloading effectiveness metrics only if the request had
 	// more than 1 batch. If the request only had 1 batch, then preloading is not triggered at all.
 	if stats.streamingSeriesBatchCount > 1 {
@@ -885,9 +910,23 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
+}
+
+func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
+	s.metrics.cachedPostingsCompressions.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressions))
+	s.metrics.cachedPostingsCompressions.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressions))
+	s.metrics.cachedPostingsCompressionErrors.WithLabelValues(labelEncode).Add(float64(stats.cachedPostingsCompressionErrors))
+	s.metrics.cachedPostingsCompressionErrors.WithLabelValues(labelDecode).Add(float64(stats.cachedPostingsDecompressionErrors))
+	s.metrics.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelEncode).Add(stats.cachedPostingsCompressionTimeSum.Seconds())
+	s.metrics.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelDecode).Add(stats.cachedPostingsDecompressionTimeSum.Seconds())
+	s.metrics.cachedPostingsOriginalSizeBytes.Add(float64(stats.cachedPostingsOriginalSizeSum))
+	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
+}
+
+func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
+	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
+	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
@@ -920,7 +959,12 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
 	}
 
-	resHints := &hintspb.LabelNamesResponseHints{}
+	var (
+		stats    = newSafeQueryStats()
+		resHints = &hintspb.LabelNamesResponseHints{}
+	)
+
+	defer s.recordLabelNamesCallResult(stats)
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.Hints != nil {
@@ -960,7 +1004,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
 
-			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger)
+			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
@@ -985,6 +1029,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+	})
+
 	anyHints, err := types.MarshalAny(resHints)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
@@ -996,7 +1044,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}, nil
 }
 
-func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger) ([]string, error) {
+func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger, stats *safeQueryStats) ([]string, error) {
 	names, ok := fetchCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
 	if ok {
 		return names, nil
@@ -1028,7 +1076,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		true,
 		minTime, maxTime,
 		1, // we skip chunks, so this doesn't make any difference
-		newSafeQueryStats(),
+		stats,
 		logger,
 	)
 	if err != nil {
@@ -1102,6 +1150,9 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
 	}
 
+	stats := newSafeQueryStats()
+	defer s.recordLabelValuesCallResult(stats)
+
 	resHints := &hintspb.LabelValuesResponseHints{}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -1142,7 +1193,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label values")
 
-			result, err := blockLabelValues(gctx, indexr, req.Label, reqSeriesMatchers, s.logger, newSafeQueryStats())
+			result, err := blockLabelValues(gctx, indexr, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}

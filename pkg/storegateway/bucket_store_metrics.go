@@ -77,20 +77,20 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
-		Help: "How many items of a data type in a block were touched for a single series request.",
+		Help: "How many items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",
 	}, []string{"data_type", "stage"})
 	m.seriesDataFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_fetched",
-		Help: "How many items of a data type in a block were fetched for a single series request. This includes chunks from the cache and the object storage.",
+		Help: "How many items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
 	m.seriesDataSizeTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_touched_bytes",
-		Help: "Size of all items of a data type in a block were touched for a single series request.",
+		Help: "Size of all items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",
 	}, []string{"data_type", "stage"})
 	m.seriesDataSizeFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_fetched_bytes",
-		Help: "Size of all items of a data type in a block were fetched for a single series request. This includes chunks from the cache and the object storage.",
+		Help: "Size of all items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
 	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
