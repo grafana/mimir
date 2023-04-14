@@ -27,6 +27,8 @@
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
+      // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+      'store-gateway.sharding-ring.unregister-on-shutdown': false,
 
       // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
