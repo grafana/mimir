@@ -956,7 +956,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var (
 		stats    = newSafeQueryStats()
-		begin    = time.Now()
 		resHints = &hintspb.LabelNamesResponseHints{}
 	)
 
@@ -1027,7 +1026,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
-		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
 	anyHints, err := types.MarshalAny(resHints)
