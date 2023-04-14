@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"sort"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -233,6 +232,25 @@ func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[u
 	return result
 }
 
+func getRegisteredTokensOwnershipStatistics(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) (min, max, spread float64) {
+	ingesters := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
+
+	// Find min and max ownership %.
+	min = ingesters[0].percentage
+	max = ingesters[0].percentage
+
+	for _, ingester := range ingesters {
+		if ingester.percentage < min {
+			min = ingester.percentage
+		}
+		if ingester.percentage > max {
+			max = ingester.percentage
+		}
+	}
+
+	return min, max, (max - min) / max
+}
+
 func analyzeRegisteredTokensOwnership(analysisName string, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, logger log.Logger) error {
 	level.Info(logger).Log("msg", "Analyzing registered ring tokens", "analysis", analysisName)
 
@@ -256,33 +274,4 @@ func formatEnabled(enabled bool) string {
 		return "enabled"
 	}
 	return "disabled"
-}
-
-func generateRingWithPerfectlySpacedTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
-	desc := &ring.Desc{Ingesters: map[string]ring.InstanceDesc{}}
-
-	for i := 0; i < numIngesters; i++ {
-		// Get the zone letter starting from "a".
-		zoneID := "zone-" + string(rune('a'+(i%numZones)))
-		ingesterID := fmt.Sprintf("ingester-%s-%d", zoneID, i/numZones)
-
-		// Generate the tokens.
-		tokens := make([]uint32, 0, numTokensPerIngester)
-		tokensOffset := maxTokenValue / uint32(numTokensPerIngester)
-		startToken := (tokensOffset / uint32(numIngesters)) * uint32(i)
-		for t := uint32(0); t < uint32(numTokensPerIngester); t++ {
-			tokens = append(tokens, startToken+(t*tokensOffset))
-		}
-
-		desc.Ingesters[ingesterID] = ring.InstanceDesc{
-			Addr:                ingesterID,
-			Timestamp:           now.Unix(),
-			State:               ring.ACTIVE,
-			Tokens:              tokens,
-			Zone:                zoneID,
-			RegisteredTimestamp: now.Unix(),
-		}
-	}
-
-	return desc
 }

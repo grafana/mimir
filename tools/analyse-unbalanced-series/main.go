@@ -27,6 +27,17 @@ func main() {
 	analyseRing("real-ingesters-ring", ringStatus.toRingModel(), logger)
 
 	// Run analysis on simulated ring.
-	ringDesc := generateRingWithPerfectlySpacedTokens(444, 3, 512, math.MaxUint32, time.Now())
+	const (
+		numIngesters         = 444
+		numZones             = 3
+		numTokensPerIngester = 512
+	)
+
+	ringDesc := generateRingWithPerfectlySpacedTokens(numIngesters, numZones, numTokensPerIngester, math.MaxUint32, time.Now())
 	analyseRing("simulated-ingesters-ring-with-perfectly-spaced-tokens", ringDesc, logger)
+
+	ringDesc = generateRingWithRandomTokens(numIngesters, numZones, numTokensPerIngester, math.MaxUint32, time.Now())
+	analyseRing("simulated-ingesters-ring-with-random-tokens", ringDesc, logger)
+
+	analyzeRingOwnershipSpreadOnDifferentTokensPerIngester(numIngesters, numZones, []int{64, 128, 256, 512, 1024, 2048, 4096, 8192}, logger)
 }
