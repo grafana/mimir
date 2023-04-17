@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )
@@ -184,8 +185,15 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 
 					decodedPostings, decodedMatchers, err := diffVarintSnappyMatchersDecode(data)
 					assert.NoError(t, err)
+
 					if assert.Len(t, decodedMatchers, len(matchers)) && len(matchers) > 0 {
-						assert.Equal(t, matchers, decodedMatchers)
+						// Assert same matchers. We do some optimizations in mimir-prometheus which make
+						// the label matchers not comparable with reflect.DeepEqual() so we're going to
+						// compare their string representation.
+						require.Len(t, decodedMatchers, len(matchers))
+						for i := 0; i < len(matchers); i++ {
+							assert.Equal(t, matchers[i].String(), decodedMatchers[i].String())
+						}
 					}
 
 					p.reset()
