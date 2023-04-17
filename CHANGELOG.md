@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 2.8.0-rc.0
+
 ### Grafana Mimir
 
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
