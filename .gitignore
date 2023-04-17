@@ -43,5 +43,3 @@ compose
 compose-simple
 .DS_Store
 coverage.txt
-
-/docs/make-docs
