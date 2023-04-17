@@ -11,6 +11,12 @@ import (
 	"github.com/xlab/treeprint"
 )
 
+// We use unsafe casting to convert between some Mimir and Prometheus types
+// For this to be safe, the two types need to have the same shape (same fields
+// in the same order). This function requires that this property is maintained.
+// The fields do not need to have the same names to make the conversion safe,
+// but we also check the names are the same here to ensure there's no confusion
+// (eg. two bool fields swapped).
 func RequireSameShape(t *testing.T, expectedType reflect.Type, actualType reflect.Type) {
 	expectedFormatted := prettyPrintType(expectedType)
 	actualFormatted := prettyPrintType(actualType)

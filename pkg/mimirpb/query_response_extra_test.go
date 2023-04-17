@@ -74,15 +74,10 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 	return strings
 }
 
+// Check that the Prometheus histogram.FloatHistogram and MimirPb
+// FloatHistogram types converted into each other with unsafe.Pointer
+// are compatible
 func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
-	// Why does this test exist?
-	// We use unsafe casting to convert between mimirpb.FloatHistogram and Prometheus' histogram.FloatHistogram in
-	// FloatHistogramFromPrometheusModel and FloatHistogram.ToPrometheusModel.
-	// For this to be safe, the two types need to have the same shape (same fields in the same order).
-	// This test ensures that this property is maintained.
-	// The fields do not need to have the same names to make the conversion safe, but we also check the names are
-	// the same here to ensure there's no confusion (eg. two bool fields swapped).
-
 	protoType := reflect.TypeOf(FloatHistogram{})
 	prometheusType := reflect.TypeOf(histogram.FloatHistogram{})
 
