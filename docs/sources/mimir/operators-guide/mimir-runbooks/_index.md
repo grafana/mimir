@@ -147,7 +147,6 @@ How to **fix** it:
 
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
-1. If the cell's number of series per ingester is below our target, we may want to increase the `max tenants` limit instead of adding more ingesters (which would make the cell over-provisioned in effect). If memory usage is high (due to the number of tenants), we might want to bring it down by reducing TSDB stripe size (`-blocks-storage.tsdb.stripe-size`) and chunk writer buffers (`-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes`). The latter will have a negative performance impact for large tenants, but for smaller tenants it should be OK.
 
 ### MimirDistributorReachingInflightPushRequestLimit
 

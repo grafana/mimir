@@ -4,7 +4,7 @@
 
 ### Documentation
 
-* [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744
+* [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
 
 ## 2.8.0-rc.0
 
