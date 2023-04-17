@@ -97,7 +97,7 @@
 * [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
 * [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
 * [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
-* [BUGFIX] Querier: fixed chunk iterator that can in theory return sample with wrong timestamp. #4450
+* [BUGFIX] Querier: fixed chunk iterator that can return sample with wrong timestamp. #4450
 
 ### Mixin
 
