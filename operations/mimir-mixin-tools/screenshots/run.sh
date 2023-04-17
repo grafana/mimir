@@ -51,11 +51,14 @@ echo "Pulling latest Grafana image"
 docker pull grafana/grafana:latest
 
 # Start Grafana in background.
+echo "Starting grafana in the background"
 "${SCRIPT_DIR}/../serve/run.sh" --docker-network "${DOCKET_NETWORK}" &
 GRAFANA_PID="$!"
 
 # Give Grafana some time to startup. It's an hack, but an easy one.
-sleep 5
+echo "Sleep for 20s"
+sleep 20
+echo "Sleep done"
 
 # Start application to take screenshots.
 echo "Start screenshot taker container with name ${DOCKER_APP_NAME}"
