@@ -12,8 +12,8 @@ check_required_setup
 # Config
 NOTIFICATION_LABEL="release/notified-changelog-cut"
 
-# List all open PRs.
-OPEN_PR_IDS=$(gh pr list --repo grafana/mimir --limit 1000 --state open --json number,title --jq '.[].number')
+# List all open PRs that modify CHANGELOG.md.
+OPEN_PR_IDS=$(gh pr list --repo grafana/mimir --limit 1000 --state open --json number,title,files --jq '.[] | select(.files[].path == "CHANGELOG.md") | .number')
 
 for PR_ID in ${OPEN_PR_IDS}; do
   # Get PR details
@@ -35,7 +35,7 @@ for PR_ID in ${OPEN_PR_IDS}; do
   # The backtick here is markdown and we don't want to get it evaluated by the shell.
   # shellcheck disable=SC2016
   PR_COMMENT_LINK=$(gh pr comment "${PR_ID}" --body 'The CHANGELOG has just been cut to prepare for the next Mimir release. Please rebase `main` and eventually move the CHANGELOG entry added / updated in this PR to the top of the CHANGELOG document. Thanks!')
-  gh pr edit "${PR_ID}" --add-label "${NOTIFICATION_LABEL}" > /dev/null
+  gh pr edit "${PR_ID}" --add-label "${NOTIFICATION_LABEL}" >/dev/null
 
   echo "  Notification posted: ${PR_COMMENT_LINK}"
 done
