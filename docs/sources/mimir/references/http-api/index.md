@@ -44,7 +44,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Tenants stats](#tenants-stats)                                                       | Distributor                    | `GET /distributor/all_user_stats`                                         |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor                    | `GET /distributor/ha_tracker`                                             |
 | [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                       | `GET,POST /ingester/flush`                                                |
-| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Ingester                       | `GET,POST /ingester/prepare-shutdown`                                     |
+| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Ingester                       | `GET,POST,DELETE /ingester/prepare-shutdown`                              |
 | [Shutdown](#shutdown)                                                                 | Ingester                       | `GET,POST /ingester/shutdown`                                             |
 | [Ingesters ring status](#ingesters-ring-status)                                       | Distributor,Ingester           | `GET /ingester/ring`                                                      |
 | [Instant query](#instant-query)                                                       | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/query`                          |
