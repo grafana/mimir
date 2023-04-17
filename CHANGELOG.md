@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
