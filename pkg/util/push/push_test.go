@@ -590,7 +590,9 @@ func BenchmarkPushHandler(b *testing.B) {
 	buf := bytes.NewBuffer(snappy.Encode(nil, protobuf))
 	req := createRequest(b, protobuf)
 	pushFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
-		pushReq.WriteRequest()
+		if _, err := pushReq.WriteRequest(); err != nil {
+			return nil, err
+		}
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}
