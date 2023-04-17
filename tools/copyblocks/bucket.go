@@ -150,20 +150,23 @@ func (bkt *azureBucket) Copy(ctx context.Context, name string, dstBucket bucket)
 		if copyStatus == nil {
 			return errors.New("no copy status present for blob copy")
 		}
-		if *copyStatus == blob.CopyStatusTypeSuccess {
+
+		switch *copyStatus {
+		case blob.CopyStatusTypeSuccess:
 			return nil
-		}
-		if *copyStatus == blob.CopyStatusTypeAborted {
-			return errors.New("copy aborted")
-		}
-		if *copyStatus == blob.CopyStatusTypeFailed {
+		case blob.CopyStatusTypeFailed:
 			return errors.New("copy failed")
+		case blob.CopyStatusTypeAborted:
+			return errors.New("copy aborted")
+		case blob.CopyStatusTypePending:
+			// proceed
+		default:
+			return errors.Errorf("unrecognized copy status: %v", *copyStatus)
 		}
 
 		if !backoff.Ongoing() {
 			break
 		}
-
 		backoff.Wait()
 
 		response, err := dstClient.GetProperties(ctx, nil)
