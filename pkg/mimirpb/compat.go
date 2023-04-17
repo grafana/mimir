@@ -217,8 +217,39 @@ func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram
 	if hp == nil {
 		return nil
 	}
+	if hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToFloatHistogram called on float histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        float64(hp.GetZeroCountInt()),
+		Count:            float64(hp.GetCountInt()),
+		Sum:              hp.Sum,
+		PositiveSpans:    fromSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
+		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
+	}
+}
+
+func deltasToCounts(deltas []int64) []float64 {
+	counts := make([]float64, len(deltas))
+	var cur float64
+	for i, d := range deltas {
+		cur += float64(d)
+		counts[i] = cur
+	}
+	return counts
+}
+
+func FromFloatHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
+	if hp == nil {
+		return nil
+	}
 	if !hp.IsFloatHistogram() {
-		panic("FromHistogramProtoToFloatHistogram called on integer histogram")
+		panic("FromFloatHistogramProtoToFloatHistogram called on integer histogram")
 	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
@@ -239,7 +270,7 @@ func FromHistogramProtoToPromHistogram(hp *Histogram) *model.SampleHistogram {
 		return nil
 	}
 	if hp.IsFloatHistogram() {
-		return FromFloatHistogramToPromHistogram(FromHistogramProtoToFloatHistogram(hp))
+		return FromFloatHistogramToPromHistogram(FromFloatHistogramProtoToFloatHistogram(hp))
 	}
 	return FromHistogramToPromHistogram(FromHistogramProtoToHistogram(hp))
 }

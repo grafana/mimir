@@ -4,6 +4,12 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Distributor: make `__meta_tenant_id` available in `metric_relabel_configs` #4725
+
+## 2.8.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
     * `cortex_bucket_store_series_get_all_duration_seconds`
@@ -44,8 +50,9 @@
   * `-query-scheduler.ring.etcd.*`
   * `-overrides-exporter.ring.etcd.*`
 * [FEATURE] Distributor, ingester, querier, query-frontend, store-gateway: add experimental support for native histograms. Requires that the experimental protobuf query result response format is enabled by `-query-frontend.query-result-response-format=protobuf` on the query frontend. #4286 #4352 #4354 #4376 #4377 #4387 #4396 #4425 #4442 #4494 #4512 #4513 #4526
-* [FEATURE] Added `-<prefix>.s3.storage-class` flag to configure the S3 storage class for objects written to S3 buckets. #3438
+* [FEATURE] Added `-<prefix>.s3.storage-class` flag to configure the S3 storage class for objects written to S3 buckets. #4300
 * [FEATURE] Add `freebsd` to the target OS when generating binaries for a Mimir release. #4654
+* [FEATURE] Ingester: Add `prepare-shutdown` endpoint which can be used as part of Kubernetes scale down automations. #4718
 * [ENHANCEMENT] Add timezone information to Alpine Docker images. #4583
 * [ENHANCEMENT] Ruler: Sync rules when ruler JOINING the ring instead of ACTIVE, In order to reducing missed rule iterations during ruler restarts. #4451
 * [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
@@ -79,12 +86,13 @@
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_limits` block in runtime configuration in addition to the existing configuration. #4619
 * [ENHANCEMENT] Querier: reduce peak memory consumption for queries that touch a large number of chunks. #4625
 * [ENHANCEMENT] Query-frontend: added experimental `-query-frontend.query-sharding-max-regexp-size-bytes` limit to query-frontend. When set to a value greater than 0, query-frontend disabled query sharding for any query with a regexp matcher longer than the configured limit. #4632
+* [ENHANCEMENT] Store-gateway: include statistics from LabelValues and LabelNames calls in `cortex_bucket_store_series*` metrics. #4673
 * [ENHANCEMENT] Query-frontend: improve readability of distributed tracing spans. #4656
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.2` to `alpine:3.17.3`. #4685
 * [ENHANCEMENT] Querier: improve performance when shuffle sharding is enabled and the shard size is large. #4711
 * [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
 * [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
-* [ENHANCEMENT] Distributor: make `__meta_tenant_id` available in `metric_relabel_configs` #4725
+* [ENHANCEMENT] Querier: Cache the converted float histogram from chunk iterator, hence there is no need to lookup chunk every time to get the converted float histogram. #4684
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -95,6 +103,7 @@
 * [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
 * [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
 * [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
+* [BUGFIX] Querier: fixed chunk iterator that can return sample with wrong timestamp. #4450
 
 ### Mixin
 

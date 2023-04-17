@@ -8,6 +8,7 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -407,7 +408,7 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 			assert.NoError(t, err, "unmarshal from protobuf")
 			assert.True(t, receivedHistogram.IsFloatHistogram())
 			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
-			mimirHistogram := FromHistogramProtoToFloatHistogram(receivedHistogram)
+			mimirHistogram := FromFloatHistogramProtoToFloatHistogram(receivedHistogram)
 
 			// Is equal
 			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
@@ -555,4 +556,22 @@ func TestFromFloatHistogramToPromHistogram(t *testing.T) {
 			require.Equal(t, c.exp, *FromFloatHistogramToPromHistogram(&c.h))
 		})
 	}
+}
+
+// Check that Prometheus and Mimir SampleHistogram types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T) {
+	protoType := reflect.TypeOf(SampleHistogram{})
+	prometheusType := reflect.TypeOf(model.SampleHistogram{})
+
+	test.RequireSameShape(t, prometheusType, protoType)
+}
+
+// Check that Promtheus Label and MimirPb LabelAdapter types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
+	protoType := reflect.TypeOf(LabelAdapter{})
+	prometheusType := reflect.TypeOf(labels.Label{})
+
+	test.RequireSameShape(t, prometheusType, protoType)
 }

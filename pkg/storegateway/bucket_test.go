@@ -276,7 +276,7 @@ func TestBlockLabelNames(t *testing.T) {
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 	})
@@ -288,8 +288,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelNamesCalled: func() error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelNames{t: t}
-
-		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -308,12 +307,12 @@ func TestBlockLabelNames(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 
 		// hit the cache now
-		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger())
+		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), nil, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, allLabelNames, names)
 	})
@@ -329,7 +328,7 @@ func TestBlockLabelNames(t *testing.T) {
 		// This test relies on the fact that j!=foo has to call LabelValues(j).
 		// We make that call fail in order to make the entire LabelNames(j!=foo) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "j", "foo.*bar")}
-		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), matchers, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), matchers, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -352,17 +351,17 @@ func TestBlockLabelNames(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		jFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "foo")}
-		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger())
+		_, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		jNotFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")}
-		_, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger())
+		_, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 
 		// hit the cache now
-		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger())
+		names, err := blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jFooMatchers, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, jFooLabelNames, names)
-		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger())
+		names, err = blockLabelNames(context.Background(), b.indexReader(selectAllStrategy{}), jNotFooMatchers, sl, 5000, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, jNotFooLabelNames, names)
 	})
