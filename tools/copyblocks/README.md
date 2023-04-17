@@ -11,7 +11,7 @@ It is specific to these two services and performs server-side copies between buc
 - Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that are too small
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
 
-## Example for Google Cloud Storage
+### Example for Google Cloud Storage
 
 ```bash
 ./copyblocks \
@@ -22,7 +22,7 @@ It is specific to these two services and performs server-side copies between buc
   --min-block-duration 24h
 ```
 
-## Example for Azure Blob Storage
+### Example for Azure Blob Storage
 
 ```bash
 ./copyblocks \
