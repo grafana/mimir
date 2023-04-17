@@ -54,7 +54,7 @@ func (r *bucketChunkReader) reset() {
 }
 
 // addLoad adds the chunk with id to the data set to be fetched.
-// Chunk will be fetched and saved to res[seriesEntry][chunk] upon r.load(res, <...>) call.
+// Chunk will be fetched and saved to res[seriesChunks][chunk] upon r.load(res, <...>) call.
 func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error {
 	var (
 		seq = chunkSegmentFile(id)
@@ -67,7 +67,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry 
 		offset:      off,
 		length:      length,
 		seriesEntry: seriesEntry,
-		chunk:       chunkEntry,
+		chunkEntry:  chunkEntry,
 	})
 	return nil
 }
@@ -80,7 +80,7 @@ func chunkRef(segmentFile, offset uint32) chunks.ChunkRef {
 }
 
 // load all added chunks and saves resulting chunks to res.
-func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
+func (r *bucketChunkReader) load(res []seriesChunks, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -110,7 +110,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPoo
 // passed to multiple concurrent invocations. However, this shouldn't require a mutex
 // because part and pIdxs is only read, and different calls are expected to write to
 // different chunks in the res.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	// Get a reader for the required range.
 	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
 	if err != nil {
@@ -173,7 +173,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb[n:chunkLen]), chunksPool)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -194,7 +194,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 
 		localStats.chunksRefetched++
 		localStats.chunksRefetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -242,7 +242,7 @@ type loadIdx struct {
 	length uint32
 	// Indices, not actual entries and chunks.
 	seriesEntry int
-	chunk       int
+	chunkEntry  int
 }
 
 // rawChunk is a helper type that wraps a chunk's raw bytes and implements the chunkenc.Chunk
@@ -281,7 +281,7 @@ type chunkReader interface {
 	io.Closer
 
 	addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error
-	load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
+	load(result []seriesChunks, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
 	reset()
 }
 
@@ -299,7 +299,7 @@ func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, serie
 	return reader.addLoad(id, seriesEntry, chunk, length)
 }
 
-func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
+func (r bucketChunkReaders) load(entries []seriesChunks, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader
