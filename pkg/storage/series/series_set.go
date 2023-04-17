@@ -205,9 +205,9 @@ func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 	}
 	h := c.series.histograms[c.curHisto]
 	if h.IsFloatHistogram() {
-		return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
+		return h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
 	}
-	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h).ToFloat()
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {

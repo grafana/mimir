@@ -408,7 +408,7 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 			assert.NoError(t, err, "unmarshal from protobuf")
 			assert.True(t, receivedHistogram.IsFloatHistogram())
 			assert.Equal(t, test.expectGauge, receivedHistogram.IsGauge())
-			mimirHistogram := FromHistogramProtoToFloatHistogram(receivedHistogram)
+			mimirHistogram := FromFloatHistogramProtoToFloatHistogram(receivedHistogram)
 
 			// Is equal
 			assert.Equal(t, test.tsdbHistogram, mimirHistogram, "mimir unmarshal results the same")
