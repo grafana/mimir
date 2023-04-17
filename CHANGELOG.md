@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+### Documentation
+
+* [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744
+
 ## 2.8.0-rc.0
 
 ### Grafana Mimir

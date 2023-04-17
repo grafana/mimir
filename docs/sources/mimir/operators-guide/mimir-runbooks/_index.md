@@ -118,6 +118,8 @@ How to **fix** it:
 
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
+The per-tenant memory utilisation in ingesters includes the overhead of allocations for TSDB stripes and chunk writer buffers. If the tenant number is high, this may contribute significantly to the total ingester memory utilization. The size of these allocations is controlled by `-blocks-storage.tsdb.stripe-size` (default 16KiB) and `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes` (default 4MiB), respectively.
+
 In case of **emergency**:
 
 - If the actual number of tenants is very close to or already hit the limit, then you can increase the limit via runtime config to gain some time
@@ -145,6 +147,7 @@ How to **fix** it:
 
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
+1. If the cell's number of series per ingester is below our target, we may want to increase the `max tenants` limit instead of adding more ingesters (which would make the cell over-provisioned in effect). If memory usage is high (due to the number of tenants), we might want to bring it down by reducing TSDB stripe size (`-blocks-storage.tsdb.stripe-size`) and chunk writer buffers (`-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes`). The latter will have a negative performance impact for large tenants, but for smaller tenants it should be OK.
 
 ### MimirDistributorReachingInflightPushRequestLimit
 
