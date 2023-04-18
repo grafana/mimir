@@ -1,14 +1,16 @@
 ---
-title: "Configure Grafana Mimir to receive Client/Server Certificates and Keys via Hashicorp Vault Agent"
+title: "Configure Grafana Mimir to allow Vault Agent to inject certificates and keys into Pods"
 menuTitle: "Vault Agent"
-description: "Learn how to configure Grafana Mimir to allow Vault Agent to inject secrets into pods"
+description: "Learn how to configure Grafana Mimir to receive client and server certificates and keys via Hashicorp Vault Agent"
 ---
 
-# Configure Grafana Mimir to receive Client/Server Certificates and Keys via Hashicorp Vault Agent
+# Configure Grafana Mimir to allow Vault Agent to inject certificates and keys into Pods
 
-When enabled, the Pod annotations for TLS configurable pods will be updated. Upon deployment, Vault Agent will intercept the Deployment, fetch the relevant secrets from Vault and mount them to the Pod. Note: Vault and Vault Agent are required to be running already.
+When you enable this feature, Helm updates the annotations on all Pods that have TLS (transport layer security) configurable components.
+When you deploy Mimir or GEM, Vault Agent fetches the relevant secrets from Vault according to the annotations and mounts them to the Pod.
+> **Note:** Vault and Vault Agent must to be running already.
 
-Example values file:
+Example `values.yaml` file:
 
 ```yaml
 vaultAgent:
@@ -21,7 +23,7 @@ vaultAgent:
   caCertPath: "ca/cert/path"
 ```
 
-Example Deployment YAML:
+Generated Kubernetes Deployment YAML file based on the preceding example:
 
 ```yaml
 apiVersion: apps/v1
@@ -58,8 +60,8 @@ spec:
         vault.hashicorp.com/agent-inject-secret-root.crt: "ca/cert/path"
 ```
 
-`vault.hashicorp.com/agent-inject-secret-<FILENAME>: '<PATH>'` tells the Vault Agent where to find the secret, and the name of the file to write the secret to. For example: `vault.hashicorp.com/agent-inject-secret-client.crt: 'client/cert/path'` will look for the secret at the path `client/cert/path` within Vault, and mount this secret to the pod as `client.crt` in the `/vault/secrets/` directory.
+`vault.hashicorp.com/agent-inject-secret-<FILENAME>: '<PATH>'` tells Vault Agent where to find the secret, and the name of the file to write the secret to. For example: `vault.hashicorp.com/agent-inject-secret-client.crt: 'client/cert/path'` will look for the secret at the path `client/cert/path` within Vault, and mount this secret to the pod as `client.crt` in the `/vault/secrets/` directory.
 
-For more information about Vault and Vault Agent, see this [blog.](https://www.hashicorp.com/blog/injecting-vault-secrets-into-kubernetes-pods-via-a-sidecar)
+For more information about Vault and Vault Agent, see [Injecting Vault Secrets Into Kubernetes Pods via a Sidecar](https://www.hashicorp.com/blog/injecting-vault-secrets-into-kubernetes-pods-via-a-sidecar).
 
-To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS](/docs/mimir/v2.7.x/operators-guide/secure/securing-communications-with-tls.md)
+To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS](/docs/mimir/v2.8.x/operators-guide/secure/securing-communications-with-tls.md)
