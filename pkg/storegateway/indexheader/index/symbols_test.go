@@ -16,13 +16,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	test.VerifyNoLeakTestMain(m)
 }
 
 func TestSymbols(t *testing.T) {
