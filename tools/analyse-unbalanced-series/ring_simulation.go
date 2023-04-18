@@ -14,15 +14,15 @@ import (
 	"github.com/grafana/dskit/ring"
 )
 
-type tokensGenerator func(ingesterID int, ringDesc *ring.Desc) []uint32
+type tokensGenerator func(instanceID int, ringDesc *ring.Desc) []uint32
 
-func generateRingWithPerfectlySpacedTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
-		tokens := make([]uint32, 0, numTokensPerIngester)
+func generateRingWithPerfectlySpacedTokens(numInstances, numZones, numTokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
+	return generateRingWithTokensGenerator(numInstances, numZones, now, func(instanceID int, ringDesc *ring.Desc) []uint32 {
+		tokens := make([]uint32, 0, numTokensPerInstance)
 
-		tokensOffset := maxTokenValue / uint32(numTokensPerIngester)
-		startToken := (tokensOffset / uint32(numIngesters)) * uint32(ingesterID)
-		for t := uint32(0); t < uint32(numTokensPerIngester); t++ {
+		tokensOffset := maxTokenValue / uint32(numTokensPerInstance)
+		startToken := (tokensOffset / uint32(numInstances)) * uint32(instanceID)
+		for t := uint32(0); t < uint32(numTokensPerInstance); t++ {
 			tokens = append(tokens, startToken+(t*tokensOffset))
 		}
 
@@ -30,19 +30,19 @@ func generateRingWithPerfectlySpacedTokens(numIngesters, numZones, numTokensPerI
 	})
 }
 
-func generateRingWithRandomTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
-		return ring.GenerateTokens(numTokensPerIngester, nil)
+func generateRingWithRandomTokens(numInstances, numZones, numTokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
+	return generateRingWithTokensGenerator(numInstances, numZones, now, func(instanceID int, ringDesc *ring.Desc) []uint32 {
+		return ring.GenerateTokens(numTokensPerInstance, nil)
 	})
 }
 
-func generateRingWithCryptoRandomTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
+func generateRingWithCryptoRandomTokens(numInstances, numZones, numTokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
 	max := big.NewInt(int64(maxTokenValue))
 
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
-		tokens := make([]uint32, 0, numTokensPerIngester)
+	return generateRingWithTokensGenerator(numInstances, numZones, now, func(instanceID int, ringDesc *ring.Desc) []uint32 {
+		tokens := make([]uint32, 0, numTokensPerInstance)
 
-		for i := uint32(0); i < uint32(numTokensPerIngester); i++ {
+		for i := uint32(0); i < uint32(numTokensPerInstance); i++ {
 			value, _ := crypto_rand.Int(crypto_rand.Reader, max)
 			tokens = append(tokens, uint32(value.Int64()))
 		}
@@ -58,33 +58,33 @@ func generateRingWithCryptoRandomTokens(numIngesters, numZones, numTokensPerInge
 
 // TODO IGNORE THIS IMPLEMENTATION - IT'S WRONG
 // TODO This implementation should also be zone-aware.
-func generateRingWithBucketedFillerTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
+func generateRingWithBucketedFillerTokens(numInstances, numZones, numTokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
+	return generateRingWithTokensGenerator(numInstances, numZones, now, func(instanceID int, ringDesc *ring.Desc) []uint32 {
 		// If the ring is empty, generate random bucketed tokens.
 		if len(ringDesc.Ingesters) == 0 {
-			return randomBucketedTokens(numTokensPerIngester, maxTokenValue, r)
+			return randomBucketedTokens(numTokensPerInstance, maxTokenValue, r)
 		}
 
 		ringTokens := ringDesc.GetTokens()
-		myTokens := make([]uint32, 0, numTokensPerIngester)
+		myTokens := make([]uint32, 0, numTokensPerInstance)
 
 		// TODO DEBUG
-		//fmt.Println("Generating tokens for", ingesterID)
+		//fmt.Println("Generating tokens for", instanceID)
 		//fmt.Println("  ring tokens:", ringTokens)
 
 		// Analyze each bucket.
-		bucketOffset := maxTokenValue / uint32(numTokensPerIngester)
+		bucketOffset := maxTokenValue / uint32(numTokensPerInstance)
 
 		nextBucketTokenOffset := 0
 
-		for i := uint32(0); i < uint32(numTokensPerIngester); i++ {
+		for i := uint32(0); i < uint32(numTokensPerInstance); i++ {
 			//bucketStart := i * bucketOffset
 			bucketEnd := (i + 1) * bucketOffset
 
 			// If it's the last bucket, make sure we generate values up to the max value.
-			if i == uint32(numTokensPerIngester)-1 {
+			if i == uint32(numTokensPerInstance)-1 {
 				bucketEnd = maxTokenValue
 			}
 
@@ -163,24 +163,24 @@ func generateRingWithBucketedFillerTokens(numIngesters, numZones, numTokensPerIn
 	})
 }
 
-func generateRingWithBucketedRandomTokens(numIngesters, numZones, numTokensPerIngester int, maxTokenValue uint32, now time.Time) *ring.Desc {
+func generateRingWithBucketedRandomTokens(numInstances, numZones, numTokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
-		return randomBucketedTokens(numTokensPerIngester, maxTokenValue, r)
+	return generateRingWithTokensGenerator(numInstances, numZones, now, func(instanceID int, ringDesc *ring.Desc) []uint32 {
+		return randomBucketedTokens(numTokensPerInstance, maxTokenValue, r)
 	})
 }
 
-func randomBucketedTokens(numTokensPerIngester int, maxTokenValue uint32, r *rand.Rand) []uint32 {
-	tokens := make([]uint32, 0, numTokensPerIngester)
-	offset := maxTokenValue / uint32(numTokensPerIngester)
+func randomBucketedTokens(numTokensPerInstance int, maxTokenValue uint32, r *rand.Rand) []uint32 {
+	tokens := make([]uint32, 0, numTokensPerInstance)
+	offset := maxTokenValue / uint32(numTokensPerInstance)
 
-	for i := uint32(0); i < uint32(numTokensPerIngester); i++ {
+	for i := uint32(0); i < uint32(numTokensPerInstance); i++ {
 		start := i * offset
 		end := (i + 1) * offset
 
 		// If it's the last bucket, make sure we generate values up to the max value.
-		if i == uint32(numTokensPerIngester)-1 {
+		if i == uint32(numTokensPerInstance)-1 {
 			end = maxTokenValue
 		}
 
@@ -192,16 +192,16 @@ func randomBucketedTokens(numTokensPerIngester int, maxTokenValue uint32, r *ran
 	return tokens
 }
 
-func generateRingWithTokensGenerator(numIngesters, numZones int, now time.Time, generateTokens tokensGenerator) *ring.Desc {
+func generateRingWithTokensGenerator(numInstances, numZones int, now time.Time, generateTokens tokensGenerator) *ring.Desc {
 	desc := &ring.Desc{Ingesters: map[string]ring.InstanceDesc{}}
 
-	for i := 0; i < numIngesters; i++ {
+	for i := 0; i < numInstances; i++ {
 		// Get the zone letter starting from "a".
 		zoneID := "zone-" + string(rune('a'+(i%numZones)))
-		ingesterID := fmt.Sprintf("ingester-%s-%d", zoneID, i/numZones)
+		instanceID := fmt.Sprintf("ingester-%s-%d", zoneID, i/numZones)
 
-		desc.Ingesters[ingesterID] = ring.InstanceDesc{
-			Addr:                ingesterID,
+		desc.Ingesters[instanceID] = ring.InstanceDesc{
+			Addr:                instanceID,
 			Timestamp:           now.Unix(),
 			State:               ring.ACTIVE,
 			Tokens:              generateTokens(i, desc),
@@ -213,7 +213,7 @@ func generateRingWithTokensGenerator(numIngesters, numZones int, now time.Time, 
 	return desc
 }
 
-func analyzeRingOwnershipSpreadOnDifferentTokensPerIngester(numIngesters, numZones int, numTokensPerIngesterScenarios []int, logger log.Logger) error {
+func analyzeRingOwnershipSpreadOnDifferentTokensPerInstance(numInstances, numZones int, numTokensPerInstanceScenarios []int, logger log.Logger) error {
 	const (
 		numIterations = 10
 	)
@@ -222,15 +222,15 @@ func analyzeRingOwnershipSpreadOnDifferentTokensPerIngester(numIngesters, numZon
 		allIterationsResults [][]float64
 	)
 
-	level.Info(logger).Log("msg", "Analyzing ring tokens ownership spread on different tokens per ingester")
+	level.Info(logger).Log("msg", "Analyzing ring tokens ownership spread on different tokens per instance")
 
 	for i := 0; i < numIterations; i++ {
-		iterationResults := make([]float64, 0, len(numTokensPerIngesterScenarios))
+		iterationResults := make([]float64, 0, len(numTokensPerInstanceScenarios))
 
-		for _, numTokensPerIngester := range numTokensPerIngesterScenarios {
-			level.Info(logger).Log("msg", "Analysis iteration", "iteration", i, "num tokens per ingester", numTokensPerIngester)
+		for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+			level.Info(logger).Log("msg", "Analysis iteration", "iteration", i, "num tokens per instance", numTokensPerInstance)
 
-			ringDesc := generateRingWithRandomTokens(numIngesters, numZones, numTokensPerIngester, math.MaxUint32, time.Now())
+			ringDesc := generateRingWithRandomTokens(numInstances, numZones, numTokensPerInstance, math.MaxUint32, time.Now())
 			ringTokens := ringDesc.GetTokens()
 			ringInstanceByToken := getRingInstanceByToken(ringDesc)
 
@@ -243,8 +243,8 @@ func analyzeRingOwnershipSpreadOnDifferentTokensPerIngester(numIngesters, numZon
 
 	// Generate CSV header.
 	var csvHeader []string
-	for _, numTokensPerIngester := range numTokensPerIngesterScenarios {
-		csvHeader = append(csvHeader, fmt.Sprintf("%d tokens per ingester", numTokensPerIngester))
+	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		csvHeader = append(csvHeader, fmt.Sprintf("%d tokens per instance", numTokensPerInstance))
 	}
 
 	// Write result to CSV.
@@ -258,7 +258,7 @@ func analyzeRingOwnershipSpreadOnDifferentTokensPerIngester(numIngesters, numZon
 
 		return formatted
 	})
-	if err := w.writeCSV(fmt.Sprintf("simulated-ingesters-ring-ownership-spread-on-different-tokens-per-ingester.csv")); err != nil {
+	if err := w.writeCSV(fmt.Sprintf("simulated-instances-ring-ownership-spread-on-different-tokens-per-instance.csv")); err != nil {
 		return err
 	}
 

@@ -11,35 +11,35 @@ import (
 	"github.com/pkg/errors"
 )
 
-func getRingStatus(mimirDistributorURL string) (ringStatusDesc, error) {
-	req, err := http.NewRequest("GET", mimirDistributorURL+"/ingester/ring?tokens=true", nil)
+func getRingStatus(mimirRingPageURL string) (ringStatusDesc, error) {
+	req, err := http.NewRequest("GET", mimirRingPageURL+"?tokens=true", nil)
 	if err != nil {
-		return ringStatusDesc{}, errors.Wrap(err, "unable to prepare request to read ingesters ring status")
+		return ringStatusDesc{}, errors.Wrap(err, "unable to prepare request to read ring status")
 	}
 
 	req.Header.Set("Accept", "application/json")
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return ringStatusDesc{}, errors.Wrap(err, "unable to read ingesters ring status")
+		return ringStatusDesc{}, errors.Wrap(err, "unable to read ring status")
 	}
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return ringStatusDesc{}, errors.Wrap(err, "unable to read ingesters ring status")
+		return ringStatusDesc{}, errors.Wrap(err, "unable to read ring status")
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(body))
 	data := ringStatusDesc{}
 	if err := dec.Decode(&data); err != nil {
-		return ringStatusDesc{}, errors.Wrap(err, "unable to decode ingesters ring status")
+		return ringStatusDesc{}, errors.Wrap(err, "unable to decode ring status")
 	}
 
 	return data, nil
 }
 
 type ringStatusDesc struct {
-	Ingesters []ringIngesterDesc `json:"shards"`
+	Ingesters []ringInstanceDesc `json:"shards"`
 	Now       time.Time          `json:"now"`
 }
 
@@ -48,21 +48,21 @@ func (d ringStatusDesc) toRingModel() *ring.Desc {
 		Ingesters: make(map[string]ring.InstanceDesc, len(d.Ingesters)),
 	}
 
-	for _, ingester := range d.Ingesters {
-		desc.Ingesters[ingester.ID] = ring.InstanceDesc{
-			Addr:                ingester.Address,
+	for _, instance := range d.Ingesters {
+		desc.Ingesters[instance.ID] = ring.InstanceDesc{
+			Addr:                instance.Address,
 			Timestamp:           time.Now().Unix(),
 			State:               ring.ACTIVE,
-			Tokens:              ingester.Tokens,
-			Zone:                ingester.Zone,
-			RegisteredTimestamp: ingester.RegisteredTimestamp.Unix(),
+			Tokens:              instance.Tokens,
+			Zone:                instance.Zone,
+			RegisteredTimestamp: instance.RegisteredTimestamp.Unix(),
 		}
 	}
 
 	return desc
 }
 
-type ringIngesterDesc struct {
+type ringInstanceDesc struct {
 	ID                  string    `json:"id"`
 	State               string    `json:"state"`
 	Address             string    `json:"address"`

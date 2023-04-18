@@ -12,7 +12,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type ingesterOwnership struct {
+type instanceOwnership struct {
 	id         string
 	percentage float64
 }
@@ -43,7 +43,7 @@ func analyseRing(analysisName string, ringDesc *ring.Desc, logger log.Logger) er
 	return nil
 }
 
-func getActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool) ([]ingesterOwnership, error) {
+func getActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo, replicationFactor int, zoneAwarenessEnabled bool) ([]instanceOwnership, error) {
 	const (
 		numIterations = 10_000_000
 	)
@@ -59,26 +59,26 @@ func getActualTokensOwnership(ringDesc *ring.Desc, ringTokens []uint32, ringInst
 	for i := 0; i < numIterations; i++ {
 		key := rand.Uint32()
 
-		ingesterIDs, err := ringGet(key, ringDesc, ringTokens, ringInstanceByToken, ring.WriteNoExtend, replicationFactor, zoneAwarenessEnabled, bufDescs[:0], bufHosts[:0], bufZones[:0])
+		instanceIDs, err := ringGet(key, ringDesc, ringTokens, ringInstanceByToken, ring.WriteNoExtend, replicationFactor, zoneAwarenessEnabled, bufDescs[:0], bufHosts[:0], bufZones[:0])
 		if err != nil {
 			return nil, err
 		}
 
-		for _, ingesterID := range ingesterIDs {
-			ownedTokens[ingesterID]++
+		for _, instanceID := range instanceIDs {
+			ownedTokens[instanceID]++
 		}
 	}
 
-	// Compute the per-ingester % of owned tokens.
-	result := []ingesterOwnership{}
+	// Compute the per-instance % of owned tokens.
+	result := []instanceOwnership{}
 	for id, numTokens := range ownedTokens {
-		result = append(result, ingesterOwnership{
+		result = append(result, instanceOwnership{
 			id:         id,
 			percentage: (float64(numTokens) / numIterations) * 100,
 		})
 	}
 
-	slices.SortFunc(result, func(a, b ingesterOwnership) bool {
+	slices.SortFunc(result, func(a, b instanceOwnership) bool {
 		return a.id < b.id
 	})
 
@@ -93,9 +93,9 @@ func analyzeActualTokensOwnership(analysisName string, ringDesc *ring.Desc, ring
 		return err
 	}
 
-	w := newCSVWriter[ingesterOwnership]()
+	w := newCSVWriter[instanceOwnership]()
 	w.setHeader([]string{"pod", fmt.Sprintf("Ring tokens ownership zone-aware=%s RF=%d", formatEnabled(zoneAwarenessEnabled), replicationFactor)})
-	w.setData(result, func(entry ingesterOwnership) []string {
+	w.setData(result, func(entry instanceOwnership) []string {
 		// To make the percentage easy to compare with different RFs, we divide it by the RF.
 		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage/float64(replicationFactor))}
 	})
@@ -195,7 +195,7 @@ func getRingInstanceByToken(desc *ring.Desc) map[uint32]instanceInfo {
 	return out
 }
 
-func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) []ingesterOwnership {
+func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) []instanceOwnership {
 	var (
 		owned = map[string]uint32{}
 	)
@@ -216,16 +216,16 @@ func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[u
 	}
 
 	// Convert to a slice.
-	result := make([]ingesterOwnership, 0, len(owned))
+	result := make([]instanceOwnership, 0, len(owned))
 	for id, numTokens := range owned {
-		result = append(result, ingesterOwnership{
+		result = append(result, instanceOwnership{
 			id:         id,
 			percentage: (float64(numTokens) / float64(math.MaxUint32)) * 100,
 		})
 	}
 
-	// Sort by ingester ID.
-	slices.SortFunc(result, func(a, b ingesterOwnership) bool {
+	// Sort by instance ID.
+	slices.SortFunc(result, func(a, b instanceOwnership) bool {
 		return a.id < b.id
 	})
 
@@ -233,18 +233,18 @@ func getRegisteredTokensOwnership(ringTokens []uint32, ringInstanceByToken map[u
 }
 
 func getRegisteredTokensOwnershipStatistics(ringTokens []uint32, ringInstanceByToken map[uint32]instanceInfo) (min, max, spread float64) {
-	ingesters := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
+	instances := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
 
 	// Find min and max ownership %.
-	min = ingesters[0].percentage
-	max = ingesters[0].percentage
+	min = instances[0].percentage
+	max = instances[0].percentage
 
-	for _, ingester := range ingesters {
-		if ingester.percentage < min {
-			min = ingester.percentage
+	for _, instance := range instances {
+		if instance.percentage < min {
+			min = instance.percentage
 		}
-		if ingester.percentage > max {
-			max = ingester.percentage
+		if instance.percentage > max {
+			max = instance.percentage
 		}
 	}
 
@@ -257,9 +257,9 @@ func analyzeRegisteredTokensOwnership(analysisName string, ringTokens []uint32, 
 	result := getRegisteredTokensOwnership(ringTokens, ringInstanceByToken)
 
 	// Write result to CSV.
-	w := newCSVWriter[ingesterOwnership]()
+	w := newCSVWriter[instanceOwnership]()
 	w.setHeader([]string{"Pod", "Registered tokens percentage"})
-	w.setData(result, func(entry ingesterOwnership) []string {
+	w.setData(result, func(entry instanceOwnership) []string {
 		return []string{entry.id, fmt.Sprintf("%.3f", entry.percentage)}
 	})
 	if err := w.writeCSV(fmt.Sprintf("%s-registered-tokens.csv", analysisName)); err != nil {
