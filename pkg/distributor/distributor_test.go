@@ -5120,9 +5120,8 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 	})
 
 	t.Run("Drop half of samples via native histogram bucket limit", func(t *testing.T) {
-		bucketLimit := 2
 		cfg := getDefaultConfig()
-		cfg.limits.MaxNativeHistogramBuckets = bucketLimit
+		cfg.limits.MaxNativeHistogramBuckets = 2
 		dist, reg := getDistributor(cfg)
 
 		validHistogram := mimirpb.Histogram{
