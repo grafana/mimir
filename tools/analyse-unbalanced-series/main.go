@@ -10,7 +10,10 @@ import (
 )
 
 func main() {
-	mimirRingPageURL := "http://localhost:8080/store-gateway/ring"
+	const (
+		mimirRingPageURL    = "http://localhost:8080/store-gateway/ring"
+		bucketIndexFilepath = "229572-bucket-index.json.gz"
+	)
 
 	logger := log.NewLogfmtLogger(os.Stdout)
 
@@ -24,7 +27,9 @@ func main() {
 	level.Info(logger).Log("msg", "Successfully built dataset")
 
 	// Run analysis on real ring.
-	analyseRing("real-instances-ring", ringStatus.toRingModel(), logger)
+	if false {
+		analyseRing("real-instances-ring", ringStatus.toRingModel(), logger)
+	}
 
 	// Run analysis on simulated ring.
 	if false {
@@ -41,5 +46,15 @@ func main() {
 		analyseRing("simulated-instances-ring-with-random-tokens", ringDesc, logger)
 
 		analyzeRingOwnershipSpreadOnDifferentTokensPerInstance(numInstances, numZones, []int{64, 128, 256, 512, 1024, 2048, 4096, 8192}, logger)
+	}
+
+	// Store-gateway ring analysis.
+	if true {
+		bucketIndex, err := readBucketIndex(bucketIndexFilepath, logger)
+		if err != nil {
+			level.Error(logger).Log("msg", "Failed to load bucket index", "filepath", bucketIndexFilepath, "err", err)
+		}
+
+		analyzeStoreGatewayActualBlocksOwnership(bucketIndex.Blocks, ringStatus.toRingModel(), logger)
 	}
 }
