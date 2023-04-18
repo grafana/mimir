@@ -148,7 +148,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := newShardedQueryable(r, s.next)
 
-	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -168,10 +168,11 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
-func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),
@@ -181,6 +182,7 @@ func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (pr
 		)
 	case *PrometheusInstantQueryRequest:
 		return engine.NewInstantQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),

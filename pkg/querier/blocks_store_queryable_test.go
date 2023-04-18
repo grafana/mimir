@@ -1744,10 +1744,10 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			})
 
 			// Query metrics.
-			q, err := engine.NewRangeQuery(queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "user-1")
 			res := q.Exec(ctx)
 			require.NoError(t, err)
 			require.NoError(t, res.Err)

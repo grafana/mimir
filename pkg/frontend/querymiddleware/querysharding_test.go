@@ -1936,7 +1936,7 @@ type downstreamHandler struct {
 }
 
 func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error) {
-	qry, err := newQuery(r, h.engine, h.queryable)
+	qry, err := newQuery(ctx, r, h.engine, h.queryable)
 	if err != nil {
 		return nil, err
 	}
