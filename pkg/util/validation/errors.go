@@ -140,6 +140,27 @@ func (e sampleValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
 }
 
+type maxNativeHistogramBucketsError struct {
+	seriesLabels []mimirpb.LabelAdapter
+	timestamp    int64
+	bucketCount  int
+	bucketLimit  int
+}
+
+func newMaxNativeHistogramBucketsError(seriesLabels []mimirpb.LabelAdapter, timestamp int64, bucketCount, bucketLimit int) maxNativeHistogramBucketsError {
+	return maxNativeHistogramBucketsError{
+		seriesLabels: seriesLabels,
+		timestamp:    timestamp,
+		bucketCount:  bucketCount,
+		bucketLimit:  bucketLimit,
+	}
+}
+
+func (e maxNativeHistogramBucketsError) Error() string {
+	return fmt.Sprintf("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d (%s)",
+		e.timestamp, mimirpb.FromLabelAdaptersToLabels(e.seriesLabels).String(), e.bucketCount, e.bucketLimit, globalerror.MaxNativeHistogramBuckets)
+}
+
 var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 	creationGracePeriodFlag)
