@@ -8,6 +8,7 @@ description: "Learn how to configure Grafana Mimir to receive client and server 
 
 When you enable this feature, Helm updates the annotations on all Pods that have TLS (transport layer security) configurable components.
 When you deploy Mimir or GEM, Vault Agent fetches the relevant secrets from Vault according to the annotations and mounts them to the Pod.
+
 > **Note:** Vault and Vault Agent must to be running already.
 
 Example `values.yaml` file:
