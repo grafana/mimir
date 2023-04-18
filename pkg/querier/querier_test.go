@@ -1171,18 +1171,17 @@ func TestStoreQueryable(t *testing.T) {
 	m := &mockQueryableWithFilter{}
 	now := time.Now()
 	sq := newStoreQueryable(m, time.Hour)
-	sq.now = func() time.Time { return now }
 
 	ctx := context.Background()
-	_, err := sq.Querier(ctx, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now))
+	_, err := sq.Querier(SetQueryTimeToContext(ctx, now), util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.False(t, m.queryableCalled)
 
-	_, err = sq.Querier(ctx, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now))
+	_, err = sq.Querier(SetQueryTimeToContext(ctx, now), util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.False(t, m.queryableCalled)
 
-	_, err = sq.Querier(ctx, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now))
+	_, err = sq.Querier(SetQueryTimeToContext(ctx, now), util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.True(t, m.queryableCalled)
 }

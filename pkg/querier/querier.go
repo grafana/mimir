@@ -155,6 +155,8 @@ func NewQueryable(distributor storage.Queryable, store storage.Queryable, chunkI
 			return nil, err
 		}
 
+		// Set query time to context, so that storage.Queryable implementations can use consistent timestamp to check if queryable should be used or not.
+		ctx = SetQueryTimeToContext(ctx, time.Now())
 		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID)))
 
 		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
@@ -438,14 +440,12 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 type storeQueryable struct {
 	q               storage.Queryable
 	queryStoreAfter time.Duration
-	now             func() time.Time // settable for testing.
 }
 
 func newStoreQueryable(q storage.Queryable, queryStoreAfter time.Duration) *storeQueryable {
 	return &storeQueryable{
 		q:               q,
 		queryStoreAfter: queryStoreAfter,
-		now:             time.Now,
 	}
 }
 
@@ -454,8 +454,8 @@ func (s *storeQueryable) Querier(ctx context.Context, queryMinT, queryMaxT int64
 		return storage.NoopQuerier(), nil
 	}
 
-	now := s.now()
-	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
+	now := GetQueryTimeFromContext(ctx, time.Now)
+	// Include this store only if mint is within QueryStoreAfter w.r.t query time.
 	if s.queryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.queryStoreAfter)) {
 		return storage.NoopQuerier(), nil
 	}
@@ -489,4 +489,22 @@ func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp mod
 		t = clamp
 	}
 	return t
+}
+
+type queryTimeKeyType int
+
+var queryTimeKey queryTimeKeyType
+
+// SetQueryTimeToContext sets given query time into context.
+func SetQueryTimeToContext(ctx context.Context, queryTime time.Time) context.Context {
+	return context.WithValue(ctx, queryTimeKey, &queryTime)
+}
+
+// GetQueryTimeFromContext returns query time from context, or it returns default value if query time in context is not set.
+func GetQueryTimeFromContext(ctx context.Context, defaultTime func() time.Time) time.Time {
+	t, ok := ctx.Value(queryTimeKey).(*time.Time)
+	if !ok || t == nil {
+		return defaultTime()
+	}
+	return *t
 }

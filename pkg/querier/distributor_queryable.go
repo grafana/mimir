@@ -44,7 +44,6 @@ func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFu
 		distributor:          distributor,
 		iteratorFn:           iteratorFn,
 		queryIngestersWithin: queryIngestersWithin,
-		now:                  time.Now,
 	}
 }
 
@@ -53,13 +52,13 @@ type distributorQueryable struct {
 	distributor          Distributor
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
-	now                  func() time.Time // settable for testing
 }
 
 func (d *distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	now := d.now()
-	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	if d.queryIngestersWithin == 0 || maxt >= util.TimeToMillis(now.Add(-d.queryIngestersWithin)) {
+	queryTime := GetQueryTimeFromContext(ctx, time.Now)
+
+	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. query time.
+	if d.queryIngestersWithin == 0 || maxt >= util.TimeToMillis(queryTime.Add(-d.queryIngestersWithin)) {
 		return &distributorQuerier{
 			logger:               d.logger,
 			distributor:          d.distributor,

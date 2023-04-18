@@ -120,23 +120,20 @@ func TestDistributorQueryableFilter(t *testing.T) {
 
 	now := time.Now()
 
-	dq.now = func() time.Time { return now }
 	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
 	queryMaxT := util.TimeToMillis(now)
 
 	ctx := context.Background()
-	q, err := dq.Querier(ctx, queryMinT, queryMaxT)
+	q, err := dq.Querier(SetQueryTimeToContext(ctx, now), queryMinT, queryMaxT)
 	require.NoError(t, err)
 	require.NotNil(t, q)
 
-	dq.now = func() time.Time { return now.Add(time.Hour) }
-	q, err = dq.Querier(ctx, queryMinT, queryMaxT)
+	q, err = dq.Querier(SetQueryTimeToContext(ctx, now.Add(time.Hour)), queryMinT, queryMaxT)
 	require.NoError(t, err)
 	require.NotNil(t, q)
 
 	// Same query, hour+1ms later, is not sent to ingesters.
-	dq.now = func() time.Time { return now.Add(time.Hour).Add(1 * time.Millisecond) }
-	q, err = dq.Querier(ctx, queryMinT, queryMaxT)
+	q, err = dq.Querier(SetQueryTimeToContext(ctx, now.Add(time.Hour).Add(1*time.Millisecond)), queryMinT, queryMaxT)
 	require.NoError(t, err)
 	require.Equal(t, storage.NoopQuerier(), q)
 }
