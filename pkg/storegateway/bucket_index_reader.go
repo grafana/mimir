@@ -142,6 +142,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, pendingMatchers []*labels.Matcher) {
+	// TODO dimitarvdimitrov add cache collision
 	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), pendingMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
@@ -414,6 +415,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			})
 
 			l, pendingMatchers, err := r.decodePostings(b, stats)
+			// TODO dimitarvdimitrov add cache collision to check if the returned matcher is actually the same as the current label
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
 					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
@@ -521,7 +523,7 @@ func storeCachedPostings(toCache []byte, r *bucketIndexReader, key labels.Label,
 	// Errors from corrupted postings will be reported when postings are used.
 	compressionStart := time.Now()
 	bep := newBigEndianPostings(toCache[4:])
-	data, err := diffVarintSnappyEncode(bep, bep.length())
+	data, err := diffVarintSnappyEncode(bep, bep.length()) // TODO dimitarvdimitrov add one matcher with the label name
 	compressionTime := time.Since(compressionStart)
 	if err == nil {
 		toCache = data
