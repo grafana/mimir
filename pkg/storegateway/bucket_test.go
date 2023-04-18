@@ -1233,8 +1233,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
 
 			// Reset the memory pools.
-			seriesEntrySlicePool.(*pool.TrackedPool).Reset()
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
+			chunksSlicePool.(*pool.TrackedPool).Reset()
 		}
 
 		assert.NoError(t, st.SyncBlocks(context.Background()))
@@ -1276,11 +1276,11 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				assert.Zero(t, st.chunkPool.(*trackedBytesPool).balance.Load())
 				st.chunkPool.(*trackedBytesPool).gets.Store(0)
 
-				assert.Zero(t, seriesEntrySlicePool.(*pool.TrackedPool).Balance.Load())
 				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
+				assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
-				assert.Greater(t, int(seriesEntrySlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 				assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+				assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 			}
 
 			for _, b := range st.blocks {

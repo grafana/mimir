@@ -37,13 +37,13 @@ const (
 )
 
 var (
-	seriesEntrySlicePool = pool.Interface(&sync.Pool{
+	seriesChunksSlicePool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
 	})
 
-	seriesChunksSlicePool = pool.Interface(&sync.Pool{
+	chunksSlicePool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
@@ -69,7 +69,7 @@ type seriesChunksSetIterator interface {
 
 // seriesChunksSet holds a set of series, each with its own chunks.
 type seriesChunksSet struct {
-	series           []seriesEntry
+	series           []seriesChunks
 	seriesReleasable bool
 
 	// It gets lazy initialized (only if required).
@@ -86,12 +86,12 @@ type seriesChunksSet struct {
 // If seriesReleasable is true, then a subsequent call release() will put the internal
 // series slices to a memory pool for reusing.
 func newSeriesChunksSet(seriesCapacity int, seriesReleasable bool) seriesChunksSet {
-	var prealloc []seriesEntry
+	var prealloc []seriesChunks
 
 	// If it's releasable then we try to reuse a slice from the pool.
 	if seriesReleasable {
-		if reused := seriesEntrySlicePool.Get(); reused != nil {
-			prealloc = *(reused.(*[]seriesEntry))
+		if reused := seriesChunksSlicePool.Get(); reused != nil {
+			prealloc = *(reused.(*[]seriesChunks))
 
 			// The capacity MUST be guaranteed. If it's smaller, then we forget it and will be
 			// reallocated.
@@ -102,7 +102,7 @@ func newSeriesChunksSet(seriesCapacity int, seriesReleasable bool) seriesChunksS
 	}
 
 	if prealloc == nil {
-		prealloc = make([]seriesEntry, 0, seriesCapacity)
+		prealloc = make([]seriesChunks, 0, seriesCapacity)
 	}
 
 	return seriesChunksSet{
@@ -132,7 +132,7 @@ func (b *seriesChunksSet) release() {
 				b.series[i].chks[c].Reset()
 			}
 
-			b.series[i] = seriesEntry{}
+			b.series[i] = seriesChunks{}
 		}
 
 		if b.seriesChunksPool != nil {
@@ -140,7 +140,7 @@ func (b *seriesChunksSet) release() {
 		}
 
 		reuse := b.series[:0]
-		seriesEntrySlicePool.Put(&reuse)
+		seriesChunksSlicePool.Put(&reuse)
 	}
 }
 
@@ -154,7 +154,7 @@ func (b *seriesChunksSet) newSeriesAggrChunkSlice(size int) []storepb.AggrChunk 
 
 	// Lazy initialise the pool.
 	if b.seriesChunksPool == nil {
-		b.seriesChunksPool = pool.NewSlabPool[storepb.AggrChunk](seriesChunksSlicePool, seriesChunksSlabSize)
+		b.seriesChunksPool = pool.NewSlabPool[storepb.AggrChunk](chunksSlicePool, seriesChunksSlabSize)
 	}
 
 	return b.seriesChunksPool.Get(size)
@@ -583,7 +583,7 @@ func encodeChunksForCache(chunks []storepb.AggrChunk) []byte {
 	return encoded
 }
 
-func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesChunkRefs, seriesChunks []seriesEntry, cacheHits map[chunkscache.Range][]byte) {
+func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesChunkRefs, seriesChunks []seriesChunks, cacheHits map[chunkscache.Range][]byte) {
 	// Count the number of ranges that were not previously cached, and so we need to store to the cache.
 	cacheMisses := 0
 	for _, s := range seriesRefs {
@@ -612,7 +612,7 @@ func (c *loadingSeriesChunksSetIterator) storeRangesInCache(seriesRefs []seriesC
 	c.cache.StoreChunks(c.userID, toStore)
 }
 
-func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEntry) {
+func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesChunks) {
 	returnedChunks, returnedChunksBytes := chunkStats(series)
 
 	c.stats.update(func(stats *queryStats) {
@@ -621,7 +621,7 @@ func (c *loadingSeriesChunksSetIterator) recordReturnedChunks(series []seriesEnt
 	})
 }
 
-func (c *loadingSeriesChunksSetIterator) recordProcessedChunks(series []seriesEntry) {
+func (c *loadingSeriesChunksSetIterator) recordProcessedChunks(series []seriesChunks) {
 	processedChunks, processedChunksBytes := chunkStats(series)
 
 	c.stats.update(func(stats *queryStats) {
@@ -630,7 +630,7 @@ func (c *loadingSeriesChunksSetIterator) recordProcessedChunks(series []seriesEn
 	})
 }
 
-func chunkStats(series []seriesEntry) (numChunks, totalSize int) {
+func chunkStats(series []seriesChunks) (numChunks, totalSize int) {
 	for _, s := range series {
 		numChunks += len(s.chks)
 		totalSize += chunksSizeInSegmentFile(s.chks)
