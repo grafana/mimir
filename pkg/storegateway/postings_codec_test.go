@@ -10,10 +10,10 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -313,17 +313,26 @@ func BenchmarkEncodePostings(b *testing.B) {
 		p[ix] = p[ix-1] + storage.SeriesRef(d)
 	}
 
-	for _, count := range []int{10000, 100000, 1000000} {
-		b.Run(strconv.Itoa(count), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				ps := &uint64Postings{vals: p[:count]}
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds"),
+		labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$"),
+		labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix),
+		labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+	}
 
-				_, err := diffVarintEncodeNoHeader(ps, ps.len())
-				if err != nil {
-					b.Fatal(err)
+	for _, count := range []int{100, 10000, 100000, 1000000} {
+		for _, numMatchers := range []int{0, 1, 4} {
+			b.Run(fmt.Sprintf("%d %s", count, indexcache.CanonicalLabelMatchersKey(matchers[:numMatchers])), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					ps := &uint64Postings{vals: p[:count]}
+
+					_, err := diffVarintSnappyWithMatchersEncode(ps, ps.len(), matchers[:numMatchers])
+					if err != nil {
+						b.Fatal(err)
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 
