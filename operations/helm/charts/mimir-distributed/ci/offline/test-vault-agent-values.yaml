@@ -1,0 +1,11 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+vaultAgent:
+  enabled: true
+  roleName: "test-role-name"
+  clientCertPath: "client-cert-path"
+  clientKeyPath: "client-key-path"
+  serverCertPath: "server-cert-path"
+  serverKeyPath: "server-key-path"
+  caCertPath: "ca-cert-path"
