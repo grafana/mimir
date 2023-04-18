@@ -494,50 +494,50 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 					return err
 				}
 
-				dataToCache := pBytes
-
-				compressionTime := time.Duration(0)
-				compressions, compressionErrors, compressedSize := 0, 0, 0
-
-				// Reencode postings before storing to cache. If that fails, we store original bytes.
-				// This can only fail, if postings data was somehow corrupted,
-				// and there is nothing we can do about it.
-				// Errors from corrupted postings will be reported when postings are used.
-				compressions++
-				s := time.Now()
-				bep := newBigEndianPostings(pBytes[4:])
-				data, err := diffVarintSnappyEncode(bep, bep.length())
-				compressionTime = time.Since(s)
-				if err == nil {
-					dataToCache = data
-					compressedSize = len(data)
-				} else {
-					compressionErrors = 1
-				}
-
-				// Return postings. Truncate first 4 bytes which are length of posting.
+				// Return postings and account for touched postings. Truncate first 4 bytes which are length of the posting list.
 				// Access to output is not protected by a mutex because each goroutine
 				// is expected to handle a different set of keys.
 				output[p.keyID] = newBigEndianPostings(pBytes[4:])
-
-				r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
-
-				// If we just fetched it we still have to update the stats for touched postings.
 				stats.update(func(stats *queryStats) {
 					stats.postingsTouched++
 					stats.postingsTouchedSizeSum += len(pBytes)
-					stats.cachedPostingsCompressions += compressions
-					stats.cachedPostingsCompressionErrors += compressionErrors
-					stats.cachedPostingsOriginalSizeSum += len(pBytes)
-					stats.cachedPostingsCompressedSizeSum += compressedSize
-					stats.cachedPostingsCompressionTimeSum += compressionTime
 				})
+
+				storeCachedPostings(pBytes, r, keys[p.keyID], stats)
 			}
 			return nil
 		})
 	}
 
 	return output, g.Wait()
+}
+
+func storeCachedPostings(toCache []byte, r *bucketIndexReader, key labels.Label, stats *safeQueryStats) {
+	compressionErrors, compressedSize := 0, 0
+
+	// Reencode postings before storing to cache. If that fails, we store original bytes.
+	// This can only fail, if postings data was somehow corrupted,
+	// and there is nothing we can do about it.
+	// Errors from corrupted postings will be reported when postings are used.
+	compressionStart := time.Now()
+	bep := newBigEndianPostings(toCache[4:])
+	data, err := diffVarintSnappyEncode(bep, bep.length())
+	compressionTime := time.Since(compressionStart)
+	if err == nil {
+		toCache = data
+		compressedSize = len(data)
+	} else {
+		compressionErrors = 1
+	}
+
+	stats.update(func(stats *queryStats) {
+		stats.cachedPostingsCompressions++
+		stats.cachedPostingsCompressionErrors += compressionErrors
+		stats.cachedPostingsOriginalSizeSum += len(toCache)
+		stats.cachedPostingsCompressedSizeSum += compressedSize
+		stats.cachedPostingsCompressionTimeSum += compressionTime
+	})
+	r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, key, toCache)
 }
 
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, []*labels.Matcher, error) {
@@ -577,6 +577,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 	}
 	return l, matchers, err
 }
+
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
 	defer span.Finish()
