@@ -409,10 +409,10 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(sample.Metric),
 			}
-			if sample.Point.H != nil {
-				ss.Histograms = mimirpb.FromPointsToHistograms([]promql.Point{sample.Point})
+			if sample.H != nil {
+				ss.Histograms = mimirpb.FromHPointsToHistograms([]promql.HPoint{{T: sample.T, H: sample.H}})
 			} else {
-				ss.Samples = mimirpb.FromPointsToSamples([]promql.Point{sample.Point})
+				ss.Samples = mimirpb.FromFPointsToSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
 			}
 			res = append(res, ss)
 		}
@@ -424,11 +424,11 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
 			}
-			samples := mimirpb.FromPointsToSamples(series.Points)
+			samples := mimirpb.FromFPointsToSamples(series.Floats)
 			if len(samples) > 0 {
 				ss.Samples = samples
 			}
-			histograms := mimirpb.FromPointsToHistograms(series.Points)
+			histograms := mimirpb.FromHPointsToHistograms(series.Histograms)
 			if len(histograms) > 0 {
 				ss.Histograms = histograms
 			}
