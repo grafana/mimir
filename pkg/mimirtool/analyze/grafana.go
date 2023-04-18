@@ -37,18 +37,20 @@ type DashboardMetrics struct {
 	Title       string   `json:"title"`
 	Metrics     []string `json:"metrics"`
 	ParseErrors []string `json:"parse_errors"`
+	Queries     []string `json:"queries"`
 }
 
-func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
+func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board, datasourceUid string) {
 	var parseErrors []error
 	metrics := make(map[string]struct{})
+	queries := make(map[string]struct{})
 
 	// Iterate through all the panels and collect metrics
 	for _, panel := range board.Panels {
-		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics)...)
+		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics, queries, datasourceUid)...)
 		if panel.RowPanel != nil {
 			for _, subPanel := range panel.RowPanel.Panels {
-				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics)...)
+				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics, queries, datasourceUid)...)
 			}
 		}
 	}
@@ -56,12 +58,12 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Iterate through all the rows and collect metrics
 	for _, row := range board.Rows {
 		for _, panel := range row.Panels {
-			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics)...)
+			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics, queries, datasourceUid)...)
 		}
 	}
 
 	// Process metrics in templating
-	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics)...)
+	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics, datasourceUid)...)
 
 	parseErrs := make([]string, 0, len(parseErrors))
 	for _, err := range parseErrors {
@@ -79,12 +81,22 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	}
 	slices.Sort(metricsInBoard)
 
+	queriesInBoard := make([]string, 0, len(queries))
+	for query := range queries {
+		if query == "" {
+			continue
+		}
+		queriesInBoard = append(queriesInBoard, query)
+	}
+	slices.Sort(queriesInBoard)
+
 	mig.Dashboards = append(mig.Dashboards, DashboardMetrics{
 		Slug:        board.Slug,
 		UID:         board.UID,
 		Title:       board.Title,
 		Metrics:     metricsInBoard,
 		ParseErrors: parseErrs,
+		Queries:     queriesInBoard,
 	})
 }
 
@@ -102,11 +114,17 @@ func getQueryFromTemplating(name string, q interface{}) (string, error) {
 	return "", fmt.Errorf("templating type error: name=%v", name)
 }
 
-func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {
+func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}, datasourceUid string) []error {
 	parseErrors := []error{}
 	for _, templateVar := range templating.List {
 		if templateVar.Type != "query" {
 			continue
+		}
+
+		if datasourceUid != "" && templateVar.Datasource != nil {
+			if templateVar.Datasource.UID != datasourceUid {
+				continue
+			}
 		}
 
 		query, err := getQueryFromTemplating(templateVar.Name, templateVar.Query)
@@ -140,9 +158,20 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 
 // Workaround to support Grafana "timeseries" panel. This should
 // be implemented in grafana/tools-sdk, and removed from here.
-func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
+func getCustomPanelTargets(panel minisdk.Panel, datasourceUid string) *[]minisdk.Target {
 	if panel.CommonPanel.Type != "timeseries" {
 		return nil
+	}
+	if datasourceUid != "" {
+		if panel.Datasource != nil {
+			// we'll filter mixed targets later
+			if panel.Datasource.Type != "datasource" && panel.Datasource.UID != datasourceUid {
+				return nil
+			}
+		} else {
+			// if datasourceUid is defined we'll filter out null datasource too
+			return nil
+		}
 	}
 
 	// Heavy handed approach to re-marshal the panel and parse it again
@@ -168,14 +197,18 @@ func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
 	return &parsedPanel.Targets
 }
 
-func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
+func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, queries map[string]struct{}, datasourceUid string) []error {
 	var parseErrors []error
 
-	targets := panel.GetTargets()
+	targets := panel.GetTargets(datasourceUid)
 	if targets == nil {
-		targets = getCustomPanelTargets(panel)
+		targets = getCustomPanelTargets(panel, datasourceUid)
 		if targets == nil {
-			parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type))
+			if datasourceUid != "" {
+				parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q or all metrics filtered out by datasourceUid: %s", panel.CommonPanel.Type, datasourceUid))
+			} else {
+				parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type))
+			}
 			return parseErrors
 		}
 	}
@@ -185,12 +218,20 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 		if target.Expr == "" {
 			continue
 		}
+		// filter datasource in mixed targets
+		if datasourceUid != "" && panel.Datasource != nil {
+			if panel.Datasource.Type == "datasource" && target.Datasource.UID != datasourceUid {
+				continue
+			}
+		}
 		query := target.Expr
 		err := parseQuery(query, metrics)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
 			log.Debugln("msg", "promql parse error", "err", err, "query", query)
 			continue
+		} else {
+			queries[query] = struct{}{}
 		}
 	}
 

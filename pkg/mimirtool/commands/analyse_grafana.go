@@ -27,7 +27,8 @@ type GrafanaAnalyzeCommand struct {
 	apiKey      string
 	readTimeout time.Duration
 
-	outputFile string
+	outputFile    string
+	datasourceUid string
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
@@ -42,7 +43,12 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	boardLinks, err := c.SearchDashboards(ctx, "", false)
+	params := []sdk.SearchParam{
+		sdk.SearchType(sdk.SearchTypeDashboard),
+		sdk.SearchQuery(""),
+		sdk.SearchStarred(false),
+	}
+	boardLinks, err := c.Search(ctx, params...)
 	if err != nil {
 		return err
 	}
@@ -58,7 +64,7 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUid)
 	}
 
 	err = writeOut(output, cmd.outputFile)

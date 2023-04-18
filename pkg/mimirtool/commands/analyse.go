@@ -64,6 +64,9 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	grafanaAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("metrics-in-grafana.json").
 		StringVar(&gaCmd.outputFile)
+	grafanaAnalyzeCmd.Flag("datasource-uid", "Filter metrics by datasource uid, if defined").
+		Default("").
+		StringVar(&gaCmd.datasourceUid)
 
 	raCmd := &RulerAnalyzeCommand{}
 	rulerAnalyzeCmd := analyzeCmd.Command("ruler", "Analyze and extract the metrics that are used in Grafana Mimir rules").
@@ -92,6 +95,9 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	dashboardAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("metrics-in-grafana.json").
 		StringVar(&daCmd.outputFile)
+	dashboardAnalyzeCmd.Flag("datasource-uid", "Filter metrics by datasource uid, if defined").
+		Default("").
+		StringVar(&daCmd.datasourceUid)
 
 	rfCmd := &RuleFileAnalyzeCommand{}
 	ruleFileAnalyzeCmd := analyzeCmd.Command("rule-file", "Analyze and output the metrics used in Prometheus rules files").Action(rfCmd.run)

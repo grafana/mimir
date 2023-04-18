@@ -19,6 +19,7 @@ import (
 type DashboardAnalyzeCommand struct {
 	DashFilesList []string
 	outputFile    string
+	datasourceUid string
 }
 
 func (cmd *DashboardAnalyzeCommand) run(k *kingpin.ParseContext) error {
@@ -35,7 +36,7 @@ func (cmd *DashboardAnalyzeCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s\n", err, file)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUid)
 	}
 
 	err := writeOut(output, cmd.outputFile)
