@@ -99,12 +99,12 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, store Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, store storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
 
-	storeQ := storeQueryable{q: store, queryStoreAfter: cfg.QueryStoreAfter}
+	storeQ := newStoreQueryable(store, cfg.QueryStoreAfter)
 	queryable := NewQueryable(distributorQueryable, storeQ, iteratorFunc, cfg, limits, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
@@ -145,18 +145,11 @@ func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	return storage.NewSeriesSetToChunkSet(q.Querier.Select(sortSeries, hints, matchers...))
 }
 
-// Queryable interface is similar to storage.Queryable, but it can return nil querier, if query should not use this queryable.
-type Queryable interface {
-	// OptionalQuerier returns storage.Querier that should be used to satisfy the query in given time range, or nil,
-	// if this queryable should not be used for given time range.
-	OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error)
-}
-
 // NewQueryable creates a new storage.Queryable for mimir.
-func NewQueryable(distributor Queryable, store Queryable, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		now := time.Now()
+func NewQueryable(distributor storage.Queryable, store storage.Queryable, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
+	var noopQuerier = storage.NoopQuerier()
 
+	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, err
@@ -181,20 +174,19 @@ func NewQueryable(distributor Queryable, store Queryable, chunkIterFn chunkItera
 			logger:             logger,
 		}
 
-		dqr, err := distributor.OptionalQuerier(ctx, now, mint, maxt)
+		dqr, err := distributor.Querier(ctx, mint, maxt)
 		if err != nil {
 			return nil, err
 		}
-		if dqr != nil {
+		if dqr != nil && dqr != noopQuerier {
 			q.queriers = append(q.queriers, dqr)
 		}
 
-		cqr, err := store.OptionalQuerier(ctx, now, mint, maxt)
+		cqr, err := store.Querier(ctx, mint, maxt)
 		if err != nil {
 			return nil, err
 		}
-
-		if cqr != nil {
+		if cqr != nil && cqr != noopQuerier {
 			q.queriers = append(q.queriers, cqr)
 		}
 
@@ -444,45 +436,30 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 }
 
 type storeQueryable struct {
-	q               Queryable
+	q               storage.Queryable
 	queryStoreAfter time.Duration
+	now             func() time.Time // settable for testing.
 }
 
-func (s storeQueryable) OptionalQuerier(ctx context.Context, now time.Time, queryMinT, queryMaxT int64) (storage.Querier, error) {
+func newStoreQueryable(q storage.Queryable, queryStoreAfter time.Duration) *storeQueryable {
+	return &storeQueryable{
+		q:               q,
+		queryStoreAfter: queryStoreAfter,
+		now:             time.Now,
+	}
+}
+
+func (s *storeQueryable) Querier(ctx context.Context, queryMinT, queryMaxT int64) (storage.Querier, error) {
 	if s.q == nil {
-		return nil, nil
+		return storage.NoopQuerier(), nil
 	}
 
+	now := s.now()
 	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
 	if s.queryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.queryStoreAfter)) {
-		return nil, nil
+		return storage.NoopQuerier(), nil
 	}
-	return s.q.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
-}
-
-type useBeforeTimestampQueryable struct {
-	q  Queryable
-	ts int64 // Timestamp in milliseconds
-}
-
-func (u useBeforeTimestampQueryable) OptionalQuerier(ctx context.Context, now time.Time, queryMinT, queryMaxT int64) (storage.Querier, error) {
-	if u.ts == 0 || queryMinT < u.ts {
-		return u.q.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
-	}
-	return nil, nil
-}
-
-// UseBeforeTimestampQueryable returns QueryableWithFilter, that is used only if query starts before given timestamp.
-// If timestamp is zero (time.IsZero), queryable is always used.
-func UseBeforeTimestampQueryable(queryable Queryable, ts time.Time) Queryable {
-	t := int64(0)
-	if !ts.IsZero() {
-		t = util.TimeToMillis(ts)
-	}
-	return useBeforeTimestampQueryable{
-		q:  queryable,
-		ts: t,
-	}
+	return s.q.Querier(ctx, queryMinT, queryMaxT)
 }
 
 func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {

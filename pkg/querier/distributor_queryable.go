@@ -38,12 +38,13 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) Queryable {
-	return distributorQueryable{
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) *distributorQueryable {
+	return &distributorQueryable{
 		logger:               logger,
 		distributor:          distributor,
 		iteratorFn:           iteratorFn,
 		queryIngestersWithin: queryIngestersWithin,
+		now:                  time.Now,
 	}
 }
 
@@ -52,9 +53,11 @@ type distributorQueryable struct {
 	distributor          Distributor
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
+	now                  func() time.Time // settable for testing
 }
 
-func (d distributorQueryable) OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
+func (d *distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	now := d.now()
 	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
 	if d.queryIngestersWithin == 0 || maxt >= util.TimeToMillis(now.Add(-d.queryIngestersWithin)) {
 		return &distributorQuerier{
@@ -68,7 +71,7 @@ func (d distributorQueryable) OptionalQuerier(ctx context.Context, now time.Time
 		}, nil
 	}
 
-	return nil, nil
+	return storage.NoopQuerier(), nil
 }
 
 type distributorQuerier struct {

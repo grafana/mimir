@@ -679,7 +679,7 @@ type Mimir struct {
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 
-	StoreQueryable querier.Queryable
+	StoreQueryable prom_storage.Queryable
 }
 
 // New makes a new Mimir.

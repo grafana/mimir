@@ -1745,7 +1745,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 			// Query metrics.
 			qb := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-				q, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
+				q, err := queryable.Querier(ctx, mint, maxt)
 				if q == nil && err == nil {
 					err = fmt.Errorf("nil queryable")
 				}

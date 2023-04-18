@@ -435,17 +435,11 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	}
 
 	require.NoError(t, app.Commit())
-	queryable := queryableFunc(func(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return tsdb.NewBlockQuerier(head, mint, maxt)
 	})
 
 	return queryable, ts
-}
-
-type queryableFunc func(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error)
-
-func (qf queryableFunc) OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
-	return qf(ctx, now, mint, maxt)
 }
 
 func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
@@ -1173,40 +1167,22 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 }
 
-func TestUseBeforeTimestamp(t *testing.T) {
-	m := &mockQueryableWithFilter{}
-	now := time.Now()
-	qwf := UseBeforeTimestampQueryable(m, now.Add(-1*time.Hour))
-
-	ctx := context.Background()
-	_, err := qwf.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now))
-	require.NoError(t, err)
-	require.False(t, m.queryableCalled)
-
-	_, err = qwf.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now))
-	require.NoError(t, err)
-	require.False(t, m.queryableCalled)
-
-	_, err = qwf.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), util.TimeToMillis(now))
-	require.NoError(t, err)
-	require.True(t, m.queryableCalled)
-}
-
 func TestStoreQueryable(t *testing.T) {
 	m := &mockQueryableWithFilter{}
 	now := time.Now()
-	sq := storeQueryable{m, time.Hour}
+	sq := newStoreQueryable(m, time.Hour)
+	sq.now = func() time.Time { return now }
 
 	ctx := context.Background()
-	_, err := sq.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now))
+	_, err := sq.Querier(ctx, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.False(t, m.queryableCalled)
 
-	_, err = sq.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now))
+	_, err = sq.Querier(ctx, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.False(t, m.queryableCalled)
 
-	_, err = sq.OptionalQuerier(ctx, now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now))
+	_, err = sq.Querier(ctx, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now))
 	require.NoError(t, err)
 	require.True(t, m.queryableCalled)
 }
@@ -1253,7 +1229,7 @@ type mockQueryableWithFilter struct {
 	queryableCalled bool
 }
 
-func (m *mockQueryableWithFilter) OptionalQuerier(_ context.Context, _ time.Time, _, _ int64) (storage.Querier, error) {
+func (m *mockQueryableWithFilter) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
 	m.queryableCalled = true
 	return nil, nil
 }
@@ -1283,7 +1259,7 @@ func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQu
 }
 
 // Querier implements storage.Queryable.
-func (m *mockBlocksStorageQueryable) OptionalQuerier(ctx context.Context, now time.Time, mint, maxt int64) (storage.Querier, error) {
+func (m *mockBlocksStorageQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return m.querier, nil
 }
 

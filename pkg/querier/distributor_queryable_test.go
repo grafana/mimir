@@ -90,10 +90,10 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, log.NewNopLogger())
-			querier, err := queryable.OptionalQuerier(ctx, now, testData.queryMinT, testData.queryMaxT)
+			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 			if testData.expectedQuerierSkipped {
-				require.Nil(t, querier)
+				require.Equal(t, storage.NoopQuerier(), querier)
 				return
 			}
 
@@ -120,22 +120,25 @@ func TestDistributorQueryableFilter(t *testing.T) {
 
 	now := time.Now()
 
+	dq.now = func() time.Time { return now }
 	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
 	queryMaxT := util.TimeToMillis(now)
 
 	ctx := context.Background()
-	q, err := dq.OptionalQuerier(ctx, now, queryMinT, queryMaxT)
+	q, err := dq.Querier(ctx, queryMinT, queryMaxT)
 	require.NoError(t, err)
 	require.NotNil(t, q)
 
-	q, err = dq.OptionalQuerier(ctx, now.Add(time.Hour), queryMinT, queryMaxT)
+	dq.now = func() time.Time { return now.Add(time.Hour) }
+	q, err = dq.Querier(ctx, queryMinT, queryMaxT)
 	require.NoError(t, err)
 	require.NotNil(t, q)
 
 	// Same query, hour+1ms later, is not sent to ingesters.
-	q, err = dq.OptionalQuerier(ctx, now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT)
+	dq.now = func() time.Time { return now.Add(time.Hour).Add(1 * time.Millisecond) }
+	q, err = dq.Querier(ctx, queryMinT, queryMaxT)
 	require.NoError(t, err)
-	require.Nil(t, q)
+	require.Equal(t, storage.NoopQuerier(), q)
 }
 
 func TestIngesterStreaming(t *testing.T) {
@@ -177,7 +180,7 @@ func TestIngesterStreaming(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
+	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 	require.NotNil(t, querier)
 
@@ -254,7 +257,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.OptionalQuerier(ctx, time.Now(), mint, maxt)
+	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 	require.NotNil(t, querier)
 
@@ -467,7 +470,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 				Return(labelNames, nil)
 
 			queryable := newDistributorQueryable(d, nil, 0, log.NewNopLogger())
-			querier, err := queryable.OptionalQuerier(context.Background(), time.Now(), mint, maxt)
+			querier, err := queryable.Querier(context.Background(), mint, maxt)
 			require.NoError(t, err)
 			require.NotNil(t, querier)
 
@@ -518,7 +521,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.OptionalQuerier(ctx, time.Now(), math.MinInt64, math.MaxInt64)
+	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 	require.NotNil(b, querier)
 
