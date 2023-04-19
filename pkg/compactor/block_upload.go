@@ -31,9 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -44,10 +42,7 @@ const (
 	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
 )
 
-var maxBlockUploadSizeBytesFormat = globalerror.CompactorBlockUploadMaxBlockSizeBytes.MessageWithPerTenantLimitConfig(
-	"the block upload exceeded the maximum block size bytes limit (limit: %d bytes)",
-	validation.BlockUploadMaxBlockSizeBytes)
-
+var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
 // StartBlockUpload handles request for starting block upload.
@@ -158,7 +153,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		decreaseActiveValidationsInDefer = false
 		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
 			defer c.blockUploadValidations.Dec()
-			return c.validateBlock(ctx, logger, blockID, userBkt, tenantID)
+			return c.validateBlock(ctx, logger, blockID, m, userBkt, tenantID)
 		})
 	} else {
 		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
@@ -519,17 +514,16 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket, userID string) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *metadata.Meta, userBkt objstore.Bucket, userID string) error {
+	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
+		return err
+	}
+
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
 	}
 	defer c.removeTemporaryBlockDirectory(blockDir)
-
-	blockMetadata, err := metadata.ReadFromDir(blockDir)
-	if err != nil {
-		return errors.Wrap(err, "error reading block metadata file")
-	}
 
 	// check that all files listed in the metadata are present and the correct size
 	for _, f := range blockMetadata.Thanos.Files {
@@ -545,10 +539,6 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
 			return errors.Errorf("file size mismatch for %s", f.RelPath)
 		}
-	}
-
-	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
-		return err
 	}
 
 	// validate block
@@ -580,9 +570,7 @@ func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files
 	}
 
 	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
-		err := fmt.Errorf(maxBlockUploadSizeBytesFormat, maxBlockSizeBytes)
-		level.Error(logger).Log("err", err, "size", blockSizeBytes)
-		return err
+		return fmt.Errorf(maxBlockUploadSizeBytesFormat, maxBlockSizeBytes)
 	}
 	return nil
 }

@@ -49,7 +49,6 @@ const (
 	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
 	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	BlockUploadMaxBlockSizeBytes           = "compactor.block-upload-max-block-size-bytes"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -674,9 +673,9 @@ func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).CompactorBlockUploadVerifyChunks
 }
 
-// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated.
-func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(tenantID string) int64 {
-	return o.getOverridesForUser(tenantID).CompactorBlockUploadMaxBlockSizeBytes
+// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
+func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
+	return o.getOverridesForUser(userID).CompactorBlockUploadMaxBlockSizeBytes
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

@@ -31,8 +31,6 @@ const (
 	MaxSeriesPerQuery             ID = "max-series-per-query"
 	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
 
-	CompactorBlockUploadMaxBlockSizeBytes ID = "compactor-block-upload-max-block-size-bytes"
-
 	DistributorMaxIngestionRate             ID = "distributor-max-ingestion-rate"
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
 	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"

@@ -1696,23 +1696,6 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
-### err-mimir-compactor-block-upload-max-block-size-bytes
-
-This error occurs when a compactor rejects a block upload because the sum of the file sizes in the block metadata is larger than the allowed limit.
-
-How it **works**:
-
-- The limit is applied when a block upload is started and during the validation of an upload.
-- The purpose of the limit is to ensure the availability of the compactor by protecting it from blocks that would consume too many resources to process.
-- For instance, if block upload validation is enabled (-compactor.block-upload-validation-enabled) the compactor will download the entire block to its disk during validation. It must have enough disk space for this to be successful.
-
-How to **fix** it:
-
-- If the size of a proposed block upload is currently unknown, it can be found by examining logs (example query: `{namespace="example-mimir-cluster", name=~"compactor.*"} |= "err-mimir-compactor-block-upload-max-block-size-bytes"`)
-- The limit can then be configured via `-compactor.block-upload-max-block-size-bytes` (or `compactor_block_upload_max_block_size_bytes` in the runtime configuration).
-- Configuring the limit to 0 disables the limit from being enforced.
-- If block upload validation is enabled ensure the compactor has enough resources to handle the size of the block upload. Keep in mind that compactors require disk space for other purposes as well.
-
 ## Mimir routes by path
 
 **Write path**:

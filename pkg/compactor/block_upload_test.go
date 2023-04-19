@@ -1684,7 +1684,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, c.logger, blockID, bkt, tenantID)
+			err = c.validateBlock(ctx, c.logger, blockID, meta, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)
