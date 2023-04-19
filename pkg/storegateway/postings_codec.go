@@ -140,14 +140,14 @@ func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, requestMat
 	offsetAfterReqMatchers += len(requestMatchers)
 
 	// Pending matchers size + matchers
-	actualPendingMatchersLen, err := encodeMatchers(estPendingMatchersLen, pendingMatchers, result[offsetAfterReqMatchers:])
+	actualMatchersLen, err := encodeMatchers(estPendingMatchersLen, pendingMatchers, result[offsetAfterReqMatchers:])
 	if err != nil {
 		return nil, err
 	}
-	if actualPendingMatchersLen != estPendingMatchersLen {
-		return nil, fmt.Errorf("encoding pending matchers wrote unexpected number of bytes: wrote %d, expected %d", actualPendingMatchersLen, estPendingMatchersLen)
+	if actualMatchersLen != estPendingMatchersLen {
+		return nil, fmt.Errorf("encoding matchers wrote unexpected number of bytes: wrote %d, expected %d", actualMatchersLen, estPendingMatchersLen)
 	}
-	offsetAfterPendingMatchers := offsetAfterReqMatchers + actualPendingMatchersLen
+	offsetAfterPendingMatchers := offsetAfterReqMatchers + actualMatchersLen
 
 	// Compressed postings
 	compressedPostings := snappy.Encode(result[offsetAfterPendingMatchers:], varintPostings)
