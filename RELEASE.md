@@ -48,7 +48,7 @@ See the next section for details on cutting an individual release.
 The quick and easy way to create a GitHub issue using the following template and follow the instructions from the issue itself.
 If something is not clear, you can get back to this document to learn more about the process.
 
-When making a branch while working on checklist, don't create branch with `release-` prefix. Such branch is protected.
+> **Note:** When making a branch while working on the following checklist, don't create branch with `release-` prefix, because such branch is protected and can't get additional commits pushed upon branch creation.
 
 ````markdown
 ### Publish the release candidate
@@ -66,7 +66,7 @@ When making a branch while working on checklist, don't create branch with `relea
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
 - [ ] Run `./tools/release/notify-changelog-cut.sh`
-- [ ] Run `make mixin-screenshots`
+- [ ] Generate mixin screenshots
   - Update config in `operations/mimir-mixin-tools/screenshots/.config` and `operations/mimir-mixin-tools/serve/.config`
   - Use dev `MIMIR_NAMESPACE` that has more metrics such as `cortex-dev-01` so that the generated dashboard will not be too empty
   - Use api-keys generated from [grafana dev environment](https://grafana-dev.com/orgs/raintank/api-keys) to set the `DATASOURCE_PASSWORD`
