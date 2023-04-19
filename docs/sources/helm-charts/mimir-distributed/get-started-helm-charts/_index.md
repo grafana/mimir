@@ -111,7 +111,6 @@ Using a custom namespace solves problems later on because you do not have to ove
    The results look similar to this:
 
    ```bash
-   kubectl -n mimir-test get pods
    NAME                                        READY   STATUS      RESTARTS   AGE
    mimir-minio-7bd89b757d-q5hp6                1/1     Running     0          2m44s
    mimir-rollout-operator-76c67c7d56-v6xtl     1/1     Running     0          2m44s
