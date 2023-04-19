@@ -417,8 +417,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, _, matchers, err := r.decodePostings(b, stats)
-			if err == nil && len(matchers) == 1 && matchers[0].Name == key.Name && matchers[0].Value == key.Value {
+			l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
+			if len(pendingMatchers) > 0 {
+				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
+					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
+			}
+			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
 				output[ix] = l
 				continue
 			}
@@ -427,7 +431,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				"msg", "can't decode cached postings",
 				"err", err,
 				"key", fmt.Sprintf("%+v", key),
-				"cached_matchers", util.LabelMatchersToString(matchers),
+				"labels_key", cachedLabelsKey,
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
 				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
@@ -505,7 +509,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressions++
 				s := time.Now()
 				bep := newBigEndianPostings(pBytes[4:])
-				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), "", labelMatchersKeyForLabel(keys[p.keyID]))
+				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), encodeLabelForPostingsCache(keys[p.keyID]), nil)
 				compressionTime = time.Since(s)
 				if err == nil {
 					compressedSize = len(dataToCache)
@@ -544,8 +548,8 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
-func labelMatchersKeyForLabel(label labels.Label) []*labels.Matcher {
-	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, label.Name, label.Value)}
+func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
+	return indexcache.LabelMatchersKey(fmt.Sprintf("%s=%s", l.Name, l.Value))
 }
 
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
