@@ -11,6 +11,10 @@
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
 
+### Mixin
+
+* [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
+
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
