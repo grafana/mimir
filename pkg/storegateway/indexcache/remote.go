@@ -217,7 +217,7 @@ func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID str
 
 func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) string {
 	hash := blake2b.Sum256([]byte(lmKey))
-	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
+	return "E2:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.

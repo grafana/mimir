@@ -34,7 +34,7 @@ type codec string
 
 const (
 	codecHeaderSnappy             codec = "dvs" // As in "diff+varint+snappy".
-	codecHeaderSnappyWithMatchers codec = "dcm" // As in "dvs+cache_collision+matchers"
+	codecHeaderSnappyWithMatchers codec = "dm"  // As in "dvs+matchers"
 )
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
