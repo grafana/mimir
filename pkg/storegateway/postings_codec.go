@@ -126,34 +126,32 @@ func diffVarintSnappyWithMatchersEncode(p index.Postings, length int, requestMat
 	estPendingMatchersLen := encodedMatchersLen(pendingMatchers)
 	codecLen := len(codecHeaderSnappyWithMatchers)
 
-	offsetAfterCodec := codecLen
-
 	// Preallocate buffer
 	result := make([]byte, codecLen+reqMatchersLen+estPendingMatchersLen+snappy.MaxEncodedLen(len(varintPostings)))
 
 	// Codec
 	copy(result, codecHeaderSnappyWithMatchers)
+	offset := codecLen
 
 	// Request matchers
-	offsetAfterReqMatchers := offsetAfterCodec + binary.PutUvarint(result[offsetAfterCodec:], uint64(len(requestMatchers)))
-	copy(result[offsetAfterReqMatchers:], requestMatchers)
-	offsetAfterReqMatchers += len(requestMatchers)
+	offset += binary.PutUvarint(result[offset:], uint64(len(requestMatchers)))
+	offset += copy(result[offset:], requestMatchers)
 
 	// Pending matchers size + matchers
-	actualMatchersLen, err := encodeMatchers(estPendingMatchersLen, pendingMatchers, result[offsetAfterReqMatchers:])
+	actualMatchersLen, err := encodeMatchers(estPendingMatchersLen, pendingMatchers, result[offset:])
 	if err != nil {
 		return nil, err
 	}
 	if actualMatchersLen != estPendingMatchersLen {
 		return nil, fmt.Errorf("encoding matchers wrote unexpected number of bytes: wrote %d, expected %d", actualMatchersLen, estPendingMatchersLen)
 	}
-	offsetAfterPendingMatchers := offsetAfterReqMatchers + actualMatchersLen
+	offset += actualMatchersLen
 
 	// Compressed postings
-	compressedPostings := snappy.Encode(result[offsetAfterPendingMatchers:], varintPostings)
+	compressedPostings := snappy.Encode(result[offset:], varintPostings)
+	offset += len(compressedPostings)
 
-	result = result[:offsetAfterPendingMatchers+len(compressedPostings)]
-	return result, nil
+	return result[:offset], nil
 }
 
 // encodeMatchers needs to be called with the precomputed length of the encoded matchers from encodedMatchersLen
@@ -192,17 +190,19 @@ func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, indexcache.La
 		return nil, "", nil, errors.New(string(codecHeaderSnappyWithMatchers) + " header not found")
 	}
 
-	codecLen := len(codecHeaderSnappyWithMatchers)
-	requestMatchersKeyLen, requestMatchersKeyLenSize := varint.Uvarint(input[codecLen:])
-	// the uint64 to int conversion should be safe since the length of the key is much smaller than math.MaxUint64
-	offsetAfterMatchersKey := codecLen + requestMatchersKeyLenSize + int(requestMatchersKeyLen)
-	requestMatchersKey := indexcache.LabelMatchersKey(input[codecLen+requestMatchersKeyLenSize : offsetAfterMatchersKey])
+	offset := len(codecHeaderSnappyWithMatchers)
 
-	pendingMatchers, pendingMatchersLen, err := decodeMatchers(input[offsetAfterMatchersKey:])
+	requestMatchersKeyLen, requestMatchersKeyLenSize := varint.Uvarint(input[offset:])
+	offset += requestMatchersKeyLenSize
+	requestMatchersKey := indexcache.LabelMatchersKey(input[offset : uint64(offset)+requestMatchersKeyLen])
+	offset += int(requestMatchersKeyLen)
+
+	pendingMatchers, pendingMatchersLen, err := decodeMatchers(input[offset:])
 	if err != nil {
 		return nil, "", nil, errors.Wrap(err, "decoding request matchers")
 	}
-	raw, err := snappy.Decode(nil, input[offsetAfterMatchersKey+pendingMatchersLen:])
+	offset += pendingMatchersLen
+	raw, err := snappy.Decode(nil, input[offset:])
 	if err != nil {
 		return nil, "", nil, errors.Wrap(err, "snappy decode")
 	}
