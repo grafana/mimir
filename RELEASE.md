@@ -35,8 +35,8 @@ The process formally starts with the initial pre-release, but some preparations 
 - On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release.
   New branch `release-<major>-<minor>` should be branched out from latest weekly release `r<xxx>`, where xxx is the weekly release number.
   In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
-- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week.
-  This is typically done at Grafana Labs.
+- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week. 
+  Since we are branching out pre-release from weekly release, the pre-release changes are automatically tested in production environment. 
 - If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
