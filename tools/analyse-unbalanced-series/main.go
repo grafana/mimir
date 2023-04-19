@@ -13,18 +13,25 @@ func main() {
 	const (
 		mimirRingPageURL    = "http://localhost:8080/store-gateway/ring"
 		bucketIndexFilepath = "229572-bucket-index.json.gz"
+		buildDataset        = false
 	)
 
-	logger := log.NewLogfmtLogger(os.Stdout)
+	var (
+		ringStatus ringStatusDesc
+		err        error
+		logger     = log.NewLogfmtLogger(os.Stdout)
+	)
 
 	// Build dataset.
-	level.Info(logger).Log("msg", "Building dataset")
-	ringStatus, err := getRingStatus(mimirRingPageURL)
-	if err != nil {
-		level.Error(logger).Log("msg", "Failed to build dataset", "err", err)
-		os.Exit(1)
+	if buildDataset {
+		level.Info(logger).Log("msg", "Building dataset")
+		ringStatus, err = getRingStatus(mimirRingPageURL)
+		if err != nil {
+			level.Error(logger).Log("msg", "Failed to build dataset", "err", err)
+			os.Exit(1)
+		}
+		level.Info(logger).Log("msg", "Successfully built dataset")
 	}
-	level.Info(logger).Log("msg", "Successfully built dataset")
 
 	// Run analysis on real ring.
 	if false {
@@ -49,12 +56,21 @@ func main() {
 	}
 
 	// Store-gateway ring analysis.
-	if true {
+	if false {
 		bucketIndex, err := readBucketIndex(bucketIndexFilepath, logger)
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to load bucket index", "filepath", bucketIndexFilepath, "err", err)
 		}
 
 		analyzeStoreGatewayActualBlocksOwnership(bucketIndex.Blocks, ringStatus.toRingModel(), logger)
+		analyzeStoreGatewaySimulateBlocksOwnershipWithJumpHash(bucketIndex.Blocks, ringStatus.toRingModel(), 1, logger)
+		analyzeStoreGatewaySimulateBlocksOwnershipWithJumpHash(bucketIndex.Blocks, ringStatus.toRingModel(), 3, logger)
+
+		analyzeStoreGatewaySimulateBlocksOwnershipWithMaglev(bucketIndex.Blocks, ringStatus.toRingModel(), 1, logger)
+	}
+
+	// Compare different algorithms
+	if true {
+		analyzeAndCompareHashingAlgorithms(logger)
 	}
 }
