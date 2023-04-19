@@ -33,12 +33,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [FEATURE] Add support for Vault Agent. When enabled, the Pod annotations for TLS configurable components are updated to allow a running Vault Agent to fetch secrets from Vault and to inject them into a Pod. The annotations are updated for the following components: `admin-api`, `alertmanager`, `compactor`, `distributor`, `gateway`, `ingester`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler`, `ruler`, `store-gateway`. #4660
 * [FEATURE] Add documentation to use external Redis support for chunks-cache, metadata-cache and results-cache. #4348
 * [FEATURE] Allow for deploying mixin dashboards as part of the helm chart. #4618
-* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.0`. #4524
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.2`. #4524 #4659 #4780
 * [ENHANCEMENT] Update the `memcached-exporter` to `v0.11.2`. #4570
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
-* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.4.1`. #4659
 * [ENHANCEMENT] Update minio subchart to `5.0.7`. #4705
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
