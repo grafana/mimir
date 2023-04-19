@@ -5,7 +5,7 @@
 ### Grafana Mimir
 
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
-* [ENHANCEMENT] Distributor: make `__meta_tenant_id` available in `metric_relabel_configs` #4725
+* [ENHANCEMENT] Distributor: make `__meta_tenant_id` label available in relabeling rules configured via `metric_relabel_configs`. #4725
 
 ### Documentation
 
