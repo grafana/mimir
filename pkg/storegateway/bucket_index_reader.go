@@ -417,12 +417,8 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, _, pendingMatchers, err := r.decodePostings(b, stats)
-			if len(pendingMatchers) > 0 {
-				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
-			}
-			if err == nil {
+			l, _, matchers, err := r.decodePostings(b, stats)
+			if err == nil && len(matchers) == 1 && matchers[0].Name == key.Name && matchers[0].Value == key.Value {
 				output[ix] = l
 				continue
 			}
@@ -431,6 +427,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				"msg", "can't decode cached postings",
 				"err", err,
 				"key", fmt.Sprintf("%+v", key),
+				"cached_matchers", util.LabelMatchersToString(matchers),
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
 				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
@@ -510,7 +507,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressions++
 				s := time.Now()
 				bep := newBigEndianPostings(pBytes[4:])
-				data, err := diffVarintSnappyEncode(bep, bep.length())
+				data, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), "", labelMatchersKeyForLabel(keys[p.keyID]))
 				compressionTime = time.Since(s)
 				if err == nil {
 					dataToCache = data
@@ -544,6 +541,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
+func labelMatchersKeyForLabel(label labels.Label) []*labels.Matcher {
+	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, label.Name, label.Value)}
+}
+
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
@@ -555,16 +556,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 	)
 	switch {
 	case isDiffVarintSnappyEncodedPostings(b):
-		s := time.Now()
-		l, err = diffVarintSnappyDecode(b)
-
-		stats.update(func(stats *queryStats) {
-			stats.cachedPostingsDecompressions++
-			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-			if err != nil {
-				stats.cachedPostingsDecompressionErrors++
-			}
-		})
+		return nil, "", nil, errors.New("found postings without collision protection")
 
 	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
 		s := time.Now()
