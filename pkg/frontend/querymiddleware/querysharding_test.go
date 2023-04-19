@@ -859,6 +859,77 @@ type queryShardingFunctionCorrectnessTest struct {
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
+	testsForBoth := []queryShardingFunctionCorrectnessTest{
+		{fn: "count_over_time", rangeQuery: true},
+		{fn: "days_in_month"},
+		{fn: "day_of_month"},
+		{fn: "day_of_week"},
+		{fn: "day_of_year"},
+		{fn: "delta", rangeQuery: true},
+		{fn: "hour"},
+		{fn: "increase", rangeQuery: true},
+		{fn: "minute"},
+		{fn: "month"},
+		{fn: "rate", rangeQuery: true},
+		{fn: "resets", rangeQuery: true},
+		{fn: "sort"},
+		{fn: "sort_desc"},
+		{fn: "last_over_time", rangeQuery: true},
+		{fn: "present_over_time", rangeQuery: true},
+		{fn: "timestamp"},
+		{fn: "year"},
+		{fn: "clamp", args: []string{"5", "10"}},
+		{fn: "clamp_max", args: []string{"5"}},
+		{fn: "clamp_min", args: []string{"5"}},
+		{fn: "round", args: []string{"20"}},
+		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
+		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
+	}
+	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "abs"},
+		{fn: "avg_over_time", rangeQuery: true},
+		{fn: "ceil"},
+		{fn: "changes", rangeQuery: true},
+		{fn: "deriv", rangeQuery: true},
+		{fn: "exp"},
+		{fn: "floor"},
+		{fn: "idelta", rangeQuery: true},
+		{fn: "irate", rangeQuery: true},
+		{fn: "ln"},
+		{fn: "log10"},
+		{fn: "log2"},
+		{fn: "max_over_time", rangeQuery: true},
+		{fn: "min_over_time", rangeQuery: true},
+		{fn: "sqrt"},
+		{fn: "deg"},
+		{fn: "asinh"},
+		{fn: "rad"},
+		{fn: "cosh"},
+		{fn: "atan"},
+		{fn: "atanh"},
+		{fn: "asin"},
+		{fn: "sinh"},
+		{fn: "cos"},
+		{fn: "acosh"},
+		{fn: "sin"},
+		{fn: "tanh"},
+		{fn: "tan"},
+		{fn: "acos"},
+		{fn: "stddev_over_time", rangeQuery: true},
+		{fn: "stdvar_over_time", rangeQuery: true},
+		{fn: "sum_over_time", rangeQuery: true},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
+		{fn: "sgn"},
+		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
+		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
+	}
+	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_count"},
+		{fn: "histogram_sum"},
+		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
+		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
+	}
 	queryableFloats := storageSeriesQueryable([]*promql.StorageSeries{
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
@@ -867,26 +938,19 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 	})
-	testQueryShardingFunctionCorrectness(t, queryableFloats, []queryShardingFunctionCorrectnessTest{})
-	/*
-		queryableNativeHistograms := storageSeriesQueryable([]*promql.StorageSeries{
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
-		})
-		testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, []queryShardingFunctionCorrectnessTest{
-			{fn: "histogram_count"},
-			{fn: "histogram_sum"},
-			{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
-			{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
-		})
-	*/
+	testQueryShardingFunctionCorrectness(t, queryableFloats, append(testsForBoth, testsForFloatsOnly...), testsForNativeHistogramsOnly)
+	queryableNativeHistograms := storageSeriesQueryable([]*promql.StorageSeries{
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
+		newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+	})
+	testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, append(testsForBoth, testsForNativeHistogramsOnly...), testsForFloatsOnly)
 }
 
-func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Queryable, extraTests []queryShardingFunctionCorrectnessTest) {
+func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Queryable, tests []queryShardingFunctionCorrectnessTest, testsToIgnore []queryShardingFunctionCorrectnessTest) {
 	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
 		if tpl == "" {
 			tpl = `(<fn>(bar1{}<args>))`
@@ -913,70 +977,6 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 			"count by (bar)" + result,
 		}
 	}
-	tests := append([]queryShardingFunctionCorrectnessTest{
-		{fn: "abs"},
-		{fn: "avg_over_time", rangeQuery: true},
-		{fn: "ceil"},
-		{fn: "changes", rangeQuery: true},
-		{fn: "count_over_time", rangeQuery: true},
-		{fn: "days_in_month"},
-		{fn: "day_of_month"},
-		{fn: "day_of_week"},
-		{fn: "day_of_year"},
-		{fn: "delta", rangeQuery: true},
-		{fn: "deriv", rangeQuery: true},
-		{fn: "exp"},
-		{fn: "floor"},
-		{fn: "hour"},
-		{fn: "idelta", rangeQuery: true},
-		{fn: "increase", rangeQuery: true},
-		{fn: "irate", rangeQuery: true},
-		{fn: "ln"},
-		{fn: "log10"},
-		{fn: "log2"},
-		{fn: "max_over_time", rangeQuery: true},
-		{fn: "min_over_time", rangeQuery: true},
-		{fn: "minute"},
-		{fn: "month"},
-		{fn: "rate", rangeQuery: true},
-		{fn: "resets", rangeQuery: true},
-		{fn: "sort"},
-		{fn: "sort_desc"},
-		{fn: "sqrt"},
-		{fn: "deg"},
-		{fn: "asinh"},
-		{fn: "rad"},
-		{fn: "cosh"},
-		{fn: "atan"},
-		{fn: "atanh"},
-		{fn: "asin"},
-		{fn: "sinh"},
-		{fn: "cos"},
-		{fn: "acosh"},
-		{fn: "sin"},
-		{fn: "tanh"},
-		{fn: "tan"},
-		{fn: "acos"},
-		{fn: "stddev_over_time", rangeQuery: true},
-		{fn: "stdvar_over_time", rangeQuery: true},
-		{fn: "sum_over_time", rangeQuery: true},
-		{fn: "last_over_time", rangeQuery: true},
-		{fn: "present_over_time", rangeQuery: true},
-		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
-		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
-		{fn: "timestamp"},
-		{fn: "year"},
-		{fn: "sgn"},
-		{fn: "clamp", args: []string{"5", "10"}},
-		{fn: "clamp_max", args: []string{"5"}},
-		{fn: "clamp_min", args: []string{"5"}},
-		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
-		{fn: "round", args: []string{"20"}},
-		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
-		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
-		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
-	}, extraTests...)
-
 	for _, tc := range tests {
 		const numShards = 4
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
@@ -1032,10 +1032,9 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		"scalar": {},
 		"vector": {},
 		"pi":     {},
-		// These are tested only for native histograms but not for floats:
-		"histogram_count":    {},
-		"histogram_sum":      {},
-		"histogram_fraction": {},
+	}
+	for _, tc := range testsToIgnore {
+		fnToIgnore[tc.fn] = struct{}{}
 	}
 
 	for expectedFn := range promql.FunctionCalls {
