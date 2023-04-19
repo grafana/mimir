@@ -2841,8 +2841,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-verify-chunks
 [compactor_block_upload_verify_chunks: <boolean> | default = true]
 
-# Maximum size in bytes of a block that is allowed to be uploaded or validated.
-# 0 = no limit.
+# (advanced) Maximum size in bytes of a block that is allowed to be uploaded or
+# validated. 0 = no limit.
 # CLI flag: -compactor.block-upload-max-block-size-bytes
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 

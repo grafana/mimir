@@ -158,7 +158,7 @@ type Limits struct {
 	CompactorBlockUploadEnabled           bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
-	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes"`
+	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.

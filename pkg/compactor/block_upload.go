@@ -515,7 +515,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 }
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *metadata.Meta, userBkt objstore.Bucket, userID string) error {
-	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
+	if err := c.validateMaximumBlockSize(blockMetadata.Thanos.Files, userID); err != nil {
 		return err
 	}
 

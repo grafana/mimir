@@ -3473,7 +3473,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.block-upload-max-block-size-bytes",
-          "fieldType": "int"
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

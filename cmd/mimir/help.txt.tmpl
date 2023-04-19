@@ -103,6 +103,8 @@ Usage of ./cmd/mimir/mimir:
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
+  -alsologtostderr
+    	log to standard error as well as files
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -blocks-storage.azure.account-key string
@@ -289,8 +291,6 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
-  -compactor.block-upload-max-block-size-bytes int
-    	Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.
   -compactor.block-upload-validation-enabled
     	Enable block upload validation for the tenant. (default true)
   -compactor.block-upload-verify-chunks
@@ -395,6 +395,12 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log_backtrace_at value
+    	when logging hits line file:N, emit a stack trace
+  -log_dir string
+    	If non-empty, write log files in this directory
+  -logtostderr
+    	log to standard error instead of files
   -memberlist.abort-if-join-fails
     	If this node fails to join memberlist cluster, abort.
   -memberlist.advertise-addr string
@@ -619,6 +625,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
+  -stderrthreshold value
+    	logs at or above this threshold go to stderr
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints string
@@ -649,6 +657,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -v value
+    	log level for V logs
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
@@ -659,5 +669,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -version
     	Print application version and exit.
+  -vmodule value
+    	comma-separated list of pattern=N settings for file-filtered logging
 
 To see all flags, use -help-all
