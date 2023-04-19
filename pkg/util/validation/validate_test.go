@@ -411,6 +411,58 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			ResetHint:      mimirpb.Histogram_GAUGE,
 			Timestamp:      0,
 		},
+		"integer counter positive buckets": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{},
+			NegativeDeltas: []int64{},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}},
+			PositiveDeltas: []int64{1, 0},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"integer counter negative buckets": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeDeltas: []int64{1, 0},
+			PositiveSpans:  []mimirpb.BucketSpan{},
+			PositiveDeltas: []int64{},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"float counter positive buckets": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{},
+			NegativeCounts: []float64{},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{1, 1},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"float counter negative buckets": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1, 1},
+			PositiveSpans:  []mimirpb.BucketSpan{},
+			PositiveCounts: []float64{},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
 	}
 
 	registry := prometheus.NewRegistry()
@@ -438,6 +490,6 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 4
+			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
 	`), "cortex_discarded_samples_total"))
 }

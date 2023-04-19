@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. Defaults to 1024. #4765
 
 ### Documentation
 
