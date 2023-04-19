@@ -63,13 +63,13 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_SOURCES_PATH := docs/sources/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := $(DOC_SOURCES_PATH)/reference-configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/references/configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := $(DOC_SOURCES_PATH)/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
-	$(DOC_SOURCES_PATH)/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
+DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
+	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
 	$(DOC_SOURCES_PATH)/operators-guide/architecture/components/overrides-exporter.md \
-	$(DOC_SOURCES_PATH)/operators-guide/get-started/_index.md \
+	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
@@ -168,26 +168,6 @@ $(dir $(1))$(UPTODATE): $(1)
 endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 
-# Manually declared dependencies And what goes into each exe
-pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
-pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
-pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/distributor.proto
-pkg/ring/ring.pb.go: pkg/ring/ring.proto
-pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/frontend.proto
-pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
-pkg/frontend/querymiddleware/model.pb.go: pkg/frontend/querymiddleware/model.proto
-pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
-pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
-pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
-pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
-pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
-pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
-pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
-pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
-pkg/storegateway/storepb/types.pb.go: pkg/storegateway/storepb/types.proto
-pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
-pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
-
 all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
@@ -198,7 +178,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr3976-e7cae18e3
+LATEST_BUILD_IMAGE_TAG ?= chore-upgrade-go-1203-5c4c29f01
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -237,7 +217,7 @@ protos: $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 
-%.pb.go:
+%.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 else
@@ -245,7 +225,7 @@ else
 	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
 endif
 
-lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
+lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir/preremove.sh
 	shellcheck $?
 
 lint: ## Run lints to check for style issues.
@@ -388,7 +368,7 @@ dist: ## Generates binaries for a Mimir release.
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows; do \
+	@for os in linux darwin windows freebsd; do \
 		for arch in amd64 arm64; do \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
@@ -600,63 +580,11 @@ integration-tests: cmd/mimir/$(UPTODATE)
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
 
-# Generate packages for a Mimir release.
-FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
-	--license "AGPL 3.0" \
-	--url "https://grafana.com/oss/mimir/" \
-	--description "Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus." \
-	--maintainer "contact@grafana.com" \
-	--vendor "Grafana Labs"
+# Those vars are needed for packages target
+export VERSION
 
-PACKAGE_IN_CONTAINER := true
-PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
-ifeq ($(PACKAGE_IN_CONTAINER), true)
-
-.PHONY: packages
-packages: dist packaging/fpm/$(UPTODATE)
-	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
-		-i $(PACKAGE_IMAGE) $@;
-
-else
-
-packages: dist/$(UPTODATE)-packages
-
-dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
-	for arch in amd64 arm64; do \
-		rpm_arch=x86_64; \
-		deb_arch=x86_64; \
-		if [ "$$arch" = "arm64" ]; then \
-			rpm_arch=aarch64; \
-			deb_arch=arm64; \
-		fi; \
-		$(FPM_OPTS) -t deb \
-			--architecture $$deb_arch \
-			--after-install packaging/deb/control/postinst \
-			--before-remove packaging/deb/control/prerm \
-			--package dist/mimir-$(VERSION)_$$arch.deb \
-			--deb-default packaging/deb/default/mimir \
-			--deb-systemd packaging/deb/systemd/mimir.service \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
-		$(FPM_OPTS) -t rpm  \
-			--architecture $$rpm_arch \
-			--rpm-os linux \
-			--after-install packaging/rpm/control/post \
-			--before-remove packaging/rpm/control/preun \
-			--package dist/mimir-$(VERSION)_$$arch.rpm \
-			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml \
-			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
-			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
-	done
-	for pkg in dist/*.deb dist/*.rpm; do \
-		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-	done; \
-	touch $@
-
-endif
+packages: dist
+	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
 packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile
