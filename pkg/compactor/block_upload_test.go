@@ -1892,7 +1892,7 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 }
 
 func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
-	const tenantID = "tenant"
+	const userID = "user"
 
 	type testCase struct {
 		maximumBlockSize int64
@@ -1944,13 +1944,13 @@ func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
 			}
 
 			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadMaxBlockSizeBytes[tenantID] = tc.maximumBlockSize
+			cfgProvider.blockUploadMaxBlockSizeBytes[userID] = tc.maximumBlockSize
 			c := &MultitenantCompactor{
 				logger:      log.NewNopLogger(),
 				cfgProvider: cfgProvider,
 			}
 
-			err := c.validateMaximumBlockSize(c.logger, files, tenantID)
+			err := c.validateMaximumBlockSize(files, userID)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {

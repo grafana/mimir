@@ -427,7 +427,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 		}
 	}
 
-	if err := c.validateMaximumBlockSize(logger, meta.Thanos.Files, userID); err != nil {
+	if err := c.validateMaximumBlockSize(meta.Thanos.Files, userID); err != nil {
 		return err.Error()
 	}
 
@@ -551,7 +551,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 	return nil
 }
 
-func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files []metadata.File, userID string) error {
+func (c *MultitenantCompactor) validateMaximumBlockSize(files []metadata.File, userID string) error {
 	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
 	if maxBlockSizeBytes <= 0 {
 		return nil
