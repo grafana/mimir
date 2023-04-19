@@ -69,7 +69,7 @@ func TestMetadataHandler_Empty(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
-	require.Equal(t, http.StatusNoContent, recorder.Result().StatusCode)
+	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
 	responseBody, err := io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 
