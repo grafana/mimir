@@ -58,7 +58,7 @@ If something is not clear, you can get back to this document to learn more about
   - This step shouldn't block from publishing release candidate
   - After the release note PR is merged (which usually happen after RC is published), cherry-pick them into the release branch
 - [ ] Wait for any open PR we want to get merged before cutting the release candidate
-  - We shouldn't wait the open PRs beyond the scheduled release date
+  - We shouldn't wait for the open PRs beyond the scheduled release date
   - [ ] Eventually open a PR for every experimental feature we want to promote to stable
   - [ ] Eventually open a PR to remove any deprecated feature or configuration option that should be removed in this release
 - [ ] Update `CHANGELOG.md`
