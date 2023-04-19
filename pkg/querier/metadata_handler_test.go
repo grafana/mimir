@@ -75,7 +75,8 @@ func TestMetadataHandler_Empty(t *testing.T) {
 
 	expectedJSON := `
 	{
-		"status": "success"
+		"status": "success",
+		"data": {}
 	}
 	`
 
