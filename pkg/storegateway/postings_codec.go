@@ -194,7 +194,8 @@ func diffVarintSnappyMatchersDecode(input []byte) (index.Postings, indexcache.La
 
 	codecLen := len(codecHeaderSnappyWithMatchers)
 	requestMatchersKeyLen, requestMatchersKeyLenSize := varint.Uvarint(input[codecLen:])
-	offsetAfterMatchersKey := codecLen + requestMatchersKeyLenSize + int(requestMatchersKeyLen) // the uint64 - int coversion should be safe since the length of the key is much smaller than math.MaxUint64
+	// the uint64 to int conversion should be safe since the length of the key is much smaller than math.MaxUint64
+	offsetAfterMatchersKey := codecLen + requestMatchersKeyLenSize + int(requestMatchersKeyLen)
 	requestMatchersKey := indexcache.LabelMatchersKey(input[codecLen+requestMatchersKeyLenSize : offsetAfterMatchersKey])
 
 	pendingMatchers, pendingMatchersLen, err := decodeMatchers(input[offsetAfterMatchersKey:])
