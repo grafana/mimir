@@ -731,6 +731,27 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				require.Error(t, err)
 			})
 
+			t.Run("colliding request matchers are detected", func(t *testing.T) {
+				b := newTestBucketBlock()
+				spyCache := &spyExpandedPostingsCache{}
+				b.indexCache = spyCache
+
+				// Store a value in the cache which is for these two matchers
+				matchers := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),   // selects all series
+					labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$"), // selects one fifth of series
+				}
+				restrictedRefs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series/5, len(restrictedRefs))
+
+				// Use different matchers, but with the same value. The item should be detected as colliding and discarded.
+				b.indexCache = &expandedPostingsReplacingCache{v: spyCache.storedExpandedPostingsVal}
+				allRefs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers[:1], newSafeQueryStats())
+				require.NoError(t, err)
+				require.Equal(t, series, len(allRefs))
+			})
+
 			t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
 				b := newTestBucketBlock()
 				b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
@@ -740,7 +761,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
 					// With a regular EqualsMatcher we can look up the value of the label in the postings
 					// offset table and see if it has any matches. If it matches no series, then
-					// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
+					// we don't need to fetch the rest of the postings lists from the cache or the bucket.
 					labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
 				}
 				postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
@@ -875,6 +896,24 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 
 func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
+}
+
+type spyExpandedPostingsCache struct {
+	noopCache
+	storedExpandedPostingsVal []byte
+}
+
+func (c *spyExpandedPostingsCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	c.storedExpandedPostingsVal = v
+}
+
+type expandedPostingsReplacingCache struct {
+	noopCache
+	v []byte
+}
+
+func (c *expandedPostingsReplacingCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+	return c.v, true
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
