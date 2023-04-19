@@ -19,6 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -462,4 +464,53 @@ func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (s
 		}
 	}
 	return groups, nil
+}
+
+// labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.
+// The differences are:
+//   - it doesn't a factor for the posting list size
+//   - as the bounded maximum for fetched data it also takes into account the provided postingLists; this is useful in
+//     LabelValues calls where we have to decide between fetching (some expanded postings + series),
+//     (expanded postings + series), or (expanded postings + postings for each label value).
+type labelValuesPostingsStrategy struct {
+	delegate     postingsSelectionStrategy
+	postingLists []streamindex.PostingListOffset
+}
+
+func (w labelValuesPostingsStrategy) name() string {
+	return "lv-" + w.delegate.name()
+}
+
+func (w labelValuesPostingsStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	selected, omitted = w.delegate.selectPostings(groups)
+
+	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(selected) * tsdb.EstimatedSeriesP99Size
+
+	completePostings := postingGroupsTotalSize(groups)
+	completePostingsPlusPostings := completePostings + postingsListsTotalSize(w.postingLists)
+	completePostingsPlusSeries := completePostings + maxPossibleSeriesSize
+	partialPostingsPlusSeries := postingGroupsTotalSize(selected) + maxPossibleSeriesSize
+
+	if util_math.Min(completePostingsPlusSeries, completePostingsPlusPostings) < partialPostingsPlusSeries {
+		return groups, nil
+	}
+	return selected, omitted
+}
+
+func (w labelValuesPostingsStrategy) preferSeriesToPostings(postings []storage.SeriesRef) bool {
+	return int64(len(postings)*tsdb.EstimatedSeriesP99Size) < postingsListsTotalSize(w.postingLists)
+}
+
+func postingGroupsTotalSize(groups []postingGroup) (n int64) {
+	for _, g := range groups {
+		n += g.totalSize
+	}
+	return
+}
+
+func postingsListsTotalSize(postingLists []streamindex.PostingListOffset) (n int64) {
+	for _, l := range postingLists {
+		n += l.Off.End - l.Off.Start
+	}
+	return
 }

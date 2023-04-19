@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1187,13 +1188,8 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		// We cannot deal with pending matchers in LabelValues yet, so we should fetch all postings.
-		indexr := b.indexReader(selectAllStrategy{})
-
 		g.Go(func() error {
-			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label values")
-
-			result, err := blockLabelValues(gctx, indexr, req.Label, reqSeriesMatchers, s.logger, stats)
+			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
@@ -1229,7 +1225,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}, nil
 }
 
-// blockLabelValues provides the values of the label with requested name,
+// blockLabelValues returns sorted values of the label with requested name,
 // optionally restricting the search to the series that match the matchers provided.
 // - First we fetch all possible values for this label from the index.
 //   - If no matchers were provided, we just return those values.
@@ -1241,34 +1237,101 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 //
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
 // so we could also intersect those with each label's postings being each one non empty and leading to the same result.
-func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+	indexr := b.indexReader(postingsStrategy) // this strategy doesn't make a difference, since we won't be using ExpandedPostings with this reader
+	defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+
 	values, ok := fetchCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, logger)
 	if ok {
 		return values, nil
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName, "", nil)
+	allValuesPostingOffsets, err := indexr.block.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
 
 	if len(matchers) == 0 {
-		storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, allValues, logger)
-		return allValues, nil
+		values = extractLabelValues(allValuesPostingOffsets)
+		storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, values, logger)
+		return values, nil
 	}
+	strategy := &labelValuesPostingsStrategy{
+		delegate:     postingsStrategy,
+		postingLists: allValuesPostingOffsets,
+	}
+	indexr = b.indexReader(strategy)
+	defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
 
-	p, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	postings, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
-	if len(pendingMatchers) > 0 {
-		return nil, fmt.Errorf("there are pending matchers (%s) for query (%s)", util.MatchersStringer(pendingMatchers), util.MatchersStringer(matchers))
+	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(postings) {
+		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, indexr, b, postings, stats)
+	} else {
+		values, err = labelValuesFromPostings(ctx, labelName, indexr, allValuesPostingOffsets, postings, stats)
+	}
+	if err != nil {
+		return nil, err
 	}
 
+	storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, values, logger)
+	return values, nil
+}
+
+func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, postings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		newPostingsSetsIterator(postings, seriesPerBatch),
+		indexr,
+		b.indexCache,
+		stats,
+		b.meta,
+		nil,
+		nil,
+		true,
+		b.meta.MinTime,
+		b.meta.MaxTime,
+		b.userID,
+		1,
+		b.logger,
+	)
+	if len(pendingMatchers) > 0 {
+		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+	}
+
+	differentValues := make(map[string]struct{})
+	for iterator.Next() {
+		set := iterator.At()
+
+		for _, s := range set.series {
+			lVal := s.lset.Get(labelName)
+			if lVal != "" {
+				differentValues[lVal] = struct{}{}
+			}
+		}
+
+		set.release()
+	}
+	if iterator.Err() != nil {
+		return nil, errors.Wrap(iterator.Err(), "iterating series for label values")
+	}
+
+	vals := make([]string, 0, len(differentValues))
+	for val := range differentValues {
+		vals = append(vals, val)
+	}
+	sort.Strings(vals)
+	return vals, nil
+}
+
+func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
 	keys := make([]labels.Label, len(allValues))
 	for i, value := range allValues {
-		keys[i] = labels.Label{Name: labelName, Value: value}
+		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
 	}
 
 	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
@@ -1280,14 +1343,12 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 	for i, value := range allValues {
 		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
 		if intersection.Next() {
-			matched = append(matched, value)
+			matched = append(matched, value.LabelValue)
 		}
-		if err := intersection.Err(); err != nil {
-			return nil, errors.Wrapf(err, "intersecting value %q postings", value)
+		if err = intersection.Err(); err != nil {
+			return nil, errors.Wrapf(err, "intersecting value %q postings", value.LabelValue)
 		}
 	}
-
-	storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, matched, logger)
 	return matched, nil
 }
 

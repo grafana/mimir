@@ -11,7 +11,10 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
+
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 func TestBigEndianPostingsCount(t *testing.T) {
@@ -208,6 +211,109 @@ func TestSpeculativeFetchedDataStrategy(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			actualSelected, actualOmitted := speculativeFetchedDataStrategy{}.selectPostings(testCase.input)
+			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
+			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
+		})
+	}
+}
+
+func TestWorstCaseWithAdditionalPostingsStrategy(t *testing.T) {
+	testCases := map[string]struct {
+		postingLists     []streamindex.PostingListOffset
+		input            []postingGroup
+		expectedSelected []postingGroup
+		expectedOmitted  []postingGroup
+	}{
+		"single posting group is selected": {
+			input: []postingGroup{
+				{totalSize: 128},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 128},
+			},
+		},
+		"only all-postings & subtracting groups": {
+			input: []postingGroup{
+				{totalSize: 0 /* all-postings doesn't have a size at the moment */, keys: []labels.Label{allPostingsKey}},
+				{isSubtract: true, totalSize: 128},
+				{isSubtract: true, totalSize: 64 * 1024 * 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 0, keys: []labels.Label{allPostingsKey}},
+				{isSubtract: true, totalSize: 128},
+				{isSubtract: true, totalSize: 64 * 1024 * 1024},
+			},
+		},
+		"only small posting lists": {
+			input: []postingGroup{
+				{totalSize: 1024},
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 1024},
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+		},
+		"two small and one large list": {
+			input: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+			expectedOmitted: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+			},
+		},
+		"if smallest group is subtractive it's not used as min size": {
+			input: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+				{totalSize: 1024 * 1024},
+				{isSubtract: true, totalSize: 128},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+				{totalSize: 1024 * 1024},
+				{isSubtract: true, totalSize: 128},
+			},
+		},
+		"one small and two mid size lists are all selected": {
+			input: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 4 * 1024},
+				{totalSize: 4 * 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 4 * 1024},
+				{totalSize: 4 * 1024},
+			},
+		},
+		"large posting lists but small posting lists": {
+			input: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 4 * 1024},
+				{totalSize: 4 * 1024},
+			},
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1_000_000}},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 4 * 1024},
+				{totalSize: 4 * 1024},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			actualSelected, actualOmitted := labelValuesPostingsStrategy{}.selectPostings(testCase.input) // TODO dimitarvdimitrov
 			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
 			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
 		})
