@@ -487,7 +487,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	for i := 0; i < numLabelsPerSeries-1; i++ {
 		commonLabelsBuilder.Set(fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
 	}
-	commonLabels := commonLabelsBuilder.Labels(nil)
+	commonLabels := commonLabelsBuilder.Labels()
 
 	response := &client.QueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
 	for i := 0; i < numSeries; i++ {
@@ -495,7 +495,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 		lbls.Set("series_id", strconv.Itoa(i))
 
 		response.Chunkseries = append(response.Chunkseries, client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels(nil)),
+			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
 			Chunks: clientChunks,
 		})
 	}

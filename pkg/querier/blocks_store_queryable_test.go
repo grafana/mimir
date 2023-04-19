@@ -1640,14 +1640,14 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 	series3 := labels.FromStrings("__name__", "metric_3_ooo")
 	series4 := labels.FromStrings("__name__", "metric_4_ooo_and_overlapping")
 
-	generateSeriesSamples := func(value float64) []promql.Point {
-		return []promql.Point{
-			{T: 1589759955000, V: value},
-			{T: 1589759970000, V: value},
-			{T: 1589759985000, V: value},
-			{T: 1589760000000, V: value},
-			{T: 1589760015000, V: value},
-			{T: 1589760030000, V: value},
+	generateSeriesSamples := func(value float64) []promql.FPoint {
+		return []promql.FPoint{
+			{T: 1589759955000, F: value},
+			{T: 1589759970000, F: value},
+			{T: 1589759985000, F: value},
+			{T: 1589760000000, F: value},
+			{T: 1589760015000, F: value},
+			{T: 1589760030000, F: value},
 		}
 	}
 
@@ -1675,8 +1675,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 				mockSeriesResponseWithSamples(series2, series2Samples[3:]...), // Second half.
 			},
 			expected: promql.Matrix{
-				{Metric: series1, Points: series1Samples},
-				{Metric: series2, Points: series2Samples},
+				{Metric: series1, Floats: series1Samples},
+				{Metric: series2, Floats: series2Samples},
 			},
 		},
 		"should query metrics with out-of-order chunks": {
@@ -1696,8 +1696,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 				mockSeriesResponseWithSamples(series4, series4Samples[4:6]...),
 			},
 			expected: promql.Matrix{
-				{Metric: series3, Points: series3Samples},
-				{Metric: series4, Points: series4Samples},
+				{Metric: series3, Floats: series3Samples},
+				{Metric: series4, Floats: series4Samples},
 			},
 		},
 	}
@@ -1744,10 +1744,10 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			})
 
 			// Query metrics.
-			q, err := engine.NewRangeQuery(queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "user-1")
 			res := q.Exec(ctx)
 			require.NoError(t, err)
 			require.NoError(t, res.Err)
@@ -2017,10 +2017,10 @@ func (m *blocksStoreLimitsMock) S3SSEKMSEncryptionContext(_ string) string {
 }
 
 func mockSeriesResponse(lbls labels.Labels, timeMillis int64, value float64) *storepb.SeriesResponse {
-	return mockSeriesResponseWithSamples(lbls, promql.Point{T: timeMillis, V: value})
+	return mockSeriesResponseWithSamples(lbls, promql.FPoint{T: timeMillis, F: value})
 }
 
-func mockSeriesResponseWithSamples(lbls labels.Labels, samples ...promql.Point) *storepb.SeriesResponse {
+func mockSeriesResponseWithSamples(lbls labels.Labels, samples ...promql.FPoint) *storepb.SeriesResponse {
 	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithSamples(samples...))
 }
 

@@ -134,10 +134,8 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.EmptyLabels(),
-						Point: promql.Point{
-							T: 1234,
-							V: 5.67,
-						},
+						T:      1234,
+						F:      5.67,
 					},
 				},
 			},
@@ -165,10 +163,8 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.FromStrings("name-1", "value-1"),
-						Point: promql.Point{
-							T: 1234,
-							V: 5.67,
-						},
+						T:      1234,
+						F:      5.67,
 					},
 				},
 			},
@@ -196,10 +192,8 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Point: promql.Point{
-							T: 1234,
-							V: 5.67,
-						},
+						T:      1234,
+						F:      5.67,
 					},
 				},
 			},
@@ -227,17 +221,13 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Point: promql.Point{
-							T: 1234,
-							V: 5.67,
-						},
+						T:      1234,
+						F:      5.67,
 					},
 					{
 						Metric: labels.FromStrings("name-3", "value-3", "name-4", "value-4"),
-						Point: promql.Point{
-							T: 2345,
-							V: 6.78,
-						},
+						T:      2345,
+						F:      6.78,
 					},
 				},
 			},
@@ -270,26 +260,24 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.FromStrings("name-1", "value-1"),
-						Point: promql.Point{
-							T: 1234,
-							H: &histogram.FloatHistogram{
-								CounterResetHint: histogram.GaugeType,
-								Schema:           3,
-								ZeroThreshold:    1.23,
-								ZeroCount:        456,
-								Count:            9001,
-								Sum:              789.1,
-								PositiveSpans: []histogram.Span{
-									{Offset: 4, Length: 1},
-									{Offset: 3, Length: 2},
-								},
-								NegativeSpans: []histogram.Span{
-									{Offset: 7, Length: 3},
-									{Offset: 9, Length: 1},
-								},
-								PositiveBuckets: []float64{100, 200, 300},
-								NegativeBuckets: []float64{400, 500, 600, 700},
+						T:      1234,
+						H: &histogram.FloatHistogram{
+							CounterResetHint: histogram.GaugeType,
+							Schema:           3,
+							ZeroThreshold:    1.23,
+							ZeroCount:        456,
+							Count:            9001,
+							Sum:              789.1,
+							PositiveSpans: []histogram.Span{
+								{Offset: 4, Length: 1},
+								{Offset: 3, Length: 2},
 							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 7, Length: 3},
+								{Offset: 9, Length: 1},
+							},
+							PositiveBuckets: []float64{100, 200, 300},
+							NegativeBuckets: []float64{400, 500, 600, 700},
 						},
 					},
 				},
@@ -335,65 +323,57 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Vector{
 					{
 						Metric: labels.FromStrings("name-1", "value-1"),
-						Point: promql.Point{
-							T: 1234,
-							H: &histogram.FloatHistogram{
-								CounterResetHint: histogram.GaugeType,
-								Schema:           3,
-								ZeroThreshold:    1.23,
-								ZeroCount:        456,
-								Count:            9001,
-								Sum:              789.1,
-								PositiveSpans: []histogram.Span{
-									{Offset: 4, Length: 1},
-									{Offset: 3, Length: 2},
-								},
-								NegativeSpans: []histogram.Span{
-									{Offset: 7, Length: 3},
-									{Offset: 9, Length: 1},
-								},
-								PositiveBuckets: []float64{100, 200, 300},
-								NegativeBuckets: []float64{400, 500, 600, 700},
+						T:      1234,
+						H: &histogram.FloatHistogram{
+							CounterResetHint: histogram.GaugeType,
+							Schema:           3,
+							ZeroThreshold:    1.23,
+							ZeroCount:        456,
+							Count:            9001,
+							Sum:              789.1,
+							PositiveSpans: []histogram.Span{
+								{Offset: 4, Length: 1},
+								{Offset: 3, Length: 2},
 							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 7, Length: 3},
+								{Offset: 9, Length: 1},
+							},
+							PositiveBuckets: []float64{100, 200, 300},
+							NegativeBuckets: []float64{400, 500, 600, 700},
 						},
 					},
 					{
 						Metric: labels.FromStrings("name-2", "value-2"),
-						Point: promql.Point{
-							T: 5678,
-							V: 9.01,
-						},
+						T:      5678,
+						F:      9.01,
 					},
 					{
 						Metric: labels.FromStrings("name-3", "value-3"),
-						Point: promql.Point{
-							T: 12340,
-							H: &histogram.FloatHistogram{
-								CounterResetHint: histogram.GaugeType,
-								Schema:           4,
-								ZeroThreshold:    1.203,
-								ZeroCount:        4560,
-								Count:            90010,
-								Sum:              7890.1,
-								PositiveSpans: []histogram.Span{
-									{Offset: 40, Length: 1},
-									{Offset: 30, Length: 2},
-								},
-								NegativeSpans: []histogram.Span{
-									{Offset: 70, Length: 3},
-									{Offset: 90, Length: 1},
-								},
-								PositiveBuckets: []float64{1000, 2000, 3000},
-								NegativeBuckets: []float64{4000, 5000, 6000, 7000},
+						T:      12340,
+						H: &histogram.FloatHistogram{
+							CounterResetHint: histogram.GaugeType,
+							Schema:           4,
+							ZeroThreshold:    1.203,
+							ZeroCount:        4560,
+							Count:            90010,
+							Sum:              7890.1,
+							PositiveSpans: []histogram.Span{
+								{Offset: 40, Length: 1},
+								{Offset: 30, Length: 2},
 							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 70, Length: 3},
+								{Offset: 90, Length: 1},
+							},
+							PositiveBuckets: []float64{1000, 2000, 3000},
+							NegativeBuckets: []float64{4000, 5000, 6000, 7000},
 						},
 					},
 					{
 						Metric: labels.FromStrings("name-4", "value-4"),
-						Point: promql.Point{
-							T: 56780,
-							V: 90.01,
-						},
+						T:      56780,
+						F:      90.01,
 					},
 				},
 			},
@@ -487,7 +467,6 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.EmptyLabels(),
-						Points: nil,
 					},
 				},
 			},
@@ -514,7 +493,6 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1"),
-						Points: nil,
 					},
 				},
 			},
@@ -541,7 +519,6 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Points: nil,
 					},
 				},
 			},
@@ -568,10 +545,10 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Points: []promql.Point{
+						Floats: []promql.FPoint{
 							{
 								T: 1234,
-								V: 5.67,
+								F: 5.67,
 							},
 						},
 					},
@@ -605,9 +582,9 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Points: []promql.Point{
-							{T: 1234, V: 5.67},
-							{T: 5678, V: 9.01},
+						Floats: []promql.FPoint{
+							{T: 1234, F: 5.67},
+							{T: 5678, F: 9.01},
 						},
 					},
 				},
@@ -644,16 +621,16 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1"),
-						Points: []promql.Point{
-							{T: 1234, V: 5.67},
-							{T: 5678, V: 9.01},
+						Floats: []promql.FPoint{
+							{T: 1234, F: 5.67},
+							{T: 5678, F: 9.01},
 						},
 					},
 					{
 						Metric: labels.FromStrings("name-2", "value-2"),
-						Points: []promql.Point{
-							{T: 12340, V: 50.67},
-							{T: 56780, V: 90.01},
+						Floats: []promql.FPoint{
+							{T: 12340, F: 50.67},
+							{T: 56780, F: 90.01},
 						},
 					},
 				},
@@ -703,29 +680,27 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Points: []promql.Point{
-							{
-								T: 1234,
-								H: &histogram.FloatHistogram{
-									CounterResetHint: histogram.GaugeType,
-									Schema:           3,
-									ZeroThreshold:    1.23,
-									ZeroCount:        456,
-									Count:            9001,
-									Sum:              789.1,
-									PositiveSpans: []histogram.Span{
-										{Offset: 4, Length: 1},
-										{Offset: 3, Length: 2},
-									},
-									NegativeSpans: []histogram.Span{
-										{Offset: 7, Length: 3},
-										{Offset: 9, Length: 1},
-									},
-									PositiveBuckets: []float64{100, 200, 300},
-									NegativeBuckets: []float64{400, 500, 600, 700},
+						Histograms: []promql.HPoint{{
+							T: 1234,
+							H: &histogram.FloatHistogram{
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
+								PositiveSpans: []histogram.Span{
+									{Offset: 4, Length: 1},
+									{Offset: 3, Length: 2},
 								},
+								NegativeSpans: []histogram.Span{
+									{Offset: 7, Length: 3},
+									{Offset: 9, Length: 1},
+								},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
 							},
-						},
+						}},
 					},
 				},
 			},
@@ -774,7 +749,17 @@ var protobufCodecScenarios = map[string]struct {
 				Result: promql.Matrix{
 					{
 						Metric: labels.FromStrings("name-1", "value-1", "name-2", "value-2"),
-						Points: []promql.Point{
+						Floats: []promql.FPoint{
+							{
+								T: 5678,
+								F: 9.01,
+							},
+							{
+								T: 56780,
+								F: 90.01,
+							},
+						},
+						Histograms: []promql.HPoint{
 							{
 								T: 1234,
 								H: &histogram.FloatHistogram{
@@ -797,10 +782,6 @@ var protobufCodecScenarios = map[string]struct {
 								},
 							},
 							{
-								T: 5678,
-								V: 9.01,
-							},
-							{
 								T: 12340,
 								H: &histogram.FloatHistogram{
 									CounterResetHint: histogram.GaugeType,
@@ -820,10 +801,6 @@ var protobufCodecScenarios = map[string]struct {
 									PositiveBuckets: []float64{1000, 2000, 3000},
 									NegativeBuckets: []float64{4000, 5000, 6000, 7000},
 								},
-							},
-							{
-								T: 56780,
-								V: 90.01,
 							},
 						},
 					},

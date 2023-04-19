@@ -240,7 +240,7 @@ std.manifestYamlDoc({
         '--maxmemory 64mb',
         '--maxmemory-policy allkeys-lru',
         "--save ''",
-         '--appendonly no'
+        '--appendonly no',
       ],
     },
   },
