@@ -35,8 +35,8 @@ The process formally starts with the initial pre-release, but some preparations 
 - On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release.
   New branch `release-<major>-<minor>` should be branched out from latest weekly release `r<xxx>`, where xxx is the weekly release number.
   In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
-- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week. 
-  Since we are branching out pre-release from weekly release, the pre-release changes are automatically tested in production environment. 
+- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week.
+  This is typically done at Grafana Labs.
 - If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
@@ -66,11 +66,7 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
 - [ ] Run `./tools/release/notify-changelog-cut.sh`
-- [ ] Generate mixin screenshots
-  - Update config in `operations/mimir-mixin-tools/screenshots/.config` and `operations/mimir-mixin-tools/serve/.config`
-  - Use dev `MIMIR_NAMESPACE` that has more metrics such as `cortex-dev-01` so that the generated dashboard will not be too empty
-  - Use api-keys generated from [grafana dev environment](https://grafana-dev.com/orgs/raintank/api-keys) to set the `DATASOURCE_PASSWORD`
-  - Execute `make mixin-screenshots`
+- [ ] Run `make mixin-screenshots`
   - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
 - [ ] Create new release branch
   - [ ] Create the branch
