@@ -82,10 +82,8 @@ func (jsonDecoder) vectorToPromQLVector(vec model.Vector) promql.Vector {
 
 		retVal = append(retVal, promql.Sample{
 			Metric: b.Labels(),
-			Point: promql.Point{
-				V: float64(p.Value),
-				T: int64(p.Timestamp),
-			},
+			F:      float64(p.Value),
+			T:      int64(p.Timestamp),
 		})
 	}
 	return retVal
@@ -93,10 +91,8 @@ func (jsonDecoder) vectorToPromQLVector(vec model.Vector) promql.Vector {
 
 func (jsonDecoder) scalarToPromQLVector(sc *model.Scalar) promql.Vector {
 	return promql.Vector{promql.Sample{
-		Point: promql.Point{
-			V: float64(sc.Value),
-			T: int64(sc.Timestamp),
-		},
+		F:      float64(sc.Value),
+		T:      int64(sc.Timestamp),
 		Metric: labels.Labels{},
 	}}
 }
@@ -129,10 +125,8 @@ func (d protobufDecoder) Decode(body []byte) (promql.Vector, error) {
 
 func (d protobufDecoder) decodeScalar(s *mimirpb.ScalarData) promql.Vector {
 	return promql.Vector{promql.Sample{
-		Point: promql.Point{
-			V: s.Value,
-			T: s.TimestampMs,
-		},
+		F:      s.Value,
+		T:      s.TimestampMs,
 		Metric: labels.Labels{},
 	}}
 }
@@ -149,10 +143,8 @@ func (d protobufDecoder) decodeVector(v *mimirpb.VectorData) (promql.Vector, err
 
 		samples[i] = promql.Sample{
 			Metric: m,
-			Point: promql.Point{
-				V: s.Value,
-				T: s.TimestampMs,
-			},
+			F:      s.Value,
+			T:      s.TimestampMs,
 		}
 	}
 
@@ -164,10 +156,8 @@ func (d protobufDecoder) decodeVector(v *mimirpb.VectorData) (promql.Vector, err
 
 		samples[floatSampleCount+i] = promql.Sample{
 			Metric: m,
-			Point: promql.Point{
-				H: s.Histogram.ToPrometheusModel(),
-				T: s.TimestampMs,
-			},
+			H:      s.Histogram.ToPrometheusModel(),
+			T:      s.TimestampMs,
 		}
 	}
 

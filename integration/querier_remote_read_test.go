@@ -341,7 +341,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							ts, fh := chkItr.AtFloatHistogram()
 							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
 
-							expected := remote.HistogramProtoToFloatHistogram(histograms[sampleIdx])
+							expected := remote.FloatHistogramProtoToFloatHistogram(histograms[sampleIdx])
 							test.RequireFloatHistogramEqual(t, expected, fh)
 						default:
 							require.Fail(t, "unrecognized value type")

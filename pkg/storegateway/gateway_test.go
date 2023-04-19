@@ -1618,7 +1618,7 @@ func (s sample) T() int64 {
 	return s.t
 }
 
-func (s sample) V() float64 {
+func (s sample) F() float64 {
 	return s.v
 }
 

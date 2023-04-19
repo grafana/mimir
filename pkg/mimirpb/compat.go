@@ -341,23 +341,20 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	return spans
 }
 
-// FromPointsToSamples converts []promql.Point to []Sample.
-func FromPointsToSamples(points []promql.Point) []Sample {
+// FromFPointsToSamples converts []promql.FPoint to []Sample.
+func FromFPointsToSamples(points []promql.FPoint) []Sample {
 	samples := make([]Sample, 0, len(points))
 	for _, point := range points {
-		if point.H != nil {
-			continue
-		}
 		samples = append(samples, Sample{
 			TimestampMs: point.T,
-			Value:       point.V,
+			Value:       point.F,
 		})
 	}
 	return samples
 }
 
-// FromPointsToHistograms converts []promql.Point to []FloatHistogramPair.
-func FromPointsToHistograms(points []promql.Point) []FloatHistogramPair {
+// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair.
+func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
 	samples := make([]FloatHistogramPair, 0, len(points))
 	for _, point := range points {
 		h := point.H
@@ -482,7 +479,7 @@ func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
-	jsonutil.MarshalValue(sample.Value, stream)
+	jsonutil.MarshalFloat(sample.Value, stream)
 	stream.WriteArrayEnd()
 }
 
