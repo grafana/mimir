@@ -142,8 +142,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, pendingMatchers []*labels.Matcher) {
-	// TODO dimitarvdimitrov add cache collision
-	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), pendingMatchers)
+	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), key, pendingMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
@@ -157,9 +156,13 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 		return nil, nil, false
 	}
 
-	p, pendingMatchers, err := r.decodePostings(data, stats)
+	p, requestMatcherKey, pendingMatchers, err := r.decodePostings(data, stats)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, nil, false
+	}
+	if requestMatcherKey != key {
+		level.Warn(r.block.logger).Log("msg", "request matchers key from cache item doesn't match request", "matchers_key", key, "block", r.block.meta.ULID, "found_key", requestMatcherKey)
 		return nil, nil, false
 	}
 
@@ -414,7 +417,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, pendingMatchers, err := r.decodePostings(b, stats)
+			l, _, pendingMatchers, err := r.decodePostings(b, stats)
 			// TODO dimitarvdimitrov add cache collision to check if the returned matcher is actually the same as the current label
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
@@ -542,13 +545,14 @@ func storeCachedPostings(toCache []byte, r *bucketIndexReader, key labels.Label,
 	r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, key, toCache)
 }
 
-func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, []*labels.Matcher, error) {
+func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
 	var (
-		l        index.Postings
-		matchers []*labels.Matcher
-		err      error
+		l               index.Postings
+		key             indexcache.LabelMatchersKey
+		pendingMatchers []*labels.Matcher
+		err             error
 	)
 	switch {
 	case isDiffVarintSnappyEncodedPostings(b):
@@ -565,7 +569,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 
 	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
 		s := time.Now()
-		l, matchers, err = diffVarintSnappyMatchersDecode(b)
+		l, key, pendingMatchers, err = diffVarintSnappyMatchersDecode(b)
 
 		stats.update(func(stats *queryStats) {
 			stats.cachedPostingsDecompressions++
@@ -577,7 +581,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 	default:
 		_, l, err = r.dec.Postings(b)
 	}
-	return l, matchers, err
+	return l, key, pendingMatchers, err
 }
 
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
