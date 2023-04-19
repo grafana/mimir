@@ -35,6 +35,14 @@ func (c Category) String() string {
 // Fields are primarily categorized via struct tags, but this can be impossible when third party libraries are involved
 // Only categorize fields here when you can't otherwise, since struct tags are less likely to become stale
 var overrides = map[string]Category{
+	// golang/glog
+	"alsologtostderr":  Advanced,
+	"log_backtrace_at": Advanced,
+	"log_dir":          Advanced,
+	"logtostderr":      Advanced,
+	"stderrthreshold":  Advanced,
+	"vmodule":          Advanced,
+	"v":                Advanced,
 	// weaveworks/common/server in server.Config
 	"server.graceful-shutdown-timeout":                  Advanced,
 	"server.grpc-conn-limit":                            Advanced,
