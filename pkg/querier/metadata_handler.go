@@ -61,6 +61,10 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 			metrics[m.Metric] = append(ms, metricMetadata{Type: string(m.Type), Help: m.Help, Unit: m.Unit})
 		}
 
+		if len(metrics) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+		}
+
 		util.WriteJSONResponse(w, metadataResult{Status: statusSuccess, Data: metrics})
 	})
 }
