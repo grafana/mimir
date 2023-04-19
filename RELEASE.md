@@ -99,7 +99,7 @@ If something is not clear, you can get back to this document to learn more about
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
-  - [ ] Announce the release candidate on social media such as on Mimir community slack, your own Twitter, Mastodon or Linkedin account
+  - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
   - _This is addressed by Grafana Labs_
 
