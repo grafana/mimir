@@ -247,8 +247,6 @@ Usage of ./cmd/mimir/mimir:
     	How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted. (default 120h0m0s)
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
-  -alsologtostderr
-    	log to standard error as well as files
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
   -auth.multitenancy-enabled
@@ -1363,12 +1361,6 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
-  -log_backtrace_at value
-    	when logging hits line file:N, emit a stack trace
-  -log_dir string
-    	If non-empty, write log files in this directory
-  -logtostderr
-    	log to standard error instead of files
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -2289,8 +2281,6 @@ Usage of ./cmd/mimir/mimir:
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
     	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
-  -stderrthreshold value
-    	logs at or above this threshold go to stderr
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
@@ -2383,8 +2373,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	[experimental] Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
-  -v value
-    	log level for V logs
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
   -validation.enforce-metadata-metric-name
@@ -2409,5 +2397,3 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Location of the Vault server
   -version
     	Print application version and exit.
-  -vmodule value
-    	comma-separated list of pattern=N settings for file-filtered logging

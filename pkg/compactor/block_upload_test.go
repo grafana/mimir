@@ -1950,7 +1950,7 @@ func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
 				cfgProvider: cfgProvider,
 			}
 
-			err := c.validateMaximumBlockSize(files, userID)
+			err := c.validateMaximumBlockSize(c.logger, files, userID)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
