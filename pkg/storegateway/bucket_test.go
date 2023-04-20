@@ -391,8 +391,8 @@ func TestBlockLabelValues(t *testing.T) {
 	t.Run("index reader error with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: func(name string) error { return context.DeadlineExceeded },
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
@@ -456,7 +456,12 @@ func TestBlockLabelValues(t *testing.T) {
 
 		// we remove the indexHeaderReader to ensure that results come from a cache
 		// if this panics, then we know that it's trying to read actual values
-		b.indexHeaderReader = nil
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:                     b.indexHeaderReader,
+			onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
+			onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
+			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		}
 
 		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
