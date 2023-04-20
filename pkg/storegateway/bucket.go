@@ -107,7 +107,8 @@ type BucketStore struct {
 	// Number of goroutines to use when syncing blocks from object storage.
 	blockSyncConcurrency int
 
-	// maxSeriesPerBatch controls the batch size to use when processing a Series() request.
+	// maxSeriesPerBatch controls the batch size to use when fetching series.
+	// This is not restricted to the Series() RPC.
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
 
