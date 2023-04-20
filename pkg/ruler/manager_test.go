@@ -147,11 +147,147 @@ func TestSyncRuleGroups(t *testing.T) {
 	})
 }
 
-func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
-	m.userManagerMtx.RLock()
-	defer m.userManagerMtx.RUnlock()
+func TestRemoteWriteSyncRuleGroups(t *testing.T) {
+	dir := t.TempDir()
+	rwAppendable := NewRemoteWriteAppendable(newPusherMock(), nil, nil, nil)
+	m, err := NewRWMultiTenantManager(Config{
+		RulePath: dir,
+		RWConfig: RemoteWriteConfig{Enabled: true},
+	}, factory, rwAppendable, nil, log.NewNopLogger())
+	require.NoError(t, err)
 
-	return m.userManagers[user]
+	const (
+		user1      = "testUser1"
+		user2      = "testUser2"
+		namespace1 = "ns1"
+		namespace2 = "ns2"
+	)
+
+	userRules := map[string]rulespb.RuleGroupList{
+		user1: {
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: namespace1,
+				Interval:  30 * time.Second,
+				User:      user1,
+			},
+		},
+		user2: {
+			&rulespb.RuleGroupDesc{
+				Name:      "group2",
+				Namespace: namespace2,
+				Interval:  1 * time.Minute,
+				User:      user2,
+			},
+		},
+	}
+	m.SyncRuleGroups(context.Background(), userRules)
+	mgr1 := getManager(m, user1)
+	require.NotNil(t, mgr1)
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return mgr1.(*mockRulesManager).running.Load()
+	})
+
+	mgr2 := getManager(m, user2)
+	require.NotNil(t, mgr2)
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return mgr2.(*mockRulesManager).running.Load()
+	})
+
+	// Verify that user rule groups are now cached locally.
+	{
+		users, err := m.mapper.users()
+		require.NoError(t, err)
+		require.Contains(t, users, user2)
+		require.Contains(t, users, user1)
+	}
+
+	// Verify that rule groups are now written to disk.
+	{
+		rulegroup1 := filepath.Join(m.mapper.Path, user1, namespace1)
+		f, error := m.mapper.FS.Open(rulegroup1)
+		require.NoError(t, error)
+		defer f.Close()
+
+		bt := make([]byte, 100)
+		n, error := f.Read(bt)
+		require.NoError(t, error)
+		require.Equal(t, string("groups:\n    - name: group1\n      interval: 30s\n      rules: []\n"), string(bt[:n]))
+	}
+
+	{
+		rulegroup2 := filepath.Join(m.mapper.Path, user2, namespace2)
+		f, error := m.mapper.FS.Open(rulegroup2)
+		require.NoError(t, error)
+		defer f.Close()
+
+		bt := make([]byte, 100)
+		n, error := f.Read(bt)
+		require.NoError(t, error)
+		require.Equal(t, string("groups:\n    - name: group2\n      interval: 1m\n      rules: []\n"), string(bt[:n]))
+	}
+
+	// Passing empty map / nil stops all managers.
+	m.SyncRuleGroups(context.Background(), nil)
+	require.Nil(t, getManager(m, user1))
+
+	// Make sure old manager was stopped.
+	test.Poll(t, 1*time.Second, false, func() interface{} {
+		return mgr1.(*mockRulesManager).running.Load()
+	})
+
+	test.Poll(t, 1*time.Second, false, func() interface{} {
+		return mgr2.(*mockRulesManager).running.Load()
+	})
+
+	// Verify that local rule groups were removed.
+	{
+		users, err := m.mapper.users()
+		require.NoError(t, err)
+		require.Equal(t, []string(nil), users)
+	}
+
+	// Resync same rules as before. Previously this didn't restart the manager.
+	m.SyncRuleGroups(context.Background(), userRules)
+
+	newMgr := getManager(m, user1)
+	require.NotNil(t, newMgr)
+	require.True(t, mgr1 != newMgr)
+
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		return newMgr.(*mockRulesManager).running.Load()
+	})
+
+	// Verify that user rule groups are cached locally again.
+	{
+		users, err := m.mapper.users()
+		require.NoError(t, err)
+		require.Contains(t, users, user1)
+	}
+
+	m.Stop()
+
+	test.Poll(t, 1*time.Second, false, func() interface{} {
+		return newMgr.(*mockRulesManager).running.Load()
+	})
+}
+
+func getManager(m MultiTenantManager, user string) RulesManager {
+	dm, ok := m.(*DefaultMultiTenantManager)
+	if ok {
+		dm.userManagerMtx.RLock()
+		defer dm.userManagerMtx.RUnlock()
+
+		return dm.userManagers[user]
+	}
+	rwm, ok := m.(*RWMultiTenantManager)
+	if ok {
+		rwm.userManagerMtx.RLock()
+		defer rwm.userManagerMtx.RUnlock()
+
+		return rwm.userManagers[user]
+	}
+	return nil
 }
 
 func factory(_ context.Context, _ string, _ *notifier.Manager, _ log.Logger, _ prometheus.Registerer) RulesManager {
