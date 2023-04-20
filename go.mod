@@ -266,3 +266,6 @@ replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-2022100509
 
 // Replace goautoneg with a fork until https://github.com/munnerz/goautoneg/pull/5 is merged
 replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
+
+// Use our fork of the upstream alertmanagers.
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20230308154952-78fedf89728b
