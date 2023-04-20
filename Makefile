@@ -602,4 +602,4 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 docs: doc
-	$(MAKE) -C docs docs
+	cd docs && $(MAKE) docs
