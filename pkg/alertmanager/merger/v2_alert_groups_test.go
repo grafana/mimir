@@ -21,19 +21,20 @@ func TestV2AlertGroups(t *testing.T) {
 
 		[]byte(`[` +
 			`{"alerts":[{"annotations":{},"endsAt":"2021-04-21T10:47:32.161+02:00","fingerprint":"c4b6b79a607b6ba0",` +
-			`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.161+02:00",` +
+			`"receivers":[{"active":false,"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.161+02:00",` +
 			`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 			`"updatedAt":"2021-04-21T07:47:32.163Z","labels":{"group":"group_1","name":"alert_1"}}],` +
-			`"labels":{"group":"group_1"},"receiver":{"name":"dummy"}},` +
+			`"labels":{"group":"group_1"},"receiver":{"active":false, "name":"dummy"}},` +
 			`{"alerts":[{"annotations":{},"endsAt":"2021-04-21T10:47:32.165+02:00","fingerprint":"465de60f606461c3",` +
-			`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.165+02:00",` +
+			`"receivers":[{"active":false,"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.165+02:00",` +
 			`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 			`"updatedAt":"2021-04-21T07:47:32.167Z","labels":{"group":"group_2","name":"alert_3"}}],` +
-			`"labels":{"group":"group_2"},"receiver":{"name":"dummy"}}` +
+			`"labels":{"group":"group_2"},"receiver":{"active":false,"name":"dummy"}}` +
 			`]`),
 		[]byte(`[` +
 			`{"alerts":[{"annotations":{},"endsAt":"2021-04-21T10:47:32.163+02:00","fingerprint":"c4b8b79a607bee77",` +
-			`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.163+02:00",` +
+			`"receivers":[{"active":true,"integrations":[{"lastNotifyAttempt":"2021-04-21T07:47:32.165Z",` +
+			`"lastNotifyAttemptDuration":"1s","name":"test","sendResolved":true}],"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.163+02:00",` +
 			`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 			`"updatedAt":"2021-04-21T07:47:32.165Z","labels":{"group":"group_1","name":"alert_2"}}],` +
 			`"labels":{"group":"group_1"},"receiver":{"name":"dummy"}}` +
@@ -41,25 +42,26 @@ func TestV2AlertGroups(t *testing.T) {
 		[]byte(`[]`),
 	}
 
-	expected := []byte(`[` +
+	expected := `[` +
 		`{"alerts":[{"annotations":{},"endsAt":"2021-04-21T10:47:32.161+02:00","fingerprint":"c4b6b79a607b6ba0",` +
-		`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.161+02:00",` +
+		`"receivers":[{"active":false,"integrations":null,"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.161+02:00",` +
 		`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 		`"updatedAt":"2021-04-21T07:47:32.163Z","labels":{"group":"group_1","name":"alert_1"}},` +
 		`{"annotations":{},"endsAt":"2021-04-21T10:47:32.163+02:00","fingerprint":"c4b8b79a607bee77",` +
-		`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.163+02:00",` +
+		`"receivers":[{"active":true,"integrations":[{"lastNotifyAttempt":"2021-04-21T07:47:32.165Z",` +
+		`"lastNotifyAttemptDuration":"1s","name":"test","sendResolved":true}],"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.163+02:00",` +
 		`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 		`"updatedAt":"2021-04-21T07:47:32.165Z","labels":{"group":"group_1","name":"alert_2"}}],` +
-		`"labels":{"group":"group_1"},"receiver":{"name":"dummy"}},` +
+		`"labels":{"group":"group_1"},"receiver":{"active":false,"integrations":null,"name":"dummy"}},` +
 		`{"alerts":[{"annotations":{},"endsAt":"2021-04-21T10:47:32.165+02:00","fingerprint":"465de60f606461c3",` +
-		`"receivers":[{"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.165+02:00",` +
+		`"receivers":[{"active":false,"integrations":null,"name":"dummy"}],"startsAt":"2021-04-21T09:47:32.165+02:00",` +
 		`"status":{"inhibitedBy":[],"silencedBy":[],"state":"unprocessed"},` +
 		`"updatedAt":"2021-04-21T07:47:32.167Z","labels":{"group":"group_2","name":"alert_3"}}],` +
-		`"labels":{"group":"group_2"},"receiver":{"name":"dummy"}}]`)
+		`"labels":{"group":"group_2"},"receiver":{"active":false,"integrations":null,"name":"dummy"}}]`
 
 	out, err := V2AlertGroups{}.MergeResponses(in)
 	require.NoError(t, err)
-	require.Equal(t, expected, out)
+	require.Equal(t, expected, string(out))
 }
 
 func v2group(label, receiver string, alerts ...*v2_models.GettableAlert) *v2_models.AlertGroup {
