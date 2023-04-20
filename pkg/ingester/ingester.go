@@ -1433,8 +1433,13 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		if req.PreferStreamingChunks {
+			level.Debug(spanlog).Log("msg", "using queryStreamStreaming")
+			numSeries, numSamples, err = i.queryStreamStreaming(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		} else {
+			level.Debug(spanlog).Log("msg", "using queryStreamChunks")
+			numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		}
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
 		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
@@ -1639,6 +1644,164 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 	}
 
 	return numSeries, numSamples, nil
+}
+
+func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+	allSeries, err := i.sendStreamingQuerySeries(ctx, db, from, through, matchers, shard, stream)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return len(allSeries), numSamples, nil
+}
+
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]storage.ChunkSeries, error) {
+	var q storage.ChunkQuerier
+	var err error
+	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
+		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+	} else {
+		q, err = db.ChunkQuerier(ctx, from, through)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: does q need to remain open until we're done using the series and their chunks?
+	defer q.Close()
+
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	hints := initSelectHints(from, through)
+	hints = configSelectHintsWithShard(hints, shard)
+	hints = configSelectHintsWithDisabledTrimming(hints)
+
+	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
+	ss := q.Select(true, hints, matchers...)
+	if ss.Err() != nil {
+		return nil, ss.Err()
+	}
+
+	var allSeries []storage.ChunkSeries                                        // TODO: pool these?
+	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for this?
+
+	for ss.Next() {
+		series := ss.At()
+		allSeries = append(allSeries, series)
+
+		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+		})
+
+		if len(seriesInBatch) >= queryStreamBatchSize {
+			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+				Series: seriesInBatch,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			seriesInBatch = seriesInBatch[:0]
+		}
+	}
+
+	// Send any remaining series.
+	if len(seriesInBatch) > 0 {
+		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+			Series: seriesInBatch,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Ensure no error occurred while iterating the series set.
+	if err := ss.Err(); err != nil {
+		return nil, err
+	}
+
+	return allSeries, nil
+}
+
+func (i *Ingester) sendStreamingQueryChunks(allSeries []storage.ChunkSeries, stream client.Ingester_QueryStreamServer) (int, error) {
+	numSamples := 0
+
+	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize) // TODO: use a different value for this?
+	batchSizeBytes := 0
+	var it chunks.Iterator
+	for seriesIdx, series := range allSeries {
+		it = series.Iterator(it)
+
+		seriesChunks := client.QueryStreamSeriesChunks{
+			Series: uint64(seriesIdx),
+		}
+
+		for it.Next() {
+			meta := it.At()
+
+			// It is not guaranteed that chunk returned by iterator is populated.
+			// For now just return error. We could also try to figure out how to read the chunk.
+			if meta.Chunk == nil {
+				return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+			}
+
+			ch := client.Chunk{
+				StartTimestampMs: meta.MinTime,
+				EndTimestampMs:   meta.MaxTime,
+				Data:             meta.Chunk.Bytes(),
+			}
+
+			switch meta.Chunk.Encoding() {
+			case chunkenc.EncXOR:
+				ch.Encoding = int32(chunk.PrometheusXorChunk)
+			case chunkenc.EncHistogram:
+				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
+			case chunkenc.EncFloatHistogram:
+				ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
+			default:
+				return 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+			}
+
+			seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
+			numSamples += meta.Chunk.NumSamples()
+		}
+
+		msgSize := seriesChunks.Size()
+
+		// TODO: what values to use for queryStreamBatchSize and queryStreamBatchMessageSize?
+		if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= queryStreamBatchSize {
+			// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
+			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+				Chunks: seriesInBatch,
+			})
+			if err != nil {
+				return 0, err
+			}
+
+			batchSizeBytes = 0
+			seriesInBatch = seriesInBatch[:0]
+		}
+
+		seriesInBatch = append(seriesInBatch, seriesChunks)
+		batchSizeBytes += msgSize
+	}
+
+	// Send any remaining series.
+	if batchSizeBytes != 0 {
+		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+			Chunks: seriesInBatch,
+		})
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return numSamples, nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {

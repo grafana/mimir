@@ -108,6 +108,8 @@ message QueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
+
+  bool PreferStreamingChunks = 4;
 }
 
 message ExemplarQueryRequest {
@@ -120,10 +122,26 @@ message QueryResponse {
   repeated cortexpb.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
 
-// QueryStreamResponse contains a batch of timeseries chunks or timeseries. Only one of these series will be populated.
+// If streaming chunks is not enabled with PreferStreamingChunks: QueryStreamResponse contains a batch of timeseries
+// chunks or timeseries. Only one of these series will be populated.
+//
+// If streaming chunks is enabled with PreferStreamingChunks: QueryStreamResponse contains a batch of series labels
+// (sorted in series order) or batch of chunks (sorted in series order). Only one of these will be populated.
 message QueryStreamResponse {
   repeated TimeSeriesChunk chunkseries = 1 [(gogoproto.nullable) = false];
   repeated cortexpb.TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+
+  repeated QueryStreamSeries series = 3 [(gogoproto.nullable) = false];
+  repeated QueryStreamSeriesChunks chunks = 4 [(gogoproto.nullable) = false];
+}
+
+message QueryStreamSeries {
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+}
+
+message QueryStreamSeriesChunks {
+  uint64 series = 1;
+  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }
 
 message ExemplarQueryResponse {
