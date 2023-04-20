@@ -1691,15 +1691,13 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	for testName, testCase := range testCases {
 		testName, testCase := testName, testCase
 		t.Run(testName, func(t *testing.T) {
-			matchers := []string{}
-			for _, m := range testCase.matchers {
-				matchers = append(matchers, m.String())
+      matchersAsStrings := func(ms []*labels.Matcher) (matcherStr []string) {
+					for _, m := range ms {
+						matcherStr = append(matcherStr, m.String())
+					}
+					return
 			}
-			pendingMatchers := []string{}
-			for _, p := range testCase.pendingMatchers {
-				pendingMatchers = append(pendingMatchers, p.String())
-			}
-			require.Subset(t, matchers, pendingMatchers, "pending matchers should be a subset of all matchers")
+			require.Subset(t, matchersAsStrings(testCase.matchers), matchersAsStrings(testCase.pendingMatchers), "pending matchers should be a subset of all matchers")
 
 			var block = newTestBlock()
 			block.pendingReaders.Add(2) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
