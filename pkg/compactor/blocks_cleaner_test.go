@@ -1037,8 +1037,8 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 	return m.verifyChunks[tenantID]
 }
 
-func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(tenantID string) int64 {
-	return m.blockUploadMaxBlockSizeBytes[tenantID]
+func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
+	return m.blockUploadMaxBlockSizeBytes[user]
 }
 
 func (m *mockConfigProvider) S3SSEType(user string) string {
