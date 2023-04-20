@@ -1305,22 +1305,18 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	if len(pendingMatchers) > 0 {
 		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
 	}
+	seriesSet := newSeriesSetWithoutChunks(ctx, iterator, stats)
 
 	differentValues := make(map[string]struct{})
-	for iterator.Next() {
-		set := iterator.At()
-
-		for _, s := range set.series {
-			lVal := s.lset.Get(labelName)
-			if lVal != "" {
-				differentValues[lVal] = struct{}{}
-			}
+	for seriesSet.Next() {
+		series, _ := seriesSet.At()
+		lVal := series.Get(labelName)
+		if lVal != "" {
+			differentValues[lVal] = struct{}{}
 		}
-
-		set.release()
 	}
-	if iterator.Err() != nil {
-		return nil, errors.Wrap(iterator.Err(), "iterating series for label values")
+	if seriesSet.Err() != nil {
+		return nil, errors.Wrap(seriesSet.Err(), "iterating series for label values")
 	}
 
 	vals := make([]string, 0, len(differentValues))
