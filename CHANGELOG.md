@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.0-rc.1
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
+
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
@@ -87,7 +94,6 @@
 * [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
 * [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
 * [ENHANCEMENT] Querier: Cache the converted float histogram from chunk iterator, hence there is no need to lookup chunk every time to get the converted float histogram. #4684
-* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
