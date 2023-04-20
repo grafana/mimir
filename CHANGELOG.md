@@ -16,6 +16,10 @@
 
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 
+### Jsonnet
+
+* [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
+
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
