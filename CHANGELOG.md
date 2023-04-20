@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Security: updates Go to version 1.20.3 to fix CVE-2023-24538
+* [BUGFIX] Security: updates Go to version 1.20.3 to fix CVE-2023-24538 #4798
 
 ## 2.6.0
 
