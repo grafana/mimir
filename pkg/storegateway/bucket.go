@@ -1268,7 +1268,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
-	if len(pendingMatchers) > 0 {
+	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(postings) {
 		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, indexr, b, postings, stats)
 	} else {
 		values, err = labelValuesFromPostings(ctx, labelName, indexr, allValuesPostingOffsets, postings, stats)
