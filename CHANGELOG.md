@@ -5,6 +5,8 @@
 ### Grafana Mimir
 
 * [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770
+* [CHANGE] Alertmanager: Import Grafana Alertmanager fork. #4796
+* [FEATURE] Alertmanager: V2 Alerts API report about receiver integration status: last notification, last duration and last error #4796
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Go: update to 1.20.3. #4773
