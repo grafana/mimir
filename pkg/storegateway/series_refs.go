@@ -725,7 +725,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
-		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+		iterator = &filteringSeriesChunkRefsSetIterator{stats: stats, from: iterator, matchers: pendingMatchers}
 	}
 
 	// Track the time spent loading series and chunk refs.
