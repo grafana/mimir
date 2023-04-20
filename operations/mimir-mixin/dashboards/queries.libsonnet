@@ -238,7 +238,7 @@ local filename = 'mimir-queries.json';
         $.panel('Data touched / sec') +
         $.queryPanel(|||
           sum by(data_type) (
-            # Exclude "chunks processed" to only count "chunks processed", other than postings and series.
+            # Exclude "chunks processed" to only count "chunks returned", other than postings and series.
             rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway", stage!="processed",%(jobMatcher)s}[$__rate_interval])
           )
         ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +

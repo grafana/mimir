@@ -1035,6 +1035,7 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
+	stats    *safeQueryStats
 	from     seriesChunkRefsSetIterator
 	matchers []*labels.Matcher
 
@@ -1063,6 +1064,9 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 		}
 	}
 	next.series = next.series[:writeIdx]
+	m.stats.update(func(stats *queryStats) {
+		stats.seriesReturned += next.len()
+	})
 
 	if next.len() == 0 {
 		next.release()
