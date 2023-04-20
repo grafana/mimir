@@ -176,6 +176,7 @@
 * [ENHANCEMENT] Add explanation for QPS values for reads in remote ruler mode and writes generally, to the Ruler dashboard page. #4629
 * [ENHANCEMENT] Expand zone-aware replication page to cover single physical availability zone deployments. #4631
 * [FEATURE] Add instructions to use puppet module. #4610
+* [FEATURE] Add documentation on how deploy mixin with terraform. #4161
 
 ### Tools
 
