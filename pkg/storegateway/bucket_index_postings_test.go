@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 
@@ -206,6 +207,20 @@ func TestSpeculativeFetchedDataStrategy(t *testing.T) {
 				{totalSize: 4 * 1024},
 			},
 		},
+		"x": {
+			input: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 32*1024 + 4},
+				{totalSize: 32*1024 + 4},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 32*1024 + 4},
+				{totalSize: 32*1024 + 4},
+			},
+			expectedOmitted: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -217,105 +232,81 @@ func TestSpeculativeFetchedDataStrategy(t *testing.T) {
 	}
 }
 
-func TestWorstCaseWithAdditionalPostingsStrategy(t *testing.T) {
+func TestLabelValuesPostingsStrategy(t *testing.T) {
 	testCases := map[string]struct {
-		postingLists     []streamindex.PostingListOffset
-		input            []postingGroup
-		expectedSelected []postingGroup
-		expectedOmitted  []postingGroup
+		postingLists           []streamindex.PostingListOffset
+		input                  []postingGroup
+		expectedSelected       []postingGroup
+		expectedOmitted        []postingGroup
+		expectedToPreferSeries bool
 	}{
-		"single posting group is selected": {
+		"posting lists are shortcuttable and per-value lists are very large": {
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1024 * 1024}},
+			},
 			input: []postingGroup{
 				{totalSize: 128},
+				{totalSize: 256},
+				{totalSize: 1024 * 1024},
 			},
 			expectedSelected: []postingGroup{
 				{totalSize: 128},
-			},
-		},
-		"only all-postings & subtracting groups": {
-			input: []postingGroup{
-				{totalSize: 0 /* all-postings doesn't have a size at the moment */, keys: []labels.Label{allPostingsKey}},
-				{isSubtract: true, totalSize: 128},
-				{isSubtract: true, totalSize: 64 * 1024 * 1024},
-			},
-			expectedSelected: []postingGroup{
-				{totalSize: 0, keys: []labels.Label{allPostingsKey}},
-				{isSubtract: true, totalSize: 128},
-				{isSubtract: true, totalSize: 64 * 1024 * 1024},
-			},
-		},
-		"only small posting lists": {
-			input: []postingGroup{
-				{totalSize: 1024},
 				{totalSize: 256},
-				{totalSize: 128},
-			},
-			expectedSelected: []postingGroup{
-				{totalSize: 1024},
-				{totalSize: 256},
-				{totalSize: 128},
-			},
-		},
-		"two small and one large list": {
-			input: []postingGroup{
-				{totalSize: 64 * 1024 * 1024},
-				{totalSize: 256},
-				{totalSize: 128},
-			},
-			expectedSelected: []postingGroup{
-				{totalSize: 256},
-				{totalSize: 128},
 			},
 			expectedOmitted: []postingGroup{
-				{totalSize: 64 * 1024 * 1024},
-			},
-		},
-		"if smallest group is subtractive it's not used as min size": {
-			input: []postingGroup{
-				{totalSize: 64 * 1024 * 1024},
 				{totalSize: 1024 * 1024},
-				{isSubtract: true, totalSize: 128},
 			},
-			expectedSelected: []postingGroup{
-				{totalSize: 64 * 1024 * 1024},
-				{totalSize: 1024 * 1024},
-				{isSubtract: true, totalSize: 128},
-			},
+			expectedToPreferSeries: true,
 		},
-		"one small and two mid size lists are all selected": {
-			input: []postingGroup{
-				{totalSize: 128},
-				{totalSize: 4 * 1024},
-				{totalSize: 4 * 1024},
-			},
-			expectedSelected: []postingGroup{
-				{totalSize: 128},
-				{totalSize: 4 * 1024},
-				{totalSize: 4 * 1024},
-			},
-		},
-		"large posting lists but small posting lists": {
-			input: []postingGroup{
-				{totalSize: 128},
-				{totalSize: 4 * 1024},
-				{totalSize: 4 * 1024},
-			},
+		"posting lists are small enough to not be able to do shortcuts, but per-value lists are very large": {
 			postingLists: []streamindex.PostingListOffset{
-				{Off: index.Range{Start: 0, End: 1_000_000}},
+				{Off: index.Range{Start: 0, End: 1024 * 1024}},
+			},
+			input: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 256},
+				{totalSize: 1024},
 			},
 			expectedSelected: []postingGroup{
 				{totalSize: 128},
-				{totalSize: 4 * 1024},
-				{totalSize: 4 * 1024},
+				{totalSize: 256},
+				{totalSize: 1024},
 			},
+			expectedOmitted:        nil,
+			expectedToPreferSeries: true,
+		},
+		"posting lists are shortcuttable, but per-value posting list is much smaller than series, so we prefer per-value postings": {
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1024}},
+			},
+			input: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 33 * 1024},
+				{totalSize: 33 * 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 33 * 1024},
+				{totalSize: 33 * 1024},
+			},
+			expectedOmitted:        nil,
+			expectedToPreferSeries: false,
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			actualSelected, actualOmitted := labelValuesPostingsStrategy{}.selectPostings(testCase.input) // TODO dimitarvdimitrov
+			strategy := labelValuesPostingsStrategy{
+				delegate:     worstCaseFetchedDataStrategy{1},
+				postingLists: testCase.postingLists,
+			}
+			actualSelected, actualOmitted := strategy.selectPostings(testCase.input)
 			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
 			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
+
+			// The posting values don't matter. Only their size does.
+			actualPreferSeries := strategy.preferSeriesToPostings(make([]storage.SeriesRef, numSeriesInSmallestIntersectingPostingGroup(actualSelected)))
+			assert.Equal(t, testCase.expectedToPreferSeries, actualPreferSeries)
 		})
 	}
 }
