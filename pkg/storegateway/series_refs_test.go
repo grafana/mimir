@@ -1691,11 +1691,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	for testName, testCase := range testCases {
 		testName, testCase := testName, testCase
 		t.Run(testName, func(t *testing.T) {
-      matchersAsStrings := func(ms []*labels.Matcher) (matcherStr []string) {
-					for _, m := range ms {
-						matcherStr = append(matcherStr, m.String())
-					}
-					return
+			matchersAsStrings := func(ms []*labels.Matcher) (matcherStr []string) {
+				for _, m := range ms {
+					matcherStr = append(matcherStr, m.String())
+				}
+				return
 			}
 			require.Subset(t, matchersAsStrings(testCase.matchers), matchersAsStrings(testCase.pendingMatchers), "pending matchers should be a subset of all matchers")
 
