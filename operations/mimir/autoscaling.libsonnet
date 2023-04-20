@@ -53,6 +53,11 @@
   local replicasWithWeight(replicas, weight) =
     if weight <= 0.5 then std.ceil(replicas * weight) else std.floor(replicas * weight),
 
+  // getScaleDownPeriod will return the scale down period expressed in seconds.
+  // If the config doesn't have a scaledownPeriod set, the default value of 60 seconds will be returned.
+  local getScaleDownPeriod(config) =
+    if std.objectHas(config, 'scaledownPeriod') then config.scaledownPeriod else 60,
+
   // The ScaledObject resource is watched by the KEDA operator. When this resource is created, KEDA
   // creates the related HPA resource in the namespace. Likewise, then ScaledObject is deleted, KEDA
   // deletes the related HPA.
@@ -84,7 +89,7 @@
                 // when Prometheus comes back up after a long outage (longer than stabilizationWindowSeconds=300s)
                 type: 'Percent',
                 value: 10,
-                periodSeconds: 60,
+                periodSeconds: getScaleDownPeriod(config),
               }],
             },
           },
@@ -384,6 +389,11 @@
     name, $._config.namespace, {
       min_replica_count: $._config.autoscaling_ruler_min_replicas,
       max_replica_count: $._config.autoscaling_ruler_max_replicas,
+
+      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler.
+      // As a result, we have made the decision to set the scale down periodSeconds to 600.
+      scaledownPeriod: 600,
+
       // Be aware that the default value for the trigger "metricType" field is "AverageValue"
       // (see https://keda.sh/docs/2.9/concepts/scaling-deployments/#triggers), which means that KEDA will
       // determine the target number of replicas by dividing the metric value by the threshold. This means in practice
