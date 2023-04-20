@@ -346,7 +346,16 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 
 	route := dispatch.NewRoute(conf.Route, nil)
-	am.api.Update(conf, func(_ model.LabelSet) {})
+
+	// TODO: This has not been upstreamed yet. Should be aligned when https://github.com/prometheus/alertmanager/pull/3016 is merged.
+	var receivers []*notify.Receiver
+	activeReceivers := am.getActiveReceiversMap(route)
+	for name, integrations := range integrationsMap {
+		_, isActive := activeReceivers[name]
+		receivers = append(receivers, notify.NewReceiver(name, isActive, integrations))
+	}
+
+	am.api.Update(conf, receivers, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -379,7 +388,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 
 	pipeline := am.pipelineBuilder.New(
-		integrationsMap,
+		receivers,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
@@ -523,6 +532,17 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		return nil, &errs
 	}
 	return integrations, nil
+}
+
+// getActiveReceiversMap returns all receivers that are in use by a route.
+func (am *Alertmanager) getActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
+	receiversMap := make(map[string]struct{})
+	visitFunc := func(r *dispatch.Route) {
+		receiversMap[r.RouteOpts.Receiver] = struct{}{}
+	}
+	r.Walk(visitFunc)
+
+	return receiversMap
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
