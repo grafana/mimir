@@ -893,7 +893,7 @@ func (s *BucketStore) recordPostingsStats(stats *queryStats) {
 
 func (s *BucketStore) recordSeriesStats(stats *queryStats) {
 	s.metrics.seriesDataTouched.WithLabelValues("series", "processed").Observe(float64(stats.seriesProcessed))
-	s.metrics.seriesDataTouched.WithLabelValues("series", "returned").Observe(float64(stats.seriesReturned))
+	s.metrics.seriesDataTouched.WithLabelValues("series", "returned").Observe(float64(stats.seriesProcessed - stats.seriesOmitted))
 	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesProcessedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))

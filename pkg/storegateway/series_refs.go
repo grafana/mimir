@@ -1063,10 +1063,10 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 			writeIdx++
 		}
 	}
-	next.series = next.series[:writeIdx]
 	m.stats.update(func(stats *queryStats) {
-		stats.seriesReturned += next.len()
+		stats.seriesOmitted += next.len() - writeIdx
 	})
+	next.series = next.series[:writeIdx]
 
 	if next.len() == 0 {
 		next.release()

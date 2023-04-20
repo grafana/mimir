@@ -33,7 +33,7 @@ type queryStats struct {
 
 	seriesProcessed        int
 	seriesProcessedSizeSum int
-	seriesReturned         int
+	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int
 	seriesFetchCount       int
@@ -99,7 +99,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.seriesProcessed += o.seriesProcessed
 	s.seriesProcessedSizeSum += o.seriesProcessedSizeSum
-	s.seriesReturned += o.seriesReturned
+	s.seriesOmitted += o.seriesOmitted
 	s.seriesFetched += o.seriesFetched
 	s.seriesFetchedSizeSum += o.seriesFetchedSizeSum
 	s.seriesFetchCount += o.seriesFetchCount
