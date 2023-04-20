@@ -1,16 +1,5 @@
 # Changelog
 
-## main / unreleased
-
-### Grafana Mimir
-
-* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
-* [ENHANCEMENT] Go: update to 1.20.3. #4773
-
-### Documentation
-
-* [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
-
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
