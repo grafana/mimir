@@ -53,11 +53,11 @@
   local replicasWithWeight(replicas, weight) =
     if weight <= 0.5 then std.ceil(replicas * weight) else std.floor(replicas * weight),
 
-  // getScaleDownPeriod will return the scale down period expressed in seconds. 
+  // getScaleDownPeriod will return the scale down period expressed in seconds.
   // If the config doesn't have a scaledownPeriod set, the default value of 60 seconds will be returned.
-  local getScaleDownPeriod(config) = 
-    if std.objectHas(config, "scaledownPeriod") then config.scaledownPeriod else 60,
-  
+  local getScaleDownPeriod(config) =
+    if std.objectHas(config, 'scaledownPeriod') then config.scaledownPeriod else 60,
+
   // The ScaledObject resource is watched by the KEDA operator. When this resource is created, KEDA
   // creates the related HPA resource in the namespace. Likewise, then ScaledObject is deleted, KEDA
   // deletes the related HPA.
@@ -390,7 +390,7 @@
       min_replica_count: $._config.autoscaling_ruler_min_replicas,
       max_replica_count: $._config.autoscaling_ruler_max_replicas,
 
-      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler. 
+      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler.
       // As a result, we have made the decision to set the scale down periodSeconds to 600.
       scaledownPeriod: 600,
 
