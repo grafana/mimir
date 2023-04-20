@@ -7,10 +7,15 @@
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [ENHANCEMENT] Go: update to 1.20.3. #4773
 * [ENHANCEMENT] Distributor: make `__meta_tenant_id` label available in relabeling rules configured via `metric_relabel_configs`. #4725
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
+
+### Mixin
+
+* [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 
 ## 2.8.0-rc.0
 
