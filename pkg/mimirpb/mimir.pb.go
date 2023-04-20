@@ -390,7 +390,6 @@ func (m *LabelPair) GetValue() []byte {
 }
 
 type Sample struct {
-	// Fields order MUST match promql.Point so that we can cast types between them.
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 }

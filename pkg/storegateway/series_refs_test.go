@@ -1260,7 +1260,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 
 			// Setup
 			block := newTestBlock()
-			indexr := block.indexReader()
+			indexr := block.indexReader(selectAllStrategy{})
 			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
 			postingsIterator := newPostingsSetsIterator(
@@ -1587,7 +1587,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			t.Parallel()
 
 			var block = newTestBlock()
-			indexReader := block.indexReader()
+			// All test cases have a single matcher, so the strategy wouldn't really make a difference.
+			// Pending matchers are tested in other tests.
+			indexReader := block.indexReader(selectAllStrategy{})
 			defer indexReader.Close()
 
 			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
@@ -1689,7 +1691,13 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	for testName, testCase := range testCases {
 		testName, testCase := testName, testCase
 		t.Run(testName, func(t *testing.T) {
-			require.Subset(t, testCase.matchers, testCase.pendingMatchers, "pending matchers should be a subset of all matchers")
+			matchersAsStrings := func(ms []*labels.Matcher) (matcherStr []string) {
+				for _, m := range ms {
+					matcherStr = append(matcherStr, m.String())
+				}
+				return
+			}
+			require.Subset(t, matchersAsStrings(testCase.matchers), matchersAsStrings(testCase.pendingMatchers), "pending matchers should be a subset of all matchers")
 
 			var block = newTestBlock()
 			block.pendingReaders.Add(2) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
@@ -1749,7 +1757,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 				b.Cleanup(cancel)
 
 				var block = newTestBlock()
-				indexReader := block.indexReader()
+				indexReader := block.indexReader(selectAllStrategy{})
 				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
 
 				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
@@ -2301,7 +2309,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					}
 
 					statsColdCache := newSafeQueryStats()
-					indexReader := b.indexReader()
+					// All test cases have a single matcher, so the strategy wouldn't really make a difference.
+					// Pending matchers are tested in other tests.
+					indexReader := b.indexReader(selectAllStrategy{})
 					ss, err := openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,

@@ -35,10 +35,6 @@ func TestOTLPIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
-		map[string]string{
-			// Enable protobuf format so that we can use native histograms.
-			"-query-frontend.query-result-response-format": "protobuf",
-		},
 	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
@@ -49,7 +45,7 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.PushOTLP(series)
 	require.NoError(t, err)

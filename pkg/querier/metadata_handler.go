@@ -32,10 +32,14 @@ type metricMetadata struct {
 	Unit string `json:"unit"`
 }
 
-type metadataResult struct {
+type metadataSuccessResult struct {
 	Status string                      `json:"status"`
-	Data   map[string][]metricMetadata `json:"data,omitempty"`
-	Error  string                      `json:"error,omitempty"`
+	Data   map[string][]metricMetadata `json:"data"`
+}
+
+type metadataErrorResult struct {
+	Status string `json:"status"`
+	Error  string `json:"error"`
 }
 
 // NewMetadataHandler creates a http.Handler for serving metric metadata held by
@@ -45,7 +49,7 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		resp, err := m.MetricsMetadata(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			util.WriteJSONResponse(w, metadataResult{Status: statusError, Error: err.Error()})
+			util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: err.Error()})
 			return
 		}
 
@@ -61,6 +65,6 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 			metrics[m.Metric] = append(ms, metricMetadata{Type: string(m.Type), Help: m.Help, Unit: m.Unit})
 		}
 
-		util.WriteJSONResponse(w, metadataResult{Status: statusSuccess, Data: metrics})
+		util.WriteJSONResponse(w, metadataSuccessResult{Status: statusSuccess, Data: metrics})
 	})
 }

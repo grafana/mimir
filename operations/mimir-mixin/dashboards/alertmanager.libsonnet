@@ -58,6 +58,17 @@ local filename = 'mimir-alertmanager.json';
       )
     )
     .addRow(
+      $.row('Alerts grouping')
+      .addPanel(
+        $.panel('per %s Active Aggregation Groups' % $._config.per_instance_label) +
+        $.queryPanel(
+          'cortex_alertmanager_dispatcher_aggregation_groups{%s}' % $.jobMatcher($._config.job_names.alertmanager),
+          '{{%s}}' % $._config.per_instance_label
+        ) +
+        $.stack
+      )
+    )
+    .addRow(
       $.row('Alert notifications')
       .addPanel(
         $.panel('NPS') +

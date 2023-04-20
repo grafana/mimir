@@ -323,6 +323,14 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	return l.validate()
 }
 
+func (l *Limits) MarshalJSON() ([]byte, error) {
+	return json.Marshal(limitsToStructWithExtensionFields(l))
+}
+
+func (l *Limits) MarshalYAML() (interface{}, error) {
+	return limitsToStructWithExtensionFields(l), nil
+}
+
 func (l *Limits) validate() error {
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
@@ -997,7 +1005,7 @@ var plainLimitsStructField = reflect.StructField{
 	Anonymous: true,
 }
 
-// newLimitsWithExtensions returns an interface{} value of a pointer to a struct of type:
+// buildStructWithExtensionFieldsAndDefaultValues returns an interface{} value of a pointer to a struct of type:
 //
 //	struct {
 //	    EXTNAME1    T1                     `yaml:"extname1" json:"extname1"`
@@ -1009,13 +1017,11 @@ var plainLimitsStructField = reflect.StructField{
 //
 // Where TN is the type of the registered extension N, and extnameN is the name of it.
 // This makes the JSON/YAML unmarshaler go through each extension field, and unmarshal the rest of the payload in the plain limits field.
+//
 // Embedding PlainLimits in the struct makes JSON parser act like `yaml:",inline"`.
-func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
-	if len(registeredExtensions) == 0 {
-		// No extensions, so just return the plain limits and an extension getter that returns nil.
-		return limits, func() map[string]interface{} { return nil }
-	}
-
+//
+// This method doesn't set any field values.
+func buildStructWithExtensionFieldsAndDefaultValues() reflect.Value {
 	// We have extensions, craft our own type.
 	// It's not strictly necessary to create a new slice here, we could just append to limitsExtensionsFields assuming that
 	// this would allocate a new underlying array, but that is too fragile, so let's copy the fields to a new slice.
@@ -1027,6 +1033,17 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 	typ := reflect.StructOf(fields)
 	// cfg is an instance of a pointer to a new struct.
 	cfg := reflect.New(typ)
+	return cfg
+}
+
+// newLimitsWithExtensions returns struct suitable for unmarshalling and a function to return map of extension values.
+func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtensions func() map[string]interface{}) {
+	if len(registeredExtensions) == 0 {
+		// No extensions, so just return the plain limits and an extension getter that returns nil.
+		return limits, func() map[string]interface{} { return nil }
+	}
+
+	cfg := buildStructWithExtensionFieldsAndDefaultValues()
 
 	// Set default values of each field
 	// In other words:
@@ -1047,4 +1064,30 @@ func newLimitsWithExtensions(limits *plainLimits) (any interface{}, getExtension
 		}
 		return ext
 	}
+}
+
+// limitsToStructWithExtensionFields converts existing Limits into a struct that contains all extension fields
+// set to values in the limits. This struct can be used for JSON/YAML marshalling.
+func limitsToStructWithExtensionFields(limits *Limits) interface{} {
+	if len(registeredExtensions) == 0 {
+		return (*plainLimits)(limits)
+	}
+
+	cfg := buildStructWithExtensionFieldsAndDefaultValues()
+
+	// Set values from limits.
+	// In other words:
+	//     cfg.PlainLimits = limits
+	cfg.Elem().FieldByName(plainLimitsStructField.Name).Set(reflect.ValueOf((*plainLimits)(limits)))
+
+	// Set value of each extension field based on value stored in supplied limits.
+	// Some values may not be set.
+	// In other words:
+	//     cfg.EXTNAME = limits.extension[EXTNAME]
+	for name, val := range limits.extensions {
+		ext := registeredExtensions[name]
+		cfg.Elem().Field(ext.index).Set(reflect.ValueOf(val))
+	}
+
+	return cfg.Interface()
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-
 	"math"
 	"math/rand"
 	"net/http"
@@ -507,10 +506,10 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}, nil
 }
 
-// countTokens returns the number tokens within the range for each instance.
-func (r *Desc) countTokens() map[string]uint32 {
+// CountTokens returns the number tokens within the range for each instance.
+func (r *Desc) CountTokens() map[string]uint32 {
 	var (
-		owned               = map[string]uint32{}
+		owned               = make(map[string]uint32, len(r.Ingesters))
 		ringTokens          = r.GetTokens()
 		ringInstanceByToken = r.getTokensInfo()
 	)
@@ -519,10 +518,11 @@ func (r *Desc) countTokens() map[string]uint32 {
 		var diff uint32
 
 		// Compute how many tokens are within the range.
-		if i+1 == len(ringTokens) {
-			diff = (math.MaxUint32 - token) + ringTokens[0]
+		if i == 0 {
+			lastToken := ringTokens[len(ringTokens)-1]
+			diff = token + (math.MaxUint32 - lastToken)
 		} else {
-			diff = ringTokens[i+1] - token
+			diff = token - ringTokens[i-1]
 		}
 
 		info := ringInstanceByToken[token]

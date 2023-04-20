@@ -146,7 +146,8 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "bar"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 			},
 		},
@@ -170,11 +171,13 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "bar"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 				{
 					Metric: labels.FromStrings("bar", "baz"),
-					Point:  promql.Point{T: 1649092025515, V: 4.56},
+					T:      1649092025515,
+					F:      4.56,
 				},
 			},
 		},
@@ -186,7 +189,8 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.EmptyLabels(),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 			},
 		},
@@ -302,7 +306,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "bar"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 			},
 		},
@@ -329,11 +334,13 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "bar"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 				{
 					Metric: labels.FromStrings("bar", "baz"),
-					Point:  promql.Point{T: 1649092025515, V: 4.56},
+					T:      1649092025515,
+					F:      4.56,
 				},
 			},
 		},
@@ -355,7 +362,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("bar", "baz", "foo", "blah"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 			},
 		},
@@ -377,7 +385,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "baz"),
-					Point:  promql.Point{T: 1649092025515, H: &promqlHistogram},
+					T:      1649092025515,
+					H:      &promqlHistogram,
 				},
 			},
 		},
@@ -406,11 +415,13 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.FromStrings("foo", "baz"),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 				{
 					Metric: labels.FromStrings("foo", "bar"),
-					Point:  promql.Point{T: 1649092025515, H: &promqlHistogram},
+					T:      1649092025515,
+					H:      &promqlHistogram,
 				},
 			},
 		},
@@ -444,7 +455,8 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			expected: promql.Vector{
 				{
 					Metric: labels.EmptyLabels(),
-					Point:  promql.Point{T: 1649092025515, V: 1.23},
+					T:      1649092025515,
+					F:      1.23,
 				},
 			},
 		},

@@ -34,7 +34,7 @@ type chunkIterator struct {
 // Seek advances the iterator forward to the value at or after
 // the given timestamp.
 func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
-	i.cacheValid = false
+	i.invalidateCache()
 
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
@@ -78,21 +78,31 @@ func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	if i.valType == chunkenc.ValHistogram {
-		// use cache as histogram
-		t, h := i.AtHistogram()
-		return t, h.ToFloat()
-	}
-	if i.valType != chunkenc.ValFloatHistogram {
-		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of different type %v", i.valType))
+	if i.valType != chunkenc.ValHistogram && i.valType != chunkenc.ValFloatHistogram {
+		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of type %v", i.valType))
 	}
 
-	if i.cacheValid {
+	if i.cacheValid && i.cachedFloatHistogram != nil {
 		return i.cachedTime, i.cachedFloatHistogram
 	}
 
-	i.cachedTime, i.cachedFloatHistogram = i.it.AtFloatHistogram()
+	var (
+		t  int64
+		fh *histogram.FloatHistogram
+	)
+
+	if i.valType == chunkenc.ValHistogram {
+		var h *histogram.Histogram
+		t, h = i.AtHistogram()
+		fh = h.ToFloat()
+	} else {
+		t, fh = i.it.AtFloatHistogram()
+	}
+
+	i.cachedTime = t
+	i.cachedFloatHistogram = fh
 	i.cacheValid = true
+
 	return i.cachedTime, i.cachedFloatHistogram
 }
 
@@ -123,11 +133,17 @@ func (i *chunkIterator) Next() chunkenc.ValueType {
 	if i.isExhausted {
 		return chunkenc.ValNone
 	}
-	i.cacheValid = false
+	i.invalidateCache()
 	i.valType = i.it.Scan()
 	return i.valType
 }
 
 func (i *chunkIterator) Err() error {
 	return i.it.Err()
+}
+
+func (i *chunkIterator) invalidateCache() {
+	i.cacheValid = false
+	i.cachedHistogram = nil
+	i.cachedFloatHistogram = nil
 }
