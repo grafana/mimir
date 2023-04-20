@@ -46,8 +46,9 @@ type query struct {
 	samples func(from, through time.Time, step time.Duration) int
 	step    time.Duration
 
-	valueType   func(ts model.Time) chunkenc.ValueType
-	assertPoint func(t testing.TB, ts int64, point promql.Point)
+	valueType    func(ts model.Time) chunkenc.ValueType
+	assertFPoint func(t testing.TB, ts int64, point promql.FPoint)
+	assertHPoint func(t testing.TB, ts int64, point promql.HPoint)
 }
 
 func TestQuerier(t *testing.T) {
@@ -68,10 +69,10 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from) / step)
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
-				require.Equal(t, promql.Point{
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.Equal(t, promql.FPoint{
 					T: ts + int64((sampleRate*4)/time.Millisecond),
-					V: 1000.0,
+					F: 1000.0,
 				}, point)
 			},
 		},
@@ -86,10 +87,10 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from)/step) + 1
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
-				require.Equal(t, promql.Point{
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.Equal(t, promql.FPoint{
 					T: ts,
-					V: float64(ts),
+					F: float64(ts),
 				}, point)
 			},
 		},
@@ -103,10 +104,10 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from) / step)
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
-				require.Equal(t, promql.Point{
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.Equal(t, promql.FPoint{
 					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
-					V: 1000.0,
+					F: 1000.0,
 				}, point)
 			},
 		},
@@ -120,10 +121,10 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from)/step) + 1
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
-				require.Equal(t, promql.Point{
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.Equal(t, promql.FPoint{
 					T: ts,
-					V: float64(ts),
+					F: float64(ts),
 				}, point)
 			},
 		},
@@ -136,7 +137,7 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from)/step) + 1
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
 			},
@@ -150,7 +151,7 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from)/step) + 1
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
@@ -164,7 +165,7 @@ func TestQuerier(t *testing.T) {
 				return int(through.Sub(from)/step) + 1
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
+			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
@@ -183,16 +184,17 @@ func TestQuerier(t *testing.T) {
 				}
 				return chunkenc.ValFloat
 			},
-			assertPoint: func(t testing.TB, ts int64, point promql.Point) {
-				if ts > int64(secondChunkStart) {
-					require.Equal(t, ts, point.T)
-					test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
-					return
-				}
-				require.Equal(t, promql.Point{
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.True(t, ts <= int64(secondChunkStart))
+				require.Equal(t, promql.FPoint{
 					T: ts,
-					V: float64(ts),
+					F: float64(ts),
 				}, point)
+			},
+			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
+				require.True(t, ts > int64(secondChunkStart))
+				require.Equal(t, ts, point.T)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
 	}
@@ -291,23 +293,23 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	})
 
 	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
-	query, err := engine.NewRangeQuery(queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	r := query.Exec(ctx)
 	m, err := r.Matrix()
 	require.NoError(t, err)
 
 	require.Equal(t, 1, m.Len())
-	assert.Equal(t, []promql.Point{
-		{T: 1635746400000, V: 29},
-		{T: 1635746460000, V: 31},
-		{T: 1635746520000, V: 37},
-		{T: 1635746580000, V: 37},
-		{T: 1635746640000, V: 78},
-		{T: 1635746700000, V: 80},
-	}, m[0].Points)
+	assert.Equal(t, []promql.FPoint{
+		{T: 1635746400000, F: 29},
+		{T: 1635746460000, F: 31},
+		{T: 1635746520000, F: 37},
+		{T: 1635746580000, F: 37},
+		{T: 1635746640000, F: 78},
+		{T: 1635746700000, F: 80},
+	}, m[0].Floats)
 }
 
 // TestBatchMergeChunks is a regression test to catch one particular case
@@ -376,16 +378,17 @@ func TestBatchMergeChunks(t *testing.T) {
 	})
 
 	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
-	query, err := engine.NewRangeQuery(queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	r := query.Exec(ctx)
 	m, err := r.Matrix()
 	require.NoError(t, err)
 
 	require.Equal(t, 2, m.Len())
-	require.ElementsMatch(t, m[0].Points, m[1].Points)
+	require.ElementsMatch(t, m[0].Floats, m[1].Floats)
+	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
@@ -510,10 +513,10 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			var storeQueryables []QueryableWithFilter
 
 			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, log.NewNopLogger(), nil)
-			query, err := engine.NewRangeQuery(queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
+			ctx := user.InjectOrgID(context.Background(), "0")
+			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			r := query.Exec(ctx)
 			_, err = r.Matrix()
 
@@ -594,10 +597,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			require.NoError(t, err)
 
 			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-			query, err := engine.NewRangeQuery(queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
+			ctx := user.InjectOrgID(context.Background(), "0")
+			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			r := query.Exec(ctx)
 			require.Nil(t, r.Err)
 
@@ -675,10 +678,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 				Timeout:            1 * time.Minute,
 			})
 
-			query, err := engine.NewRangeQuery(queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
+			ctx := user.InjectOrgID(context.Background(), "test")
+			query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "test")
 			r := query.Exec(ctx)
 
 			if testData.expected != nil {
@@ -789,7 +792,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				require.NoError(t, err)
 
-				query, err := engine.NewRangeQuery(queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
+				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 				require.NoError(t, err)
 
 				r := query.Exec(ctx)
@@ -983,10 +986,10 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
 	})
-	query, err := engine.NewRangeQuery(queryable, nil, q.query, from, through, step)
+	ctx := user.InjectOrgID(context.Background(), "0")
+	query, err := engine.NewRangeQuery(ctx, queryable, nil, q.query, from, through, step)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	r := query.Exec(ctx)
 	m, err := r.Matrix()
 	require.NoError(t, err)
@@ -994,10 +997,14 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 	require.Len(t, m, 1)
 	series := m[0]
 	require.Equal(t, q.labels, series.Metric)
-	require.Equal(t, q.samples(from, through, step), len(series.Points))
+	require.Equal(t, q.samples(from, through, step), len(series.Floats)+len(series.Histograms))
 	var ts int64
-	for _, point := range series.Points {
-		q.assertPoint(t, ts, point)
+	for _, point := range series.Floats {
+		q.assertFPoint(t, ts, point)
+		ts += int64(step / time.Millisecond)
+	}
+	for _, point := range series.Histograms {
+		q.assertHPoint(t, ts, point)
 		ts += int64(step / time.Millisecond)
 	}
 	return r
@@ -1143,10 +1150,10 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
 			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(newMockBlocksStorageQueryable(querier))}, nil, log.NewNopLogger(), nil)
-			query, err := engine.NewRangeQuery(queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
+			ctx := user.InjectOrgID(context.Background(), "0")
+			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			r := query.Exec(ctx)
 			_, err = r.Matrix()
 

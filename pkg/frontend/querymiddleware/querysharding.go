@@ -148,7 +148,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := newShardedQueryable(r, s.next)
 
-	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -168,10 +168,11 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
-func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),
@@ -181,6 +182,7 @@ func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (pr
 		)
 	case *PrometheusInstantQueryRequest:
 		return engine.NewInstantQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),
@@ -409,10 +411,10 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(sample.Metric),
 			}
-			if sample.Point.H != nil {
-				ss.Histograms = mimirpb.FromPointsToHistograms([]promql.Point{sample.Point})
+			if sample.H != nil {
+				ss.Histograms = mimirpb.FromHPointsToHistograms([]promql.HPoint{{T: sample.T, H: sample.H}})
 			} else {
-				ss.Samples = mimirpb.FromPointsToSamples([]promql.Point{sample.Point})
+				ss.Samples = mimirpb.FromFPointsToSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
 			}
 			res = append(res, ss)
 		}
@@ -424,11 +426,11 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
 			}
-			samples := mimirpb.FromPointsToSamples(series.Points)
+			samples := mimirpb.FromFPointsToSamples(series.Floats)
 			if len(samples) > 0 {
 				ss.Samples = samples
 			}
-			histograms := mimirpb.FromPointsToHistograms(series.Points)
+			histograms := mimirpb.FromHPointsToHistograms(series.Histograms)
 			if len(histograms) > 0 {
 				ss.Histograms = histograms
 			}
