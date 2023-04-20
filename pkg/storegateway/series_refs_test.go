@@ -2306,7 +2306,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					// All test cases have a single matcher, so the strategy wouldn't really make a difference.
 					// Pending matchers are tested in other tests.
 					indexReader := b.indexReader(selectAllStrategy{})
-					ss, err := openBlockSeriesChunkRefsSetsIterator(
+					ss, err := blockSeriesChunkRefsSetsIteratorForMatchers(
 						context.Background(),
 						batchSize,
 						"",

@@ -1305,6 +1305,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	if len(pendingMatchers) > 0 {
 		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
 	}
+	iterator = seriesStreamingFetchRefsDurationIterator(iterator, stats)
 	seriesSet := newSeriesSetWithoutChunks(ctx, iterator, stats)
 
 	differentValues := make(map[string]struct{})
