@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -549,7 +550,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 }
 
 func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
-	return indexcache.LabelMatchersKey(l.Name + "=" + l.Value)
+	var sb strings.Builder
+	sb.Grow(len(l.Name) + 1 + len(l.Value))
+	sb.WriteString(l.Name)
+	sb.WriteByte('=')
+	sb.WriteString(l.Value)
+	return indexcache.LabelMatchersKey(sb.String())
 }
 
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
