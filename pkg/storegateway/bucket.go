@@ -1243,20 +1243,20 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	labelValuesReader := b.indexReader(selectAllStrategy{})
 	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
 
-	values, ok := fetchCachedLabelValues(ctx, labelValuesReader.block.indexCache, labelValuesReader.block.userID, labelValuesReader.block.meta.ULID, labelName, matchers, logger)
+	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
 	if ok {
 		return values, nil
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := labelValuesReader.block.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
+	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
 
 	if len(matchers) == 0 {
 		values = extractLabelValues(allValuesPostingOffsets)
-		storeCachedLabelValues(ctx, labelValuesReader.block.indexCache, labelValuesReader.block.userID, labelValuesReader.block.meta.ULID, labelName, matchers, values, logger)
+		storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, values, logger)
 		return values, nil
 	}
 	strategy := &labelValuesPostingsStrategy{
@@ -1279,7 +1279,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 		return nil, err
 	}
 
-	storeCachedLabelValues(ctx, postingsAndSeriesReader.block.indexCache, postingsAndSeriesReader.block.userID, postingsAndSeriesReader.block.meta.ULID, labelName, matchers, values, logger)
+	storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, values, logger)
 	return values, nil
 }
 
