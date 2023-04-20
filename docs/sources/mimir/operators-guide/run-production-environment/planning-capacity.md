@@ -154,6 +154,19 @@ For more information about disk requirements, refer to [Compactor disk utilizati
 sum(prometheus_tsdb_head_series)
 ```
 
+Related to working with large tenants, there are two compactor-specific settings to consider when planning or adjusting capacity:
+
+`-compactor.split-groups`
+`-compactor.split-and-merge-shards`
+
+For more information about how they work, refer to [Compaction algorithm]({{< relref "../architecture/components/compactor/index.md#compaction-algorithm" >}}).
+
+We recommend 1 shard per every 8 million active series in a tenant.
+
+For example, for a tenant with 100 million active series, use approximately 12 shards. Use an even number for the shard count.
+
+We also recommend setting the number of split-groups to be the same as the shard count.
+
 ### (Optional) Alertmanager
 
 The [Alertmanager]({{< relref "../architecture/components/alertmanager.md" >}}) component resources’ utilization is determined by the number of alerts firing at the same time.
