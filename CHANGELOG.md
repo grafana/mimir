@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.0-rc.1
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
+* 
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
