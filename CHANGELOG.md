@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Security: updated Go version to 1.20.3 to fix CVE-2023-24538
+* [BUGFIX] Security: updated Go version to 1.20.3 to fix CVE-2023-24538 #4795
 
 ## 2.7.1
 
