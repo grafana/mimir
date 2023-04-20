@@ -882,8 +882,9 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 func (s *BucketStore) recordLabelValuesCallResult(safeStats *safeQueryStats) {
 	stats := safeStats.export()
 	s.recordPostingsStats(stats)
+	s.recordSeriesStats(stats)
+	s.recordStreamingSeriesStats(stats)
 	s.recordCachedPostingStats(stats)
-
 }
 
 func (s *BucketStore) recordPostingsStats(stats *queryStats) {
