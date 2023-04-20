@@ -48,7 +48,7 @@ See the next section for details on cutting an individual release.
 The quick and easy way to create a GitHub issue using the following template and follow the instructions from the issue itself.
 If something is not clear, you can get back to this document to learn more about the process.
 
-> **Note:** When making a branch while working on the following checklist, don't create branch with `release-` prefix, because such branch is protected and can't get additional commits pushed upon branch creation.
+> **Note:** Branches with `release-` prefix in the name are protected, use some different branch name for making your PRs, for example `my/release-notes`.
 
 ````markdown
 ### Publish the release candidate
