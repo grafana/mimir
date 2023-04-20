@@ -1266,14 +1266,14 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	postingsAndSeriesReader := b.indexReader(strategy)
 	defer runutil.CloseWithLogOnErr(b.logger, postingsAndSeriesReader, "close block index reader")
 
-	postings, pendingMatchers, err := postingsAndSeriesReader.ExpandedPostings(ctx, matchers, stats)
+	matchersPostings, pendingMatchers, err := postingsAndSeriesReader.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
-	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(postings) {
-		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, postingsAndSeriesReader, b, postings, stats)
+	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(matchersPostings) {
+		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, postingsAndSeriesReader, b, matchersPostings, stats)
 	} else {
-		values, err = labelValuesFromPostings(ctx, labelName, postingsAndSeriesReader, allValuesPostingOffsets, postings, stats)
+		values, err = labelValuesFromPostings(ctx, labelName, postingsAndSeriesReader, allValuesPostingOffsets, matchersPostings, stats)
 	}
 	if err != nil {
 		return nil, err
@@ -1283,11 +1283,11 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	return values, nil
 }
 
-func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, postings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
+func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, matchersPostings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
 	var iterator seriesChunkRefsSetIterator
 	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
-		newPostingsSetsIterator(postings, seriesPerBatch),
+		newPostingsSetsIterator(matchersPostings, seriesPerBatch),
 		indexr,
 		b.indexCache,
 		stats,
