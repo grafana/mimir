@@ -549,7 +549,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 }
 
 func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
-	return indexcache.LabelMatchersKey(fmt.Sprintf("%s=%s", l.Name, l.Value))
+	return indexcache.LabelMatchersKey(l.Name + "=" + l.Value)
 }
 
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
