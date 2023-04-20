@@ -28,7 +28,7 @@ type GrafanaAnalyzeCommand struct {
 	readTimeout time.Duration
 
 	outputFile    string
-	datasourceUid string
+	datasourceUID string
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
@@ -64,7 +64,7 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUid)
+		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUID)
 	}
 
 	err = writeOut(output, cmd.outputFile)

@@ -100,15 +100,15 @@ type Target struct {
 
 // GetTargets is iterate over all panel targets. It just returns nil if
 // no targets defined for panel of concrete type.
-func (p *Panel) GetTargets(datasourceUid string) *[]Target {
-	if datasourceUid != "" {
+func (p *Panel) GetTargets(datasourceUID string) *[]Target {
+	if datasourceUID != "" {
 		if p.Datasource != nil {
 			// we'll filter mixed targets later
-			if p.Datasource.Type != "datasource" && p.Datasource.UID != datasourceUid {
+			if p.Datasource.Type != "datasource" && p.Datasource.UID != datasourceUID {
 				return nil
 			}
 		} else {
-			// if datasourceUid is defined we'll filter out null datasource too
+			// if datasourceUID is defined we'll filter out null datasource too
 			return nil
 		}
 	}
