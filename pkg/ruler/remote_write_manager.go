@@ -76,8 +76,8 @@ func NewRemoteWriteAppendable(p Pusher, rulesLimits RulesLimits, totalWrites, fa
 	}
 }
 
-func (t *RemoteWriteAppendable) Appender(ctx context.Context) storage.Appender { // this is the write and differentiation
-	userID, err := user.ExtractOrgID(ctx)
+func (t *RemoteWriteAppendable) Appender(ctx context.Context) storage.Appender {
+	userID, err := ExtractTenantIDs(ctx)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "error getting userID from context", "err", err)
 		// this should never happen, ctx always has a userID, but just to be doubly sure
