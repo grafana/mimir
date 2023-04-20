@@ -2965,7 +2965,7 @@
           "required": false,
           "desc": "Maximum number of buckets per native histogram sample. 0 to disable the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 1024,
+          "fieldDefaultValue": 0,
           "fieldFlag": "validation.max-native-histogram-buckets",
           "fieldType": "int"
         },
