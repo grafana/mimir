@@ -182,6 +182,12 @@
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
+## 2.7.2
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updated Go version to 1.20.3 to fix CVE-2023-24538 #4795
+
 ## 2.7.1
 
 **Note**: During the release process, version 2.7.0 was tagged too early, before completing the release checklist and production testing. Release 2.7.1 doesn't include any code changes since 2.7.0, but now has proper release notes, published documentation, and has been fully tested in our production environment.
@@ -235,7 +241,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
-* [ENHANCEMENT] Distributor: moves the distributor push wrappers from the API configuration into the distributor configuration. #4244
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.1` to `alpine:3.17.2`. #4240
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227 #4316
