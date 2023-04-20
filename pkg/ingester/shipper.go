@@ -252,7 +252,12 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	meta, err := readShipperMetaFile(dir)
 	if err != nil {
-		return map[ulid.ULID]time.Time{}, err
+		if errors.Is(err, os.ErrNotExist) {
+			// If the meta file doesn't exist it means the shipper hasn't run yet.
+			meta = shipperMeta{}
+		} else if err != nil {
+			return nil, err
+		}
 	}
 
 	shippedBlocks := make(map[ulid.ULID]time.Time, len(meta.Shipped))
