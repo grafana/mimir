@@ -27,9 +27,9 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/weaveworks/common/user"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/wal"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -78,15 +78,16 @@ func NewRemoteWriteAppendable(p Pusher, rulesLimits RulesLimits, totalWrites, fa
 
 func (t *RemoteWriteAppendable) Appender(ctx context.Context) storage.Appender {
 	userID, err := ExtractTenantIDs(ctx)
+	var l log.Logger
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "error getting userID from context", "err", err)
+		level.Error(l).Log("msg", "error getting userID from context", "err", err)
 		// this should never happen, ctx always has a userID, but just to be doubly sure
 		return nil // TODO figure out non nil but not nop appender
 	}
 	if q := ctx.Value(promql.QueryOrigin{}); q != nil {
 		if ruleGroup, ok := q.(map[string]interface{})["ruleGroup"]; ok {
 			if groupName, ok := ruleGroup.(map[string]string)["name"]; ok {
-				level.Debug(util_log.Logger).Log("msg",
+				level.Debug(l).Log("msg",
 					"fetching remote write appender",
 					"userGroup",
 					userID+delimiter+groupName)
@@ -99,7 +100,7 @@ func (t *RemoteWriteAppendable) Appender(ctx context.Context) storage.Appender {
 			}
 		}
 	}
-	level.Debug(util_log.Logger).Log("msg",
+	level.Debug(l).Log("msg",
 		"rulegroup does not have remote write config, sending metrics to distributor")
 
 	app := NewPusherAppendable(t.pusher, userID, t.rulesLimits, t.totalWrites, t.failedWrites)
