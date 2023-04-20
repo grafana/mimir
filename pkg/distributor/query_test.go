@@ -201,7 +201,7 @@ func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResp
 		for i := 0; i < 10; i++ {
 			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d_%d", i, rand.Intn(10)))
 		}
-		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels(nil))
+		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 		ts[i].Exemplars = []mimirpb.Exemplar{{
 			Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
 			Value:       float64(i),

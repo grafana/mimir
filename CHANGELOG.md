@@ -6,11 +6,21 @@
 
 * [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
+
+### Mixin
+
+* [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
+
+### Jsonnet
+
+* [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
 
 ## 2.8.0-rc.0
 
@@ -168,6 +178,7 @@
 * [ENHANCEMENT] Add explanation for QPS values for reads in remote ruler mode and writes generally, to the Ruler dashboard page. #4629
 * [ENHANCEMENT] Expand zone-aware replication page to cover single physical availability zone deployments. #4631
 * [FEATURE] Add instructions to use puppet module. #4610
+* [FEATURE] Add documentation on how deploy mixin with terraform. #4161
 
 ### Tools
 

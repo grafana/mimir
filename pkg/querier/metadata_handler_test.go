@@ -55,6 +55,34 @@ func TestMetadataHandler_Success(t *testing.T) {
 	require.JSONEq(t, expectedJSON, string(responseBody))
 }
 
+func TestMetadataHandler_Empty(t *testing.T) {
+	d := &mockDistributor{}
+	d.On("MetricsMetadata", mock.Anything).Return(
+		[]scrape.MetricMetadata{},
+		nil)
+
+	handler := NewMetadataHandler(d)
+
+	request, err := http.NewRequest("GET", "/metadata", nil)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+	responseBody, err := io.ReadAll(recorder.Result().Body)
+	require.NoError(t, err)
+
+	expectedJSON := `
+	{
+		"status": "success",
+		"data": {}
+	}
+	`
+
+	require.JSONEq(t, expectedJSON, string(responseBody))
+}
+
 func TestMetadataHandler_Error(t *testing.T) {
 	d := &mockDistributor{}
 	d.On("MetricsMetadata", mock.Anything).Return([]scrape.MetricMetadata{}, fmt.Errorf("no user id"))

@@ -11,7 +11,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 4.4.0-weekly.233](https://img.shields.io/badge/Version-4.4.0--weekly.233-informational?style=flat-square) ![AppVersion: r233](https://img.shields.io/badge/AppVersion-r233-informational?style=flat-square)
+![Version: 4.4.0-weekly.234](https://img.shields.io/badge/Version-4.4.0--weekly.234-informational?style=flat-square) ![AppVersion: r234](https://img.shields.io/badge/AppVersion-r234-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -23,7 +23,7 @@ Kubernetes: `^1.20.0-0`
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.0.7 |
 | https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.2.8 |
-| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.4.1 |
+| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.4.2 |
 
 ## Dependencies
 

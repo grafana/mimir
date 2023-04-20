@@ -538,7 +538,7 @@ func (s *BucketStore) TimeRange() (mint, maxt int64) {
 	return mint, maxt
 }
 
-type seriesEntry struct {
+type seriesChunks struct {
 	lset labels.Labels
 	chks []storepb.AggrChunk
 }

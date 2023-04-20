@@ -75,6 +75,9 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 }
 
 func main() {
+	// Cleanup all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	var (
 		cfg       mimir.Config
 		mainFlags mainFlags

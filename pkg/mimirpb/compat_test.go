@@ -216,21 +216,21 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	}
 }
 
-func TestFromPointsToSamples(t *testing.T) {
-	input := []promql.Point{{T: 1, V: 2}, {T: 3, V: 4}, {T: 5, H: test.GenerateTestFloatHistogram(0)}}
+func TestFromFPointsToSamples(t *testing.T) {
+	input := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
 	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 
-	assert.Equal(t, expected, FromPointsToSamples(input))
+	assert.Equal(t, expected, FromFPointsToSamples(input))
 }
 
-func TestFromPointsToHistograms(t *testing.T) {
-	input := []promql.Point{{T: 1, V: 2}, {T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
+func TestFromHPointsToHistograms(t *testing.T) {
+	input := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
 	expected := []FloatHistogramPair{
 		{TimestampMs: 3, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
 		{TimestampMs: 5, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
 	}
 
-	assert.Equal(t, expected, FromPointsToHistograms(input))
+	assert.Equal(t, expected, FromHPointsToHistograms(input))
 }
 
 func TestPreallocatingMetric(t *testing.T) {
