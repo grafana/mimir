@@ -262,12 +262,6 @@ func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	return shippedBlocks, nil
 }
 
-// thanosShipperMeta defines the format thanos.shipper.json file that the shipper places in the data directory.
-type thanosShipperMeta struct {
-	Version  int         `json:"version"`
-	Uploaded []ulid.ULID `json:"uploaded"`
-}
-
 // shipperMeta defines the format mimir.shipper.json file that the shipper places in the data directory.
 type shipperMeta struct {
 	Version int                      `json:"version"`
@@ -275,9 +269,6 @@ type shipperMeta struct {
 }
 
 const (
-	// thanosShipperMetaFilename is the known JSON filename for Thanos meta information.
-	thanosShipperMetaFilename = "thanos.shipper.json"
-
 	// shipperMetaFilename is the known JSON filename for meta information.
 	shipperMetaFilename = "mimir.shipper.json"
 
