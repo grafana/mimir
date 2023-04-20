@@ -1234,51 +1234,52 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // - Next we load the postings (references to series) for supplied matchers.
 // - Then we load the postings for each label-value fetched in the first step.
 // - Finally, we check if postings from each label-value intersect postings from matchers.
-//   - A non empty intersection means that a matched series has that value, so we add it to the result.
+//   - A non-empty intersection means that a matched series has that value, so we add it to the result.
 //
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
-// so we could also intersect those with each label's postings being each one non empty and leading to the same result.
+// so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
-	indexr := b.indexReader(postingsStrategy) // this strategy doesn't make a difference, since we won't be using ExpandedPostings with this reader
-	defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+	// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
+	labelValuesReader := b.indexReader(selectAllStrategy{})
+	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
 
-	values, ok := fetchCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, logger)
+	values, ok := fetchCachedLabelValues(ctx, labelValuesReader.block.indexCache, labelValuesReader.block.userID, labelValuesReader.block.meta.ULID, labelName, matchers, logger)
 	if ok {
 		return values, nil
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := indexr.block.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
+	allValuesPostingOffsets, err := labelValuesReader.block.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
 
 	if len(matchers) == 0 {
 		values = extractLabelValues(allValuesPostingOffsets)
-		storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, values, logger)
+		storeCachedLabelValues(ctx, labelValuesReader.block.indexCache, labelValuesReader.block.userID, labelValuesReader.block.meta.ULID, labelName, matchers, values, logger)
 		return values, nil
 	}
 	strategy := &labelValuesPostingsStrategy{
 		delegate:     postingsStrategy,
 		postingLists: allValuesPostingOffsets,
 	}
-	indexr = b.indexReader(strategy)
-	defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+	postingsAndSeriesReader := b.indexReader(strategy)
+	defer runutil.CloseWithLogOnErr(b.logger, postingsAndSeriesReader, "close block index reader")
 
-	postings, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	postings, pendingMatchers, err := postingsAndSeriesReader.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
 	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(postings) {
-		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, indexr, b, postings, stats)
+		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, postingsAndSeriesReader, b, postings, stats)
 	} else {
-		values, err = labelValuesFromPostings(ctx, labelName, indexr, allValuesPostingOffsets, postings, stats)
+		values, err = labelValuesFromPostings(ctx, labelName, postingsAndSeriesReader, allValuesPostingOffsets, postings, stats)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	storeCachedLabelValues(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, labelName, matchers, values, logger)
+	storeCachedLabelValues(ctx, postingsAndSeriesReader.block.indexCache, postingsAndSeriesReader.block.userID, postingsAndSeriesReader.block.meta.ULID, labelName, matchers, values, logger)
 	return values, nil
 }
 
