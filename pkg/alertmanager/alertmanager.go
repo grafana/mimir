@@ -345,6 +345,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		return nil
 	}
 
+	route := dispatch.NewRoute(conf.Route, nil)
 	am.api.Update(conf, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
@@ -389,7 +390,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		route,
 		pipeline,
 		am.marker,
 		timeoutFunc,
