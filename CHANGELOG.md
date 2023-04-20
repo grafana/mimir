@@ -30,8 +30,8 @@
 
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
-  * `cortex_bucket_store_series_get_all_duration_seconds`
-  * `cortex_bucket_store_series_merge_duration_seconds`
+    * `cortex_bucket_store_series_get_all_duration_seconds`
+    * `cortex_bucket_store_series_merge_duration_seconds`
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
 * [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
@@ -203,7 +203,7 @@
   * `-distributor.ephemeral-series-matchers`
   * `-ingester.max-ephemeral-series-per-user`
   * `-ingester.instance-limits.max-ephemeral-series`
-    Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. All label values with `ephemeral-` prefix in `reason` label of `cortex_discarded_samples_total` metric are no longer available. Following metrics have been removed:
+Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. All label values with `ephemeral-` prefix in `reason` label of `cortex_discarded_samples_total` metric are no longer available. Following metrics have been removed:
   * `cortex_ingester_ephemeral_series`
   * `cortex_ingester_ephemeral_series_created_total`
   * `cortex_ingester_ephemeral_series_removed_total`
@@ -214,9 +214,9 @@
   * `cortex_ingester_queried_ephemeral_samples`
   * `cortex_ingester_queried_ephemeral_series`
 * [CHANGE] Store-gateway: use mmap-less index-header reader by default and remove mmap-based index header reader. The following flags have changed: #4280
-  * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
-  * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
-  * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
+   * `-blocks-storage.bucket-store.index-header.map-populate-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-enabled` has been removed
+   * `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles` has been renamed to `-blocks-storage.bucket-store.index-header.max-idle-file-handles`, and the corresponding configuration file option has been renamed from `stream_reader_max_idle_file_handles` to `max_idle_file_handles`
 * [CHANGE] Store-gateway: the streaming store-gateway is now enabled by default. The new default setting for `-blocks-storage.bucket-store.batch-series-size` is `5000`. #4330
 * [CHANGE] Compactor: the configuration parameter `-compactor.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
 * [CHANGE] Store-gateway: the configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been deprecated and will be removed in Mimir 2.9. #4409
@@ -567,7 +567,7 @@
 
 * [FEATURE] Add `copyblocks` tool, to copy Mimir blocks between two GCS buckets. #3264
 * [ENHANCEMENT] copyblocks: copy no-compact global markers and optimize min time filter check. #3268
-* [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
+* [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
 * [BUGFIX] Mimir rules Github action: Fix single line output. #3421
 
 ## 2.4.0
@@ -874,12 +874,12 @@
 
 * [CHANGE] Increased default configuration for `-server.grpc-max-recv-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` from 4MB to 100MB. #1884
 * [CHANGE] Default values have changed for the following settings. This improves query performance for recent data (within 12h) by only reading from ingesters: #1909 #1921
-  - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
-  - `-querier.query-store-after` now defaults to `12h` (previously `0`)
+    - `-blocks-storage.bucket-store.ignore-blocks-within` now defaults to `10h` (previously `0`)
+    - `-querier.query-store-after` now defaults to `12h` (previously `0`)
 * [CHANGE] Alertmanager: removed support for migrating local files from Cortex 1.8 or earlier. Related to original Cortex PR https://github.com/cortexproject/cortex/pull/3910. #2253
 * [CHANGE] The following settings are now classified as advanced because the defaults should work for most users and tuning them requires in-depth knowledge of how the read path works: #1929
-  - `-querier.query-ingesters-within`
-  - `-querier.query-store-after`
+    - `-querier.query-ingesters-within`
+    - `-querier.query-store-after`
 * [CHANGE] Config flag category overrides can be set dynamically at runtime. #1934
 * [CHANGE] Ingester: deprecated `-ingester.ring.join-after`. Mimir now behaves as this setting is always set to 0s. This configuration option will be removed in Mimir 2.4.0. #1965
 * [CHANGE] Blocks uploaded by ingester no longer contain `__org_id__` label. Compactor now ignores this label and will compact blocks with and without this label together. `mimirconvert` tool will remove the label from blocks as "unknown" label. #1972
@@ -1012,9 +1012,9 @@
 
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
-  - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
-  - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
-  - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)
+    - `-alertmanager.alertmanager-client.grpc-max-send-msg-size` now defaults to 100 MiB (previously was not configurable and set to 4 MiB)
+    - `-alertmanager.max-recv-msg-size` now defaults to 100 MiB (previously was 16 MiB)
 * [CHANGE] Ingester: Add `user` label to metrics `cortex_ingester_ingested_samples_total` and `cortex_ingester_ingested_samples_failures_total`. #1533
 * [CHANGE] Ingester: Changed `-blocks-storage.tsdb.isolation-enabled` default from `true` to `false`. The config option has also been deprecated and will be removed in 2 minor version. #1655
 * [CHANGE] Query-frontend: results cache keys are now versioned, this will cause cache to be re-filled when rolling out this version. #1631
@@ -1299,7 +1299,7 @@ _Changes since Cortex 1.10.0._
   * Query endpoints
 
     | Legacy                                                  | Alternative                                                |
-        | ------------------------------------------------------- | ---------------------------------------------------------- |
+    | ------------------------------------------------------- | ---------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/query`                    | `<prometheus-http-prefix>/api/v1/query`                    |
     | `/<legacy-http-prefix>/api/v1/query_range`              | `<prometheus-http-prefix>/api/v1/query_range`              |
     | `/<legacy-http-prefix>/api/v1/query_exemplars`          | `<prometheus-http-prefix>/api/v1/query_exemplars`          |
@@ -1315,7 +1315,7 @@ _Changes since Cortex 1.10.0._
   * Distributor endpoints
 
     | Legacy endpoint               | Alternative                   |
-        | ----------------------------- | ----------------------------- |
+    | ----------------------------- | ----------------------------- |
     | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
     | `/all_user_stats`             | `/distributor/all_user_stats` |
     | `/ha-tracker`                 | `/distributor/ha_tracker`     |
@@ -1323,7 +1323,7 @@ _Changes since Cortex 1.10.0._
   * Ingester endpoints
 
     | Legacy          | Alternative           |
-        | --------------- | --------------------- |
+    | --------------- | --------------------- |
     | `/ring`         | `/ingester/ring`      |
     | `/shutdown`     | `/ingester/shutdown`  |
     | `/flush`        | `/ingester/flush`     |
@@ -1332,7 +1332,7 @@ _Changes since Cortex 1.10.0._
   * Ruler endpoints
 
     | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                    |
-        | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
     | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                     |
     | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                     |
     | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |  `<prometheus-http-prefix>/config/v1/rules`                         |
@@ -1350,7 +1350,7 @@ _Changes since Cortex 1.10.0._
   * Alertmanager endpoints
 
     | Legacy                      | Alternative                        |
-        | --------------------------- | ---------------------------------- |
+    | --------------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>`     | `/alertmanager`                    |
     | `/status`                   | `/multitenant_alertmanager/status` |
 
@@ -1547,7 +1547,7 @@ _Changes since Cortex 1.10.0._
   * `-ingester.max-metadata-per-user` -> set `-ingester.max-global-metadata-per-user` to `N` times the existing value of `-ingester.max-metadata-per-user` instead
   * `-ingester.max-metadata-per-metric` -> set `-ingester.max-global-metadata-per-metric` to `N` times the existing value of `-ingester.max-metadata-per-metric` instead
   * In the above notes, `N` refers to the number of ingester replicas
-    Additionally, default values for the following flags have changed:
+  Additionally, default values for the following flags have changed:
   * `-ingester.max-global-series-per-user` from `0` to `150000`
   * `-ingester.max-global-series-per-metric` from `0` to `20000`
   * `-distributor.ingestion-rate-limit` from `25000` to `10000`
