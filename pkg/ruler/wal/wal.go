@@ -166,7 +166,7 @@ func NewStorage(logger log.Logger, registerer prometheus.Registerer, path string
 func (w *Storage) replayWAL() error {
 	level.Info(w.logger).Log("msg", "replaying WAL, this may take a while", "dir", w.wal.Dir())
 	dir, startFrom, err := wlog.LastCheckpoint(w.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 
