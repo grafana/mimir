@@ -4,9 +4,9 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Store-gateway: change expanded postings index cache key format. #4770
+* [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
-* [BUGFIX] Store-gateway: add collision detection on expanded postings cache keys. #4770
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 
 ### Documentation
 

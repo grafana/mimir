@@ -9,6 +9,7 @@
 package storegateway
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -16,6 +17,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -94,6 +97,24 @@ func TestDiffVarintCodec(t *testing.T) {
 			})
 		}
 	}
+}
+
+// isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
+func isDiffVarintSnappyEncodedPostings(input []byte) bool {
+	return bytes.HasPrefix(input, []byte(codecHeaderSnappy))
+}
+
+func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
+	if !isDiffVarintSnappyEncodedPostings(input) {
+		return nil, errors.New(string(codecHeaderSnappy) + " header not found")
+	}
+
+	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappy):])
+	if err != nil {
+		return nil, errors.Wrap(err, "snappy decode")
+	}
+
+	return newDiffVarintPostings(raw), nil
 }
 
 func TestLabelMatchersTypeValues(t *testing.T) {

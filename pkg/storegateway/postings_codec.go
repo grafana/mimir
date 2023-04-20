@@ -37,11 +37,6 @@ const (
 	codecHeaderSnappyWithMatchers codec = "dm"  // As in "dvs+matchers"
 )
 
-// isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
-func isDiffVarintSnappyEncodedPostings(input []byte) bool {
-	return bytes.HasPrefix(input, []byte(codecHeaderSnappy))
-}
-
 // diffVarintSnappyEncode encodes postings into diff+varint representation,
 // and applies snappy compression on the result.
 // Returned byte slice starts with codecHeaderSnappy header.
@@ -91,19 +86,6 @@ func diffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
 	}
 
 	return buf.B, nil
-}
-
-func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
-	if !isDiffVarintSnappyEncodedPostings(input) {
-		return nil, errors.New(string(codecHeaderSnappy) + " header not found")
-	}
-
-	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappy):])
-	if err != nil {
-		return nil, errors.Wrap(err, "snappy decode")
-	}
-
-	return newDiffVarintPostings(raw), nil
 }
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy+matchers codec.

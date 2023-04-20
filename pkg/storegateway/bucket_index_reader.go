@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -417,12 +418,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, _, pendingMatchers, err := r.decodePostings(b, stats)
+			l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
 					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
 			}
-			if err == nil {
+			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
 				output[ix] = l
 				continue
 			}
@@ -431,6 +432,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				"msg", "can't decode cached postings",
 				"err", err,
 				"key", fmt.Sprintf("%+v", key),
+				"labels_key", cachedLabelsKey,
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
 				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
@@ -498,8 +500,6 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 					return err
 				}
 
-				dataToCache := pBytes
-
 				compressionTime := time.Duration(0)
 				compressions, compressionErrors, compressedSize := 0, 0, 0
 
@@ -510,21 +510,26 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressions++
 				s := time.Now()
 				bep := newBigEndianPostings(pBytes[4:])
-				data, err := diffVarintSnappyEncode(bep, bep.length())
+				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), encodeLabelForPostingsCache(keys[p.keyID]), nil)
 				compressionTime = time.Since(s)
 				if err == nil {
-					dataToCache = data
-					compressedSize = len(data)
+					compressedSize = len(dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 				} else {
 					compressionErrors = 1
+					level.Warn(r.block.logger).Log(
+						"msg", "couldn't encode postings for cache",
+						"err", err,
+						"user", r.block.userID,
+						"block", r.block.meta.ULID,
+						"label", keys[p.keyID],
+					)
 				}
 
 				// Return postings. Truncate first 4 bytes which are length of posting.
 				// Access to output is not protected by a mutex because each goroutine
 				// is expected to handle a different set of keys.
 				output[p.keyID] = newBigEndianPostings(pBytes[4:])
-
-				r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 
 				// If we just fetched it we still have to update the stats for touched postings.
 				stats.update(func(stats *queryStats) {
@@ -544,6 +549,15 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
+func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
+	var sb strings.Builder
+	sb.Grow(len(l.Name) + 1 + len(l.Value))
+	sb.WriteString(l.Name)
+	sb.WriteByte('=')
+	sb.WriteString(l.Value)
+	return indexcache.LabelMatchersKey(sb.String())
+}
+
 func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
@@ -553,33 +567,21 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 		pendingMatchers []*labels.Matcher
 		err             error
 	)
-	switch {
-	case isDiffVarintSnappyEncodedPostings(b):
-		s := time.Now()
-		l, err = diffVarintSnappyDecode(b)
-
-		stats.update(func(stats *queryStats) {
-			stats.cachedPostingsDecompressions++
-			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-			if err != nil {
-				stats.cachedPostingsDecompressionErrors++
-			}
-		})
-
-	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
-		s := time.Now()
-		l, key, pendingMatchers, err = diffVarintSnappyMatchersDecode(b)
-
-		stats.update(func(stats *queryStats) {
-			stats.cachedPostingsDecompressions++
-			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-			if err != nil {
-				stats.cachedPostingsDecompressionErrors++
-			}
-		})
-	default:
-		_, l, err = r.dec.Postings(b)
+	if !isDiffVarintSnappyWithMatchersEncodedPostings(b) {
+		return nil, "", nil, errors.New("didn't find expected prefix for postings key")
 	}
+
+	s := time.Now()
+	l, key, pendingMatchers, err = diffVarintSnappyMatchersDecode(b)
+
+	stats.update(func(stats *queryStats) {
+		stats.cachedPostingsDecompressions++
+		stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+		if err != nil {
+			stats.cachedPostingsDecompressionErrors++
+		}
+	})
+
 	return l, key, pendingMatchers, err
 }
 

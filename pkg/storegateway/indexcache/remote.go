@@ -140,7 +140,7 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
 	lblHash := blake2b.Sum256([]byte(l.Name + ":" + l.Value))
-	return "P:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
+	return "P2:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
