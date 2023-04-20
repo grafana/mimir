@@ -74,7 +74,7 @@ The following steps apply to a release candidate or a final release.
 
    The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
 
-1. Update the Mimir and GEM documentation version parameters in [_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
+1. Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
    The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
 
