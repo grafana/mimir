@@ -297,8 +297,8 @@ func TestLabelValuesPostingsStrategy(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			strategy := labelValuesPostingsStrategy{
-				delegate:     worstCaseFetchedDataStrategy{1},
-				postingLists: testCase.postingLists,
+				matchersStrategy: worstCaseFetchedDataStrategy{1},
+				allLabelValues:   testCase.postingLists,
 			}
 			actualSelected, actualOmitted := strategy.selectPostings(testCase.input)
 			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)

@@ -1260,8 +1260,8 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 		return values, nil
 	}
 	strategy := &labelValuesPostingsStrategy{
-		delegate:     postingsStrategy,
-		postingLists: allValuesPostingOffsets,
+		matchersStrategy: postingsStrategy,
+		allLabelValues:   allValuesPostingOffsets,
 	}
 	postingsAndSeriesReader := b.indexReader(strategy)
 	defer runutil.CloseWithLogOnErr(b.logger, postingsAndSeriesReader, "close block index reader")

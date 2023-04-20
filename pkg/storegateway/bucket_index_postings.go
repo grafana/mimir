@@ -469,36 +469,36 @@ func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (s
 // labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.
 // The differences are:
 //   - it doesn't a factor for the posting list size
-//   - as the bounded maximum for fetched data it also takes into account the provided postingLists; this is useful in
-//     LabelValues calls where we have to decide between fetching (some expanded postings + series),
+//   - as the bounded maximum for fetched data it also takes into account the provided allLabelValues;
+//     this is useful in LabelValues calls where we have to decide between fetching (some expanded postings + series),
 //     (expanded postings + series), or (expanded postings + postings for each label value).
 type labelValuesPostingsStrategy struct {
-	delegate     postingsSelectionStrategy
-	postingLists []streamindex.PostingListOffset
+	matchersStrategy postingsSelectionStrategy
+	allLabelValues   []streamindex.PostingListOffset
 }
 
 func (w labelValuesPostingsStrategy) name() string {
-	return "lv-" + w.delegate.name()
+	return "lv-" + w.matchersStrategy.name()
 }
 
-func (w labelValuesPostingsStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	selected, omitted = w.delegate.selectPostings(groups)
+func (w labelValuesPostingsStrategy) selectPostings(matchersPostingGroups []postingGroup) (partial, omitted []postingGroup) {
+	partial, omitted = w.matchersStrategy.selectPostings(matchersPostingGroups)
 
-	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(selected) * tsdb.EstimatedSeriesP99Size
+	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(partial) * tsdb.EstimatedSeriesP99Size
+	completePostingsSize := postingGroupsTotalSize(matchersPostingGroups)
 
-	completePostings := postingGroupsTotalSize(groups)
-	completePostingsPlusPostings := completePostings + postingsListsTotalSize(w.postingLists)
-	completePostingsPlusSeries := completePostings + maxPossibleSeriesSize
-	partialPostingsPlusSeries := postingGroupsTotalSize(selected) + maxPossibleSeriesSize
+	completePostingsPlusPostingsSize := completePostingsSize + postingsListsTotalSize(w.allLabelValues)
+	completePostingsPlusSeriesSize := completePostingsSize + maxPossibleSeriesSize
+	partialPostingsPlusSeriesSize := postingGroupsTotalSize(partial) + maxPossibleSeriesSize
 
-	if util_math.Min(completePostingsPlusSeries, completePostingsPlusPostings) < partialPostingsPlusSeries {
-		return groups, nil
+	if util_math.Min(completePostingsPlusSeriesSize, completePostingsPlusPostingsSize) < partialPostingsPlusSeriesSize {
+		return matchersPostingGroups, nil
 	}
-	return selected, omitted
+	return partial, omitted
 }
 
 func (w labelValuesPostingsStrategy) preferSeriesToPostings(postings []storage.SeriesRef) bool {
-	return int64(len(postings)*tsdb.EstimatedSeriesP99Size) < postingsListsTotalSize(w.postingLists)
+	return int64(len(postings)*tsdb.EstimatedSeriesP99Size) < postingsListsTotalSize(w.allLabelValues)
 }
 
 func postingGroupsTotalSize(groups []postingGroup) (n int64) {
