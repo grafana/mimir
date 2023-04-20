@@ -1260,8 +1260,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 
 			// Setup
 			block := newTestBlock()
-			indexr := block.indexReader()
-			postings, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
+			indexr := block.indexReader(selectAllStrategy{})
+			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
 			postingsIterator := newPostingsSetsIterator(
 				postings,
@@ -1587,7 +1587,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			t.Parallel()
 
 			var block = newTestBlock()
-			indexReader := block.indexReader()
+			// All test cases have a single matcher, so the strategy wouldn't really make a difference.
+			// Pending matchers are tested in other tests.
+			indexReader := block.indexReader(selectAllStrategy{})
 			defer indexReader.Close()
 
 			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
@@ -1630,6 +1632,112 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
+func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(10_000))
+
+	testCases := map[string]struct {
+		matchers        []*labels.Matcher
+		pendingMatchers []*labels.Matcher
+		batchSize       int
+	}{
+		"applies pending matchers": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
+			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "n", "1_1.*"),
+			},
+			batchSize: 100,
+		},
+		"applies pending matchers when they match all series": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
+			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+			},
+			batchSize: 100,
+		},
+		"applies pending matchers when they match all series (with some completely empty batches)": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
+			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "n", ""),
+			},
+			batchSize: 1,
+		},
+		"applies pending matchers when they match no series": {
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+				labels.MustNewMatcher(labels.MatchEqual, "s", "foo"),
+				labels.MustNewMatcher(labels.MatchRegexp, "i", "100.*"),
+			},
+			pendingMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+			},
+			batchSize: 100,
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			matchersAsStrings := func(ms []*labels.Matcher) (matcherStr []string) {
+				for _, m := range ms {
+					matcherStr = append(matcherStr, m.String())
+				}
+				return
+			}
+			require.Subset(t, matchersAsStrings(testCase.matchers), matchersAsStrings(testCase.pendingMatchers), "pending matchers should be a subset of all matchers")
+
+			var block = newTestBlock()
+			block.pendingReaders.Add(2) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
+			querySeries := func(indexReader *bucketIndexReader) []seriesChunkRefsSet {
+				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+				iterator, err := openBlockSeriesChunkRefsSetsIterator(
+					ctx,
+					testCase.batchSize,
+					"",
+					indexReader,
+					newInMemoryIndexCache(t),
+					block.meta,
+					testCase.matchers,
+					nil,
+					cachedSeriesHasher{hashCache},
+					true, // skip chunks since we are testing labels filtering
+					block.meta.MinTime,
+					block.meta.MaxTime,
+					2,
+					newSafeQueryStats(),
+					nil,
+				)
+				require.NoError(t, err)
+				allSets := readAllSeriesChunkRefsSet(iterator)
+				assert.NoError(t, iterator.Err())
+				return allSets
+			}
+
+			indexReaderOmittingMatchers := newBucketIndexReader(block, omitMatchersStrategy{testCase.pendingMatchers})
+			defer indexReaderOmittingMatchers.Close()
+
+			indexReader := newBucketIndexReader(block, selectAllStrategy{})
+			defer indexReader.Close()
+
+			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
+		})
+	}
+
+}
+
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	const series = 5e6
 
@@ -1649,7 +1757,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 				b.Cleanup(cancel)
 
 				var block = newTestBlock()
-				indexReader := block.indexReader()
+				indexReader := block.indexReader(selectAllStrategy{})
 				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
 
 				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
@@ -2201,7 +2309,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					}
 
 					statsColdCache := newSafeQueryStats()
-					indexReader := b.indexReader()
+					// All test cases have a single matcher, so the strategy wouldn't really make a difference.
+					// Pending matchers are tested in other tests.
+					indexReader := b.indexReader(selectAllStrategy{})
 					ss, err := openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,

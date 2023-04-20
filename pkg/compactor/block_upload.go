@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -38,6 +39,7 @@ const (
 	validationFilename          = "validation.json"     // Name of the file that stores a heartbeat time and possibly an error message
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
+	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -65,7 +67,29 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := c.createBlockUpload(ctx, r, logger, userBkt, tenantID, blockID); err != nil {
+	content, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maximumMetaSizeBytes))
+	if err != nil {
+		if errors.As(err, new(*http.MaxBytesError)) {
+			err = httpError{
+				message:    fmt.Sprintf("The block metadata was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
+				statusCode: http.StatusRequestEntityTooLarge,
+			}
+		}
+		writeBlockUploadError(err, op, "", logger, w)
+		return
+	}
+
+	var meta metadata.Meta
+	if err := json.Unmarshal(content, &meta); err != nil {
+		err = httpError{
+			message:    "malformed request body",
+			statusCode: http.StatusBadRequest,
+		}
+		writeBlockUploadError(err, op, "", logger, w)
+		return
+	}
+
+	if err := c.createBlockUpload(ctx, &meta, logger, userBkt, tenantID, blockID); err != nil {
 		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
@@ -176,20 +200,11 @@ func writeBlockUploadError(err error, op, extra string, logger log.Logger, w htt
 	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
-func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Request,
+func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *metadata.Meta,
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "starting block upload")
 
-	var meta metadata.Meta
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(&meta); err != nil {
-		return httpError{
-			message:    "malformed request body",
-			statusCode: http.StatusBadRequest,
-		}
-	}
-
-	if msg := c.sanitizeMeta(logger, blockID, &meta); msg != "" {
+	if msg := c.sanitizeMeta(logger, blockID, meta); msg != "" {
 		return httpError{
 			message:    msg,
 			statusCode: http.StatusBadRequest,
@@ -209,7 +224,7 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 		}
 	}
 
-	return c.uploadMeta(ctx, logger, &meta, blockID, uploadingMetaFilename, userBkt)
+	return c.uploadMeta(ctx, logger, meta, blockID, uploadingMetaFilename, userBkt)
 }
 
 // UploadBlockFile handles requests for uploading block files.
@@ -359,6 +374,10 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, blockID ulid.ULID, meta *metadata.Meta) string {
+	if meta == nil {
+		return "missing block metadata"
+	}
+
 	// check that the blocks doesn't contain down-sampled data
 	if meta.Thanos.Downsample.Resolution > 0 {
 		return "block contains downsampled data"

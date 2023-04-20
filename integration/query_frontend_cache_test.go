@@ -41,8 +41,6 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 				"-query-frontend.cache-results":             "true",
 				"-query-frontend.split-queries-by-interval": "2m",
 				"-query-frontend.max-cache-freshness":       "0", // Cache everything.
-				// Enable protobuf format so that we can use native histograms.
-				"-query-frontend.query-result-response-format": "protobuf",
 			}, cacheConfig(backend, cacheService))
 
 			// Start the query-frontend.

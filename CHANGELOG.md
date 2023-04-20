@@ -4,6 +4,22 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+
+### Documentation
+
+* [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
+
+### Mixin
+
+* [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
+
+## 2.8.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
     * `cortex_bucket_store_series_get_all_duration_seconds`
@@ -12,9 +28,11 @@
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
 * [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
 * [CHANGE] Ingester: the `cortex_ingester_tsdb_wal_replay_duration_seconds` metrics has been removed. #4465
-* [CHANGE] Query-frontend: use protobuf internal query result payload format by default. This feature is no longer considered experimental. #4557
+* [CHANGE] Query-frontend and ruler: use protobuf internal query result payload format by default. This feature is no longer considered experimental. #4557 #4709
 * [CHANGE] Ruler: reject creating federated rule groups while tenant federation is disabled. Previously the rule groups would be silently dropped during bucket sync. #4555
 * [CHANGE] Compactor: the `/api/v1/upload/block/{block}/finish` endpoint now returns a `429` status code when the compactor has reached the limit specified by `-compactor.max-block-upload-validation-concurrency`. #4598
+* [CHANGE] Compactor: when starting a block upload the maximum byte size of the block metadata provided in the request body is now limited to 1 MiB. If this limit is exceeded a `413` status code is returned. #4683
+* [CHANGE] Store-gateway: cache key format for expanded postings has changed. This will invalidate the expanded postings in the index cache when deployed. #4667
 * [FEATURE] Cache: Introduce experimental support for using Redis for results, chunks, index, and metadata caches. #4371
 * [FEATURE] Vault: Introduce experimental integration with Vault to fetch secrets used to configure TLS for clients. Server TLS secrets will still be read from a file. `tls-ca-path`, `tls-cert-path` and `tls-key-path` will denote the path in Vault for the following CLI flags when `-vault.enabled` is true: #4446.
   * `-distributor.ha-tracker.etcd.*`
@@ -42,8 +60,9 @@
   * `-query-scheduler.ring.etcd.*`
   * `-overrides-exporter.ring.etcd.*`
 * [FEATURE] Distributor, ingester, querier, query-frontend, store-gateway: add experimental support for native histograms. Requires that the experimental protobuf query result response format is enabled by `-query-frontend.query-result-response-format=protobuf` on the query frontend. #4286 #4352 #4354 #4376 #4377 #4387 #4396 #4425 #4442 #4494 #4512 #4513 #4526
-* [FEATURE] Added `-<prefix>.s3.storage-class` flag to configure the S3 storage class for objects written to S3 buckets. #3438
+* [FEATURE] Added `-<prefix>.s3.storage-class` flag to configure the S3 storage class for objects written to S3 buckets. #4300
 * [FEATURE] Add `freebsd` to the target OS when generating binaries for a Mimir release. #4654
+* [FEATURE] Ingester: Add `prepare-shutdown` endpoint which can be used as part of Kubernetes scale down automations. #4718
 * [ENHANCEMENT] Add timezone information to Alpine Docker images. #4583
 * [ENHANCEMENT] Ruler: Sync rules when ruler JOINING the ring instead of ACTIVE, In order to reducing missed rule iterations during ruler restarts. #4451
 * [ENHANCEMENT] Allow to define service name used for tracing via `JAEGER_SERVICE_NAME` environment variable. #4394
@@ -77,7 +96,14 @@
 * [ENHANCEMENT] Distributor: add ability to set per-distributor limits via `distributor_limits` block in runtime configuration in addition to the existing configuration. #4619
 * [ENHANCEMENT] Querier: reduce peak memory consumption for queries that touch a large number of chunks. #4625
 * [ENHANCEMENT] Query-frontend: added experimental `-query-frontend.query-sharding-max-regexp-size-bytes` limit to query-frontend. When set to a value greater than 0, query-frontend disabled query sharding for any query with a regexp matcher longer than the configured limit. #4632
+* [ENHANCEMENT] Store-gateway: include statistics from LabelValues and LabelNames calls in `cortex_bucket_store_series*` metrics. #4673
 * [ENHANCEMENT] Query-frontend: improve readability of distributed tracing spans. #4656
+* [ENHANCEMENT] Update Docker base images from `alpine:3.17.2` to `alpine:3.17.3`. #4685
+* [ENHANCEMENT] Querier: improve performance when shuffle sharding is enabled and the shard size is large. #4711
+* [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
+* [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
+* [ENHANCEMENT] Querier: Cache the converted float histogram from chunk iterator, hence there is no need to lookup chunk every time to get the converted float histogram. #4684
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -85,12 +111,17 @@
 * [BUGFIX] Packaging: flag `/etc/default/mimir` and `/etc/sysconfig/mimir` as config to prevent overwrite. #4587
 * [BUGFIX] Query-frontend: don't retry queries which error inside PromQL. #4643
 * [BUGFIX] Store-gateway & query-frontend: report more consistent statistics for fetched index bytes. #4671
+* [BUGFIX] Native histograms: fix how IsFloatHistogram determines if mimirpb.Histogram is a float histogram. #4706
+* [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
+* [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
+* [BUGFIX] Querier: fixed chunk iterator that can return sample with wrong timestamp. #4450
 
 ### Mixin
 
 * [ENHANCEMENT] Queries: Display data touched per sec in bytes instead of number of items. #4492
 * [ENHANCEMENT] `_config.job_names.<job>` values can now be arrays of regular expressions in addition to a single string. Strings are still supported and behave as before. #4543
 * [ENHANCEMENT] Queries dashboard: remove mention to store-gateway "streaming enabled" in panels because store-gateway only support streaming series since Mimir 2.7. #4569
+* [ENHANCEMENT] Ruler: Add panel description for Read QPS panel in Ruler dashboard to explain values when in remote ruler mode. #4675
 * [BUGFIX] Ruler dashboard: show data for reads from ingesters. #4543
 * [BUGFIX] Pod selector regex for deployments: change `(.*-mimir-)` to `(.*mimir-)`. #4603
 
@@ -102,6 +133,7 @@
   * Renamed `memcached_*_enabled` config options to `cache_*_enabled`
   * Renamed `memcached_*_max_item_size_mb` config options to `cache_*_max_item_size_mb`
   * Added `cache_*_backend` config options
+* [CHANGE] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. This eliminated resharding during rollouts, at the cost of extra effort during scaling down store-gateways. For more information see [Scaling down store-gateways](https://grafana.com/docs/mimir/v2.7.x/operators-guide/run-production-environment/scaling-out/#scaling-down-store-gateways). #4713
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
@@ -115,6 +147,19 @@
 
 * [ENHANCEMENT] Backfill: mimirtool will now sleep and retry if it receives a 429 response while trying to finish an upload due to validation concurrency limits. #4598
 * [ENHANCEMENT] `gauge` panel type is supported now in `mimirtool analyze dashboard`. #4679
+* [ENHANCEMENT] Set a `User-Agent` header on requests to Mimir or Prometheus servers. #4700
+
+### Mimir Continuous Test
+
+* [FEATURE] Allow continuous testing of native histograms as well by enabling the flag `-tests.write-read-series-test.histogram-samples-enabled`. The metrics exposed by the tool will now have a new label called `type` with possible values of `float`, `histogram_float_counter`, `histogram_float_gauge`, `histogram_int_counter`, `histogram_int_gauge`, the list of metrics impacted: #4457
+  * `mimir_continuous_test_writes_total`
+  * `mimir_continuous_test_writes_failed_total`
+  * `mimir_continuous_test_queries_total`
+  * `mimir_continuous_test_queries_failed_total`
+  * `mimir_continuous_test_query_result_checks_total`
+  * `mimir_continuous_test_query_result_checks_failed_total`
+* [ENHANCEMENT] Added a new metric `mimir_continuous_test_build_info` that reports version information, similar to the existing `cortex_build_info` metric exposed by other Mimir components. #4712
+* [ENHANCEMENT] Add coherency for the selected ranges and instants of test queries. #4704
 
 ### Query-tee
 

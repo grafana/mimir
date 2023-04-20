@@ -217,8 +217,39 @@ func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram
 	if hp == nil {
 		return nil
 	}
+	if hp.IsFloatHistogram() {
+		panic("FromHistogramProtoToFloatHistogram called on float histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        float64(hp.GetZeroCountInt()),
+		Count:            float64(hp.GetCountInt()),
+		Sum:              hp.Sum,
+		PositiveSpans:    fromSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
+		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
+	}
+}
+
+func deltasToCounts(deltas []int64) []float64 {
+	counts := make([]float64, len(deltas))
+	var cur float64
+	for i, d := range deltas {
+		cur += float64(d)
+		counts[i] = cur
+	}
+	return counts
+}
+
+func FromFloatHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram {
+	if hp == nil {
+		return nil
+	}
 	if !hp.IsFloatHistogram() {
-		panic("FromHistogramProtoToFloatHistogram called on integer histogram")
+		panic("FromFloatHistogramProtoToFloatHistogram called on integer histogram")
 	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
@@ -239,7 +270,7 @@ func FromHistogramProtoToPromHistogram(hp *Histogram) *model.SampleHistogram {
 		return nil
 	}
 	if hp.IsFloatHistogram() {
-		return FromFloatHistogramToPromHistogram(FromHistogramProtoToFloatHistogram(hp))
+		return FromFloatHistogramToPromHistogram(FromFloatHistogramProtoToFloatHistogram(hp))
 	}
 	return FromHistogramToPromHistogram(FromHistogramProtoToHistogram(hp))
 }
@@ -310,23 +341,20 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	return spans
 }
 
-// FromPointsToSamples converts []promql.Point to []Sample.
-func FromPointsToSamples(points []promql.Point) []Sample {
+// FromFPointsToSamples converts []promql.FPoint to []Sample.
+func FromFPointsToSamples(points []promql.FPoint) []Sample {
 	samples := make([]Sample, 0, len(points))
 	for _, point := range points {
-		if point.H != nil {
-			continue
-		}
 		samples = append(samples, Sample{
 			TimestampMs: point.T,
-			Value:       point.V,
+			Value:       point.F,
 		})
 	}
 	return samples
 }
 
-// FromPointsToHistograms converts []promql.Point to []FloatHistogramPair.
-func FromPointsToHistograms(points []promql.Point) []FloatHistogramPair {
+// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair.
+func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
 	samples := make([]FloatHistogramPair, 0, len(points))
 	for _, point := range points {
 		h := point.H
@@ -451,7 +479,7 @@ func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
-	jsonutil.MarshalValue(sample.Value, stream)
+	jsonutil.MarshalFloat(sample.Value, stream)
 	stream.WriteArrayEnd()
 }
 

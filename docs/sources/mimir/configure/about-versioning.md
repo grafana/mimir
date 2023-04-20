@@ -102,6 +102,7 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
   - `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
+  - `-blocks-storage.bucket-store.series-selection-strategy`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
@@ -117,8 +118,6 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-- Protobuf internal query result payload format for rule evaluation (`-ruler.query-frontend.query-result-response-format=protobuf`)
-  - Note that using the protobuf format for the query path (`-query-frontend.query-result-response-format=protobuf`) is not considered experimental
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 

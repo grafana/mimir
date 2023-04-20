@@ -160,3 +160,11 @@ patches:
     patch: |-
       - op: remove
         path: /config/alertmanager/fallback_config_file
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      # Jsonnet doesn't set this on non-store-gateway components
+      - op: remove
+        path: /config/store_gateway/sharding_ring/unregister_on_shutdown

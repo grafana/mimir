@@ -70,7 +70,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 	for i, ts := range []time.Time{timeStamp1, timeStamp2, timeStamp3} {
 		seriesID := i + 1
-		series, _, _ := generateSeries(fmt.Sprintf("series_%d", seriesID), ts)
+		series, _, _ := generateAlternatingSeries(i)(fmt.Sprintf("series_%d", seriesID), ts)
 		pushTimeSeries(t, client, series)
 
 		// Wait until the TSDB head is shipped to storage and removed from the ingester.

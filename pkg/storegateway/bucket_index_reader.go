@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,23 +29,27 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
 // The second return value indicates whether the returned data comes from the cache.
-type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, bool, error)
+type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error)
 
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
-	block *bucketBlock
-	dec   *index.Decoder
+	block            *bucketBlock
+	postingsStrategy postingsSelectionStrategy
+	dec              *index.Decoder
 }
 
-func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
+func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	r := &bucketIndexReader{
-		block: block,
+		block:            block,
+		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
@@ -60,10 +66,11 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
-func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
+func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
-		loaded bool
-		cached bool
+		loaded  bool
+		cached  bool
+		promise expandedPostingsPromise
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
@@ -73,10 +80,9 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		}
 		span.Finish()
 	}()
-	var promise expandedPostingsPromise
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
-	returnRefs, cached, returnErr = promise(ctx)
-	return returnRefs, returnErr
+	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)
+	return returnRefs, pendingMatchers, returnErr
 }
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
@@ -88,28 +94,29 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 // TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (promise expandedPostingsPromise, loaded bool) {
 	var (
-		refs   []storage.SeriesRef
-		err    error
-		done   = make(chan struct{})
-		cached bool
+		refs            []storage.SeriesRef
+		pendingMatchers []*labels.Matcher
+		err             error
+		done            = make(chan struct{})
+		cached          bool
 	)
 
-	promise = func(ctx context.Context) ([]storage.SeriesRef, bool, error) {
+	promise = func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error) {
 		select {
 		case <-ctx.Done():
-			return nil, false, ctx.Err()
+			return nil, nil, false, ctx.Err()
 		case <-done:
 		}
 
 		if err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 
 		// We must make a copy of refs to return, because caller can modify the postings slice in place.
 		refsCopy := make([]storage.SeriesRef, len(refs))
 		copy(refsCopy, refs)
 
-		return refsCopy, cached, nil
+		return refsCopy, pendingMatchers, cached, nil
 	}
 
 	key := indexcache.CanonicalLabelMatchersKey(ms)
@@ -122,62 +129,67 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	defer close(done)
 	defer r.block.expandedPostingsPromises.Delete(key)
 
-	refs, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
+	refs, pendingMatchers, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
 	if cached {
 		return promise, false
 	}
-	refs, err = r.expandedPostings(ctx, ms, stats)
+	refs, pendingMatchers, err = r.expandedPostings(ctx, ms, stats)
 	if err != nil {
 		return promise, false
 	}
-	r.cacheExpandedPostings(r.block.userID, key, refs)
+	r.cacheExpandedPostings(r.block.userID, key, refs, pendingMatchers)
 	return promise, false
 }
 
-func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef) {
-	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, pendingMatchers []*labels.Matcher) {
+	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), pendingMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
 	}
-	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, data)
+	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, r.postingsStrategy.name(), data)
 }
 
-func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, bool) {
-	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key)
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, bool) {
+	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key, r.postingsStrategy.name())
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
 
-	p, err := r.decodePostings(data, stats)
+	p, pendingMatchers, err := r.decodePostings(data, stats)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
-		return nil, false
+		return nil, nil, false
 	}
 
 	refs, err := index.ExpandPostings(p)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't expand decoded expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
-		return nil, false
+		return nil, nil, false
 	}
-	return refs, true
+	return refs, pendingMatchers, true
 }
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
-func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, returnErr error) {
-	postingGroups, keys, err := toPostingGroups(ms, r.block.indexHeaderReader)
+func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
+	postingGroups, err := toPostingGroups(ms, r.block.indexHeaderReader)
 	if err != nil {
-		return nil, errors.Wrap(err, "toPostingGroups")
+		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
-	if len(keys) == 0 {
-		return nil, nil
+	if len(postingGroups) == 0 {
+		return nil, nil, nil
 	}
 
-	fetchedPostings, err := r.fetchPostings(ctx, keys, stats)
+	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
+	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
+
+	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
 	if err != nil {
-		return nil, errors.Wrap(err, "get postings")
+		return nil, nil, errors.Wrap(err, "get postings")
 	}
 
+	// The order of the fetched postings is the same as the order of the requested keys.
+	// This is guaranteed by extractLabels.
 	postingIndex := 0
 
 	var groupAdds, groupRemovals []index.Postings
@@ -202,14 +214,14 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	ps, err := index.ExpandPostings(result)
 	if err != nil {
-		return nil, errors.Wrap(err, "expand")
+		return nil, nil, errors.Wrap(err, "expand")
 	}
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
 	version, err := r.block.indexHeaderReader.IndexVersion()
 	if err != nil {
-		return nil, errors.Wrap(err, "get index version")
+		return nil, nil, errors.Wrap(err, "get index version")
 	}
 	if version >= 2 {
 		for i, id := range ps {
@@ -217,13 +229,67 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
-	return ps, nil
+	return ps, extractLabelMatchers(omittedPostingGroups), nil
 }
 
+func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ulid.ULID, selectedGroups, omittedGroups []postingGroup) {
+	numKeyvals := 2 /* msg */ + 2 /* ulid */ + 4*(len(selectedGroups)+len(omittedGroups))
+	keyvals := make([]any, 0, numKeyvals)
+	keyvals = append(keyvals, "msg", "select posting groups")
+	keyvals = append(keyvals, "ulid", blockID.String())
+
+	formatGroup := func(g postingGroup) (string, int64) {
+		if g.matcher == nil {
+			return "ALL_POSTINGS", -1
+		}
+		return g.matcher.String(), g.totalSize
+	}
+
+	for i, g := range selectedGroups {
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), groupSize)
+	}
+	for i, g := range omittedGroups {
+		matcherStr, groupSize := formatGroup(g)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
+		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
+	}
+	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
+}
+
+func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
+	if len(groups) == 0 {
+		return nil
+	}
+	m := make([]*labels.Matcher, len(groups))
+	for i := range groups {
+		m[i] = groups[i].matcher
+	}
+	return m
+}
+
+// extractLabels returns the keys of the posting groups in the order that they are found in each posting group.
+func extractLabels(groups []postingGroup) []labels.Label {
+	numKeys := 0
+	for _, pg := range groups {
+		numKeys += len(pg.keys)
+	}
+	keys := make([]labels.Label, 0, numKeys)
+	for _, pg := range groups {
+		keys = append(keys, pg.keys...)
+	}
+	return keys
+}
+
+var allPostingsKey = func() labels.Label {
+	n, v := index.AllPostingsKey()
+	return labels.Label{Name: n, Value: v}
+}()
+
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
-// each postingGroup's keys exist in the index. The order of the returned labels
-// is the same as iterating through the posting groups and for each group adding all keys.
-func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, []labels.Label, error) {
+// each postingGroup's keys exist in the index.
+func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
 		allRequested     = false
@@ -262,22 +328,20 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
-	numKeys := 0
 	for _, rawGroup := range rawPostingGroups {
 		pg, err := rawGroup.toPostingGroup(indexhdr)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "filtering posting group")
+			return nil, errors.Wrap(err, "filtering posting group")
 		}
 
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
 		// E.g. `label="non-existent-value"` returns empty group.
 		if !pg.isSubtract && len(pg.keys) == 0 {
-			return nil, nil, nil
+			return nil, nil
 		}
 
 		postingGroups = append(postingGroups, pg)
-		numKeys += len(pg.keys)
 		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
 		allRequested = allRequested || pg.isSubtract
 		hasAdds = hasAdds || !pg.isSubtract
@@ -286,12 +350,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
 	// special All postings completely.
 	if allRequested && !hasAdds {
-		// add group with label to fetch "special All postings".
-		name, value := index.AllPostingsKey()
-		allPostingsLabel := labels.Label{Name: name, Value: value}
-
-		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsLabel}})
-		numKeys++
+		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsKey}})
 	}
 
 	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.
@@ -299,15 +358,10 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// Shortcut doing any set operations and just return an empty set here.
 	// A query that might end up in this case is `{pod=~"non-existent-value.*"}`.
 	if !allRequested && !hasAdds {
-		return nil, nil, nil
+		return nil, nil
 	}
 
-	keys := make([]labels.Label, 0, numKeys)
-	for _, pg := range postingGroups {
-		keys = append(keys, pg.keys...)
-	}
-
-	return postingGroups, keys, nil
+	return postingGroups, nil
 }
 
 // FetchPostings fills postings requested by posting groups.
@@ -359,7 +413,11 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, err := r.decodePostings(b, stats)
+			l, pendingMatchers, err := r.decodePostings(b, stats)
+			if len(pendingMatchers) > 0 {
+				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
+					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
+			}
 			if err == nil {
 				output[ix] = l
 				continue
@@ -482,14 +540,16 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
-func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, error) {
+func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, []*labels.Matcher, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
 	var (
-		l   index.Postings
-		err error
+		l        index.Postings
+		matchers []*labels.Matcher
+		err      error
 	)
-	if isDiffVarintSnappyEncodedPostings(b) {
+	switch {
+	case isDiffVarintSnappyEncodedPostings(b):
 		s := time.Now()
 		l, err = diffVarintSnappyDecode(b)
 
@@ -500,10 +560,22 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 				stats.cachedPostingsDecompressionErrors++
 			}
 		})
-	} else {
+
+	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
+		s := time.Now()
+		l, matchers, err = diffVarintSnappyMatchersDecode(b)
+
+		stats.update(func(stats *queryStats) {
+			stats.cachedPostingsDecompressions++
+			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+			if err != nil {
+				stats.cachedPostingsDecompressionErrors++
+			}
+		})
+	default:
 		_, l, err = r.dec.Postings(b)
 	}
-	return l, err
+	return l, matchers, err
 }
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")

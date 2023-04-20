@@ -140,6 +140,15 @@ func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Req
 	i.ing.FlushHandler(w, r)
 }
 
+func (i *ActivityTrackerWrapper) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/PrepareShutdownHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.PrepareShutdownHandler(w, r)
+}
+
 func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/ShutdownHandler", nil)

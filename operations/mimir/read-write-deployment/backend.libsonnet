@@ -68,11 +68,7 @@
   newMimirBackendZoneContainer(zone, zone_args)::
     $.mimir_backend_container +
     container.withArgs($.util.mapToFlags(
-      // This first block contains flags that can be overridden.
-      {
-        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-        'store-gateway.sharding-ring.unregister-on-shutdown': false,
-      } + $.mimir_backend_args + zone_args + {
+      $.mimir_backend_args + zone_args + {
         'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
         'store-gateway.sharding-ring.zone-awareness-enabled': true,
 

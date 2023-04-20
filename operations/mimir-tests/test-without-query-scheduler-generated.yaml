@@ -1003,6 +1003,7 @@ spec:
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet

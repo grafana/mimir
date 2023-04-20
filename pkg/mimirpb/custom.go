@@ -7,7 +7,8 @@ import (
 )
 
 func (h Histogram) IsFloatHistogram() bool {
-	return h.GetCountFloat() > 0 || h.GetZeroCountFloat() > 0
+	_, ok := h.GetCount().(*Histogram_CountFloat)
+	return ok
 }
 
 func (h Histogram) IsGauge() bool {

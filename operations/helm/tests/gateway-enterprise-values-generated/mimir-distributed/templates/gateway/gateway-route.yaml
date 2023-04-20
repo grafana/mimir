@@ -17,6 +17,6 @@ spec:
     name: gateway-enterprise-values-mimir-gateway
     weight: 100
   port:
-    targetPort: http-metric
+    targetPort: http-metrics
   tls:
     termination: edge
