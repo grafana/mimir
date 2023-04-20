@@ -16,6 +16,10 @@
 
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 
+### Mimirtool
+
+* [ENHANCEMENT] `analyze dashboard` and `analyze grafana` command have dashboard uid filtering added, also queries array added to dashboard report. #4790
+
 ## 2.8.0-rc.0
 
 ### Grafana Mimir
