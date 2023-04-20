@@ -796,7 +796,8 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
 	series := generateSeries([]int{1, 10, 100, 1000})
-	series = append(series, prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))...)
+	highCardinalitySeries := prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))
+	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
 	prepareCfg := defaultPrepareStoreConfig(tb)
