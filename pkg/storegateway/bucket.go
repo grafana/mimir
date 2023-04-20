@@ -1324,7 +1324,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	for val := range differentValues {
 		vals = append(vals, val)
 	}
-	sort.Strings(vals)
+	slices.Sort(vals)
 	return vals, nil
 }
 
