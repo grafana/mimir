@@ -585,6 +585,16 @@ Usage of ./cmd/mimir/mimir:
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
+  -ruler.remote-write.enable
+    	Enable ruler to remote write output.
+  -ruler.remote-write.max-wal-time duration
+    	Maximum time to stay in WAL (default 4h0m0s)
+  -ruler.remote-write.min-wal-time duration
+    	Minimum time to stay in WAL (default 5m0s)
+  -ruler.remote-write.wal-dir string
+    	Directory to store WAL (for Ruler Remote Write). (default "wal")
+  -ruler.remote-write.wal-truncate-frequency duration
+    	Frequency for truncating WAL (default 1h0m0s)
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints string

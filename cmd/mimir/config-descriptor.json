@@ -9659,6 +9659,66 @@
         },
         {
           "kind": "block",
+          "name": "rwconfig",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "wal_dir",
+              "required": false,
+              "desc": "Directory to store WAL (for Ruler Remote Write).",
+              "fieldValue": null,
+              "fieldDefaultValue": "wal",
+              "fieldFlag": "ruler.remote-write.wal-dir",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable ruler to remote write output.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.remote-write.enable",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "wal_truncate_frequency",
+              "required": false,
+              "desc": "Frequency for truncating WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 3600000000000,
+              "fieldFlag": "ruler.remote-write.wal-truncate-frequency",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "min_wal_time",
+              "required": false,
+              "desc": "Minimum time to stay in WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 300000000000,
+              "fieldFlag": "ruler.remote-write.min-wal-time",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_wal_time",
+              "required": false,
+              "desc": "Maximum time to stay in WAL",
+              "fieldValue": null,
+              "fieldDefaultValue": 14400000000000,
+              "fieldFlag": "ruler.remote-write.max-wal-time",
+              "fieldType": "duration"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "query_frontend",
           "required": false,
           "desc": "",

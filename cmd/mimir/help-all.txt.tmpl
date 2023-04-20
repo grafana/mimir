@@ -2095,6 +2095,16 @@ Usage of ./cmd/mimir/mimir:
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled
     	[experimental] Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
+  -ruler.remote-write.enable
+    	Enable ruler to remote write output.
+  -ruler.remote-write.max-wal-time duration
+    	Maximum time to stay in WAL (default 4h0m0s)
+  -ruler.remote-write.min-wal-time duration
+    	Minimum time to stay in WAL (default 5m0s)
+  -ruler.remote-write.wal-dir string
+    	Directory to store WAL (for Ruler Remote Write). (default "wal")
+  -ruler.remote-write.wal-truncate-frequency duration
+    	Frequency for truncating WAL (default 1h0m0s)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
