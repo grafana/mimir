@@ -830,7 +830,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 					continue
 				}
 				lb.Del(metaLabelTenantID)
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels(labels.EmptyLabels()))
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels())
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {

@@ -1866,7 +1866,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 
-					metrics[i] = lbls.Labels(nil)
+					metrics[i] = lbls.Labels()
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
