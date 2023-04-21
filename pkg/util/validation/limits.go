@@ -37,6 +37,7 @@ const (
 	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
 	maxLabelValueLengthFlag                = "validation.max-length-label-value"
 	maxMetadataLengthFlag                  = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag          = "validation.max-native-histogram-buckets"
 	creationGracePeriodFlag                = "validation.create-grace-period"
 	maxQueryLengthFlag                     = "store.max-query-length"
 	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
@@ -86,6 +87,7 @@ type Limits struct {
 	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
+	MaxNativeHistogramBuckets int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
 	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
@@ -202,6 +204,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, maxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, maxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, maxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
+	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
@@ -459,6 +462,12 @@ func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 // to the Metric Name, HELP and UNIT.
 func (o *Overrides) MaxMetadataLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxMetadataLength
+}
+
+// MaxNativeHistogramBuckets returns the maximum number of buckets per native
+// histogram sample.
+func (o *Overrides) MaxNativeHistogramBuckets(userID string) int {
+	return o.getOverridesForUser(userID).MaxNativeHistogramBuckets
 }
 
 // CreationGracePeriod is misnamed, and actually returns how far into the future

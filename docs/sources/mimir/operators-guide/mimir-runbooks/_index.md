@@ -1240,6 +1240,13 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 
 > **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 
+### err-mimir-max-native-histogram-buckets
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
+The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
+
+> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.

@@ -1498,10 +1498,15 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 func TestDistributor_Push_HistogramValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
+	// For testing bucket limit
+	testHistogram := util_test.GenerateTestFloatHistogram(0)
+	require.Equal(t, 8, len(testHistogram.PositiveBuckets)+len(testHistogram.NegativeBuckets), "selftest, check generator drift")
+
 	tests := map[string]struct {
-		req    *mimirpb.WriteRequest
-		errMsg string
-		errID  globalerror.ID
+		req         *mimirpb.WriteRequest
+		errMsg      string
+		errID       globalerror.ID
+		bucketLimit int
 	}{
 		"valid histogram": {
 			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0)),
@@ -1519,6 +1524,16 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			errMsg: "received a sample whose timestamp is too far in the future",
 			errID:  globalerror.SampleTooFarInFuture,
 		},
+		"buckets at limit": {
+			req:         makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, 1000, testHistogram),
+			bucketLimit: 8,
+		},
+		"buckets over limit": {
+			req:         makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, 1000, testHistogram),
+			bucketLimit: 7,
+			errMsg:      "received a native histogram sample with too many buckets, timestamp",
+			errID:       globalerror.MaxNativeHistogramBuckets,
+		},
 	}
 
 	for testName, tc := range tests {
@@ -1526,6 +1541,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			limits.CreationGracePeriod = model.Duration(time.Minute)
+			limits.MaxNativeHistogramBuckets = tc.bucketLimit
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
@@ -1538,6 +1554,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
 				fromError, _ := status.FromError(err)
+				require.Equal(t, int32(400), fromError.Proto().Code)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
 			} else {
@@ -5094,6 +5111,65 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedSamples:   10,
 			receivedExemplars: 5,
 			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop half of samples via native histogram bucket limit", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.MaxNativeHistogramBuckets = 2
+		dist, reg := getDistributor(cfg)
+
+		validHistogram := mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveDeltas: []int64{1},
+			Timestamp:      100,
+		}
+		invalidHistogram := mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 3},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveDeltas: []int64{1, 2},
+			Timestamp:      100,
+		}
+
+		req := mimirpb.NewWriteRequest(nil, mimirpb.API)
+		for sampleIdx := 0; sampleIdx < 20; sampleIdx++ {
+			lbs := mimirpb.FromLabelAdaptersToLabels(uniqueMetricsGen(sampleIdx))
+			if sampleIdx%2 == 0 {
+				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{validHistogram}, nil)
+			} else {
+				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{invalidHistogram}, nil)
+			}
+		}
+
+		dist.Push(getCtx(), req) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       0,
+			metadataIn:        0,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 0,
+			receivedMetadata:  0})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,

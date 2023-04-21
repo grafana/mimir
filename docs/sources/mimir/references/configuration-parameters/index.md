@@ -2547,6 +2547,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
+# Maximum number of buckets per native histogram sample. 0 to disable the limit.
+# CLI flag: -validation.max-native-histogram-buckets
+[max_native_histogram_buckets: <int> | default = 0]
+
 # (advanced) Controls how far into the future incoming samples are accepted
 # compared to the wall clock. Any sample with timestamp `t` will be rejected if
 # `t > (now + validation.create-grace-period)`. Also used by query-frontend to
