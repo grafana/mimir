@@ -1183,8 +1183,6 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 }
 
-// TODO: test userID passed in
-
 func TestUseAlwaysQueryable(t *testing.T) {
 	m := &mockQueryableWithFilter{}
 	qwf := UseAlwaysQueryable(m)
