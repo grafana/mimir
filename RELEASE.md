@@ -289,7 +289,7 @@ You can add this label before or after the PR is merged. Grafanabot will open a 
 branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and
 [PR#2364 (backport PR)](https://github.com/grafana/mimir/pull/2364) for an example pair.
 
-In the case of backport is failed. Follow step from grafanabot's comment to do a manual cherry-pick.
+In case the automated backport failed, follow the steps from grafanabot's comment to do a manual cherry-pick.
 
 ### Merging release branch into main
 
