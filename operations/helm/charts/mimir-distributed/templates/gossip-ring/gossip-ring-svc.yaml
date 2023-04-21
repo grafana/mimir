@@ -9,9 +9,13 @@ spec:
   type: ClusterIP
   clusterIP: None
   ports:
-    - name: gossip-ring
+    - name: tcp-gossip-ring
       port: {{ include "mimir.memberlistBindPort" . }}
       protocol: TCP
+      targetPort: {{ include "mimir.memberlistBindPort" . }}
+    - name: udp-gossip-ring
+      port: {{ include "mimir.memberlistBindPort" . }}
+      protocol: UDP
       targetPort: {{ include "mimir.memberlistBindPort" . }}
   publishNotReadyAddresses: true
   selector:
