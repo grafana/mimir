@@ -255,7 +255,7 @@ func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			// If the meta file doesn't exist it means the shipper hasn't run yet.
 			meta = shipperMeta{}
-		} else if err != nil {
+		} else {
 			return nil, err
 		}
 	}
