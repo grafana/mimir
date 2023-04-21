@@ -45,6 +45,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
 * [BUGFIX] Add missing imagePullSecrets configuration to the `graphite-web` deployment template. #4716
 
+## 4.3.1
+
+* [BUGFIX] Updated Go version in Mimir and GEM images to 1.20.3 to fix CVE-2023-24538. #4803
+
 ## 4.3.0
 
 * [CHANGE] Ruler: changed ruler deployment max surge from `0` to `50%`, and max unavailable from `1` to `0`. #4381

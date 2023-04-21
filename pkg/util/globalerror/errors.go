@@ -17,6 +17,7 @@ const (
 	MissingMetricName             ID = "missing-metric-name"
 	InvalidMetricName             ID = "metric-name-invalid"
 	MaxLabelNamesPerSeries        ID = "max-label-names-per-series"
+	MaxNativeHistogramBuckets     ID = "max-native-histogram-buckets"
 	SeriesInvalidLabel            ID = "label-invalid"
 	SeriesLabelNameTooLong        ID = "label-name-too-long"
 	SeriesLabelValueTooLong       ID = "label-value-too-long"

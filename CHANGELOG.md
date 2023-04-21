@@ -4,10 +4,15 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
+* [BUGFIX] Packaging: fix preremove script preventing upgrades. #4801
 
 ### Documentation
 
@@ -177,10 +182,17 @@
 * [ENHANCEMENT] Add explanation for QPS values for reads in remote ruler mode and writes generally, to the Ruler dashboard page. #4629
 * [ENHANCEMENT] Expand zone-aware replication page to cover single physical availability zone deployments. #4631
 * [FEATURE] Add instructions to use puppet module. #4610
+* [FEATURE] Add documentation on how deploy mixin with terraform. #4161
 
 ### Tools
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
+
+## 2.7.2
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updated Go version to 1.20.3 to fix CVE-2023-24538 #4795
 
 ## 2.7.1
 
@@ -235,7 +247,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
-* [ENHANCEMENT] Distributor: moves the distributor push wrappers from the API configuration into the distributor configuration. #4244
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.1` to `alpine:3.17.2`. #4240
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227 #4316

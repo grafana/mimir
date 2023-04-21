@@ -307,36 +307,6 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	require.Equal(t, []string{segmentFile}, meta.Thanos.SegmentFiles)
 }
 
-func TestReadThanosMetaFile(t *testing.T) {
-	t.Run("Missing meta file", func(t *testing.T) {
-		// Create TSDB directory without meta file
-		dpath := t.TempDir()
-
-		_, err := readThanosShipperMetaFile(dpath)
-		fpath := filepath.Join(dpath, thanosShipperMetaFilename)
-		require.Equal(t, fmt.Sprintf(`failed to read %s: open %s: no such file or directory`, fpath, fpath), err.Error())
-	})
-
-	t.Run("Non-JSON meta file", func(t *testing.T) {
-		dpath := t.TempDir()
-		fpath := filepath.Join(dpath, thanosShipperMetaFilename)
-		// Make an invalid JSON file
-		require.NoError(t, os.WriteFile(fpath, []byte("{"), 0600))
-
-		_, err := readThanosShipperMetaFile(dpath)
-		require.Equal(t, fmt.Sprintf(`failed to parse %s as JSON: "{": unexpected end of JSON input`, fpath), err.Error())
-	})
-
-	t.Run("Wrongly versioned meta file", func(t *testing.T) {
-		dpath := t.TempDir()
-		fpath := filepath.Join(dpath, thanosShipperMetaFilename)
-		require.NoError(t, os.WriteFile(fpath, []byte(`{"version": 2}`), 0600))
-
-		_, err := readThanosShipperMetaFile(dpath)
-		require.Equal(t, "unexpected meta file version 2", err.Error())
-	})
-}
-
 func TestShipper_AddOOOLabel(t *testing.T) {
 	for _, tc := range []struct {
 		name                      string
