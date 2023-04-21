@@ -2,6 +2,7 @@ output:
   format: line-number
 
 linters:
+  disable-all: true
   enable:
     - goimports
     - revive
@@ -30,6 +31,7 @@ linters-settings:
 
 run:
   timeout: 5m
+  go: '1.20'
 
   # List of build tags, all linters use it.
   build-tags:

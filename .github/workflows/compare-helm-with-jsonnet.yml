@@ -13,10 +13,10 @@ jobs:
   compare-manifests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: actions/setup-go@v3
       with:
-        go-version: '1.19.3'
+        go-version: '1.20.3'
     - uses: helm/kind-action@v1.2.0
     - name: Download yq
       uses: dsaltares/fetch-gh-release-asset@d9376dacd30fd38f49238586cd2e9295a8307f4c
