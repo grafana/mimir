@@ -54,9 +54,9 @@ If something is not clear, you can get back to this document to learn more about
 ### Publish the release candidate
 
 - [ ] Begin drafting the [release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
-  - Create the release note PR targeting the main branch
+  - Create the release notes PR targeting the main branch
   - This step shouldn't block from publishing release candidate
-  - After the release note PR is merged (which usually happen after RC is published), cherry-pick them into the release branch
+  - After the release notes PR is merged (which usually happen after RC is published), cherry-pick them into the release branch
 - [ ] Wait for any open PR we want to get merged before cutting the release candidate
   - We shouldn't wait for the open PRs beyond the scheduled release date
   - [ ] Eventually open a PR for every experimental feature we want to promote to stable
