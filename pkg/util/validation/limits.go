@@ -39,7 +39,6 @@ const (
 	maxMetadataLengthFlag                  = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag          = "validation.max-native-histogram-buckets"
 	creationGracePeriodFlag                = "validation.create-grace-period"
-	maxQueryLengthFlag                     = "store.max-query-length"
 	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
 	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
@@ -118,7 +117,6 @@ type Limits struct {
 	MaxFetchedSeriesPerQuery        int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery    int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxQueryLookback                model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength                  model.Duration `yaml:"max_query_length" json:"max_query_length" doc:"hidden"` // TODO: deprecated, remove in 2.8
 	MaxPartialQueryLength           model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism             int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength            model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
@@ -225,9 +223,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	// TODO: Deprecated in Mimir 2.6, remove in Mimir 2.8
-	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, fmt.Sprintf("Deprecated: Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable. This option is deprecated, use -%s or -%s instead.", maxPartialQueryLengthFlag, maxTotalQueryLengthFlag))
-	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, fmt.Sprintf("Limit the time range for partial queries at the querier level. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
+	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
@@ -261,7 +257,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 
 	// Query-frontend.
-	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
+	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
 	_ = l.ResultsCacheTTL.Set("7d")
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
@@ -507,27 +503,14 @@ func (o *Overrides) MaxQueryLookback(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLookback)
 }
 
-// maxQueryLength returns the limit of the length (in time) of a query.
-func (o *Overrides) maxQueryLength(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).MaxQueryLength)
-}
-
 // MaxPartialQueryLength returns the limit of the length (in time) of a (partial) query.
 func (o *Overrides) MaxPartialQueryLength(userID string) time.Duration {
-	t := time.Duration(o.getOverridesForUser(userID).MaxPartialQueryLength)
-	if t == time.Duration(0) {
-		t = o.maxQueryLength(userID)
-	}
-	return t
+	return time.Duration(o.getOverridesForUser(userID).MaxPartialQueryLength)
 }
 
 // MaxTotalQueryLength returns the limit of the total length (in time) of a query.
 func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
-	t := time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
-	if t == time.Duration(0) {
-		return o.maxQueryLength(userID)
-	}
-	return t
+	return time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
 }
 
 // MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.

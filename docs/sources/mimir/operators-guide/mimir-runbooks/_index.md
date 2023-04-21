@@ -1556,7 +1556,6 @@ A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range
 Mimir has a limit on the query length.
 This limit is applied to range queries before they are split (according to time) or sharded by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
-If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
 ### err-mimir-max-query-expression-size-bytes
 

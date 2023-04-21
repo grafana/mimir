@@ -1574,7 +1574,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
-    	Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the time range for partial queries at the querier level.
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
@@ -1670,7 +1670,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
-    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
@@ -2361,8 +2361,6 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
-  -store.max-query-length duration
-    	Deprecated: Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable. This option is deprecated, use -querier.max-partial-query-length or -query-frontend.max-total-query-length instead.
   -target comma-separated-list-of-strings
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
