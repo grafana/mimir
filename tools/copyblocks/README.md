@@ -1,7 +1,7 @@
 # Copyblocks
 
-This program can copy Mimir blocks between two Google Cloud Storage (GCS) buckets or two Azure Blob Storage (ABS) buckets.
-It is specific to these two services and performs server-side copies between buckets.
+This program can copy Mimir blocks server-side between two buckets on the same object storage service provider.
+The currently supported services are Google Cloud Storage (GCS) and Azure Blob Storage (ABS).
 
 ## Features
 

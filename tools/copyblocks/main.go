@@ -19,9 +19,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -123,11 +120,6 @@ func main() {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 
-	if cfg.sourceBucket == "" || cfg.destBucket == "" || cfg.sourceBucket == cfg.destBucket {
-		level.Error(logger).Log("msg", "no source or destination bucket, or buckets are the same")
-		os.Exit(1)
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -163,6 +155,46 @@ func main() {
 	}
 }
 
+func initializeBuckets(ctx context.Context, cfg config) (sourceBucket bucket, destBucket bucket, err error) {
+	if cfg.sourceBucket == "" || cfg.destBucket == "" {
+		return nil, nil, errors.New("--source-bucket or --destination-bucket is missing")
+	}
+	if cfg.sourceBucket == cfg.destBucket {
+		return nil, nil, errors.New("--source-bucket and --destination-bucket can not be the same")
+	}
+
+	switch strings.ToLower(cfg.service) {
+	case serviceGCS:
+		client, err := storage.NewClient(ctx)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "failed to create client")
+		}
+		sourceBucket = newGCSBucket(client, cfg.sourceBucket)
+		destBucket = newGCSBucket(client, cfg.destBucket)
+	case serviceABS:
+		if cfg.azureSourceAccountKey == "" || cfg.azureSourceAccountName == "" {
+			return nil, nil, errors.New("the azure source bucket's account name (--azure-source-account-name) and account key (--azure-source-account-key) are required")
+		}
+		if cfg.azureDestinationAccountKey == "" || cfg.azureDestinationAccountName == "" {
+			return nil, nil, errors.New("the azure destination bucket's account name (--azure-destination-account-name) and account key (--azure-destination-account-key) are required")
+		}
+
+		var err error
+		sourceBucket, err = newAzureBucketClient(cfg.sourceBucket, cfg.azureSourceAccountName, cfg.azureSourceAccountKey)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "failed to create source azure bucket client")
+		}
+		destBucket, err = newAzureBucketClient(cfg.destBucket, cfg.azureDestinationAccountName, cfg.azureDestinationAccountKey)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "failed to create destination azure bucket client")
+		}
+	default:
+		return nil, nil, errors.Errorf("invalid service: %v", cfg.service)
+	}
+
+	return sourceBucket, destBucket, nil
+}
+
 func runCopy(ctx context.Context, cfg config, logger log.Logger, m *metrics) bool {
 	err := copyBlocks(ctx, cfg, logger, m)
 	if err != nil {
@@ -177,86 +209,23 @@ func runCopy(ctx context.Context, cfg config, logger log.Logger, m *metrics) boo
 }
 
 func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) error {
-	enabledUsers := map[string]struct{}{}
-	disabledUsers := map[string]struct{}{}
-
-	for _, u := range cfg.enabledUsers {
-		enabledUsers[u] = struct{}{}
-	}
-	for _, u := range cfg.disabledUsers {
-		disabledUsers[u] = struct{}{}
-	}
-
-	var sourceBucket, destBucket bucket
-	switch strings.ToLower(cfg.service) {
-	case serviceGCS:
-		client, err := storage.NewClient(ctx)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create client")
-		}
-		sourceBucket = &gcsBucket{
-			BucketHandle: *client.Bucket(cfg.sourceBucket),
-			name:         cfg.sourceBucket,
-		}
-		destBucket = &gcsBucket{
-			BucketHandle: *client.Bucket(cfg.destBucket),
-			name:         cfg.destBucket,
-		}
-	case serviceABS:
-		if cfg.azureSourceAccountKey == "" || cfg.azureSourceAccountName == "" {
-			return errors.New("the azure source bucket's account name and account key are required")
-		}
-		if cfg.azureDestinationAccountKey == "" || cfg.azureDestinationAccountName == "" {
-			return errors.New("the azure destination bucket's account name and account key are required")
-		}
-
-		newAzureBucketClient := func(containerURL string, accountName string, sharedKey string) (bucket, error) {
-			urlParts, err := blob.ParseURL(containerURL)
-			if err != nil {
-				return nil, err
-			}
-			containerName := urlParts.ContainerName
-			if containerName == "" {
-				return nil, errors.New("container name missing from azure bucket URL")
-			}
-			serviceURL, found := strings.CutSuffix(containerURL, containerName)
-			if !found {
-				return nil, errors.New("malformed or unexpected azure bucket URL")
-			}
-			keyCred, err := azblob.NewSharedKeyCredential(accountName, sharedKey)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to get azure shared key credential")
-			}
-			client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, keyCred, nil)
-			if err != nil {
-				return nil, err
-			}
-			containerClient, err := container.NewClientWithSharedKeyCredential(containerURL, keyCred, nil)
-			if err != nil {
-				return nil, err
-			}
-			return &azureBucket{
-				Client:          *client,
-				containerClient: *containerClient,
-				containerName:   containerName,
-			}, nil
-		}
-		var err error
-		sourceBucket, err = newAzureBucketClient(cfg.sourceBucket, cfg.azureSourceAccountName, cfg.azureSourceAccountKey)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create source azure bucket client")
-		}
-		destBucket, err = newAzureBucketClient(cfg.destBucket, cfg.azureDestinationAccountName, cfg.azureDestinationAccountKey)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create destination azure bucket client")
-		}
-	default:
-		return errors.Errorf("invalid service: %v", cfg.service)
+	sourceBucket, destBucket, err := initializeBuckets(ctx, cfg)
+	if err != nil {
+		return err
 	}
 
 	tenants, err := listTenants(ctx, sourceBucket)
 	if err != nil {
 		return errors.Wrapf(err, "failed to list tenants")
+	}
+
+	enabledUsers := map[string]struct{}{}
+	disabledUsers := map[string]struct{}{}
+	for _, u := range cfg.enabledUsers {
+		enabledUsers[u] = struct{}{}
+	}
+	for _, u := range cfg.disabledUsers {
+		disabledUsers[u] = struct{}{}
 	}
 
 	return concurrency.ForEachUser(ctx, tenants, cfg.tenantConcurrency, func(ctx context.Context, tenantID string) error {

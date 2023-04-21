@@ -19,10 +19,10 @@ import (
 )
 
 type bucket interface {
-	Get(ctx context.Context, name string) (io.ReadCloser, error)
-	Copy(ctx context.Context, name string, dstBucket bucket) error
+	Get(ctx context.Context, objectName string) (io.ReadCloser, error)
+	Copy(ctx context.Context, objectName string, dstBucket bucket) error
 	ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error)
-	UploadMarkerFile(ctx context.Context, name string) error
+	UploadMarkerFile(ctx context.Context, objectName string) error
 	Name() string
 }
 
@@ -31,8 +31,15 @@ type gcsBucket struct {
 	name string
 }
 
-func (bkt *gcsBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	obj := bkt.Object(name)
+func newGCSBucket(client *storage.Client, name string) bucket {
+	return &gcsBucket{
+		BucketHandle: *client.Bucket(name),
+		name:         name,
+	}
+}
+
+func (bkt *gcsBucket) Get(ctx context.Context, objectName string) (io.ReadCloser, error) {
+	obj := bkt.Object(objectName)
 	r, err := obj.NewReader(ctx)
 	if err != nil {
 		return nil, err
@@ -40,13 +47,13 @@ func (bkt *gcsBucket) Get(ctx context.Context, name string) (io.ReadCloser, erro
 	return r, nil
 }
 
-func (bkt *gcsBucket) Copy(ctx context.Context, name string, dstBucket bucket) error {
+func (bkt *gcsBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
 	d, ok := dstBucket.(*gcsBucket)
 	if !ok {
 		return errors.New("destination bucket wasn't a gcs bucket")
 	}
-	srcObj := bkt.Object(name)
-	dstObject := d.BucketHandle.Object(name)
+	srcObj := bkt.Object(objectName)
+	dstObject := d.BucketHandle.Object(objectName)
 	copier := dstObject.CopierFrom(srcObj)
 	_, err := copier.Run(ctx)
 	return err
@@ -97,8 +104,8 @@ func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive b
 	return result, nil
 }
 
-func (bkt *gcsBucket) UploadMarkerFile(ctx context.Context, name string) error {
-	obj := bkt.Object(name)
+func (bkt *gcsBucket) UploadMarkerFile(ctx context.Context, objectName string) error {
+	obj := bkt.Object(objectName)
 	w := obj.NewWriter(ctx)
 	return w.Close()
 }
@@ -113,8 +120,40 @@ type azureBucket struct {
 	containerName   string
 }
 
-func (bkt *azureBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	client := bkt.containerClient.NewBlobClient(name)
+func newAzureBucketClient(containerURL string, accountName string, sharedKey string) (bucket, error) {
+	urlParts, err := blob.ParseURL(containerURL)
+	if err != nil {
+		return nil, err
+	}
+	containerName := urlParts.ContainerName
+	if containerName == "" {
+		return nil, errors.New("container name missing from azure bucket URL")
+	}
+	serviceURL, found := strings.CutSuffix(containerURL, containerName)
+	if !found {
+		return nil, errors.New("malformed or unexpected azure bucket URL")
+	}
+	keyCred, err := azblob.NewSharedKeyCredential(accountName, sharedKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get azure shared key credential")
+	}
+	client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, keyCred, nil)
+	if err != nil {
+		return nil, err
+	}
+	containerClient, err := container.NewClientWithSharedKeyCredential(containerURL, keyCred, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &azureBucket{
+		Client:          *client,
+		containerClient: *containerClient,
+		containerName:   containerName,
+	}, nil
+}
+
+func (bkt *azureBucket) Get(ctx context.Context, objectName string) (io.ReadCloser, error) {
+	client := bkt.containerClient.NewBlobClient(objectName)
 	response, err := client.DownloadStream(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -122,8 +161,8 @@ func (bkt *azureBucket) Get(ctx context.Context, name string) (io.ReadCloser, er
 	return response.Body, nil
 }
 
-func (bkt *azureBucket) Copy(ctx context.Context, name string, dstBucket bucket) error {
-	sourceClient := bkt.containerClient.NewBlobClient(name)
+func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
+	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	sasURL, err := sourceClient.GetSASURL(sas.BlobPermissions{Read: true}, time.Now(), time.Now().Add(10*time.Minute))
 	if err != nil {
 		return err
@@ -132,7 +171,7 @@ func (bkt *azureBucket) Copy(ctx context.Context, name string, dstBucket bucket)
 	if !ok {
 		return errors.New("destination bucket wasn't a blob storage bucket")
 	}
-	dstClient := d.containerClient.NewBlobClient(name)
+	dstClient := d.containerClient.NewBlobClient(objectName)
 
 	response, err := dstClient.StartCopyFromURL(ctx, sasURL, nil)
 	if err != nil {
@@ -222,8 +261,8 @@ func (bkt *azureBucket) ListPrefix(ctx context.Context, prefix string, recursive
 	return list, nil
 }
 
-func (bkt *azureBucket) UploadMarkerFile(ctx context.Context, name string) error {
-	_, err := bkt.UploadBuffer(ctx, bkt.containerName, name, []byte{}, nil)
+func (bkt *azureBucket) UploadMarkerFile(ctx context.Context, objectName string) error {
+	_, err := bkt.UploadBuffer(ctx, bkt.containerName, objectName, []byte{}, nil)
 	return err
 }
 
