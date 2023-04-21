@@ -29,14 +29,15 @@ const (
 
 var (
 	// Discarded series / samples reasons.
-	reasonMissingMetricName      = metricReasonFromErrorID(globalerror.MissingMetricName)
-	reasonInvalidMetricName      = metricReasonFromErrorID(globalerror.InvalidMetricName)
-	reasonMaxLabelNamesPerSeries = metricReasonFromErrorID(globalerror.MaxLabelNamesPerSeries)
-	reasonInvalidLabel           = metricReasonFromErrorID(globalerror.SeriesInvalidLabel)
-	reasonLabelNameTooLong       = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
-	reasonLabelValueTooLong      = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
-	reasonDuplicateLabelNames    = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
-	reasonTooFarInFuture         = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
+	reasonMissingMetricName         = metricReasonFromErrorID(globalerror.MissingMetricName)
+	reasonInvalidMetricName         = metricReasonFromErrorID(globalerror.InvalidMetricName)
+	reasonMaxLabelNamesPerSeries    = metricReasonFromErrorID(globalerror.MaxLabelNamesPerSeries)
+	reasonInvalidLabel              = metricReasonFromErrorID(globalerror.SeriesInvalidLabel)
+	reasonLabelNameTooLong          = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
+	reasonLabelValueTooLong         = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
+	reasonMaxNativeHistogramBuckets = metricReasonFromErrorID(globalerror.MaxNativeHistogramBuckets)
+	reasonDuplicateLabelNames       = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
+	reasonTooFarInFuture            = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
 
 	// Discarded exemplars reasons.
 	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerror.ExemplarLabelsMissing)
@@ -109,18 +110,20 @@ func DiscardedMetadataCounter(reg prometheus.Registerer, reason string) *prometh
 // SampleValidationConfig helps with getting required config to validate sample.
 type SampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
+	MaxNativeHistogramBuckets(userID string) int
 }
 
 // SampleValidationMetrics is a collection of metrics used during sample validation.
 type SampleValidationMetrics struct {
-	missingMetricName      *prometheus.CounterVec
-	invalidMetricName      *prometheus.CounterVec
-	maxLabelNamesPerSeries *prometheus.CounterVec
-	invalidLabel           *prometheus.CounterVec
-	labelNameTooLong       *prometheus.CounterVec
-	labelValueTooLong      *prometheus.CounterVec
-	duplicateLabelNames    *prometheus.CounterVec
-	tooFarInFuture         *prometheus.CounterVec
+	missingMetricName         *prometheus.CounterVec
+	invalidMetricName         *prometheus.CounterVec
+	maxLabelNamesPerSeries    *prometheus.CounterVec
+	invalidLabel              *prometheus.CounterVec
+	labelNameTooLong          *prometheus.CounterVec
+	labelValueTooLong         *prometheus.CounterVec
+	maxNativeHistogramBuckets *prometheus.CounterVec
+	duplicateLabelNames       *prometheus.CounterVec
+	tooFarInFuture            *prometheus.CounterVec
 }
 
 func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
@@ -131,6 +134,7 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.invalidLabel.DeletePartialMatch(filter)
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
+	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
@@ -142,20 +146,22 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 	m.invalidLabel.DeleteLabelValues(userID, group)
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
+	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
 
 func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
 	return &SampleValidationMetrics{
-		missingMetricName:      DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:      DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries: DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:           DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:       DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:      DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		duplicateLabelNames:    DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:         DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		missingMetricName:         DiscardedSamplesCounter(r, reasonMissingMetricName),
+		invalidMetricName:         DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:    DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		invalidLabel:              DiscardedSamplesCounter(r, reasonInvalidLabel),
+		labelNameTooLong:          DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		labelValueTooLong:         DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets: DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		duplicateLabelNames:       DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		tooFarInFuture:            DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
 
@@ -207,6 +213,19 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return newSampleTimestampTooNewError(unsafeMetricName, s.Timestamp)
+	}
+
+	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
+		var bucketCount int
+		if s.IsFloatHistogram() {
+			bucketCount = len(s.GetNegativeCounts()) + len(s.GetPositiveCounts())
+		} else {
+			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
+		}
+		if bucketCount > bucketLimit {
+			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+			return newMaxNativeHistogramBucketsError(ls, s.Timestamp, bucketCount, bucketLimit)
+		}
 	}
 
 	return nil

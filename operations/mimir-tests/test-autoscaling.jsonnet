@@ -34,6 +34,10 @@ mimir {
     autoscaling_ruler_query_frontend_enabled: true,
     autoscaling_ruler_query_frontend_min_replicas: 3,
     autoscaling_ruler_query_frontend_max_replicas: 30,
+
+    autoscaling_ruler_enabled: true,
+    autoscaling_ruler_min_replicas: 2,
+    autoscaling_ruler_max_replicas: 10,
   },
 
   local k = import 'ksonnet-util/kausal.libsonnet',
