@@ -185,6 +185,7 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 		MaxRetries: 10,
 	})
 
+	var copyStatusDescription *string
 	for {
 		if copyStatus == nil {
 			return errors.New("no copy status present for blob copy")
@@ -194,6 +195,9 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 		case blob.CopyStatusTypeSuccess:
 			return nil
 		case blob.CopyStatusTypeFailed:
+			if copyStatusDescription != nil {
+				return errors.Errorf("copy failed, description: %s", *copyStatusDescription)
+			}
 			return errors.New("copy failed")
 		case blob.CopyStatusTypeAborted:
 			return errors.New("copy aborted")
@@ -213,6 +217,7 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 			return err
 		}
 		copyStatus = response.CopyStatus
+		copyStatusDescription = response.CopyStatusDescription
 	}
 	return errors.Wrap(backoff.Err(), "waiting for blob copy status")
 }
