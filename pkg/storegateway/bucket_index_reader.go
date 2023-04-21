@@ -725,7 +725,7 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	if !ok {
 		return false, errors.Errorf("series %d not found", ref)
 	}
-	stats.seriesTouched++
-	stats.seriesTouchedSizeSum += len(b)
+	stats.seriesProcessed++
+	stats.seriesProcessedSizeSum += len(b)
 	return decodeSeries(b, lset, chks, skipChunks)
 }
