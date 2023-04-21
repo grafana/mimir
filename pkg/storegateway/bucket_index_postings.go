@@ -408,15 +408,16 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 // It returns the number of postings in the smallest intersecting (non-subtractive) postingGroup.
 // It returns 0 if there was no intersecting posting group that also wasn't the all-postings group.
 func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
+	var minGroupSize int64
 	for _, g := range groups {
 		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
 			// The size of each posting list contains 4 bytes with the number of entries.
 			// We shouldn't count these as series.
 			groupSize := g.totalSize - int64(len(g.keys)*4)
-			return groupSize / tsdb.BytesPerPostingInAPostingList
+			minGroupSize = util_math.Min(minGroupSize, groupSize)
 		}
 	}
-	return 0
+	return minGroupSize / tsdb.BytesPerPostingInAPostingList
 }
 
 // speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
