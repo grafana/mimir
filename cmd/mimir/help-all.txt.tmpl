@@ -1574,7 +1574,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
-    	Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the time range for partial queries at the querier level.
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
@@ -1670,7 +1670,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
-    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
