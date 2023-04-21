@@ -35,6 +35,16 @@ local overrides = {
         dst: '/etc/mimir/config.example.yaml',
         type: 'config|noreplace',
       },
+      {
+        src: './dist/tmp/dependencies-%s-%s-%s/config.yml' % [name, packager, arch],
+        dst: '/etc/mimir/config.yml',
+        type: 'config|noreplace',
+      },
+      {
+        src: './dist/tmp/dependencies-%s-%s-%s/runtime_config.yml' % [name, packager, arch],
+        dst: '/etc/mimir/runtime_config.yml',
+        type: 'config|noreplace',
+      },
     ],
     scripts: {
       postinstall: './dist/tmp/dependencies-%s-%s-%s/postinstall.sh' % [name, packager, arch],
