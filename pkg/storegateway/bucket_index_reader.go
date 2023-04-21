@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -285,6 +286,14 @@ func extractLabels(groups []postingGroup) []labels.Label {
 		keys = append(keys, pg.keys...)
 	}
 	return keys
+}
+
+func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
+	vals := make([]string, len(offsets))
+	for i := range offsets {
+		vals[i] = offsets[i].LabelValue
+	}
+	return vals
 }
 
 var allPostingsKey = func() labels.Label {

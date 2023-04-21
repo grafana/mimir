@@ -383,7 +383,7 @@ func TestBlockLabelValues(t *testing.T) {
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -391,12 +391,12 @@ func TestBlockLabelValues(t *testing.T) {
 	t.Run("index reader error with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: func(name string) error { return context.DeadlineExceeded },
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
-		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -415,12 +415,12 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 
 		// hit the cache now
-		names, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -436,7 +436,7 @@ func TestBlockLabelValues(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -445,24 +445,28 @@ func TestBlockLabelValues(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
-		values, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 
 		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
-		values, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 
 		// we remove the indexHeaderReader to ensure that results come from a cache
 		// if this panics, then we know that it's trying to read actual values
-		indexrWithoutHeaderReader := b.indexReader(selectAllStrategy{})
-		indexrWithoutHeaderReader.block.indexHeaderReader = nil
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:                     b.indexHeaderReader,
+			onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
+			onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
+			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		}
 
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 	})

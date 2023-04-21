@@ -728,12 +728,16 @@ func openBlockSeriesChunkRefsSetsIterator(
 		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
 	}
 
-	// Track the time spent loading series and chunk refs.
+	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+}
+
+// seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
+func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterator, stats *safeQueryStats) genericIterator[seriesChunkRefsSet] {
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
-	}), nil
+	})
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
