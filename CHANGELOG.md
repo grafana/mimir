@@ -6,6 +6,7 @@
 
 * [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [BUGFIX] Packaging: fix preremove script preventing upgrades. #4801
 
 ## 2.8.0-rc.0
 
