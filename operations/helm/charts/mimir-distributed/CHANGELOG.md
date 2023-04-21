@@ -26,7 +26,9 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## main / unreleased
+## 4.3.1
+
+* [BUGFIX] Updated Go version in Mimir and GEM images to 1.20.3 to fix CVE-2023-24538. #4803
 
 ## 4.3.0
 
