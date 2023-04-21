@@ -414,7 +414,9 @@ func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 			// The size of each posting list contains 4 bytes with the number of entries.
 			// We shouldn't count these as series.
 			groupSize := g.totalSize - int64(len(g.keys)*4)
-			minGroupSize = util_math.Min(minGroupSize, groupSize)
+			if minGroupSize == 0 || minGroupSize > groupSize {
+				minGroupSize = groupSize
+			}
 		}
 	}
 	return minGroupSize / tsdb.BytesPerPostingInAPostingList
