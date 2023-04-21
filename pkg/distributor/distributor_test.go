@@ -4715,8 +4715,6 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
 }
 
-// TODO: test per-tenant query lookback
-
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
 	tokens := []uint32{}
 	tokensMap := map[uint32]int{}
