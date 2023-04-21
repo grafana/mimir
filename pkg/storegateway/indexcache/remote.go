@@ -140,7 +140,7 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
 	lblHash := blake2b.Sum256([]byte(l.Name + ":" + l.Value))
-	return "P:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
+	return "P2:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
@@ -217,7 +217,7 @@ func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID str
 
 func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) string {
 	hash := blake2b.Sum256([]byte(lmKey))
-	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
+	return "E2:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.

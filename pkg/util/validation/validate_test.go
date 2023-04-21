@@ -6,8 +6,10 @@
 package validation
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -340,4 +342,154 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: "a", Value: "a"},
 	}, "a")
 	assert.Equal(t, expected, actual)
+}
+
+type sampleValidationConfig struct {
+	maxNativeHistogramBuckets int
+}
+
+func (c sampleValidationConfig) CreationGracePeriod(userID string) time.Duration {
+	return 0
+}
+
+func (c sampleValidationConfig) MaxNativeHistogramBuckets(userID string) int {
+	return c.maxNativeHistogramBuckets
+}
+
+func TestMaxNativeHistorgramBuckets(t *testing.T) {
+	// All will have 2 buckets, one negative and one positive
+	testCases := map[string]mimirpb.Histogram{
+		"integer counter": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveDeltas: []int64{1},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"integer gauge": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveDeltas: []int64{1},
+			ResetHint:      mimirpb.Histogram_GAUGE,
+			Timestamp:      0,
+		},
+		"float counter": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeCounts: []float64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveCounts: []float64{1},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"float gauge": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeCounts: []float64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveCounts: []float64{1},
+			ResetHint:      mimirpb.Histogram_GAUGE,
+			Timestamp:      0,
+		},
+		"integer counter positive buckets": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{},
+			NegativeDeltas: []int64{},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}},
+			PositiveDeltas: []int64{1, 0},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"integer counter negative buckets": {
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeDeltas: []int64{1, 0},
+			PositiveSpans:  []mimirpb.BucketSpan{},
+			PositiveDeltas: []int64{},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"float counter positive buckets": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{},
+			NegativeCounts: []float64{},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveCounts: []float64{1, 1},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+		"float counter negative buckets": {
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			NegativeCounts: []float64{1, 1},
+			PositiveSpans:  []mimirpb.BucketSpan{},
+			PositiveCounts: []float64{},
+			ResetHint:      mimirpb.Histogram_UNKNOWN,
+			Timestamp:      0,
+		},
+	}
+
+	registry := prometheus.NewRegistry()
+	metrics := NewSampleValidationMetrics(registry)
+
+	for _, limit := range []int{0, 1, 2} {
+		for name, h := range testCases {
+			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
+				var cfg sampleValidationConfig
+				cfg.maxNativeHistogramBuckets = limit
+
+				err := ValidateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "a"},
+					{Name: "a", Value: "a"}}, h)
+
+				if limit == 1 {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+			# TYPE cortex_discarded_samples_total counter
+			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
+	`), "cortex_discarded_samples_total"))
 }

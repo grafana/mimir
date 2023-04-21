@@ -725,15 +725,19 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
-		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+		iterator = &filteringSeriesChunkRefsSetIterator{stats: stats, from: iterator, matchers: pendingMatchers}
 	}
 
-	// Track the time spent loading series and chunk refs.
+	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+}
+
+// seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
+func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterator, stats *safeQueryStats) genericIterator[seriesChunkRefsSet] {
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
-	}), nil
+	})
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
@@ -1035,6 +1039,7 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
+	stats    *safeQueryStats
 	from     seriesChunkRefsSetIterator
 	matchers []*labels.Matcher
 
@@ -1062,6 +1067,9 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 			writeIdx++
 		}
 	}
+	m.stats.update(func(stats *queryStats) {
+		stats.seriesOmitted += next.len() - writeIdx
+	})
 	next.series = next.series[:writeIdx]
 
 	if next.len() == 0 {

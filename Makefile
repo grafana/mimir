@@ -601,5 +601,5 @@ packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfil
 test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
-include docs/docs.mk
 docs: doc
+	cd docs && $(MAKE) docs
