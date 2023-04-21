@@ -19,7 +19,6 @@ type Config struct {
 	ContainerName      string         `yaml:"container_name"`
 	Endpoint           string         `yaml:"endpoint_suffix"`
 	MaxRetries         int            `yaml:"max_retries" category:"advanced"`
-	MSIResource        string         `yaml:"msi_resource" category:"advanced" doc:"hidden"` // TODO Remove in Mimir 2.7.
 	UserAssignedID     string         `yaml:"user_assigned_id" category:"advanced"`
 }
 
