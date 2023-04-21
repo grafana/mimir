@@ -27,6 +27,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/notify"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
@@ -41,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/util"
+	util_net "github.com/grafana/mimir/pkg/util/net"
 )
 
 const (
@@ -656,7 +659,8 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var userAmConfig *amconfig.Config
 	var err error
 	var hasTemplateChanges bool
-	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
+	var tenantDir = am.getTenantDirectory(cfg.User)
+	var userTemplateDir = filepath.Join(tenantDir, templatesDir)
 	var pathsToRemove = make(map[string]struct{})
 
 	// List existing files to keep track of the ones to be removed
@@ -700,7 +704,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 
 	am.alertmanagersMtx.Lock()
 	defer am.alertmanagersMtx.Unlock()
-	existing, hasExisting := am.alertmanagers[cfg.User]
+	alertmanager, hasExisting := am.alertmanagers[cfg.User]
 
 	rawCfg := cfg.RawConfig
 	if cfg.RawConfig == "" {
@@ -731,23 +735,72 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
+	applyConfig := false
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg)
+		alertmanager, err = am.newAlertmanager(cfg.User)
 		if err != nil {
 			return err
 		}
-		am.alertmanagers[cfg.User] = newAM
+		applyConfig = true
 	} else if am.cfgs[cfg.User].RawConfig != cfg.RawConfig || hasTemplateChanges {
+		applyConfig = true
+	}
+
+	if applyConfig {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
+		templateFiles := make([]string, len(userAmConfig.Templates))
+		for i, t := range userAmConfig.Templates {
+			templateFilepath, err := safeTemplateFilepath(userTemplateDir, t)
+			if err != nil {
+				return err
+			}
+			templateFiles[i] = templateFilepath
+		}
+
+		var tmpl *template.Template
+		tmpl, err = template.FromGlobs(templateFiles, withCustomFunctions(cfg.User))
+		if err != nil {
+			return err
+		}
+		tmpl.ExternalURL = am.cfg.ExternalURL.URL
+
+		// Create a firewall binded to the per-tenant config.
+		firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(cfg.User, am.limits))
+		integrationsMap, err := buildIntegrationsMap(userAmConfig.Receivers, tmpl, firewallDialer, alertmanager.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+			if am.limits != nil {
+				rl := &tenantRateLimits{
+					tenant:      cfg.User,
+					limits:      am.limits,
+					integration: integrationName,
+				}
+
+				return newRateLimitedNotifier(notifier, rl, 10*time.Second, alertmanager.rateLimitedNotifications.WithLabelValues(integrationName))
+			}
+			return notifier
+		})
+
+		if err != nil {
+			return err
+		}
+
+		userConfig := &AlertmanagerConfig{
+			conf:            userAmConfig,
+			template:        tmpl,
+			raw:             rawCfg,
+			integrationsMap: integrationsMap,
+		}
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(cfg.User, userAmConfig, rawCfg)
+		err = alertmanager.ApplyConfig(userConfig)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
 	}
 
+	if !hasExisting {
+		am.alertmanagers[cfg.User] = alertmanager
+	}
 	am.cfgs[cfg.User] = cfg
 	return nil
 }
@@ -756,7 +809,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -781,10 +834,6 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
-	}
-
-	if err := newAM.ApplyConfig(userID, amConfig, rawCfg); err != nil {
-		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
 	am.alertmanagerMetrics.addUserRegistry(userID, reg)

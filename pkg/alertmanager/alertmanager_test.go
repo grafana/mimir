@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -85,7 +86,12 @@ route:
 
 	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	require.NoError(t, am.ApplyConfig(AlertmanagerConfig{
+		conf:            cfg,
+		template:        nil,
+		integrationsMap: map[string][]notify.Integration{"prod": {}},
+		raw:             "",
+	}))
 
 	now := time.Now()
 
@@ -168,7 +174,12 @@ route:
 
 	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	require.NoError(t, am.ApplyConfig(AlertmanagerConfig{
+		conf:            cfg,
+		template:        nil,
+		integrationsMap: map[string][]notify.Integration{"prod": {}},
+		raw:             "",
+	}))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{

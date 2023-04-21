@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/alertmanager/provider/mem"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/template"
-	"github.com/prometheus/alertmanager/timeinterval"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/alertmanager/ui"
 	"github.com/prometheus/client_golang/prometheus"
@@ -289,7 +288,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
+	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
 }
 
@@ -309,24 +308,8 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
-	templateFiles := make([]string, len(conf.Templates))
-	for i, t := range conf.Templates {
-		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
-		if err != nil {
-			return err
-		}
-
-		templateFiles[i] = templateFilepath
-	}
-
-	tmpl, err := template.FromGlobs(templateFiles, withCustomFunctions(userID))
-	if err != nil {
-		return err
-	}
-	tmpl.ExternalURL = am.cfg.ExternalURL
-
-	am.api.Update(conf, func(_ model.LabelSet) {})
+func (am *Alertmanager) ApplyConfig(conf Configuration) error {
+	conf.UpdateAPI(am.api)
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -338,7 +321,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, log.With(am.logger, "component", "inhibitor"))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules(), am.marker, log.With(am.logger, "component", "inhibitor"))
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -349,47 +332,19 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		return d + waitFunc()
 	}
 
-	// Create a firewall binded to the per-tenant config.
-	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
-
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
-		if am.cfg.Limits != nil {
-			rl := &tenantRateLimits{
-				tenant:      userID,
-				limits:      am.cfg.Limits,
-				integration: integrationName,
-			}
-
-			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
-		}
-		return notifier
-	})
-	if err != nil {
-		return nil
-	}
-
-	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
-	for _, ti := range conf.MuteTimeIntervals {
-		timeIntervals[ti.Name] = ti.TimeIntervals
-	}
-
-	for _, ti := range conf.TimeIntervals {
-		timeIntervals[ti.Name] = ti.TimeIntervals
-	}
-
 	pipeline := am.pipelineBuilder.New(
-		integrationsMap,
+		conf.ReceiverIntegrations(),
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
-		timeIntervals,
+		conf.TimeIntervals(),
 		am.nflog,
 		am.state,
 	)
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		dispatch.NewRoute(conf.RoutingTree(), nil),
 		pipeline,
 		am.marker,
 		timeoutFunc,
@@ -401,7 +356,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	go am.dispatcher.Run()
 	go am.inhibitor.Run()
 
-	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
+	am.configHashMetric.Set(md5HashAsMetricValue(conf.Raw()))
 	return nil
 }
 
