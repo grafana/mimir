@@ -1899,26 +1899,34 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 	}
 }
 
-func TestLongestRegexpMatcherBytes(t *testing.T) {
+func TestGetRegexpMatcherStats(t *testing.T) {
 	tests := map[string]struct {
 		expr     string
-		expected int
+		expected regexpMatcherStats
 	}{
 		"should return 0 if the query has no vector selectors": {
 			expr:     "1",
-			expected: 0,
+			expected: regexpMatcherStats{},
 		},
 		"should return 0 if the query has regexp matchers": {
 			expr:     `count(metric{app="test"})`,
-			expected: 0,
+			expected: regexpMatcherStats{},
 		},
 		"should return the longest regexp matcher for a query with vector selectors": {
-			expr:     `avg(metric{app="test",namespace=~"short"}) / count(metric{app="very-very-long-but-ignored",namespace!~"longest-regexp"})`,
-			expected: 14,
+			expr: `avg(metric{app="test",namespace=~"short"}) / count(metric{app="very-very-long-but-ignored",namespace!~"longest-regexp"})`,
+			expected: regexpMatcherStats{
+				longestBytes:     14,
+				count:            2,
+				countIsOptimized: 2,
+			},
 		},
 		"should return the longest regexp matcher for a query with matrix selectors": {
-			expr:     `avg_over_time(metric{app="test",namespace!~"short"}[5m]) / count_over_time(metric{app="very-very-long-but-ignored",namespace=~"longest-regexp"}[5m])`,
-			expected: 14,
+			expr: `avg_over_time(metric{app="test",namespace!~"short"}[5m]) / count_over_time(metric{app="very-very-long-but-ignored",namespace=~"longest-regexp"}[5m])`,
+			expected: regexpMatcherStats{
+				longestBytes:     14,
+				count:            2,
+				countIsOptimized: 2,
+			},
 		},
 	}
 
@@ -1927,7 +1935,7 @@ func TestLongestRegexpMatcherBytes(t *testing.T) {
 			parsed, err := parser.ParseExpr(testData.expr)
 			require.NoError(t, err)
 
-			actual := longestRegexpMatcherBytes(parsed)
+			actual := getRegexpMatcherStats(parsed)
 			assert.Equal(t, testData.expected, actual)
 		})
 	}
