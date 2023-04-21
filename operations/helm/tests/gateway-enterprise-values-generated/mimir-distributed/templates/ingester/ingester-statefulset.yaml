@@ -119,9 +119,12 @@ spec:
             - name: grpc
               containerPort: 9095
               protocol: TCP
-            - name: memberlist
+            - name: tcp-memberlist
               containerPort: 7946
               protocol: TCP
+            - name: udp-memberlist
+              containerPort: 7946
+              protocol: UDP
           livenessProbe:
             null
           readinessProbe:
@@ -262,9 +265,12 @@ spec:
             - name: grpc
               containerPort: 9095
               protocol: TCP
-            - name: memberlist
+            - name: tcp-memberlist
               containerPort: 7946
               protocol: TCP
+            - name: udp-memberlist
+              containerPort: 7946
+              protocol: UDP
           livenessProbe:
             null
           readinessProbe:
@@ -405,9 +411,12 @@ spec:
             - name: grpc
               containerPort: 9095
               protocol: TCP
-            - name: memberlist
+            - name: tcp-memberlist
               containerPort: 7946
               protocol: TCP
+            - name: udp-memberlist
+              containerPort: 7946
+              protocol: UDP
           livenessProbe:
             null
           readinessProbe:

@@ -13,9 +13,13 @@ spec:
   type: ClusterIP
   clusterIP: None
   ports:
-    - name: gossip-ring
+    - name: tcp-gossip-ring
       port: 7946
       protocol: TCP
+      targetPort: 7946
+    - name: udp-gossip-ring
+      port: 7946
+      protocol: UDP
       targetPort: 7946
   publishNotReadyAddresses: true
   selector:
