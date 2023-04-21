@@ -482,20 +482,20 @@ func (w labelValuesPostingsStrategy) name() string {
 	return "lv-" + w.matchersStrategy.name()
 }
 
-func (w labelValuesPostingsStrategy) selectPostings(matchersPostingGroups []postingGroup) (partial, omitted []postingGroup) {
-	partial, omitted = w.matchersStrategy.selectPostings(matchersPostingGroups)
+func (w labelValuesPostingsStrategy) selectPostings(matchersGroups []postingGroup) (partialMatchersGroups, omittedMatchersGroups []postingGroup) {
+	partialMatchersGroups, omittedMatchersGroups = w.matchersStrategy.selectPostings(matchersGroups)
 
-	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(partial) * tsdb.EstimatedSeriesP99Size
-	completePostingsSize := postingGroupsTotalSize(matchersPostingGroups)
+	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(partialMatchersGroups) * tsdb.EstimatedSeriesP99Size
+	completeMatchersSize := postingGroupsTotalSize(matchersGroups)
 
-	completePostingsPlusPostingsSize := completePostingsSize + postingsListsTotalSize(w.allLabelValues)
-	completePostingsPlusSeriesSize := completePostingsSize + maxPossibleSeriesSize
-	partialPostingsPlusSeriesSize := postingGroupsTotalSize(partial) + maxPossibleSeriesSize
+	completeMatchersPlusLabelValuesSize := completeMatchersSize + postingsListsTotalSize(w.allLabelValues)
+	completeMatchersPlusSeriesSize := completeMatchersSize + maxPossibleSeriesSize
+	partialMatchersPlusSeriesSize := postingGroupsTotalSize(partialMatchersGroups) + maxPossibleSeriesSize
 
-	if util_math.Min(completePostingsPlusSeriesSize, completePostingsPlusPostingsSize) < partialPostingsPlusSeriesSize {
-		return matchersPostingGroups, nil
+	if util_math.Min(completeMatchersPlusSeriesSize, completeMatchersPlusLabelValuesSize) < partialMatchersPlusSeriesSize {
+		return matchersGroups, nil
 	}
-	return partial, omitted
+	return partialMatchersGroups, omittedMatchersGroups
 }
 
 func (w labelValuesPostingsStrategy) preferSeriesToPostings(postings []storage.SeriesRef) bool {
