@@ -63,11 +63,11 @@ func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceIn
 	return instanceInfoByInstance, zoneInfoByZone
 }
 
-func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[navigableTokenInterface] {
-	circularList := newCircularListNavigableTokenInterface[navigableTokenInterface]()
+func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
+	circularList := newCircularListNavigableTokenInterface[*tokenInfo]()
 	for _, token := range t.sortedTokens {
 		instanceInfo := instanceInfoByInstance[t.instanceByToken[token]]
-		navigableToken := newNavigableToken(newTokenInfo(instanceInfo, token))
+		navigableToken := newNavigableTokenInfo(newTokenInfo(instanceInfo, token))
 		circularList.insertLast(navigableToken)
 	}
 

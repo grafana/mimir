@@ -9,11 +9,11 @@ type navigableTokenInterface interface {
 
 	// getNavigableToken returns the navigableToken related to this navigableTokenInterface
 	// its goal is to connect tokenInfoInterface with navigableTokenInterface
-	getNavigableToken() *navigableToken[navigableTokenInterface]
+	getNavigableToken() *navigableToken[*tokenInfo]
 
 	// setNavigableToken sets the navigableToken related to this navigableTokenInterface
 	// its goal is to connect tokenInfoInterface with navigableTokenInterface
-	setNavigableToken(navigableToken *navigableToken[navigableTokenInterface])
+	setNavigableToken(navigableToken *navigableToken[*tokenInfo])
 
 	// getPrevious returns the navigableTokenInterface preceding this navigableTokenInterface
 	getPrevious() navigableTokenInterface
@@ -26,6 +26,14 @@ type navigableToken[T navigableTokenInterface] struct {
 
 func newNavigableToken(data navigableTokenInterface) *navigableToken[navigableTokenInterface] {
 	n := &navigableToken[navigableTokenInterface]{
+		data: data,
+	}
+	//data.setNavigableToken(n)
+	return n
+}
+
+func newNavigableTokenInfo(data *tokenInfo) *navigableToken[*tokenInfo] {
+	n := &navigableToken[*tokenInfo]{
 		data: data,
 	}
 	data.setNavigableToken(n)

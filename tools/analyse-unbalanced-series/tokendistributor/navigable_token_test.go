@@ -85,7 +85,7 @@ func TestCircularList_Remove(t *testing.T) {
 	require.Nil(t, firstElement.next)
 }
 
-func TestElementWithToken_InsertBefore(t *testing.T) {
+func TestNavigableToken_InsertBefore(t *testing.T) {
 	tokenInfo := newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1)
 	firstElement := newNavigableToken(tokenInfo)
 	secondElement := newNavigableToken(newCandidateTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2, tokenInfo))
@@ -99,4 +99,18 @@ func TestElementWithToken_InsertBefore(t *testing.T) {
 	require.NotNil(t, secondElement.prev)
 	require.Equal(t, firstElement.next, secondElement)
 	require.Equal(t, secondElement.prev, firstElement)
+}
+
+func TestNavigableToken_GetNavigableToken(t *testing.T) {
+	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
+	secondElemet := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
+	circularList := newCircularListNavigableTokenInterface[*tokenInfo]()
+	circularList.insertLast(firstElement)
+	circularList.insertLast(secondElemet)
+	head := circularList.head
+	first := head.getData()
+	require.Equal(t, first.getNavigableToken(), head)
+	tail := head.prev
+	last := tail.getData()
+	require.Equal(t, last.getNavigableToken(), tail)
 }

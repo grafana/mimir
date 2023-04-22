@@ -106,7 +106,7 @@ type tokenInfo struct {
 	replicaStart        Token
 	expandable          bool
 	replicatedOwnership uint32
-	navigableToken      *navigableToken[navigableTokenInterface]
+	navigableToken      *navigableToken[*tokenInfo]
 	prev, next          *navigableTokenInfo
 }
 
@@ -118,11 +118,11 @@ func newTokenInfo(instance *instanceInfo, token Token) *tokenInfo {
 }
 
 // implementation of navigableTokenInterface
-func (ti *tokenInfo) getNavigableToken() *navigableToken[navigableTokenInterface] {
+func (ti *tokenInfo) getNavigableToken() *navigableToken[*tokenInfo] {
 	return ti.navigableToken
 }
 
-func (ti *tokenInfo) setNavigableToken(navigableToken *navigableToken[navigableTokenInterface]) {
+func (ti *tokenInfo) setNavigableToken(navigableToken *navigableToken[*tokenInfo]) {
 	ti.navigableToken = navigableToken
 }
 
