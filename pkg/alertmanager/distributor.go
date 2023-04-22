@@ -105,6 +105,9 @@ func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
 	if strings.HasSuffix(path.Dir(p), "/v2/silence") {
 		return true, merger.V2SilenceID{}
 	}
+	if strings.HasSuffix(p, "/v2/receivers") {
+		return true, merger.V2Receivers{}
+	}
 	return false, nil
 }
 
