@@ -33,7 +33,7 @@ func (z *zoneInfo) String() string {
 type instanceInfo struct {
 	instanceId        Instance
 	zone              *zoneInfo
-	ownership         uint32
+	ownership         float64
 	adjustedOwnership float64
 	tokenCount        int
 }
@@ -53,11 +53,11 @@ func (i *instanceInfo) addTokens(tokenCount int) {
 }
 
 func (i *instanceInfo) String() string {
-	return fmt.Sprintf("instanceInfo{%s-%s-%d-%d}", i.instanceId, i.zone, i.tokenCount, i.ownership)
+	return fmt.Sprintf("instanceInfo{%s-%s-%d-%.2f}", i.instanceId, i.zone, i.tokenCount, i.ownership)
 }
 
 func (i *instanceInfo) toStringVerbose() string {
-	return fmt.Sprintf("instanceInfo{instanceId:%s,zone:%s,tokenCount:%d,ownership:%d,adjustedOwnership:%f}", i.instanceId, i.zone, i.tokenCount, i.ownership, i.adjustedOwnership)
+	return fmt.Sprintf("instanceInfo{instanceId:%s,zone:%s,tokenCount:%d,ownership:%.2f,adjustedOwnership:%.2f}", i.instanceId, i.zone, i.tokenCount, i.ownership, i.adjustedOwnership)
 }
 
 type tokenInfoInterface interface {
@@ -84,20 +84,11 @@ type tokenInfoInterface interface {
 	setExpandable(expandable bool)
 
 	// getReplicatedOwnership returns the size of the range of tokens that are owned by this token
-	getReplicatedOwnership() uint32
+	getReplicatedOwnership() float64
 
 	// setReplicatedOwnership sets the replicatedOwnership, i.r., the size of the range of tokens that are owned by
 	// this tokenInfoInterface
-	setReplicatedOwnership(replicatedOwnership uint32)
-}
-
-type navigableTokenInfo struct {
-	instance            *instanceInfo
-	token               Token
-	replicaStart        Token
-	expandable          bool
-	replicatedOwnership uint32
-	prev, next          *navigableTokenInfo
+	setReplicatedOwnership(replicatedOwnership float64)
 }
 
 type tokenInfo struct {
@@ -105,9 +96,8 @@ type tokenInfo struct {
 	token               Token
 	replicaStart        Token
 	expandable          bool
-	replicatedOwnership uint32
+	replicatedOwnership float64
 	navigableToken      *navigableToken[*tokenInfo]
-	prev, next          *navigableTokenInfo
 }
 
 func newTokenInfo(instance *instanceInfo, token Token) *tokenInfo {
@@ -151,11 +141,11 @@ func (ti *tokenInfo) setExpandable(expandable bool) {
 	ti.expandable = expandable
 }
 
-func (ti *tokenInfo) getReplicatedOwnership() uint32 {
+func (ti *tokenInfo) getReplicatedOwnership() float64 {
 	return ti.replicatedOwnership
 }
 
-func (ti *tokenInfo) setReplicatedOwnership(replicatedOwnership uint32) {
+func (ti *tokenInfo) setReplicatedOwnership(replicatedOwnership float64) {
 	ti.replicatedOwnership = replicatedOwnership
 }
 
@@ -164,7 +154,7 @@ func (ti *tokenInfo) getPrevious() navigableTokenInterface {
 }
 
 func (ti *tokenInfo) String() string {
-	return fmt.Sprintf("tokenInfo{%s,t:%d,replicaStart:%d,replicatedOwnership:%d,exp:%v", ti.instance, ti.token, ti.replicaStart, ti.replicatedOwnership, ti.expandable)
+	return fmt.Sprintf("tokenInfo{%s,t:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ti.instance, ti.token, ti.replicaStart, ti.replicatedOwnership, ti.expandable)
 }
 
 type candidateTokenInfo struct {
@@ -185,7 +175,7 @@ func (ci *candidateTokenInfo) getPrevious() navigableTokenInterface {
 }
 
 func (ci candidateTokenInfo) String() string {
-	return fmt.Sprintf("candidateTokenInfo{%s,t:%d,hostToken:%d,replicaStart:%d,replicatedOwnership:%d,exp:%v", ci.instance, ci.token, ci.host.getToken(), ci.replicaStart, ci.replicatedOwnership, ci.expandable)
+	return fmt.Sprintf("candidateTokenInfo{%s,t:%d,hostToken:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ci.instance, ci.token, ci.host.getToken(), ci.replicaStart, ci.replicatedOwnership, ci.expandable)
 }
 
 type Token uint32
@@ -201,6 +191,10 @@ func (t Token) distance(next, maxTokenValue Token) uint32 {
 
 func (t Token) split(next, maxTokenValue Token) Token {
 	dist := (t.distance(next, maxTokenValue) + 1) / 2
+	distFromMax := uint32(maxTokenValue - t)
+	if distFromMax < dist {
+		return Token(distFromMax + dist)
+	}
 	return Token(uint32(t) + dist)
 }
 

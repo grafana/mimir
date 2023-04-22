@@ -52,6 +52,11 @@ func (t TokenDistributor) getInstanceCount() int {
 	return len(t.tokensByInstance)
 }
 
+func (t TokenDistributor) getOptimalTokenOwnership(newTokensCount int) float64 {
+	maxTokenAsFloat64 := float64(t.maxTokenValue)
+	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+newTokensCount)
+}
+
 func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceInfo, map[Zone]*zoneInfo) {
 	zoneInfoByZone := make(map[Zone]*zoneInfo)
 	instanceInfoByInstance := make(map[Instance]*instanceInfo, len(t.tokensByInstance))
@@ -64,7 +69,7 @@ func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceIn
 }
 
 func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
-	circularList := newCircularListNavigableTokenInterface[*tokenInfo]()
+	circularList := newCircularList[*tokenInfo]()
 	for _, token := range t.sortedTokens {
 		instanceInfo := instanceInfoByInstance[t.instanceByToken[token]]
 		navigableToken := newNavigableTokenInfo(newTokenInfo(instanceInfo, token))
@@ -80,23 +85,31 @@ func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map
 	return &circularList
 }
 
-/*
-func (t TokenDistributor) createCandidateInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo, initialTokenOwnership uint32) *CircularList[navigableTokenInterface] {
-	circularList := newCircularListNavigableTokenInterface()
-	for _, token := range t.sortedTokens {
-		instanceInfo := instanceInfoByInstance[t.instanceByToken[token]]
-		navigableToken := newNavigableToken(newTokenInfo(instanceInfo, token))
+func (t TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircularList *CircularList[*tokenInfo], newInstanceInfo *instanceInfo, initialTokenOwnership float64) *CircularList[*candidateTokenInfo] {
+	circularList := newCircularList[*candidateTokenInfo]()
+	curr := tokenInfoCircularList.head
+	for {
+		currentTokenInfo := curr.getData()
+		candidateToken := t.calculateCandidateToken(currentTokenInfo)
+		candidateTokenInfo := newCandidateTokenInfo(newInstanceInfo, candidateToken, currentTokenInfo)
+		candidateTokenInfo.setReplicatedOwnership(initialTokenOwnership)
+		navigableToken := newNavigableCandidateTokenInfo(candidateTokenInfo)
 		circularList.insertLast(navigableToken)
-	}
+		t.populateCandidateTokenInfo(navigableToken.getData(), newInstanceInfo.zone)
 
-	curr := circularList.head
-	for _ = range t.sortedTokens {
-		t.populateTokenInfo(curr.getData(), newInstanceZone)
 		curr = curr.next
+		if curr == tokenInfoCircularList.head {
+			break
+		}
 	}
-
 	return &circularList
-}*/
+}
+
+func (t TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
+	currentToken := tokenInfo.getToken()
+	nextToken := tokenInfo.getNavigableToken().getNext().getToken()
+	return currentToken.split(nextToken, t.maxTokenValue)
+}
 
 // calculateReplicaStartAndExpansion crosses the ring backwards starting from the token corresponding to navigableToken,
 // and looks for the first token belonging to the same zone. The token preceding the latter is a replica start of
@@ -177,8 +190,14 @@ func (t TokenDistributor) populateTokenInfo(navigableToken navigableTokenInterfa
 	replicaStart, expandable := t.calculateReplicaStartAndExpansion(navigableToken, newInstanceZone)
 	navigableToken.setReplicaStart(replicaStart.getToken())
 	navigableToken.setExpandable(expandable)
-	newOwnership := replicaStart.getNavigableToken().getPrev().getToken().distance(navigableToken.getToken(), t.maxTokenValue)
+	newOwnership := float64(replicaStart.getNavigableToken().getPrev().getToken().distance(navigableToken.getToken(), t.maxTokenValue))
 	oldOwnership := navigableToken.getReplicatedOwnership()
 	navigableToken.setReplicatedOwnership(newOwnership)
 	navigableToken.getOwningInstance().ownership += newOwnership - oldOwnership
+}
+
+func (t TokenDistributor) populateCandidateTokenInfo(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) {
+	replicaStart, expandable := t.calculateReplicaStartAndExpansion(navigableToken, newInstanceZone)
+	navigableToken.setReplicaStart(replicaStart.getToken())
+	navigableToken.setExpandable(expandable)
 }

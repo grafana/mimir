@@ -7,18 +7,17 @@ import (
 )
 
 func TestCircularList_InsertFirst(t *testing.T) {
-	tokenInfo := newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1)
-	firstElement := newNavigableToken(tokenInfo)
-	circularList := newCircularListNavigableTokenInterface[navigableTokenInterface]()
+	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
+	circularList := newCircularList[*tokenInfo]()
 
 	head := circularList.insertFirst(firstElement)
 	require.Equal(t, head, firstElement)
 
-	secondElement := newNavigableToken(newCandidateTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2, tokenInfo))
+	secondElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
 	head = circularList.insertFirst(secondElement)
 	require.Equal(t, head, secondElement)
 
-	thirdElement := newNavigableToken(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
+	thirdElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
 	head = circularList.insertFirst(thirdElement)
 	require.Equal(t, head, thirdElement)
 
@@ -31,18 +30,17 @@ func TestCircularList_InsertFirst(t *testing.T) {
 }
 
 func TestCircularList_InsertLast(t *testing.T) {
-	tokenInfo := newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1)
-	firstElement := newNavigableToken(tokenInfo)
-	circularList := newCircularListNavigableTokenInterface[navigableTokenInterface]()
+	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
+	circularList := newCircularList[*tokenInfo]()
 
 	head := circularList.insertLast(firstElement)
 	require.Equal(t, head, firstElement)
 
-	secondElement := newNavigableToken(newCandidateTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2, tokenInfo))
+	secondElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
 	head = circularList.insertLast(secondElement)
 	require.Equal(t, head, firstElement)
 
-	thirdElement := newNavigableToken(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
+	thirdElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
 	head = circularList.insertLast(thirdElement)
 	require.Equal(t, head, firstElement)
 
@@ -55,14 +53,14 @@ func TestCircularList_InsertLast(t *testing.T) {
 }
 
 func TestCircularList_Remove(t *testing.T) {
-	tokenInfo := newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1)
-	firstElement := newNavigableToken(tokenInfo)
-	secondElement := newNavigableToken(newCandidateTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2, tokenInfo))
-	thirdElement := newNavigableToken(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
-	circularList := newCircularListNavigableTokenInterface[navigableTokenInterface]()
-
+	circularList := newCircularList[*tokenInfo]()
+	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
 	circularList.insertLast(firstElement)
+
+	secondElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
 	circularList.insertLast(secondElement)
+
+	thirdElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-3", newZoneInfo("zone-3"), 4), 3))
 	circularList.insertLast(thirdElement)
 
 	head := circularList.remove(secondElement)
@@ -86,9 +84,8 @@ func TestCircularList_Remove(t *testing.T) {
 }
 
 func TestNavigableToken_InsertBefore(t *testing.T) {
-	tokenInfo := newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1)
-	firstElement := newNavigableToken(tokenInfo)
-	secondElement := newNavigableToken(newCandidateTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2, tokenInfo))
+	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
+	secondElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
 	secondElement.prev = secondElement
 	secondElement.next = secondElement
 
@@ -104,7 +101,7 @@ func TestNavigableToken_InsertBefore(t *testing.T) {
 func TestNavigableToken_GetNavigableToken(t *testing.T) {
 	firstElement := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-1", newZoneInfo("zone-1"), 4), 1))
 	secondElemet := newNavigableTokenInfo(newTokenInfo(newInstanceInfo("instance-2", newZoneInfo("zone-2"), 4), 2))
-	circularList := newCircularListNavigableTokenInterface[*tokenInfo]()
+	circularList := newCircularList[*tokenInfo]()
 	circularList.insertLast(firstElement)
 	circularList.insertLast(secondElemet)
 	head := circularList.head

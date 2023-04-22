@@ -24,19 +24,19 @@ type navigableToken[T navigableTokenInterface] struct {
 	prev, next *navigableToken[T]
 }
 
-func newNavigableToken(data navigableTokenInterface) *navigableToken[navigableTokenInterface] {
-	n := &navigableToken[navigableTokenInterface]{
-		data: data,
-	}
-	//data.setNavigableToken(n)
-	return n
-}
-
 func newNavigableTokenInfo(data *tokenInfo) *navigableToken[*tokenInfo] {
 	n := &navigableToken[*tokenInfo]{
 		data: data,
 	}
 	data.setNavigableToken(n)
+	return n
+}
+
+func newNavigableCandidateTokenInfo(data *candidateTokenInfo) *navigableToken[*candidateTokenInfo] {
+	n := &navigableToken[*candidateTokenInfo]{
+		data: data,
+	}
+	//data.setNavigableToken(n)
 	return n
 }
 
@@ -69,7 +69,7 @@ type CircularList[T navigableTokenInterface] struct {
 	head *navigableToken[T]
 }
 
-func newCircularListNavigableTokenInterface[T navigableTokenInterface]() CircularList[T] {
+func newCircularList[T navigableTokenInterface]() CircularList[T] {
 	return CircularList[T]{
 		head: nil,
 	}

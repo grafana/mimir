@@ -26,3 +26,23 @@ func TestTokenDistributor_CreateTokenInfoCircularList(t *testing.T) {
 		tokenInfoCircularList.remove(head)
 	}
 }
+
+func TestTokenDistributor_CreateCandidateTokenInfoCircularList(t *testing.T) {
+	tokenDistributor := createTokenDistributor()
+	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
+	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
+	newInstanceInfo := newInstanceInfo("instance-4", zoneInfoByZone["zone-b"], 4)
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(4)
+	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
+
+	curr1 := tokenInfoCircularList.head
+	curr2 := candidateTokenCircularList.head
+	for _ = range tokenDistributor.sortedTokens {
+		candidateToken := tokenDistributor.calculateCandidateToken(curr1.getData())
+		require.Equal(t, curr2.getData().getToken(), candidateToken)
+		require.Equal(t, curr2.getData().getPrevious(), curr1.getData())
+		fmt.Println(curr2.getData())
+		curr1 = curr1.next
+		curr2 = curr2.next
+	}
+}
