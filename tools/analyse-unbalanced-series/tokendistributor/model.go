@@ -116,6 +116,14 @@ func (ti *tokenInfo) setNavigableToken(navigableToken *navigableToken[*tokenInfo
 	ti.navigableToken = navigableToken
 }
 
+func (ti *tokenInfo) getPrevious() navigableTokenInterface {
+	return ti.getNavigableToken().getPrev()
+}
+
+func (ti *tokenInfo) getNext() navigableTokenInterface {
+	return ti.getNavigableToken().getNext()
+}
+
 // implementation of tokenInfoInterface
 func (ti *tokenInfo) getToken() Token {
 	return ti.token
@@ -147,10 +155,6 @@ func (ti *tokenInfo) getReplicatedOwnership() float64 {
 
 func (ti *tokenInfo) setReplicatedOwnership(replicatedOwnership float64) {
 	ti.replicatedOwnership = replicatedOwnership
-}
-
-func (ti *tokenInfo) getPrevious() navigableTokenInterface {
-	return ti.getNavigableToken().getPrev()
 }
 
 func (ti *tokenInfo) String() string {

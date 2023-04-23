@@ -17,6 +17,9 @@ type navigableTokenInterface interface {
 
 	// getPrevious returns the navigableTokenInterface preceding this navigableTokenInterface
 	getPrevious() navigableTokenInterface
+
+	// getNext returns the navigableTokenInterface succeeding this navigableTokenInterface
+	getNext() navigableTokenInterface
 }
 
 type navigableToken[T navigableTokenInterface] struct {

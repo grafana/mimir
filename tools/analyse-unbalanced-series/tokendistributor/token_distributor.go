@@ -114,7 +114,7 @@ func (t TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircular
 
 func (t TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
 	currentToken := tokenInfo.getToken()
-	nextToken := tokenInfo.getNavigableToken().getNext().getToken()
+	nextToken := tokenInfo.getNext().getToken()
 	return currentToken.split(nextToken, t.maxTokenValue)
 }
 
@@ -179,7 +179,7 @@ func (t TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navig
 			}
 		}
 		replicaStart = curr
-		curr = curr.getNavigableToken().getPrev()
+		curr = curr.getPrevious()
 	}
 
 	// clean up visited zones
@@ -200,7 +200,7 @@ func (t TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZon
 	replicaStart, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstanceZone)
 	tokenInfo.setReplicaStart(replicaStart.getToken())
 	tokenInfo.setExpandable(expandable)
-	newOwnership := float64(replicaStart.getNavigableToken().getPrev().getToken().distance(tokenInfo.getToken(), t.maxTokenValue))
+	newOwnership := float64(replicaStart.getPrevious().getToken().distance(tokenInfo.getToken(), t.maxTokenValue))
 	oldOwnership := tokenInfo.getReplicatedOwnership()
 	tokenInfo.setReplicatedOwnership(newOwnership)
 	tokenInfo.getOwningInstance().ownership += newOwnership - oldOwnership
@@ -214,3 +214,10 @@ func (t TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candida
 	candidateTokenInfo.setReplicaStart(replicaStart.getToken())
 	candidateTokenInfo.setExpandable(expandable)
 }
+
+/*
+func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, optimalTokenOwnership, multiplier float64) float64 {
+	host := candidate.host
+	next := host.getNavigableToken().getNext()
+}
+*/
