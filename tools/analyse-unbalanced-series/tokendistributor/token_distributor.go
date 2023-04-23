@@ -68,6 +68,10 @@ func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceIn
 	return instanceInfoByInstance, zoneInfoByZone
 }
 
+// createTokenInfoCircularList creates a circularList whose elements are of type tokenInfo.
+// The resulting circularList is created starting from the slice of sorted tokens sortedTokens, and represent the actual
+// ring. For tokenInfo its replica start (tokenInfo.replicaStart) and expandable (tokenInfo.expandable) are calculated
+// and stored
 func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
 	circularList := newCircularList[*tokenInfo]()
 	for _, token := range t.sortedTokens {
@@ -85,6 +89,9 @@ func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map
 	return &circularList
 }
 
+// createCandidateTokenInfoCircularList creates a circularList whose elements are of type candidateTokenInfo.
+// The resulting circularList is created starting from a circularList of tokenInfo elements in such a way that between
+// each 2 tokenInfos belonging to the former, a candidateTokenInfo is created in the middle of the 2 tokenInfos.
 func (t TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircularList *CircularList[*tokenInfo], newInstanceInfo *instanceInfo, initialTokenOwnership float64) *CircularList[*candidateTokenInfo] {
 	circularList := newCircularList[*candidateTokenInfo]()
 	curr := tokenInfoCircularList.head
@@ -186,18 +193,24 @@ func (t TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navig
 	return replicaStart, expandable
 }
 
-func (t TokenDistributor) populateTokenInfo(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) {
-	replicaStart, expandable := t.calculateReplicaStartAndExpansion(navigableToken, newInstanceZone)
-	navigableToken.setReplicaStart(replicaStart.getToken())
-	navigableToken.setExpandable(expandable)
-	newOwnership := float64(replicaStart.getNavigableToken().getPrev().getToken().distance(navigableToken.getToken(), t.maxTokenValue))
-	oldOwnership := navigableToken.getReplicatedOwnership()
-	navigableToken.setReplicatedOwnership(newOwnership)
-	navigableToken.getOwningInstance().ownership += newOwnership - oldOwnership
+// populateTokenInfo gets as input a tokenInfo, and it calculates and updates its replica start and expandable information
+// in the ring. Moreover, it updates the replicated ownership information of both token itself and the instance that
+// corresponds to that node.
+func (t TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZone *zoneInfo) {
+	replicaStart, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstanceZone)
+	tokenInfo.setReplicaStart(replicaStart.getToken())
+	tokenInfo.setExpandable(expandable)
+	newOwnership := float64(replicaStart.getNavigableToken().getPrev().getToken().distance(tokenInfo.getToken(), t.maxTokenValue))
+	oldOwnership := tokenInfo.getReplicatedOwnership()
+	tokenInfo.setReplicatedOwnership(newOwnership)
+	tokenInfo.getOwningInstance().ownership += newOwnership - oldOwnership
 }
 
-func (t TokenDistributor) populateCandidateTokenInfo(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) {
-	replicaStart, expandable := t.calculateReplicaStartAndExpansion(navigableToken, newInstanceZone)
-	navigableToken.setReplicaStart(replicaStart.getToken())
-	navigableToken.setExpandable(expandable)
+// populateCandidateTokenInfo gets as input a candidateTokenInfo, it calculates and sets its replica start and expandable
+// information starting from the position in the ring that corresponds to candidateTokenInfo's host, i.e., the token after
+// which the candidate is being added to the ring
+func (t TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candidateTokenInfo, newInstanceZone *zoneInfo) {
+	replicaStart, expandable := t.calculateReplicaStartAndExpansion(candidateTokenInfo, newInstanceZone)
+	candidateTokenInfo.setReplicaStart(replicaStart.getToken())
+	candidateTokenInfo.setExpandable(expandable)
 }
