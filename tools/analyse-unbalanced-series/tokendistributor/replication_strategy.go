@@ -25,6 +25,9 @@ type ReplicationStrategy interface {
 	// getReplicaStart returns the most far away token in the ring whose replication ends in the given instance with the given key
 	getReplicaStart(key Token, sortedRingTokens []Token, ringInstanceByToken map[Token]Instance) (Token, error)
 
+	// addInstance add the given instance with the given zone to the replication strategy
+	addInstance(instance Instance, zone Zone)
+
 	// getZone returns the zone the given instance belongs to
 	getZone(instance Instance) Zone
 }
@@ -58,6 +61,10 @@ func (s SimpleReplicationStrategy) getReplicationFactor() int {
 
 func (s SimpleReplicationStrategy) getZone(instance Instance) Zone {
 	return SingleZone
+}
+
+func (s SimpleReplicationStrategy) addInstance(instance Instance, zone Zone) {
+
 }
 
 func (s SimpleReplicationStrategy) getReplicaSetWithLastToken(key Token, sortedRingTokens []Token, ringInstanceByToken map[Token]Instance) ([]Instance, Token, error) {
@@ -182,6 +189,10 @@ func newZoneAwareReplicationStrategy(replicationFactor int, zoneByInstance map[I
 		bufZones:          bufZones,
 		logger:            logger,
 	}
+}
+
+func (z ZoneAwareReplicationStrategy) addInstance(instance Instance, zone Zone) {
+	z.zonesByInstance[instance] = zone
 }
 
 func (z ZoneAwareReplicationStrategy) getZone(instance Instance) Zone {

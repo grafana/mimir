@@ -36,6 +36,7 @@ type instanceInfo struct {
 	ownership         float64
 	adjustedOwnership float64
 	tokenCount        int
+	precededBy        *instanceInfo
 }
 
 func newInstanceInfo(instanceId Instance, zone *zoneInfo, tokenCount int) *instanceInfo {
@@ -69,12 +70,12 @@ type tokenInfoInterface interface {
 
 	// getReplicaStart returns the farthest token in the ring whose replication ends in the given instance with
 	// the given key it is the token that succeeds the closest token of the same zone as this tokenInfoInterface
-	getReplicaStart() Token
+	getReplicaStart() tokenInfoInterface
 
 	// setReplicaStart sets the replica set for this tokenInfoInterface. Replica set is the farthest away token
 	// in the ring whose replication ends in the given instance with the given key it is the token that succeeds
 	// the closest token of the same zone as this tokenInfoInterface
-	setReplicaStart(token Token)
+	setReplicaStart(token tokenInfoInterface)
 
 	// isExpandable is true if it is possible to put a new token in front of the replica start of this tokenInfoInterface
 	isExpandable() bool
@@ -94,7 +95,7 @@ type tokenInfoInterface interface {
 type tokenInfo struct {
 	instance            *instanceInfo
 	token               Token
-	replicaStart        Token
+	replicaStart        tokenInfoInterface
 	expandable          bool
 	replicatedOwnership float64
 	navigableToken      *navigableToken[*tokenInfo]
@@ -133,11 +134,11 @@ func (ti *tokenInfo) getOwningInstance() *instanceInfo {
 	return ti.instance
 }
 
-func (ti *tokenInfo) getReplicaStart() Token {
+func (ti *tokenInfo) getReplicaStart() tokenInfoInterface {
 	return ti.replicaStart
 }
 
-func (ti *tokenInfo) setReplicaStart(replicaStart Token) {
+func (ti *tokenInfo) setReplicaStart(replicaStart tokenInfoInterface) {
 	ti.replicaStart = replicaStart
 }
 
@@ -158,7 +159,7 @@ func (ti *tokenInfo) setReplicatedOwnership(replicatedOwnership float64) {
 }
 
 func (ti *tokenInfo) String() string {
-	return fmt.Sprintf("tokenInfo{%s,t:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ti.instance, ti.token, ti.replicaStart, ti.replicatedOwnership, ti.expandable)
+	return fmt.Sprintf("tokenInfo{%s,t:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ti.instance, ti.token, ti.replicaStart.getToken(), ti.replicatedOwnership, ti.expandable)
 }
 
 type candidateTokenInfo struct {
@@ -179,7 +180,7 @@ func (ci *candidateTokenInfo) getPrevious() navigableTokenInterface {
 }
 
 func (ci candidateTokenInfo) String() string {
-	return fmt.Sprintf("candidateTokenInfo{%s,t:%d,hostToken:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ci.instance, ci.token, ci.host.getToken(), ci.replicaStart, ci.replicatedOwnership, ci.expandable)
+	return fmt.Sprintf("candidateTokenInfo{%s,t:%d,hostToken:%d,replicaStart:%d,replicatedOwnership:%.2f,exp:%v", ci.instance, ci.token, ci.host.getToken(), ci.replicaStart.getToken(), ci.replicatedOwnership, ci.expandable)
 }
 
 type Token uint32
