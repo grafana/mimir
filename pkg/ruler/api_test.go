@@ -294,7 +294,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				return len(rls.Groups)
 			})
 
-			a := NewAPI(r, r.store, log.NewNopLogger())
+			a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules", nil, userID)
 			w := httptest.NewRecorder()
@@ -347,7 +347,7 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 		return len(rls.Groups)
 	})
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/alerts", nil, "user1")
 	w := httptest.NewRecorder()
@@ -466,7 +466,7 @@ rules:
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			r := prepareRuler(t, tt.cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
-			a := NewAPI(r, r.store, log.NewNopLogger())
+			a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
@@ -518,7 +518,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 	}
 
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart())
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
@@ -557,7 +557,7 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -610,7 +610,7 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -646,6 +646,79 @@ rules:
 	}
 
 	// define once so the requests build on each other so the number of rules can be tested
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			// POST
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+			require.Equal(t, tt.status, w.Code)
+			require.Equal(t, tt.output, w.Body.String())
+		})
+	}
+}
+
+func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 0
+		defaults.RulerMaxRulesPerRuleGroup = 0
+	})))
+
+	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+
+	tc := []struct {
+		name   string
+		input  string
+		output string
+		err    error
+		status int
+	}{
+		{
+			name:   "when pushing the first group with disabled limit",
+			status: 202,
+			input: `
+name: test_first_group_will_succeed
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:   "when pushing the second group with disabled limit",
+			status: 202,
+			input: `
+name: test_second_group_will_also_succeed
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+	}
+
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 
