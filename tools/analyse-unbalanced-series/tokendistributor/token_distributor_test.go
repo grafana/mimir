@@ -58,6 +58,7 @@ func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 	head := candidateTokenCircularList.head
 	curr := head
+
 	for {
 		candidate := curr.getData()
 		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(newTokensCount))

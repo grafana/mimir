@@ -24,10 +24,10 @@ func createCandidateTokenInfoOwnership(candTokenInfo *candidateTokenInfo, owners
 	return candidateTokenInfoOwnership
 }
 
-func createPriorityQueueWithoutInitialization(size int) (*PriorityQueue, float64, float64) {
+func createPriorityQueueWithoutInitialization(size int, max bool) (*PriorityQueue, float64, float64) {
 	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
 	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
-	pq := newPriorityQueue(size)
+	pq := newPriorityQueue(size, max)
 
 	minOwnership := math.MaxFloat64
 	maxOwnership := math.SmallestNonzeroFloat64
@@ -44,9 +44,9 @@ func createPriorityQueueWithoutInitialization(size int) (*PriorityQueue, float64
 	return pq, minOwnership, maxOwnership
 }
 
-func TestPriorityQueue_PushPopPeek(t *testing.T) {
+func TestMaxPriorityQueue_PushPopPeek(t *testing.T) {
 	size := 10
-	pq, minOwnership, maxOwnership := createPriorityQueueWithoutInitialization(size)
+	pq, minOwnership, maxOwnership := createPriorityQueueWithoutInitialization(size, true)
 
 	// Initialize PriorityQueue
 	heap.Init(pq)
@@ -54,7 +54,7 @@ func TestPriorityQueue_PushPopPeek(t *testing.T) {
 	// Check that the highest priority is maxOwnership, but don't remove it
 	require.Equal(t, maxOwnership, pq.Peek().ownership)
 
-	candidateTokenInfo := (*pq)[0].candidateTokenInfo
+	candidateTokenInfo := pq.items[0].candidateTokenInfo
 	newMaxOwnership := maxOwnership + 1.0
 	// Push to pq an element with the priority higher than the current maximal priority
 	candidateTokenInfoOwnership := createCandidateTokenInfoOwnership(candidateTokenInfo, newMaxOwnership)
@@ -83,12 +83,12 @@ func TestPriorityQueue_PushPopPeek(t *testing.T) {
 		currOwnership = candidateTokenOwnership.ownership
 	}
 
-	// Check that the minimal priority is minOwnership
+	// Check that the minimal priority is newMinOwnership
 	item = heap.Pop(pq).(*CandidateTokenInfoOwnership)
 	require.Equal(t, newMinOwnership, item.ownership)
 }
 
-func TestPriorityQueue_Update(t *testing.T) {
+func TestMaxPriorityQueue_Update(t *testing.T) {
 	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
 	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
 
@@ -96,7 +96,7 @@ func TestPriorityQueue_Update(t *testing.T) {
 	second := createCandidateTokenInfoOwnership(candidateTokenInfo, 5.0)
 	third := createCandidateTokenInfoOwnership(candidateTokenInfo, 4.0)
 
-	pq := newPriorityQueue(3)
+	pq := newPriorityQueue(3, true)
 	pq.Add(first)
 	pq.Add(second)
 	pq.Add(third)
@@ -109,6 +109,77 @@ func TestPriorityQueue_Update(t *testing.T) {
 	// Update the value of first and assign it the highest priority
 	pq.Update(first, func(candidateTokenInfoOwnership *CandidateTokenInfoOwnership) {
 		candidateTokenInfoOwnership.ownership *= 2
+	})
+
+	// Check that now first has the highest priority
+	require.Equal(t, first, pq.Peek())
+}
+
+func TestMinPriorityQueue_PushPopPeek(t *testing.T) {
+	size := 10
+	pq, minOwnership, maxOwnership := createPriorityQueueWithoutInitialization(size, false)
+
+	// Initialize PriorityQueue
+	heap.Init(pq)
+
+	// Check that the highest priority is minOwnership, but don't remove it
+	require.Equal(t, minOwnership, pq.Peek().ownership)
+
+	candidateTokenInfo := pq.items[0].candidateTokenInfo
+	newMinOwnership := minOwnership - 1.0
+	// Push to pq an element with the ownership lower than the current minimal ownership
+	candidateTokenInfoOwnership := createCandidateTokenInfoOwnership(candidateTokenInfo, newMinOwnership)
+	heap.Push(pq, candidateTokenInfoOwnership)
+
+	// Check that the highest priority is now newMinOwnership, but don't remove it
+	require.Equal(t, newMinOwnership, pq.Peek().ownership)
+
+	// Push to pq an element with the ownership higher than the current maximal priority
+	newMaxOwnership := maxOwnership + 1.0
+	candidateTokenInfoOwnership = createCandidateTokenInfoOwnership(candidateTokenInfo, newMaxOwnership)
+	heap.Push(pq, candidateTokenInfoOwnership)
+
+	// Check that the highest priority is newMinOwnership and remove it
+	item := heap.Pop(pq).(*CandidateTokenInfoOwnership)
+	require.Equal(t, newMinOwnership, item.ownership)
+
+	// Check that the highest priority is again minOwnership, but don't remove it
+	require.Equal(t, minOwnership, pq.Peek().ownership)
+
+	// Check that all other elements except the last one are sorted correctly
+	currOwnership := math.SmallestNonzeroFloat64
+	for pq.Len() > 1 {
+		candidateTokenOwnership := heap.Pop(pq).(*CandidateTokenInfoOwnership)
+		require.Greater(t, candidateTokenOwnership.ownership, currOwnership)
+		currOwnership = candidateTokenOwnership.ownership
+	}
+
+	// Check that the minimal priority is newMaxOwnership
+	item = heap.Pop(pq).(*CandidateTokenInfoOwnership)
+	require.Equal(t, newMaxOwnership, item.ownership)
+}
+
+func TestMinPriorityQueue_Update(t *testing.T) {
+	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
+	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
+
+	first := createCandidateTokenInfoOwnership(candidateTokenInfo, 4.0)
+	second := createCandidateTokenInfoOwnership(candidateTokenInfo, 3.0)
+	third := createCandidateTokenInfoOwnership(candidateTokenInfo, 5.0)
+
+	pq := newPriorityQueue(3, false)
+	pq.Add(first)
+	pq.Add(second)
+	pq.Add(third)
+
+	heap.Init(pq)
+
+	// Check that second has the highest priority, i.e., the minimal ownership
+	require.Equal(t, second, pq.Peek())
+
+	// Update the value of first and assign it the highest priority
+	pq.Update(first, func(candidateTokenInfoOwnership *CandidateTokenInfoOwnership) {
+		candidateTokenInfoOwnership.ownership /= 2
 	})
 
 	// Check that now first has the highest priority
