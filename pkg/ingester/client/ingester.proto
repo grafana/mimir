@@ -109,7 +109,7 @@ message QueryRequest {
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
 
-  bool PreferStreamingChunks = 4;
+  bool prefer_streaming_chunks = 4;
 }
 
 message ExemplarQueryRequest {
