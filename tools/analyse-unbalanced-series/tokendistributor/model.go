@@ -58,7 +58,7 @@ func (i *instanceInfo) String() string {
 }
 
 func (i *instanceInfo) toStringVerbose() string {
-	return fmt.Sprintf("instanceInfo{instanceId:%s,zone:%s,tokenCount:%d,ownership:%.2f,adjustedOwnership:%.2f}", i.instanceId, i.zone, i.tokenCount, i.ownership, i.adjustedOwnership)
+	return fmt.Sprintf("instanceInfo{instanceId:%s,zone:%s,tokenCount:%d,improvement:%.2f,adjustedOwnership:%.2f}", i.instanceId, i.zone, i.tokenCount, i.ownership, i.adjustedOwnership)
 }
 
 type tokenInfoInterface interface {

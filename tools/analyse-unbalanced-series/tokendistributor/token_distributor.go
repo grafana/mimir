@@ -1,5 +1,7 @@
 package tokendistributor
 
+import "container/heap"
+
 const (
 	initialInstanceCount = 66
 )
@@ -57,8 +59,8 @@ func (t TokenDistributor) getOptimalTokenOwnership(newTokensCount int) float64 {
 	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+newTokensCount)
 }
 
-// calculateReplicatedOwnership calculated the replicated ownership of the given token with its given replicaStart.
-// The replicated ownership is basically the distance between replicaStart's predecessor and the token itself.
+// calculateReplicatedOwnership calculated the replicated improvement of the given token with its given replicaStart.
+// The replicated improvement is basically the distance between replicaStart's predecessor and the token itself.
 func (t TokenDistributor) calculateReplicatedOwnership(token, replicaStart navigableTokenInterface) float64 {
 	return float64(replicaStart.getPrevious().getToken().distance(token.getToken(), t.maxTokenValue))
 }
@@ -200,7 +202,7 @@ func (t TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navig
 }
 
 // populateTokenInfo gets as input a tokenInfo, and it calculates and updates its replica start and expandable information
-// in the ring. Moreover, it updates the replicated ownership information of both token itself and the instance that
+// in the ring. Moreover, it updates the replicated improvement information of both token itself and the instance that
 // corresponds to that node.
 func (t TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZone *zoneInfo) {
 	replicaStart, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstanceZone)
@@ -227,19 +229,19 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 	next := host.getNext()
 	improvement := 0.0
 
-	// We first calculate the replication ownership of candidate
+	// We first calculate the replication improvement of candidate
 	oldOwnership := candidate.getReplicatedOwnership()
 	newOwnership := t.calculateReplicatedOwnership(candidate, candidate.getReplicaStart().(navigableTokenInterface))
 	improvement += calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, newInstance.tokenCount)
 	newInstance.adjustedOwnership = newInstance.ownership + newOwnership - oldOwnership
 
-	// We now calculate potential changes in the replicated ownership of the tokenInfo that succeeds the host (i.e., next).
+	// We now calculate potential changes in the replicated improvement of the tokenInfo that succeeds the host (i.e., next).
 	// This tokenInfo (next) is of interest because candidate has been placed between host and next.
 
-	// On the other hand. the replicated ownership of next can change
+	// On the other hand. the replicated improvement of next can change
 
-	// The replicated ownership of host and tokenInfos preceding it cannot be changed because they precede candidate,
-	// and the replicated ownership is the distance between the (further) replica start of a token and the token itself.
+	// The replicated improvement of host and tokenInfos preceding it cannot be changed because they precede candidate,
+	// and the replicated improvement is the distance between the (further) replica start of a token and the token itself.
 	// Therefore, we cross the ring backwards starting from the tokenInfo that succeeds the host (i.e., next) and calculate
 	// potential improvements of all the tokenInfos that could be potentially affected by candidate's insertion. This
 	// basically means that we are looking for all the tokenInfos that replicate the candidate.
@@ -297,7 +299,7 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
 				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
 				// In order to check whether the current barrier precedes candidate, we could compare the current
-				// replicated ownership of currToken (i.e., the range of tokens from its barrier to curentToken itself)
+				// replicated improvement of currToken (i.e., the range of tokens from its barrier to curentToken itself)
 				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
 				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
 				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
@@ -348,7 +350,8 @@ func calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership floa
 	return (sq(newOwnership-optimalTokenOwnership) - sq(oldOwnership-optimalTokenOwnership)) / sq(float64(tokenCount))
 }
 
-/*func (t TokenDistributor) AddInstance(instance Instance, zone Zone, tokenCount int) {
+/*
+func (t TokenDistributor) AddInstance(instance Instance, zone Zone, tokenCount int) {
 	t.replicationStrategy.addInstance(instance, zone)
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -358,5 +361,24 @@ func calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership floa
 	}
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceZone)
 	optimalTokenOwnership := t.getOptimalTokenOwnership(tokenCount)
-
+	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, tokenCount)
+	newInstanceInfo.improvement = optimalTokenOwnership
+	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 }*/
+
+func (t TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *CircularList[*candidateTokenInfo], optimalTokenOwnership float64, tokenCount int) *PriorityQueue {
+	head := candidateTokenInfoCircularList.head
+	curr := head
+	pq := newPriorityQueue(len(t.sortedTokens), false)
+	for {
+		candidate := curr.getData()
+		improvement := t.evaluateImprovement(curr.getData(), optimalTokenOwnership, 1/float64(tokenCount))
+		pq.Add(newCandidateTokenInfoImprovement(candidate, improvement))
+		curr = curr.next
+		if curr == head {
+			break
+		}
+	}
+	heap.Init(pq)
+	return pq
+}
