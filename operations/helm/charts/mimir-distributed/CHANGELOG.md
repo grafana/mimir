@@ -28,6 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 4.2.1
+
+* [BUGFIX] Updated Go version in Mimir and GEM images to 1.20.3 and 1.19.8 to fix CVE-2023-24538. #xxxx
+
 ## 4.2.0
 
 * [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
