@@ -342,7 +342,9 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.InstanceLimitsFn = distributorInstanceLimits(t.RuntimeConfig)
 
-	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Ingester.BlocksStorageConfig.TSDB.Retention
+	if t.Cfg.Querier.ShuffleShardingIngestersEnabled {
+		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Ingester.BlocksStorageConfig.TSDB.Retention
+	}
 
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or
