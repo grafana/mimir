@@ -44,9 +44,9 @@ find_prev_release() {
   find_last_release
 
   if [[ $LAST_RELEASE_VERSION =~ "-rc" ]]; then
-    PREV_RELEASE_TAG=$(git tag --list --sort=taggerdate 'mimir-[0-9]*' | tail -2 | head -1)
+    PREV_RELEASE_TAG=$(git tag --list 'mimir-[0-9]*' | tail -2 | head -1)
   else
-    PREV_RELEASE_TAG=$(git tag --list --sort=taggerdate 'mimir-[0-9]*' | grep -v -- '-rc' | tail -2 | head -1)
+    PREV_RELEASE_TAG=$(git tag --list 'mimir-[0-9]*' | grep -v -- '-rc' | tail -2 | head -1)
   fi
 
   if [ -z "${PREV_RELEASE_TAG}" ]; then
