@@ -2,6 +2,7 @@ package tokendistributor
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,14 +59,23 @@ func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 	head := candidateTokenCircularList.head
 	curr := head
-
+	bestOwnershipDecrease := math.MaxFloat64
+	bestCandidate := head
 	for {
 		candidate := curr.getData()
 		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(newTokensCount))
 		fmt.Printf("Improvement of insertion of candidate %s would be %.2f\n", candidate, improvement)
+
+		if improvement < bestOwnershipDecrease {
+			bestOwnershipDecrease = improvement
+			bestCandidate = curr
+		}
+
 		curr = curr.next
 		if curr == head {
 			break
 		}
 	}
+
+	require.Equal(t, Token(770), bestCandidate.getData().getToken())
 }
