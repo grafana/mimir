@@ -311,6 +311,7 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 			}
 		} else if currZone == next.getOwningInstance().zone && currToken.getReplicatedOwnership() > float64(candidate.getToken().distance(currToken.getToken(), t.maxTokenValue)) {
 			// If the barrier of the current token
+			// Does this really make sense?
 			barrier = next
 		}
 
@@ -382,3 +383,201 @@ func (t TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *Ci
 	heap.Init(pq)
 	return pq
 }
+
+func (t TokenDistributor) adjustData(candidate *candidateTokenInfo) {
+	host := candidate.host
+	next := host.getNext()
+	newInstance := candidate.getOwningInstance()
+	newInstanceZone := newInstance.zone
+	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
+	newTokenInfo.setReplicatedOwnership(candidate.getReplicatedOwnership())
+	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
+	navigableToken := newNavigableTokenInfo(newTokenInfo)
+	next.getNavigableToken().insertBefore(navigableToken)
+
+	visitedZonesCount := 0
+	prevZone := &LastZoneInfo
+	for currToken := next; visitedZonesCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
+		currInstance := currToken.getOwningInstance()
+		currZone := currInstance.zone
+		// if this zone has already been visited, we go on
+		if currZone.precededBy != nil {
+			continue
+		}
+		// otherwise we mark this zone as visited and increase the counter of visited zones
+		currZone.precededBy = prevZone
+		prevZone = currZone
+		visitedZonesCount++
+
+		//newReplicaStart := currToken.getReplicaStart()
+		barrier := currToken.getReplicaStart().(navigableTokenInterface).getPrevious()
+		if currToken.isExpandable() {
+			if currToken.getReplicaStart() == next {
+				// If currToken is expandable (wrt. candidate's zone), then it is possible to extend its replica set by adding
+				// a token from  candidate's zone as a direct predecessor of currToken replica start. Token candidate is being
+				// evaluated as the direct predecessor of token next, and therefore only that case would be valid here. In this
+				// case candidate would become the new replica start of currToken.
+				currToken.setReplicaStart(newTokenInfo)
+				// since the new replica set is candidate, it cannot be extendable by another token from its zone
+				currToken.setExpandable(false)
+				barrier = host
+			} else {
+				continue
+			}
+		} else if currZone == newInstanceZone {
+			if currToken.getReplicatedOwnership() > float64(candidate.getToken().distance(currToken.getToken(), t.maxTokenValue)) {
+				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
+				// backwards, i.e., it is the direct predecessor of replica start of that token.
+				// If currToken and candidate belong to the same zone, the only change that could happen here is if
+				// candidate becomes a new barrier of currToken, and this is possible only if the current barrier of
+				// currentToken precedes candidate.
+				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
+				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
+				// In order to check whether the current barrier precedes candidate, we could compare the current
+				// replicated improvement of currToken (i.e., the range of tokens from its barrier to curentToken itself)
+				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
+				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
+				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
+				// be node next.
+				//newReplicaStart = next
+				currToken.setReplicaStart(next)
+				// currToken and candidate belong to the same zone, and candidate is a new barrier of currToken. Hence,
+				// currToken cannot be expandable.
+				currToken.setExpandable(false)
+				barrier = candidate
+			} else {
+				continue
+			}
+		}
+		oldOwnership := currToken.getReplicatedOwnership()
+		newOwnership := float64(barrier.getToken().distance(currToken.getToken(), t.maxTokenValue))
+		currToken.setReplicatedOwnership(newOwnership)
+		currInstance.adjustedOwnership += newOwnership - oldOwnership
+	}
+
+	currZone := prevZone
+	for currZone != &LastZoneInfo {
+		prevZone = currZone.precededBy
+		currZone.precededBy = nil
+		currZone = prevZone
+	}
+}
+
+/*func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, optimalTokenOwnership, multiplier float64) float64 {
+	newInstance := candidate.getOwningInstance()
+	host := candidate.host
+	next := host.getNext()
+	improvement := 0.0
+
+	// We first calculate the replication improvement of candidate
+	oldOwnership := candidate.getReplicatedOwnership()
+	newOwnership := t.calculateReplicatedOwnership(candidate, candidate.getReplicaStart().(navigableTokenInterface))
+	improvement += calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, newInstance.tokenCount)
+	newInstance.adjustedOwnership = newInstance.ownership + newOwnership - oldOwnership
+
+	// We now calculate potential changes in the replicated improvement of the tokenInfo that succeeds the host (i.e., next).
+	// This tokenInfo (next) is of interest because candidate has been placed between host and next.
+
+	// On the other hand. the replicated improvement of next can change
+
+	// The replicated improvement of host and tokenInfos preceding it cannot be changed because they precede candidate,
+	// and the replicated improvement is the distance between the (further) replica start of a token and the token itself.
+	// Therefore, we cross the ring backwards starting from the tokenInfo that succeeds the host (i.e., next) and calculate
+	// potential improvements of all the tokenInfos that could be potentially affected by candidate's insertion. This
+	// basically means that we are looking for all the tokenInfos that replicate the candidate.
+	// We keep track of visited zones, so that we don't count the same zone more than once. Once the count of visited
+	// zones is equal to replicationStrategy.getReplicationFactor(), we can stop the visit. The reason for that is that
+	// no other token that precedes the token of the last visited zone could contain a replica of candidate because
+	// between that token (included) and candidate (excluded) there would be all available zones, and therefore candidate
+	// would have already been replicated replicationStrategy.getReplicationFactor() times. In other words, the replica
+	// start of that token would succeed candidate on the ring.
+	//
+
+	newInstanceZone := newInstance.zone
+	prevInstance := newInstance
+	visitedZonesCount := 0
+	for currToken := next; visitedZonesCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
+		currInstance := currToken.getOwningInstance()
+		currZone := currInstance.zone
+		// if this zone has already been visited, we go on
+		if currZone.precededBy != nil {
+			continue
+		}
+		// otherwise we mark this zone as visited and increase the counter of visited zones
+		currZone.precededBy = currZone
+		visitedZonesCount++
+
+		// If this is the firs time we encounter an instance, we initialize its adjustedOwnership and mark it as seen.
+		// The adjustedOwnership of each node will be used for the final evaluation of improvement, together with all
+		// potential improvements of all visited tokens
+		if currInstance.precededBy == nil {
+			currInstance.adjustedOwnership = currInstance.ownership
+			currInstance.precededBy = prevInstance
+			prevInstance = currInstance
+		}
+
+		//newReplicaStart := currToken.getReplicaStart()
+		barrier := currToken.getReplicaStart().(navigableTokenInterface).getPrevious()
+		if currToken.isExpandable() {
+			if currToken.getReplicaStart() == next {
+				// If currToken is expandable (wrt. candidate's zone), then it is possible to extend its replica set by adding
+				// a token from  candidate's zone as a direct predecessor of currToken replica start. Token candidate is being
+				// evaluated as the direct predecessor of token next, and therefore only that case would be valid here. In this
+				// case candidate would become the new replica start of currToken.
+				//newReplicaStart = candidate
+				barrier = host
+			} else {
+				continue
+			}
+		} else if currZone == newInstanceZone {
+			if currToken.getReplicatedOwnership() > float64(candidate.getToken().distance(currToken.getToken(), t.maxTokenValue)) {
+				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
+				// backwards, i.e., it is the direct predecessor of replica start of that token.
+				// If currToken and candidate belong to the same zone, the only change that could happen here is if
+				// candidate becomes a new barrier of currToken, and this is possible only if the current barrier of
+				// currentToken precedes candidate.
+				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
+				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
+				// In order to check whether the current barrier precedes candidate, we could compare the current
+				// replicated improvement of currToken (i.e., the range of tokens from its barrier to curentToken itself)
+				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
+				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
+				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
+				// be node next.
+				//newReplicaStart = next
+				barrier = candidate
+			} else {
+				continue
+			}
+		} else if currZone == next.getOwningInstance().zone && currToken.getReplicatedOwnership() > float64(candidate.getToken().distance(currToken.getToken(), t.maxTokenValue)) {
+			// If the barrier of the current token
+			barrier = next
+		}
+
+		oldOwnership = currToken.getReplicatedOwnership()
+		newOwnership = float64(barrier.getToken().distance(currToken.getToken(), t.maxTokenValue))
+		improvement += calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, currInstance.tokenCount)
+		currInstance.adjustedOwnership += newOwnership - oldOwnership
+	}
+
+	// Go through all visited instances and zones, add recorder adjustedOwnership and clear visited instances and zones
+	currInstance := prevInstance
+	for currInstance != newInstance {
+		newOwnership = prevInstance.adjustedOwnership
+		oldOwnership = prevInstance.ownership
+		tokenCount := float64(prevInstance.tokenCount)
+		diff := sq(newOwnership/tokenCount-optimalTokenOwnership) - sq(oldOwnership/tokenCount-optimalTokenOwnership)
+		prevInstance = currInstance.precededBy
+		currInstance.precededBy = nil
+		currInstance.zone.precededBy = nil
+		currInstance.adjustedOwnership = 0.0
+		if currInstance == newInstance {
+			improvement += diff * multiplier
+		} else {
+			improvement += diff
+		}
+		currInstance = prevInstance
+	}
+
+	return -improvement
+}*/
