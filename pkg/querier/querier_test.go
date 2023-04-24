@@ -327,8 +327,12 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	cfg.BatchIterators = true    // Always use the Batch iterator - regression test
+	cfg.BatchIterators = true // Always use the Batch iterator - regression test
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
 
 	s1 := []mimirpb.Sample{}
 	s2 := []mimirpb.Sample{}
@@ -368,9 +372,6 @@ func TestBatchMergeChunks(t *testing.T) {
 			},
 		},
 		nil)
-
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     logger,
