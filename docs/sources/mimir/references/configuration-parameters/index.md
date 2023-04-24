@@ -2547,6 +2547,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
+# Maximum number of buckets per native histogram sample. 0 to disable the limit.
+# CLI flag: -validation.max-native-histogram-buckets
+[max_native_histogram_buckets: <int> | default = 0]
+
 # (advanced) Controls how far into the future incoming samples are accepted
 # compared to the wall clock. Any sample with timestamp `t` will be rejected if
 # `t > (now + validation.create-grace-period)`. Also used by query-frontend to
@@ -2565,7 +2569,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) List of metric relabel configurations. Note that in most
 # situations, it is more effective to use metrics relabeling directly in the
-# Prometheus server, e.g. remote_write.write_relabel_configs.
+# Prometheus server, e.g. remote_write.write_relabel_configs. Labels available
+# during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
 # The maximum number of in-memory series per tenant, across the cluster before
@@ -2665,8 +2670,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
-# Limit the time range for partial queries at the querier level. Defaults to the
-# value of -store.max-query-length if set to 0.
+# Limit the time range for partial queries at the querier level.
 # CLI flag: -querier.max-partial-query-length
 [max_partial_query_length: <duration> | default = 0s]
 
@@ -2724,8 +2728,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Limit the total query time range (end - start time). This limit is enforced in
-# the query-frontend on the received query. Defaults to the value of
-# -store.max-query-length if set to 0.
+# the query-frontend on the received query.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 

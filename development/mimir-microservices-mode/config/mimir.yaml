@@ -153,7 +153,7 @@ query_scheduler:
 
 limits:
   # Limit max query time range to 31d
-  max_query_length: 744h
+  max_partial_query_length: 744h
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32

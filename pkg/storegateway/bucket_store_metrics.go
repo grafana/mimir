@@ -103,7 +103,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 	m.resultSeriesCount = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_result_series",
-		Help: "Number of series observed in the final result of a query.",
+		Help: "Number of series observed in the final result of a query after merging identical series from different blocks.",
 	})
 	m.queriesDropped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_queries_dropped_total",

@@ -795,13 +795,15 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	assert.NoError(tb, err)
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
-	card := []int{1, 10, 100, 1000}
-	series := generateSeries(card)
+	series := generateSeries([]int{1, 10, 100, 1000})
+	highCardinalitySeries := prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))
+	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
 	prepareCfg := defaultPrepareStoreConfig(tb)
 	prepareCfg.tempDir = dir
 	prepareCfg.series = series
+	prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
 
 	s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
 	mint, maxt := s.store.TimeRange()
@@ -892,6 +894,32 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 				assert.Equal(tb, 10, len(resp.Values))
 			}
 		})
+
+		tb.Run("1_000_000-series-matched-with-1-label-values", func(tb *testing.B) {
+			ms, err := storepb.PromMatchersToMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "high_cardinality_label_1", "0"),   // matches a single series
+				labels.MustNewMatcher(labels.MatchNotEqual, "high_cardinality_label_0", ""), // matches 1M series
+			)
+			require.NoError(tb, err)
+
+			req := &storepb.LabelValuesRequest{
+				Label:    "high_cardinality_label_0", // there is only 1 value for this label
+				Start:    timestamp.FromTime(minTime),
+				End:      timestamp.FromTime(maxTime),
+				Matchers: ms,
+			}
+			// warmup cache if any
+			resp, err := s.store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 1, len(resp.Values))
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N; i++ {
+				resp, err := s.store.LabelValues(ctx, req)
+				require.NoError(tb, err)
+				assert.Equal(tb, 1, len(resp.Values))
+			}
+		})
 	}
 
 	tb.Run("no cache", func(tb *testing.B) {
@@ -903,6 +931,19 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 		s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
 		benchmarks(tb)
 	})
+}
+
+func prefixLabels(prefix string, series []labels.Labels) []labels.Labels {
+	prefixed := make([]labels.Labels, len(series))
+	b := labels.NewScratchBuilder(2)
+	for i := range series {
+		b.Reset()
+		series[i].Range(func(l labels.Label) {
+			b.Add(prefix+l.Name, l.Value)
+		})
+		prefixed[i] = b.Labels()
+	}
+	return prefixed
 }
 
 // indexCacheMissingLabelValues wraps an IndexCache returning a miss on all FetchLabelValues calls,

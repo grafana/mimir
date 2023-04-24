@@ -118,6 +118,7 @@ type prepareStoreConfig struct {
 	indexCache           indexcache.IndexCache
 	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
+	postingsStrategy     postingsSelectionStrategy
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -139,6 +140,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
+		postingsStrategy:     selectAllStrategy{},
 		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
@@ -187,7 +189,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		cfg.tempDir,
 		cfg.maxSeriesPerBatch,
 		1,
-		selectAllStrategy{},
+		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),

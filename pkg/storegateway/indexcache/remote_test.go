@@ -634,7 +634,7 @@ func TestStringCacheKeys_Values(t *testing.T) {
 				hash := blake2b.Sum256([]byte("foo:bar"))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
 
-				return fmt.Sprintf("P:%s:%s:%s", user, uid.String(), encodedHash)
+				return fmt.Sprintf("P2:%s:%s:%s", user, uid.String(), encodedHash)
 			}(),
 		},
 		"should stringify series cache key": {
@@ -662,7 +662,7 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 		expectedLen int
 	}{
 		"should guarantee reasonably short key length for postings": {
-			expectedLen: 79,
+			expectedLen: 80,
 			keys: []string{
 				postingsCacheKey(user, uid, labels.Label{Name: "a", Value: "b"}),
 				postingsCacheKey(user, uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
