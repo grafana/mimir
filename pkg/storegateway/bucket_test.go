@@ -377,7 +377,7 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(userID string, block
 }
 
 func TestBlockLabelValues(t *testing.T) {
-	const series = 500
+	const series = 100_000
 
 	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
 
@@ -469,6 +469,19 @@ func TestBlockLabelValues(t *testing.T) {
 		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
+	})
+
+	t.Run("happy case with weak matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "p", "foo"),
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "1234.+"),
+			labels.MustNewMatcher(labels.MatchRegexp, "j", ".+"), // this is too weak and doesn't bring much value, it should be shortcut
+		}
+		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
 	})
 }
 
