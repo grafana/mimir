@@ -72,6 +72,12 @@ The following steps apply to a release candidate or a final release.
 
 1. Create or update the release notes in [release notes](https://github.com/grafana/mimir/tree/mimir-distributed-release-4.2/docs/sources/helm-charts/mimir-distributed/release-notes).
 
+   The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
+
+1. Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
+
+   The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
+
 1. From the root directory of the repository, run `make doc` so a template can update the [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
 1. Open a PR, and make sure that your PR targets the release branch.
