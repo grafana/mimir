@@ -63,9 +63,10 @@ If the query time range overlaps with the `-querier.query-ingesters-within` dura
 The request to the ingesters fetches samples that have not yet been uploaded to the long-term storage or are not yet available for querying through the store-gateway.
 
 The configured period for `-querier.query-ingesters-within` should be:
-  - greater than `-querier.query-store-after` and,
-    - greater than the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
-      When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in an uploaded block to be available for querying is `3h`.
+
+- greater than `-querier.query-store-after` and,
+  - greater than the estimated minimum amount of time for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying.
+    When running Grafana Mimir with the default configuration, the estimated minimum amount of time for the oldest sample in an uploaded block to be available for querying is `3h`.
 
 After all samples have been fetched from both the store-gateways and the ingesters, the querier runs the PromQL engine to execute the query and sends back the result to the client.
 
