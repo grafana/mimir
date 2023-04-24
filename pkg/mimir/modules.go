@@ -266,7 +266,9 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
-	t.Cfg.RuntimeConfig.Loader = loadRuntimeConfig
+
+	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
+	t.Cfg.RuntimeConfig.Loader = loader.load
 
 	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
 	// We need to preserve the option in the querier yaml for two releases

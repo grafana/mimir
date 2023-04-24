@@ -1222,7 +1222,7 @@ func TestStoreQueryable(t *testing.T) {
 	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 
-func TestConfig_Validate(t *testing.T) {
+func TestConfig_ValidateLimits(t *testing.T) {
 	tests := map[string]struct {
 		setup    func(cfg *Config, limits *validation.Limits)
 		expected error
@@ -1256,7 +1256,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg)
 			limits := defaultLimitsConfig()
 			testData.setup(cfg, &limits)
-			assert.Equal(t, testData.expected, cfg.Validate(limits))
+			assert.Equal(t, testData.expected, cfg.ValidateLimits(limits))
 		})
 	}
 }

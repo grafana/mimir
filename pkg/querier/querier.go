@@ -83,8 +83,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
-// Validate the config
-func (cfg *Config) Validate(limits validation.Limits) error {
+func (cfg *Config) Validate() error {
+	return nil
+}
+
+func (cfg *Config) ValidateLimits(limits validation.Limits) error {
 	// Ensure the config wont create a situation where no queriers are returned.
 	if limits.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
 		if cfg.QueryStoreAfter >= time.Duration(limits.QueryIngestersWithin) {
