@@ -24,6 +24,10 @@
 
 * [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
 
+### Mimirtool
+
+* [FEATURE] Added `mimirtool remote-write push` command to push metrics. #4715
+
 ## 2.8.0-rc.1
 
 ### Grafana Mimir
