@@ -1861,6 +1861,39 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "received a sample whose timestamp is too far in the future",
 		},
+		"all samples go to metric_relabel_configs": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MetricRelabelConfigs = []*relabel.Config{
+					{
+						SourceLabels: []model.LabelName{"__name__"},
+						Action:       relabel.DefaultRelabelConfig.Action,
+						Regex:        relabel.DefaultRelabelConfig.Regex,
+						Replacement:  relabel.DefaultRelabelConfig.Replacement,
+						TargetLabel:  "__tmp_name",
+					},
+				}
+			},
+			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+				metrics := make([]labels.Labels, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
+					for i := 0; i < 10; i++ {
+						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+					}
+
+					metrics[i] = lbls.Labels()
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
+		},
 	}
 
 	for testName, testData := range tests {
@@ -3215,6 +3248,40 @@ func TestRelabelMiddleware(t *testing.T) {
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
 			expectErrs: []bool{false, false, false, false},
+		}, {
+			name: metaLabelTenantID + " available and cleaned up afterwards",
+			ctx:  ctxWithUser,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels: []model.LabelName{metaLabelTenantID},
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					TargetLabel:  "tenant_id",
+					Replacement:  "$1",
+				},
+			},
+			reqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectedReqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+						{Name: "tenant_id", Value: "user"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectErrs: []bool{false},
 		},
 	}
 

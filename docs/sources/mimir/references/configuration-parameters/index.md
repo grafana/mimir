@@ -2569,7 +2569,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) List of metric relabel configurations. Note that in most
 # situations, it is more effective to use metrics relabeling directly in the
-# Prometheus server, e.g. remote_write.write_relabel_configs.
+# Prometheus server, e.g. remote_write.write_relabel_configs. Labels available
+# during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
 # The maximum number of in-memory series per tenant, across the cluster before

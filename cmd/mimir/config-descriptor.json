@@ -3005,7 +3005,7 @@
           "kind": "field",
           "name": "metric_relabel_configs",
           "required": false,
-          "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs.",
+          "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id",
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldType": "relabel_config...",
