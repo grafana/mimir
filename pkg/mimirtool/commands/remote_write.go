@@ -178,7 +178,7 @@ func (c *RemoteWriteCommand) push(k *kingpin.ParseContext) error {
 	return nil
 }
 
-var MetricMetadata_MetricType_value = map[string]int32{
+var MetricMetadataTypeValue = map[string]int32{
 	"UNKNOWN":        0,
 	"COUNTER":        1,
 	"GAUGE":          2,
@@ -195,7 +195,7 @@ func FormatData(mf map[string]*dto.MetricFamily, jobLabel string) *prompb.WriteR
 
 	for metricName, data := range mf {
 		// Set metadata writerequest
-		mtype := MetricMetadata_MetricType_value[data.Type.String()]
+		mtype := MetricMetadataTypeValue[data.Type.String()]
 		metadata := prompb.MetricMetadata{
 			MetricFamilyName: data.GetName(),
 			Type:             prompb.MetricMetadata_MetricType(mtype),
