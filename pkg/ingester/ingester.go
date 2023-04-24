@@ -1647,20 +1647,20 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 }
 
 func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	allSeries, err := i.sendStreamingQuerySeries(ctx, db, from, through, matchers, shard, stream)
+	allIterators, err := i.sendStreamingQuerySeries(ctx, db, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream)
+	numSamples, err = i.sendStreamingQueryChunks(allIterators, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return len(allSeries), numSamples, nil
+	return len(allIterators), numSamples, nil
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]storage.ChunkSeries, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]chunks.Iterator, error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -1687,12 +1687,18 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 		return nil, ss.Err()
 	}
 
-	var allSeries []storage.ChunkSeries                                        // TODO: pool these?
-	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for this?
+	// Why retain the chunks.Iterator rather than the storage.ChunkSeries? ChunkSeries holds a reference to the series' labels,
+	// which we want to avoid, as that would increase memory consumption. We also don't need series' labels outside
+	// this method.
+	// TODO: pool slice?
+	var allIterators []chunks.Iterator
+	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
 
 	for ss.Next() {
 		series := ss.At()
-		allSeries = append(allSeries, series)
+
+		// TODO: pool iterators?
+		allIterators = append(allIterators, series.Iterator(nil))
 
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
@@ -1725,18 +1731,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 		return nil, err
 	}
 
-	return allSeries, nil
+	return allIterators, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allSeries []storage.ChunkSeries, stream client.Ingester_QueryStreamServer) (int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stream client.Ingester_QueryStreamServer) (int, error) {
 	numSamples := 0
 
-	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize) // TODO: use a different value for this?
+	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
 	batchSizeBytes := 0
-	var it chunks.Iterator
-	for seriesIdx, series := range allSeries {
-		it = series.Iterator(it)
-
+	for seriesIdx, it := range allIterators {
 		seriesChunks := client.QueryStreamSeriesChunks{
 			Series: uint64(seriesIdx),
 		}
