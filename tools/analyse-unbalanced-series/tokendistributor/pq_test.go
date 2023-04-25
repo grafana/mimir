@@ -10,93 +10,81 @@ import (
 )
 
 const (
-	minTokenOwnership = 100
-	maxTokenOwnership = 1000
+	minTokenWeight = 100
+	maxTokenWeight = 1000
 )
 
-func getRandomTokenOwnership() float64 {
-	return (maxTokenOwnership-minTokenOwnership)*rand.Float64() + minTokenOwnership
+func getRandomTokenWeight() float64 {
+	return (maxTokenWeight-minTokenWeight)*rand.Float64() + minTokenWeight
 }
 
-func createCandidateTokenInfoOwnership(candTokenInfo *candidateTokenInfo, ownership float64) *CandidateTokenInfoImprovement {
-	candidateTokenInfoOwnership := newCandidateTokenInfoImprovement(candTokenInfo, candTokenInfo.getReplicatedOwnership())
-	candidateTokenInfoOwnership.improvement = ownership
-	return candidateTokenInfoOwnership
-}
+func createPriorityQueueWithoutInitialization(size int, max bool) (*PriorityQueue[*candidateTokenInfo], float64, float64) {
+	pq := newPriorityQueue[*candidateTokenInfo](size, max)
 
-func createPriorityQueueWithoutInitialization(size int, max bool) (*PriorityQueue, float64, float64) {
-	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
-	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
-	pq := newPriorityQueue(size, max)
-
-	minOwnership := math.MaxFloat64
-	maxOwnership := math.SmallestNonzeroFloat64
+	minWeight := math.MaxFloat64
+	maxWeight := math.SmallestNonzeroFloat64
 	for i := 1; i <= size-1; i++ {
-		randomOwnership := getRandomTokenOwnership()
-		if randomOwnership > maxOwnership {
-			maxOwnership = randomOwnership
+		randomWeight := getRandomTokenWeight()
+		if randomWeight > maxWeight {
+			maxWeight = randomWeight
 		}
-		if randomOwnership < minOwnership {
-			minOwnership = randomOwnership
+		if randomWeight < minWeight {
+			minWeight = randomWeight
 		}
-		pq.Add(createCandidateTokenInfoOwnership(candidateTokenInfo, randomOwnership))
+		pq.Add(newWeightedNavigableToken[*candidateTokenInfo](randomWeight))
 	}
-	return pq, minOwnership, maxOwnership
+	return pq, minWeight, maxWeight
 }
 
 func TestMaxPriorityQueue_PushPopPeek(t *testing.T) {
 	size := 10
-	pq, minOwnership, maxOwnership := createPriorityQueueWithoutInitialization(size, true)
+	pq, minWeight, maxWeight := createPriorityQueueWithoutInitialization(size, true)
 
 	// Initialize PriorityQueue
 	heap.Init(pq)
 
-	// Check that the highest priority is maxOwnership, but don't remove it
-	require.Equal(t, maxOwnership, pq.Peek().improvement)
+	// Check that the highest priority is maxWeight, but don't remove it
+	require.Equal(t, maxWeight, pq.Peek().weight)
 
-	candidateTokenInfo := pq.items[0].candidateTokenInfo
-	newMaxOwnership := maxOwnership + 1.0
+	newMaxWeight := maxWeight + 1.0
 	// Push to pq an element with the priority higher than the current maximal priority
-	candidateTokenInfoOwnership := createCandidateTokenInfoOwnership(candidateTokenInfo, newMaxOwnership)
-	heap.Push(pq, candidateTokenInfoOwnership)
+	weightedNavigableToken := newWeightedNavigableToken[*candidateTokenInfo](newMaxWeight)
+	heap.Push(pq, weightedNavigableToken)
 
-	// Check that the highest priority is now newMaxOwnership, but don't remove it
-	require.Equal(t, newMaxOwnership, pq.Peek().improvement)
+	// Check that the highest priority is now newMaxWeight, but don't remove it
+	require.Equal(t, newMaxWeight, pq.Peek().weight)
 
 	// Push to pq an element with the priority lower than the current minimal priority
-	newMinOwnership := minOwnership - 1.0
-	candidateTokenInfoOwnership = createCandidateTokenInfoOwnership(candidateTokenInfo, newMinOwnership)
-	heap.Push(pq, candidateTokenInfoOwnership)
+	newMinWeight := minWeight - 1.0
+	weightedNavigableToken = newWeightedNavigableToken[*candidateTokenInfo](newMinWeight)
+	heap.Push(pq, weightedNavigableToken)
 
-	// Check that the maximal priority is newMaxOwnership and remove it
-	item := heap.Pop(pq).(*CandidateTokenInfoImprovement)
-	require.Equal(t, newMaxOwnership, item.improvement)
+	// Check that the maximal priority is newMaxWeight and remove it
+	item := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+	require.Equal(t, newMaxWeight, item.weight)
 
-	// Check that the highest priority is again maxOwnership, but don't remove it
-	require.Equal(t, maxOwnership, pq.Peek().improvement)
+	// Check that the highest priority is again maxWeight, but don't remove it
+	require.Equal(t, maxWeight, pq.Peek().weight)
 
 	// Check that all other elements except the last one are sorted correctly
-	currOwnership := math.MaxFloat64
+	currWeight := math.MaxFloat64
 	for pq.Len() > 1 {
-		candidateTokenOwnership := heap.Pop(pq).(*CandidateTokenInfoImprovement)
-		require.Less(t, candidateTokenOwnership.improvement, currOwnership)
-		currOwnership = candidateTokenOwnership.improvement
+		weightedNavigableToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+		require.Less(t, weightedNavigableToken.weight, currWeight)
+		currWeight = weightedNavigableToken.weight
 	}
 
-	// Check that the minimal priority is newMinOwnership
-	item = heap.Pop(pq).(*CandidateTokenInfoImprovement)
-	require.Equal(t, newMinOwnership, item.improvement)
+	// Check that the minimal priority is newMinWeight
+	item = heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+	require.Equal(t, newMinWeight, item.weight)
 }
 
 func TestMaxPriorityQueue_Update(t *testing.T) {
-	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
-	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
+	first := newWeightedNavigableToken[*candidateTokenInfo](3.0)
+	second := newWeightedNavigableToken[*candidateTokenInfo](5.0)
+	third := newWeightedNavigableToken[*candidateTokenInfo](4.0)
 
-	first := createCandidateTokenInfoOwnership(candidateTokenInfo, 3.0)
-	second := createCandidateTokenInfoOwnership(candidateTokenInfo, 5.0)
-	third := createCandidateTokenInfoOwnership(candidateTokenInfo, 4.0)
-
-	pq := newPriorityQueue(3, true)
+	pq := newPriorityQueue[*candidateTokenInfo](3, true)
 	pq.Add(first)
 	pq.Add(second)
 	pq.Add(third)
@@ -107,8 +95,8 @@ func TestMaxPriorityQueue_Update(t *testing.T) {
 	require.Equal(t, second, pq.Peek())
 
 	// Update the value of first and assign it the highest priority
-	pq.Update(first, func(candidateTokenInfoOwnership *CandidateTokenInfoImprovement) {
-		candidateTokenInfoOwnership.improvement *= 2
+	pq.Update(first, func(weightedNavigableToken *WeightedNavigableToken[*candidateTokenInfo]) {
+		weightedNavigableToken.weight *= 2
 	})
 
 	// Check that now first has the highest priority
@@ -117,69 +105,65 @@ func TestMaxPriorityQueue_Update(t *testing.T) {
 
 func TestMinPriorityQueue_PushPopPeek(t *testing.T) {
 	size := 10
-	pq, minOwnership, maxOwnership := createPriorityQueueWithoutInitialization(size, false)
+	pq, minWeight, maxWeight := createPriorityQueueWithoutInitialization(size, false)
 
 	// Initialize PriorityQueue
 	heap.Init(pq)
 
-	// Check that the highest priority is minOwnership, but don't remove it
-	require.Equal(t, minOwnership, pq.Peek().improvement)
+	// Check that the highest priority is minWeight, but don't remove it
+	require.Equal(t, minWeight, pq.Peek().weight)
 
-	candidateTokenInfo := pq.items[0].candidateTokenInfo
-	newMinOwnership := minOwnership - 1.0
-	// Push to pq an element with the improvement lower than the current minimal improvement
-	candidateTokenInfoOwnership := createCandidateTokenInfoOwnership(candidateTokenInfo, newMinOwnership)
-	heap.Push(pq, candidateTokenInfoOwnership)
+	newMinWeight := minWeight - 1.0
+	// Push to pq an element with the weight lower than the current minimal weight
+	weightedNavigableToken := newWeightedNavigableToken[*candidateTokenInfo](newMinWeight)
+	heap.Push(pq, weightedNavigableToken)
 
-	// Check that the highest priority is now newMinOwnership, but don't remove it
-	require.Equal(t, newMinOwnership, pq.Peek().improvement)
+	// Check that the highest priority is now newMinWeight, but don't remove it
+	require.Equal(t, newMinWeight, pq.Peek().weight)
 
-	// Push to pq an element with the improvement higher than the current maximal priority
-	newMaxOwnership := maxOwnership + 1.0
-	candidateTokenInfoOwnership = createCandidateTokenInfoOwnership(candidateTokenInfo, newMaxOwnership)
-	heap.Push(pq, candidateTokenInfoOwnership)
+	// Push to pq an element with the weight higher than the current maximal priority
+	newMaxWeight := maxWeight + 1.0
+	weightedNavigableToken = newWeightedNavigableToken[*candidateTokenInfo](newMaxWeight)
+	heap.Push(pq, weightedNavigableToken)
 
-	// Check that the highest priority is newMinOwnership and remove it
-	item := heap.Pop(pq).(*CandidateTokenInfoImprovement)
-	require.Equal(t, newMinOwnership, item.improvement)
+	// Check that the highest priority is newMinWeight and remove it
+	item := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+	require.Equal(t, newMinWeight, item.weight)
 
-	// Check that the highest priority is again minOwnership, but don't remove it
-	require.Equal(t, minOwnership, pq.Peek().improvement)
+	// Check that the highest priority is again minWeight, but don't remove it
+	require.Equal(t, minWeight, pq.Peek().weight)
 
 	// Check that all other elements except the last one are sorted correctly
-	currOwnership := math.SmallestNonzeroFloat64
+	currWeight := math.SmallestNonzeroFloat64
 	for pq.Len() > 1 {
-		candidateTokenOwnership := heap.Pop(pq).(*CandidateTokenInfoImprovement)
-		require.Greater(t, candidateTokenOwnership.improvement, currOwnership)
-		currOwnership = candidateTokenOwnership.improvement
+		candidateTokenOwnership := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+		require.Greater(t, candidateTokenOwnership.weight, currWeight)
+		currWeight = candidateTokenOwnership.weight
 	}
 
-	// Check that the minimal priority is newMaxOwnership
-	item = heap.Pop(pq).(*CandidateTokenInfoImprovement)
-	require.Equal(t, newMaxOwnership, item.improvement)
+	// Check that the minimal priority is newMaxWeight
+	item = heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+	require.Equal(t, newMaxWeight, item.weight)
 }
 
 func TestMinPriorityQueue_Update(t *testing.T) {
-	instanceInfo := newInstanceInfo("instance", newZoneInfo("zone"), 4)
-	candidateTokenInfo := newCandidateTokenInfo(instanceInfo, Token(1), nil)
+	first := newWeightedNavigableToken[*candidateTokenInfo](4.0)
+	second := newWeightedNavigableToken[*candidateTokenInfo](3.0)
+	third := newWeightedNavigableToken[*candidateTokenInfo](5.0)
 
-	first := createCandidateTokenInfoOwnership(candidateTokenInfo, 4.0)
-	second := createCandidateTokenInfoOwnership(candidateTokenInfo, 3.0)
-	third := createCandidateTokenInfoOwnership(candidateTokenInfo, 5.0)
-
-	pq := newPriorityQueue(3, false)
+	pq := newPriorityQueue[*candidateTokenInfo](3, false)
 	pq.Add(first)
 	pq.Add(second)
 	pq.Add(third)
 
 	heap.Init(pq)
 
-	// Check that second has the highest priority, i.e., the minimal improvement
+	// Check that second has the highest priority, i.e., the minimal weight
 	require.Equal(t, second, pq.Peek())
 
 	// Update the value of first and assign it the highest priority
-	pq.Update(first, func(candidateTokenInfoOwnership *CandidateTokenInfoImprovement) {
-		candidateTokenInfoOwnership.improvement /= 2
+	pq.Update(first, func(weightedNavigableToken *WeightedNavigableToken[*candidateTokenInfo]) {
+		weightedNavigableToken.weight /= 2
 	})
 
 	// Check that now first has the highest priority

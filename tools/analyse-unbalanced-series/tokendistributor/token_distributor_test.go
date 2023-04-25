@@ -10,6 +10,12 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const (
+	tokensPerInstance          = 4
+	newInstanceZone   Zone     = "zone-b"
+	newInstance       Instance = "instance-4"
+)
+
 func createTokenDistributor() *TokenDistributor {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZones()
 	replicationStrategy := newZoneAwareReplicationStrategy(3, zoneByInstance, nil, nil)
@@ -18,10 +24,30 @@ func createTokenDistributor() *TokenDistributor {
 	return tokenDistributor
 }
 
+func createTokenInfoCircularList(tokenDistributor *TokenDistributor, newInstanceZone Zone) *CircularList[*tokenInfo] {
+	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
+	return tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone[newInstanceZone])
+}
+
+func createNewInstanceAncCircularListsWithVerification(t *testing.T, tokenDistributor *TokenDistributor, newInstance Instance, newInstanceZone Zone, numberOfTokens int, verify bool) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
+	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
+	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone[newInstanceZone])
+	if verify {
+		require.True(t, verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList))
+	}
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(numberOfTokens)
+	newInstanceInfo := newInstanceInfo(newInstance, zoneInfoByZone[newInstanceZone], numberOfTokens)
+	newInstanceInfo.ownership = float64(numberOfTokens) * optimalTokenOwnership
+	candidateTokenInfoCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
+	if verify {
+		require.True(t, verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList))
+	}
+	return tokenInfoCircularList, candidateTokenInfoCircularList
+}
+
 func TestTokenDistributor_CreateTokenInfoCircularList(t *testing.T) {
 	tokenDistributor := createTokenDistributor()
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
+	tokenInfoCircularList := createTokenInfoCircularList(tokenDistributor, newInstanceZone)
 	for _, token := range tokenDistributor.sortedTokens {
 		head := tokenInfoCircularList.head
 		fmt.Println(head.getData())
@@ -32,11 +58,7 @@ func TestTokenDistributor_CreateTokenInfoCircularList(t *testing.T) {
 
 func TestTokenDistributor_CreateCandidateTokenInfoCircularList(t *testing.T) {
 	tokenDistributor := createTokenDistributor()
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
-	newInstanceInfo := newInstanceInfo("instance-4", zoneInfoByZone["zone-b"], 4)
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(4)
-	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
+	tokenInfoCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, tokensPerInstance, false)
 
 	curr1 := tokenInfoCircularList.head
 	curr2 := candidateTokenCircularList.head
@@ -52,20 +74,15 @@ func TestTokenDistributor_CreateCandidateTokenInfoCircularList(t *testing.T) {
 
 func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 	tokenDistributor := createTokenDistributor()
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
-	newTokensCount := 4
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(newTokensCount)
-	newInstanceInfo := newInstanceInfo("instance-4", zoneInfoByZone["zone-b"], newTokensCount)
-	newInstanceInfo.ownership = float64(newTokensCount) * optimalTokenOwnership
-	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
+	_, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, tokensPerInstance, false)
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(tokensPerInstance)
 	head := candidateTokenCircularList.head
 	curr := head
 	bestOwnershipDecrease := math.MaxFloat64
 	bestCandidate := head
 	for {
 		candidate := curr.getData()
-		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(newTokensCount))
+		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
 		fmt.Printf("Improvement of insertion of candidate %s would be %.2f\n", candidate, improvement)
 
 		if improvement < bestOwnershipDecrease {
@@ -84,20 +101,15 @@ func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 
 func TestTokenDistributor_CreatePriorityQueue(t *testing.T) {
 	tokenDistributor := createTokenDistributor()
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
-	newTokensCount := 4
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(newTokensCount)
-	newInstanceInfo := newInstanceInfo("instance-4", zoneInfoByZone["zone-b"], newTokensCount)
-	newInstanceInfo.ownership = float64(newTokensCount) * optimalTokenOwnership
-	candidateTokenCircularList := tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
+	_, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, tokensPerInstance, false)
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(tokensPerInstance)
 
 	sortedImprovements := make([]float64, 0, len(tokenDistributor.sortedTokens))
 	head := candidateTokenCircularList.head
 	curr := head
 	for {
 		candidate := curr.getData()
-		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(newTokensCount))
+		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
 		sortedImprovements = append(sortedImprovements, improvement)
 		curr = curr.next
 		if curr == head {
@@ -107,28 +119,60 @@ func TestTokenDistributor_CreatePriorityQueue(t *testing.T) {
 
 	slices.Sort(sortedImprovements)
 
-	pq := tokenDistributor.createPriorityQueue(candidateTokenCircularList, optimalTokenOwnership, newTokensCount)
+	pq := tokenDistributor.createPriorityQueue(candidateTokenCircularList, optimalTokenOwnership, tokensPerInstance)
 	for _, improvement := range sortedImprovements {
-		improvementFromPQ := heap.Pop(pq).(*CandidateTokenInfoImprovement).improvement
+		improvementFromPQ := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo]).weight
 		require.Equal(t, improvement, improvementFromPQ)
 	}
 }
 
 func TestTokenDistributor_VerifyTokenInfo(t *testing.T) {
 	tokenDistributor := createTokenDistributor()
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone["zone-b"])
-	require.True(t, verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList))
-
-	newTokensCount := 4
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(newTokensCount)
-	newInstanceInfo := newInstanceInfo("instance-4", zoneInfoByZone["zone-b"], newTokensCount)
-	newInstanceInfo.ownership = float64(newTokensCount) * optimalTokenOwnership
-	tokenDistributor.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
-	require.True(t, verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList))
+	createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, tokensPerInstance, true)
 }
 
-func verifyReplicaStartAndReplicatedOwnership(t *testing.T, tokenDistributor *TokenDistributor, tokenInfoCircularList *CircularList[*tokenInfo]) bool {
+func TestTokenDistributor_AddCandidateToTokenInfoCircularList(t *testing.T) {
+	tokenDistributor := createTokenDistributor()
+	tokenInfoCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, tokensPerInstance, false)
+
+	// find candidate with token 770
+	head := candidateTokenCircularList.head
+	curr := head
+	for {
+		curr = curr.next
+		if curr.getData().getToken() == Token(770) || curr == head {
+			break
+		}
+	}
+	require.NotEqual(t, head, curr)
+
+	oldReplicaSetMap, _ := createReplicaStartAndReplicatedOwnershipMaps(tokenDistributor, tokenInfoCircularList)
+
+	tokenDistributor.addCandidateToTokenInfoCircularList(curr.getData())
+	verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList)
+
+	first := tokenInfoCircularList.head
+	currTokenInfo := first.next
+	for ; currTokenInfo != first; currTokenInfo = currTokenInfo.next {
+		currToken := currTokenInfo.getData().getToken()
+		switch currToken {
+		case Token(770):
+			require.Equal(t, Token(736), currTokenInfo.getPrev().getToken())
+			require.Equal(t, Token(804), currTokenInfo.getNext().getToken())
+			require.Equal(t, Token(770), currTokenInfo.getData().getReplicaStart().getToken())
+			require.Equal(t, float64(Token(736).distance(Token(770), tokenDistributor.maxTokenValue)), currTokenInfo.getData().getReplicatedOwnership())
+		case Token(853):
+			require.Equal(t, Token(804), currTokenInfo.getPrev().getToken())
+			require.Equal(t, Token(902), currTokenInfo.getNext().getToken())
+			require.Equal(t, Token(804), currTokenInfo.getData().getReplicaStart().getToken())
+			require.Equal(t, float64(Token(770).distance(Token(853), tokenDistributor.maxTokenValue)), currTokenInfo.getData().getReplicatedOwnership())
+		default:
+			require.Equal(t, oldReplicaSetMap[currToken], currTokenInfo.getData().getReplicaStart().getToken())
+		}
+	}
+}
+
+func createReplicaStartAndReplicatedOwnershipMaps(tokenDistributor *TokenDistributor, tokenInfoCircularList *CircularList[*tokenInfo]) (map[Token]Token, map[Instance]float64) {
 	replicaStartMap := make(map[Token]Token, len(tokenDistributor.sortedTokens))
 	ownershipMap := make(map[Instance]float64, len(tokenDistributor.tokensByInstance))
 	head := tokenInfoCircularList.head
@@ -146,6 +190,11 @@ func verifyReplicaStartAndReplicatedOwnership(t *testing.T, tokenDistributor *To
 			break
 		}
 	}
+	return replicaStartMap, ownershipMap
+}
+
+func verifyReplicaStartAndReplicatedOwnership(t *testing.T, tokenDistributor *TokenDistributor, tokenInfoCircularList *CircularList[*tokenInfo]) bool {
+	replicaStartMap, ownershipMap := createReplicaStartAndReplicatedOwnershipMaps(tokenDistributor, tokenInfoCircularList)
 	return verifyReplicaStartMap(t, tokenDistributor, replicaStartMap) && verifyOwnershipMap(t, tokenDistributor, ownershipMap)
 }
 
