@@ -252,7 +252,12 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	meta, err := readShipperMetaFile(dir)
 	if err != nil {
-		return readThanosShippedBlocks(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			// If the meta file doesn't exist it means the shipper hasn't run yet.
+			meta = shipperMeta{}
+		} else {
+			return nil, err
+		}
 	}
 
 	shippedBlocks := make(map[ulid.ULID]time.Time, len(meta.Shipped))
@@ -262,31 +267,6 @@ func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	return shippedBlocks, nil
 }
 
-// readThanosShippedBlocks reads the legacy thanos.shipper.json file.
-// TODO Remove in Mimir 2.8.0
-func readThanosShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
-	meta, err := readThanosShipperMetaFile(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		// If the meta file doesn't exist it means the shipper hasn't run yet.
-		meta = &thanosShipperMeta{}
-	} else if err != nil {
-		return nil, err
-	}
-
-	shippedBlocks := make(map[ulid.ULID]time.Time, len(meta.Uploaded))
-	for _, blockID := range meta.Uploaded {
-		shippedBlocks[blockID] = time.Now()
-	}
-
-	return shippedBlocks, nil
-}
-
-// thanosShipperMeta defines the format thanos.shipper.json file that the shipper places in the data directory.
-type thanosShipperMeta struct {
-	Version  int         `json:"version"`
-	Uploaded []ulid.ULID `json:"uploaded"`
-}
-
 // shipperMeta defines the format mimir.shipper.json file that the shipper places in the data directory.
 type shipperMeta struct {
 	Version int                      `json:"version"`
@@ -294,9 +274,6 @@ type shipperMeta struct {
 }
 
 const (
-	// thanosShipperMetaFilename is the known JSON filename for Thanos meta information.
-	thanosShipperMetaFilename = "thanos.shipper.json"
-
 	// shipperMetaFilename is the known JSON filename for meta information.
 	shipperMetaFilename = "mimir.shipper.json"
 
@@ -330,40 +307,7 @@ func writeShipperMetaFile(logger log.Logger, dir string, meta shipperMeta) error
 		return errors.Wrap(err, "writing mimir shipped meta file")
 	}
 
-	// Keep backwards compatibility with the previous Mimir version.
-	// TODO Remove in Mimir 2.8.0
-	thanosMeta := &thanosShipperMeta{Version: shipperMetaVersion1}
-	for blockID := range meta.Shipped {
-		thanosMeta.Uploaded = append(thanosMeta.Uploaded, blockID)
-	}
-	if err := writeThanosShipperMetaFile(logger, dir, thanosMeta); err != nil {
-		return errors.Wrap(err, "writing thanos shipped meta file")
-	}
-
 	return nil
-}
-
-// writeThanosShipperMetaFile writes the given meta into <dir>/thanos.shipper.json.
-func writeThanosShipperMetaFile(logger log.Logger, dir string, meta *thanosShipperMeta) error {
-	path := filepath.Join(dir, thanosShipperMetaFilename)
-	tmp := path + ".tmp"
-
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "\t")
-
-	if err := enc.Encode(meta); err != nil {
-		runutil.CloseWithLogOnErr(logger, f, "write meta file close")
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return renameFile(logger, tmp, path)
 }
 
 // readShipperMetaFile reads the given meta from <dir>/mimir.shipper.json.
@@ -383,25 +327,6 @@ func readShipperMetaFile(dir string) (shipperMeta, error) {
 	}
 
 	return m, nil
-}
-
-// readThanosShipperMetaFile reads the given meta from <dir>/thanos.shipper.json.
-func readThanosShipperMetaFile(dir string) (*thanosShipperMeta, error) {
-	fpath := filepath.Join(dir, filepath.Clean(thanosShipperMetaFilename))
-	b, err := os.ReadFile(fpath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read %s", fpath)
-	}
-
-	var m thanosShipperMeta
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
-	}
-	if m.Version != shipperMetaVersion1 {
-		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
-	}
-
-	return &m, nil
 }
 
 func renameFile(logger log.Logger, from, to string) error {

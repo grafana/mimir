@@ -21,7 +21,7 @@ results-cache:
   enabled: false
 ```
 
-Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference](/docs/mimir/latest/references/configuration-parameters/#redis) for Redis connection configuration options. For example:
+Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference](/docs/mimir/{{< param "mimir_docs_version" >}}/references/configuration-parameters/#redis) for Redis connection configuration options. For example:
 
 ```yaml
 mimir:

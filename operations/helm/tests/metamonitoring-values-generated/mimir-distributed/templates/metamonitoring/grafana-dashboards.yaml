@@ -14945,7 +14945,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(data_type) (\n  # Exclude \"chunks processed\" to only count \"chunks processed\", other than postings and series.\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage!=\"processed\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
+                            "expr": "sum by(data_type) (\n  # Exclude \"chunks processed\" to only count \"chunks returned\", other than postings and series.\n  rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component=\"store-gateway\", stage!=\"processed\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{data_type}}",

@@ -662,6 +662,79 @@ rules:
 	}
 }
 
+func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 0
+		defaults.RulerMaxRulesPerRuleGroup = 0
+	})))
+
+	a := NewAPI(r, r.store, log.NewNopLogger())
+
+	tc := []struct {
+		name   string
+		input  string
+		output string
+		err    error
+		status int
+	}{
+		{
+			name:   "when pushing the first group with disabled limit",
+			status: 202,
+			input: `
+name: test_first_group_will_succeed
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:   "when pushing the second group with disabled limit",
+			status: 202,
+			input: `
+name: test_second_group_will_also_succeed
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+	}
+
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			// POST
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+			require.Equal(t, tt.status, w.Code)
+			require.Equal(t, tt.output, w.Body.String())
+		})
+	}
+}
+
 func TestAlertStateDescToPrometheusAlert(t *testing.T) {
 	t.Run("should not export KeepFiringSince if it's the zero value", func(t *testing.T) {
 		actual := alertStateDescToPrometheusAlert(&AlertStateDesc{})

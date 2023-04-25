@@ -4,9 +4,14 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
-* [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770
+* [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
+* [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
+* [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
+* [ENHANCEMENT] Distributor: make `__meta_tenant_id` label available in relabeling rules configured via `metric_relabel_configs`. #4725
+* [ENHANCEMENT] Ruler: Improve rule upload performance when not enforcing per-tenant rule group limits. #4828
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 
 ### Documentation
 
@@ -19,6 +24,15 @@
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
+
+## 2.8.0-rc.1
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
+* [BUGFIX] Packaging: fix preremove script preventing upgrades. #4801
+
 
 ## 2.8.0-rc.0
 
@@ -107,7 +121,6 @@
 * [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
 * [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
 * [ENHANCEMENT] Querier: Cache the converted float histogram from chunk iterator, hence there is no need to lookup chunk every time to get the converted float histogram. #4684
-* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -182,6 +195,12 @@
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
 
+## 2.7.2
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updated Go version to 1.20.3 to fix CVE-2023-24538 #4795
+
 ## 2.7.1
 
 **Note**: During the release process, version 2.7.0 was tagged too early, before completing the release checklist and production testing. Release 2.7.1 doesn't include any code changes since 2.7.0, but now has proper release notes, published documentation, and has been fully tested in our production environment.
@@ -235,7 +254,6 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Store-gateway: use more efficient chunks fetching and caching. This should reduce CPU, memory utilization, and receive bandwidth of a store-gateway. Enable with `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled=true`. #4163 #4174 #4227
 * [ENHANCEMENT] Query-frontend: Wait for in-flight queries to finish before shutting down. #4073 #4170
 * [ENHANCEMENT] Store-gateway: added `encode` and `other` stage to `cortex_bucket_store_series_request_stage_duration_seconds` metric. #4179
-* [ENHANCEMENT] Distributor: moves the distributor push wrappers from the API configuration into the distributor configuration. #4244
 * [ENHANCEMENT] Ingester: log state of TSDB when shipping or forced compaction can't be done due to unexpected state of TSDB. #4211
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.1` to `alpine:3.17.2`. #4240
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metrics `cortex_bucket_store_series_data_fetched`, `cortex_bucket_store_series_data_size_fetched_bytes`, `cortex_bucket_store_series_data_touched`, `cortex_bucket_store_series_data_size_touched_bytes`. This label only applies to `data_type="chunks"`. For `fetched` metrics with `data_type="chunks"` the `stage` label has 2 values: `fetched` - the chunks or bytes that were fetched from the cache or the object store, `refetched` - the chunks or bytes that had to be refetched from the cache or the object store because their size was underestimated during the first fetch. For `touched` metrics with `data_type="chunks"` the `stage` label has 2 values: `processed` - the chunks or bytes that were read from the fetched chunks or bytes and were processed in memory, `returned` - the chunks or bytes that were selected from the processed bytes to satisfy the query. #4227 #4316
@@ -305,6 +323,12 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Adapt tsdb-print-chunk for native histograms. #4186
 * [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #4186
 * [ENHANCEMENT] Adapt tsdb-chunks tool to handle native histograms. #4186
+
+## 2.6.1
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updates Go to version 1.20.3 to fix CVE-2023-24538 #4798
 
 ## 2.6.0
 

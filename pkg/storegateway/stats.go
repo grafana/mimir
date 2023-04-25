@@ -31,8 +31,9 @@ type queryStats struct {
 	cachedPostingsDecompressionErrors  int
 	cachedPostingsDecompressionTimeSum time.Duration
 
-	seriesTouched          int
-	seriesTouchedSizeSum   int
+	seriesProcessed        int
+	seriesProcessedSizeSum int
+	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int
 	seriesFetchCount       int
@@ -96,8 +97,9 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.cachedPostingsDecompressionErrors += o.cachedPostingsDecompressionErrors
 	s.cachedPostingsDecompressionTimeSum += o.cachedPostingsDecompressionTimeSum
 
-	s.seriesTouched += o.seriesTouched
-	s.seriesTouchedSizeSum += o.seriesTouchedSizeSum
+	s.seriesProcessed += o.seriesProcessed
+	s.seriesProcessedSizeSum += o.seriesProcessedSizeSum
+	s.seriesOmitted += o.seriesOmitted
 	s.seriesFetched += o.seriesFetched
 	s.seriesFetchedSizeSum += o.seriesFetchedSizeSum
 	s.seriesFetchCount += o.seriesFetchCount

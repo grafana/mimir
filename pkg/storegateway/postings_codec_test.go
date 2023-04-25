@@ -9,19 +9,21 @@
 package storegateway
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
-	"strconv"
 	"testing"
 
+	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )
@@ -97,6 +99,24 @@ func TestDiffVarintCodec(t *testing.T) {
 	}
 }
 
+// isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
+func isDiffVarintSnappyEncodedPostings(input []byte) bool {
+	return bytes.HasPrefix(input, []byte(codecHeaderSnappy))
+}
+
+func diffVarintSnappyDecode(input []byte) (index.Postings, error) {
+	if !isDiffVarintSnappyEncodedPostings(input) {
+		return nil, errors.New(string(codecHeaderSnappy) + " header not found")
+	}
+
+	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappy):])
+	if err != nil {
+		return nil, errors.Wrap(err, "snappy decode")
+	}
+
+	return newDiffVarintPostings(raw), nil
+}
+
 func TestLabelMatchersTypeValues(t *testing.T) {
 	expectedValues := map[labels.MatchType]int{
 		labels.MatchEqual:     0,
@@ -149,7 +169,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		`i!~"2.*"`:       matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
 	}
 
-	pendingMatchersList := [][]*labels.Matcher{
+	matchersList := [][]*labels.Matcher{
 		nil,
 		{},
 		{{}},
@@ -170,37 +190,43 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		assert.NoError(t, err)
 
 		t.Run(postingsName, func(t *testing.T) {
-			for _, matchers := range pendingMatchersList {
-				t.Run(string(indexcache.CanonicalLabelMatchersKey(matchers)), func(t *testing.T) {
+			for rIdx, requestMatchers := range matchersList {
+				for pIdx, pendingMatchers := range matchersList {
+					t.Run(fmt.Sprintf("%d_%d", rIdx, pIdx), func(t *testing.T) {
+						t.Logf("request matchers: %s, pending matchers: %s", indexcache.CanonicalLabelMatchersKey(requestMatchers), indexcache.CanonicalLabelMatchersKey(pendingMatchers))
+						t.Log("postings entries:", p.len())
+						t.Log("original size (4*entries):", 4*p.len(), "bytes")
+						p.reset() // We reuse postings between runs, so we need to reset iterator.
 
-					t.Log("postings entries:", p.len())
-					t.Log("original size (4*entries):", 4*p.len(), "bytes")
-					p.reset() // We reuse postings between runs, so we need to reset iterator.
+						data, err := diffVarintSnappyWithMatchersEncode(p, p.len(), indexcache.CanonicalLabelMatchersKey(requestMatchers), pendingMatchers)
+						assert.NoError(t, err)
 
-					data, err := diffVarintSnappyWithMatchersEncode(p, p.len(), matchers)
-					assert.NoError(t, err)
+						t.Log("encoded size", len(data), "bytes")
+						t.Logf("ratio: %0.3f", float64(len(data))/float64(4*p.len()))
 
-					t.Log("encoded size", len(data), "bytes")
-					t.Logf("ratio: %0.3f", float64(len(data))/float64(4*p.len()))
+						decodedPostings, decodedReqMatchers, decodedPendingMatchers, err := diffVarintSnappyMatchersDecode(data)
+						assert.NoError(t, err)
 
-					decodedPostings, decodedMatchers, err := diffVarintSnappyMatchersDecode(data)
-					assert.NoError(t, err)
+						assert.Equal(t, decodedReqMatchers, indexcache.CanonicalLabelMatchersKey(requestMatchers))
+						assertMatchers(t, decodedPendingMatchers, pendingMatchers)
 
-					if assert.Len(t, decodedMatchers, len(matchers)) && len(matchers) > 0 {
-						// Assert same matchers. We do some optimizations in mimir-prometheus which make
-						// the label matchers not comparable with reflect.DeepEqual() so we're going to
-						// compare their string representation.
-						require.Len(t, decodedMatchers, len(matchers))
-						for i := 0; i < len(matchers); i++ {
-							assert.Equal(t, matchers[i].String(), decodedMatchers[i].String())
-						}
-					}
-
-					p.reset()
-					comparePostings(t, p, decodedPostings)
-				})
+						p.reset()
+						comparePostings(t, p, decodedPostings)
+					})
+				}
 			}
 		})
+	}
+}
+
+func assertMatchers(t *testing.T, actual, expected []*labels.Matcher) {
+	if assert.Len(t, actual, len(expected)) && len(expected) > 0 {
+		// Assert same matchers. We do some optimizations in mimir-prometheus which make
+		// the label matchers not comparable with reflect.DeepEqual() so we're going to
+		// compare their string representation.
+		for i := range expected {
+			assert.Equal(t, expected[i].String(), actual[i].String())
+		}
 	}
 }
 
@@ -313,17 +339,28 @@ func BenchmarkEncodePostings(b *testing.B) {
 		p[ix] = p[ix-1] + storage.SeriesRef(d)
 	}
 
-	for _, count := range []int{10000, 100000, 1000000} {
-		b.Run(strconv.Itoa(count), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				ps := &uint64Postings{vals: p[:count]}
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds"),
+		labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$"),
+		labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix),
+		labels.MustNewMatcher(labels.MatchEqual, "n", ""),
+	}
 
-				_, err := diffVarintEncodeNoHeader(ps, ps.len())
-				if err != nil {
-					b.Fatal(err)
+	for _, count := range []int{100, 10000, 100000, 1000000} {
+		for _, numMatchers := range []int{0, 1, 4} {
+			matchersKey := indexcache.CanonicalLabelMatchersKey(matchers[:numMatchers])
+			b.Run(fmt.Sprintf("%d %s", count, matchersKey), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					ps := &uint64Postings{vals: p[:count]}
+
+					// Use the same matchers as pending and as request matchers to keep the Benchmark simpler and shorter
+					_, err := diffVarintSnappyWithMatchersEncode(ps, ps.len(), matchersKey, matchers[:numMatchers])
+					if err != nil {
+						b.Fatal(err)
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 
