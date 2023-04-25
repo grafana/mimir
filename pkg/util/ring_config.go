@@ -29,6 +29,7 @@ type CommonRingConfig struct {
 	InstanceInterfaceNames []string `yaml:"instance_interface_names" doc:"default=[<private network interfaces>]"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
+	EnableIPv6             bool     `yaml:"instance_enable_ipv6" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -54,6 +55,7 @@ func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentP
 	f.StringVar(&cfg.InstanceAddr, flagPrefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, flagPrefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, flagPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
+	f.BoolVar(&cfg.EnableIPv6, flagPrefix+"instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
 }
 
 func (cfg *CommonRingConfig) ToRingConfig() ring.Config {
