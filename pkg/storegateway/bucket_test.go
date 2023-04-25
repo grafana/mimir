@@ -455,7 +455,7 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Equal(t, []string{"bar"}, values)
 
 		// we break the indexHeaderReader to ensure that results come from a cache
-		b.indexHeaderReader = deadlineExceededIndexHeader(b.indexHeaderReader)
+		b.indexHeaderReader = deadlineExceededIndexHeader()
 
 		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
@@ -479,7 +479,7 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Equal(t, []string{"foo"}, values)
 
 		// we break the indexHeaderReader to ensure that results come from a cache
-		b.indexHeaderReader = deadlineExceededIndexHeader(b.indexHeaderReader)
+		b.indexHeaderReader = deadlineExceededIndexHeader()
 
 		values, err = blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
@@ -901,9 +901,8 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
-func deadlineExceededIndexHeader(r indexheader.Reader) *interceptedIndexReader {
+func deadlineExceededIndexHeader() *interceptedIndexReader {
 	return &interceptedIndexReader{
-		Reader:                     r,
 		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
