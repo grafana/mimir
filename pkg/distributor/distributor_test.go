@@ -135,6 +135,18 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 0,
 		},
+		"A push to 2 ingesters should succeed": {
+			numIngesters:   2,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
+			expectedMetrics: `
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.004
+			`,
+		},
 		"A push to 3 happy ingesters should succeed": {
 			numIngesters:   3,
 			happyIngesters: 3,
@@ -1906,6 +1918,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
 					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					d.AddIngester("ingester-2", "127.0.0.2", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					d.AddIngester("ingester-3", "127.0.0.3", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
 					return d, true, nil
 				},
 			)
@@ -1914,7 +1928,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			ingestersRing, err := ring.New(ring.Config{
 				KVStore:           kv.Config{Mock: kvStore},
 				HeartbeatTimeout:  60 * time.Minute,
-				ReplicationFactor: 1,
+				ReplicationFactor: 3,
 			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
@@ -1922,7 +1936,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
 			})
 
-			test.Poll(b, time.Second, 1, func() interface{} {
+			test.Poll(b, time.Second, 3, func() interface{} {
 				return ingestersRing.InstancesCount()
 			})
 
