@@ -1919,7 +1919,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					d := &ring.Desc{}
 					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
 					d.AddIngester("ingester-2", "127.0.0.2", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
-					d.AddIngester("ingester-3", "127.0.0.3", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					//d.AddIngester("ingester-3", "127.0.0.3", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now()) // simulate an excluded zone
 					return d, true, nil
 				},
 			)
@@ -1936,7 +1936,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
 			})
 
-			test.Poll(b, time.Second, 3, func() interface{} {
+			test.Poll(b, time.Second, 2, func() interface{} {
 				return ingestersRing.InstancesCount()
 			})
 
