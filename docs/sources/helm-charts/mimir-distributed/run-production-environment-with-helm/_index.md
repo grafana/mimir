@@ -322,7 +322,7 @@ rollout_operator:
     runAsUser: null
 ```
 
-> **Note**: When using `mimir-distributed` as a subchart, setting Helm values to `null` requires a workaround but to [a bug in Helm](https://github.com/helm/helm/issues/9027).
+> **Note**: When using `mimir-distributed` as a subchart, setting Helm values to `null` requires a workaround due to [a bug in Helm](https://github.com/helm/helm/issues/9027).
 > To set the PodSecurityContext fields to `null`, in addition to the YAML, set the values to `null` via the command line
 > when using `helm`. For example, to use `helm tempalte`:
 >
