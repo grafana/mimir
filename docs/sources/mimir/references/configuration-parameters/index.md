@@ -330,6 +330,10 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
 
+    # (advanced) Enable using a IPv6 instance address. (default false)
+    # CLI flag: -overrides-exporter.ring.instance-enable-ipv6
+    [instance_enable_ipv6: <boolean> | default = false]
+
     # (advanced) Minimum time to wait for ring stability at startup, if set to
     # positive value. Set to 0 to disable.
     # CLI flag: -overrides-exporter.ring.wait-stability-min-duration
@@ -722,6 +726,10 @@ ring:
   # CLI flag: -distributor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -distributor.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that this distributor will
   # accept. This limit is per-distributor, not per-tenant. Additional push
@@ -871,6 +879,10 @@ ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -ingester.ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -ingester.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
 
   # (advanced) The availability zone where this instance is running.
   # CLI flag: -ingester.ring.instance-availability-zone
@@ -1334,6 +1346,10 @@ ring:
   # CLI flag: -query-scheduler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -query-scheduler.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
 # (experimental) The maximum number of query-scheduler instances to use,
 # regardless how many replicas are running. This option can be set only when
 # -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
@@ -1553,6 +1569,10 @@ ring:
   # CLI flag: -ruler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -ruler.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
   # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
@@ -1750,6 +1770,10 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -alertmanager.sharding-ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
 
   # (advanced) The replication factor to use when sharding the alertmanager.
   # CLI flag: -alertmanager.sharding-ring.replication-factor
@@ -3584,6 +3608,10 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -compactor.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
   # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
   # CLI flag: -compactor.ring.wait-stability-min-duration
   [wait_stability_min_duration: <duration> | default = 0s]
@@ -3708,6 +3736,10 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -store-gateway.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -store-gateway.sharding-ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
 
   # The availability zone where this instance is running. Required if
   # zone-awareness is enabled.
