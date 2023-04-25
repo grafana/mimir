@@ -454,14 +454,8 @@ func TestBlockLabelValues(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 
-		// we remove the indexHeaderReader to ensure that results come from a cache
-		// if this panics, then we know that it's trying to read actual values
-		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:                     b.indexHeaderReader,
-			onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
-			onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
-			onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
-		}
+		// we break the indexHeaderReader to ensure that results come from a cache
+		b.indexHeaderReader = deadlineExceededIndexHeader(b.indexHeaderReader)
 
 		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
@@ -471,8 +465,9 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Equal(t, []string{"bar"}, values)
 	})
 
-	t.Run("happy case with weak matchers", func(t *testing.T) {
+	t.Run("happy case cached with weak matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
 
 		matchers := []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, "p", "foo"),
@@ -480,6 +475,13 @@ func TestBlockLabelValues(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchRegexp, "j", ".+"), // this is too weak and doesn't bring much value, it should be shortcut
 		}
 		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+
+		// we break the indexHeaderReader to ensure that results come from a cache
+		b.indexHeaderReader = deadlineExceededIndexHeader(b.indexHeaderReader)
+
+		values, err = blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 	})
@@ -897,6 +899,15 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 		}
 	}
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
+}
+
+func deadlineExceededIndexHeader(r indexheader.Reader) *interceptedIndexReader {
+	return &interceptedIndexReader{
+		Reader:                     r,
+		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
+		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
+		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+	}
 }
 
 type contextNotifyingOnDoneWaiting struct {
