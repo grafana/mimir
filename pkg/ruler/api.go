@@ -130,19 +130,17 @@ func respondError(logger log.Logger, w http.ResponseWriter, msg string) {
 
 // API is used to handle HTTP requests for the ruler service
 type API struct {
-	ruler  *Ruler
-	store  rulestore.RuleStore
-	limits RulesLimits
+	ruler *Ruler
+	store rulestore.RuleStore
 
 	logger log.Logger
 }
 
 // NewAPI returns a new API struct with the provided ruler and rule store
-func NewAPI(r *Ruler, s rulestore.RuleStore, l RulesLimits, logger log.Logger) *API {
+func NewAPI(r *Ruler, s rulestore.RuleStore, logger log.Logger) *API {
 	return &API{
 		ruler:  r,
 		store:  s,
-		limits: l,
 		logger: logger,
 	}
 }
@@ -484,8 +482,8 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Only fetch rule groups when enforcing a max number of groups for this tenant.
-	if rgsLimit := a.limits.RulerMaxRuleGroupsPerTenant(userID); rgsLimit > 0 {
+	// Only list rule groups when enforcing a max number of groups for this tenant.
+	if a.ruler.IsMaxRuleGroupsLimited(userID) {
 		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, "")
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)

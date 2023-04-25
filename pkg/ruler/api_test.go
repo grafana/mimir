@@ -294,7 +294,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				return len(rls.Groups)
 			})
 
-			a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewNopLogger())
 
 			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules", nil, userID)
 			w := httptest.NewRecorder()
@@ -347,7 +347,7 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 		return len(rls.Groups)
 	})
 
-	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/alerts", nil, "user1")
 	w := httptest.NewRecorder()
@@ -466,7 +466,7 @@ rules:
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			r := prepareRuler(t, tt.cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
-			a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewNopLogger())
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
@@ -518,7 +518,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 	}
 
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart())
-	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
@@ -557,7 +557,7 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -610,7 +610,7 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -670,7 +670,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 0
 	})))
 
-	a := NewAPI(r, r.store, r.limits, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
