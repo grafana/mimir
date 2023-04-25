@@ -605,13 +605,13 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}
 }
 
-func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numSeries int, registry *prometheus.Registry) {
+func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, registry *prometheus.Registry) {
 	t.Helper()
 
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
-	if numSeries > 0 {
+	if numLabelNames > 0 {
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
