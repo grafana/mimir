@@ -219,6 +219,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
+  -alertmanager.sharding-ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names string
@@ -941,6 +943,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -compactor.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names string
@@ -1163,6 +1167,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -distributor.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names string
@@ -1317,6 +1323,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -ingester.ring.instance-availability-zone string
     	The availability zone where this instance is running.
+  -ingester.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -ingester.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ingester.ring.instance-interface-names string
@@ -1485,6 +1493,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -overrides-exporter.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -overrides-exporter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -overrides-exporter.ring.instance-interface-names string
@@ -1877,6 +1887,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. (default 1m0s)
   -query-scheduler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -query-scheduler.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -query-scheduler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -query-scheduler.ring.instance-interface-names string
@@ -2171,6 +2183,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -ruler.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names string
@@ -2327,6 +2341,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
+  -store-gateway.sharding-ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -store-gateway.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names string

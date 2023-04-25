@@ -1387,6 +1387,17 @@
               "fieldFlag": "distributor.ring.instance-addr",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -2592,6 +2603,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -8346,6 +8368,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "compactor.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup. 0 to disable.",
@@ -8845,6 +8878,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "store-gateway.sharding-ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "store-gateway.sharding-ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -9819,6 +9863,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -11198,6 +11253,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager.sharding-ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager.sharding-ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -13166,6 +13232,17 @@
               "fieldFlag": "query-scheduler.ring.instance-addr",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "query-scheduler.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -13625,6 +13702,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "overrides-exporter.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "overrides-exporter.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
