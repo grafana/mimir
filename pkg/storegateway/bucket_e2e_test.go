@@ -629,7 +629,9 @@ func assertQueryStatsLabelValuesMetricsRecorded(t *testing.T, registry *promethe
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "postings"))
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
