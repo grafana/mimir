@@ -17,6 +17,30 @@ type AnalyzeCommand struct{}
 func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
 
+	chCmd := &ClassicHistogramsAnalyzeCommand{}
+	classicHistogramsAnalyzeCommand := analyzeCmd.Command("classichistograms", "Analyze the usage pattern of classic histograms").Action(chCmd.run)
+	classicHistogramsAnalyzeCommand.Flag("lookback", "Time frame to analyze.").
+		Default("1h").
+		DurationVar(&chCmd.lookback)
+	classicHistogramsAnalyzeCommand.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").
+		Envar(envVars.Address).
+		Required().
+		StringVar(&chCmd.address)
+	classicHistogramsAnalyzeCommand.Flag("id", "Username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&chCmd.username)
+	classicHistogramsAnalyzeCommand.Flag("key", "Password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+		Envar(envVars.APIKey).
+		Default("").
+		StringVar(&chCmd.password)
+	classicHistogramsAnalyzeCommand.Flag("read-timeout", "timeout for read requests").
+		Default("30s").
+		DurationVar(&chCmd.readTimeout)
+	classicHistogramsAnalyzeCommand.Flag("output", "The path for the output file").
+		Default("classic-histograms.json").
+		StringVar(&chCmd.outputFile)
+
 	paCmd := &PrometheusAnalyzeCommand{}
 	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").Action(paCmd.run)
 	prometheusAnalyzeCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").

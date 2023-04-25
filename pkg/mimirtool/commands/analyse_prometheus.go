@@ -17,9 +17,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	log "github.com/sirupsen/logrus"
@@ -47,7 +45,7 @@ func (cmd *PrometheusAnalyzeCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	v1api, err := cmd.newAPI()
+	v1api, err := client.NewAPI(cmd.address, cmd.username, cmd.password)
 	if err != nil {
 		return err
 	}
@@ -102,24 +100,6 @@ func (cmd *PrometheusAnalyzeCommand) parseUsedMetrics() (model.LabelValues, erro
 	}
 
 	return metricsUsed, nil
-}
-
-func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
-	rt := api.DefaultRoundTripper
-	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
-	if cmd.username != "" {
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", rt)
-	}
-
-	client, err := api.NewClient(api.Config{
-		Address:      cmd.address,
-		RoundTripper: rt,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return v1.NewAPI(client), nil
 }
 
 func (cmd *PrometheusAnalyzeCommand) queryMetricNames(api v1.API) (model.LabelValues, error) {
