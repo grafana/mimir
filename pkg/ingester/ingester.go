@@ -1694,6 +1694,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 	var allIterators []chunks.Iterator
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
 
+	// TODO: enforce limits on number of series? Or is this enforced elsewhere already?
 	for ss.Next() {
 		series := ss.At()
 
