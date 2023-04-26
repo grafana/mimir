@@ -2,6 +2,7 @@ package tokendistributor
 
 import (
 	"container/heap"
+	"fmt"
 
 	"golang.org/x/exp/slices"
 )
@@ -329,6 +330,10 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 		newOwnership = t.calculateDistanceAsFloat64(barrier, currToken)
 		improvement += calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, currInstance.tokenCount)
 		currInstance.adjustedOwnership += newOwnership - oldOwnership
+		if newOwnership != oldOwnership {
+			fmt.Printf("\tEvaluation of candidate %d: ownership of token %d changes from %.2f to %.2f, instance %s: %.2f\n", candidate.getToken(), currToken.getToken(), oldOwnership, newOwnership, currInstance.instanceId, currInstance.adjustedOwnership)
+			fmt.Printf("\t\tCurrent improvement: %.8f\n", improvement)
+		}
 	}
 
 	// Go through all visited instances and zones, add recorder adjustedOwnership and clear visited instances and zones
@@ -347,8 +352,13 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 		} else {
 			improvement += diff
 		}
+		if newOwnership != oldOwnership {
+			fmt.Printf("\tEvaluation of candidate %d: ownership of instance %s changes from %.2f to %.2f, diff: %.2f\n", candidate.getToken(), currInstance, oldOwnership, newOwnership, diff)
+			fmt.Printf("\t\tCurrent improvement: %.8f\n", improvement)
+		}
 		currInstance = prevInstance
 	}
+	fmt.Printf("\tEvaluation of candidate %d: returning %.8f\n", candidate.getToken(), -improvement)
 
 	return -improvement
 }
