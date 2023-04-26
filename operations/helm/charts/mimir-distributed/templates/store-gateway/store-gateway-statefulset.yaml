@@ -33,19 +33,12 @@ spec:
           {{- toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if $rolloutZone.storageClass}}
-        {{- if (eq "-" $rolloutZone.storageClass) }}
-        storageClassName: {{ .Values.store_gateway.persistentVolume.storageClass }}
-        {{- else }}
-        storageClassName: {{ $rolloutZone.storageClass }}
-        {{- end }}
-        {{- else }}
-        {{- if .Values.store_gateway.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.store_gateway.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.store_gateway.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.store_gateway.persistentVolume.storageClass }}"
-        {{- end }}
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:
