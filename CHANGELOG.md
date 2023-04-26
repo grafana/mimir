@@ -25,6 +25,12 @@
 
 * [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
 
+## 2.8.0-rc.2
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Ruler: Improve rule upload performance when not enforcing per-tenant rule group limits. #4828
+
 ## 2.8.0-rc.1
 
 ### Grafana Mimir
