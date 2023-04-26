@@ -22,6 +22,10 @@ func setNavigableToken[T navigableTokenInterface](weightedNavigableToken *Weight
 	weightedNavigableToken.navigableToken = navigableToken
 }
 
+func getNavigableToken[T navigableTokenInterface](weightedNavigableToken *WeightedNavigableToken[T]) *navigableToken[T] {
+	return weightedNavigableToken.navigableToken
+}
+
 type PriorityQueue[T navigableTokenInterface] struct {
 	items []*WeightedNavigableToken[T]
 	max   bool

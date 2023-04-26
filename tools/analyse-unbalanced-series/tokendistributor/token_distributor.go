@@ -1,6 +1,10 @@
 package tokendistributor
 
-import "container/heap"
+import (
+	"container/heap"
+
+	"golang.org/x/exp/slices"
+)
 
 const (
 	initialInstanceCount = 66
@@ -54,9 +58,9 @@ func (t TokenDistributor) getInstanceCount() int {
 	return len(t.tokensByInstance)
 }
 
-func (t TokenDistributor) getOptimalTokenOwnership(newTokensCount int) float64 {
+func (t TokenDistributor) getOptimalTokenOwnership() float64 {
 	maxTokenAsFloat64 := float64(t.maxTokenValue)
-	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+newTokensCount)
+	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+t.tokensPerInstance)
 }
 
 // calculateReplicatedOwnership calculated the replicated weight of the given token with its given replicaStart.
@@ -454,7 +458,19 @@ func (t TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candida
 	}
 }
 
-func (t TokenDistributor) AddInstance(instance Instance, zone Zone, tokenCount int) {
+func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
+	t.sortedTokens = append(t.sortedTokens, token)
+	slices.Sort(t.sortedTokens)
+	t.instanceByToken[token] = instance.instanceId
+	tokens, ok := t.tokensByInstance[instance.instanceId]
+	if !ok {
+		tokens = make([]Token, 0, t.tokensPerInstance)
+	}
+	tokens = append(tokens, token)
+	t.tokensByInstance[instance.instanceId] = tokens
+}
+
+func (t TokenDistributor) AddInstance(instance Instance, zone Zone) {
 	t.replicationStrategy.addInstance(instance, zone)
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -463,12 +479,33 @@ func (t TokenDistributor) AddInstance(instance Instance, zone Zone, tokenCount i
 		zoneInfoByZone[zone] = newInstanceZone
 	}
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceZone)
-	optimalTokenOwnership := t.getOptimalTokenOwnership(tokenCount)
-	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, tokenCount)
-	newInstanceInfo.ownership = float64(tokenCount) * optimalTokenOwnership
+	optimalTokenOwnership := t.getOptimalTokenOwnership()
+	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
+	newInstanceInfo.ownership = float64(t.tokensPerInstance) * optimalTokenOwnership
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
-	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, tokenCount)
+	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)
 	bestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
+
+	for i := 0; i < t.tokensPerInstance; i++ {
+		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
+		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+
+		for {
+			bestToken = heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+			candidateTokenInfoCircularList.remove(bestToken.navigableToken)
+			candidate := getNavigableToken[*candidateTokenInfo](bestToken).getData()
+			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, 1.0/float64(t.tokensPerInstance))
+			nextBestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+			if newImprovement >= nextBestToken.weight {
+				break
+			}
+			navigableToken := getNavigableToken[*candidateTokenInfo](bestToken)
+			bestToken = newWeightedNavigableToken[*candidateTokenInfo](newImprovement)
+			setNavigableToken[*candidateTokenInfo](bestToken, navigableToken)
+			heap.Push(pq, bestToken)
+		}
+	}
+
 }
