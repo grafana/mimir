@@ -471,7 +471,7 @@ func TestConfig_ValidateLimits(t *testing.T) {
 }
 
 // Temporary behavior to keep supporting global query-ingesters-within flag for two Mimir versions
-// TODO: Remove in Mimir 2.XX.0
+// TODO: Remove in Mimir 2.10.0
 func TestQueryIngestersWithinGlobalConfigIsUsedInsteadOfDefaultLimitConfig(t *testing.T) {
 	dir := t.TempDir()
 
