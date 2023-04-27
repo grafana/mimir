@@ -300,7 +300,7 @@ func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
 
 func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
 	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
 	instances := []Instance{"A", "B", "C"}
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 
@@ -321,15 +321,15 @@ func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
 
 func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
 	tokenDistributor.maxTokenValue = maxToken
-	instances := []Instance{"A", "B", "C"}
+	instances := []Instance{"A-1", "B-1", "C-1"}
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 
 	for i := range instances {
 		tokenDistributor.AddInstance(instances[i], zones[i])
 	}
-
+	instances = []Instance{"A-2", "B-2", "C-2"}
 	for i := range instances {
 		tokenDistributor.AddInstance(instances[i], zones[i])
 	}

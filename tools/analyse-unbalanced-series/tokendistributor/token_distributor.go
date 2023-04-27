@@ -4,9 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
-	"time"
 
 	"golang.org/x/exp/slices"
 )
@@ -27,7 +25,7 @@ type TokenDistributor struct {
 	seedByZone          map[Zone][]Token
 }
 
-func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy) *TokenDistributor {
+func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy, seedGenerator SeedGenerator) *TokenDistributor {
 	sortedTokens := make([]Token, 0, initialInstanceCount*tokensPerInstance)
 	instanceByToken := make(map[Token]Instance, initialInstanceCount*tokensPerInstance)
 	tokensByInstance := make(map[Instance][]Token, initialInstanceCount)
@@ -43,7 +41,7 @@ func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token,
 		maxTokenValue:       maxTokenValue,
 		tokensPerInstance:   tokensPerInstance,
 	}
-	tokenDistributor.generatePerfectlySpacedSeed()
+	tokenDistributor.seedByZone = seedGenerator.generateSeedByZone(tokenDistributor.zones, tokenDistributor.tokensPerInstance, tokenDistributor.maxTokenValue)
 	return tokenDistributor
 }
 
@@ -80,35 +78,6 @@ func generateZones(zonesCount int) []Zone {
 		zones = append(zones, Zone("zone-"+string(rune('a'+i))))
 	}
 	return zones
-}
-
-func (t *TokenDistributor) generatePerfectlySpacedSeed() {
-	allSeeds := make([]Token, 0, t.tokensPerInstance*len(t.zones))
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	tokensCount := t.tokensPerInstance * len(t.zones)
-	offset := uint32(t.maxTokenValue) / uint32(tokensCount)
-	curr := uint32(r.Intn(int(t.maxTokenValue)))
-	for i := 0; i < tokensCount; i++ {
-		allSeeds = append(allSeeds, Token(curr))
-		if uint32(t.maxTokenValue)-offset < curr {
-			curr -= uint32(t.maxTokenValue) - offset
-		} else {
-			curr += offset
-		}
-	}
-
-	slices.Sort(allSeeds)
-
-	t.seedByZone = make(map[Zone][]Token, len(t.zones))
-	for i, token := range allSeeds {
-		zone := t.zones[i%len(t.zones)]
-		currSeed, ok := t.seedByZone[zone]
-		if !ok {
-			currSeed = make([]Token, 0, t.tokensPerInstance)
-		}
-		currSeed = append(currSeed, token)
-		t.seedByZone[zone] = currSeed
-	}
 }
 
 func (t *TokenDistributor) addTokenToInstance(instance Instance, token Token) {
@@ -435,32 +404,74 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 	}
 	stats.WriteString(fmt.Sprintf("Evaluation of candidate %d [%s-%s] gives rise to the following improvement: %.5f\n",
 		candidate.getToken(), newInstance.instanceId, newInstanceZone.zone, improvement))
-	fmt.Print(stats.String())
+	//fmt.Print(stats.String())
 
 	return improvement
 }
 
-func (t *TokenDistributor) getStats(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) (float64, float64, float64) {
+func (t *TokenDistributor) getStats(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) [2][4]float64 {
+	result := [2][4]float64{}
 	head := tokenInfoCircularList.head
 	curr := head
-	min := math.MaxFloat64
-	max := math.SmallestNonzeroFloat64
-	dev := 0.0
+	result[0][0] = math.MaxFloat64
+	result[0][1] = math.SmallestNonzeroFloat64
+	result[0][2] = 0.0
+	result[0][3] = 0.0
+	result[1][0] = math.MaxFloat64
+	result[1][1] = math.SmallestNonzeroFloat64
+	result[1][2] = 0.0
+	result[1][3] = 0.0
 	for {
 		dist := curr.getData().getReplicatedOwnership() / optimalTokenOwnership
-		dev += sq(dist - 1.0)
-		if min > dist {
-			min = dist
+		if result[0][0] > dist {
+			result[0][0] = dist
 		}
-		if max < dist {
-			max = dist
+		if result[0][1] < dist {
+			result[0][1] = dist
 		}
+		result[0][2] = result[0][2] + sq(dist-1.0)
+		result[0][3] = result[0][3] + curr.getData().getReplicatedOwnership()
+		dist = curr.getData().getOwningInstance().ownership / (optimalTokenOwnership * float64(t.tokensPerInstance))
+		if result[1][0] > dist {
+			result[1][0] = dist
+		}
+		if result[1][1] < dist {
+			result[1][1] = dist
+		}
+		result[1][2] = result[1][2] + sq(dist-1.0)
+		result[1][3] = result[1][3] + curr.getData().getOwningInstance().ownership
 		curr = curr.next
 		if curr == head {
 			break
 		}
 	}
-	return min, max, dev
+	head = tokenInfoCircularList.head
+	curr = head
+	termInstance := newInstanceInfo("term", nil, 0)
+	prevInstance := termInstance
+	for {
+		instance := curr.getData().getOwningInstance()
+		if instance.precededBy == nil {
+			fmt.Printf("Instance [%s-%s-%.2f]\n", curr.getData().getOwningInstance().instanceId, curr.getData().getOwningInstance().zone.zone, curr.getData().getOwningInstance().ownership)
+			instance.precededBy = prevInstance
+			prevInstance = instance
+		} else {
+			fmt.Printf("\t Already seen Instance [%s-%s-%.2f]\n", curr.getData().getOwningInstance().instanceId, curr.getData().getOwningInstance().zone.zone, curr.getData().getOwningInstance().ownership)
+		}
+
+		curr = curr.next
+		if curr == head {
+			break
+		}
+	}
+	currInstance := prevInstance
+	for currInstance != termInstance {
+		prevInstance = currInstance.precededBy
+		currInstance.precededBy = nil
+		currInstance = prevInstance
+	}
+
+	return result
 }
 
 func sq(value float64) float64 {
@@ -494,6 +505,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candid
 	next := host.getNext()
 	newInstance := candidate.getOwningInstance()
 	newInstanceZone := newInstance.zone
+	old := newInstance.ownership
 	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
 	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
 	newTokenInfo.setReplicatedOwnership(t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface)))
@@ -566,6 +578,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candid
 		currZone.precededBy = nil
 		currZone = prevZone
 	}
+	fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getToken(), newInstance, old, newInstance.ownership)
 }
 
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
@@ -601,34 +614,39 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	}
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceZone)
 	optimalTokenOwnership := t.getOptimalTokenOwnership()
-	initMin, initMax, initStdev := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
+	initStats := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
 	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
 	newInstanceInfo.ownership = float64(t.tokensPerInstance) * optimalTokenOwnership
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
 	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)
-	fmt.Printf("Priority queue: %s\n", pq)
+	//fmt.Printf("Priority queue: %s\n", pq)
 	bestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
-	fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
+	//fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
-	for i := 0; i < t.tokensPerInstance; i++ {
+	addedTokens := 0
+	for {
 		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
 		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+		addedTokens++
+		if addedTokens == t.tokensPerInstance {
+			break
+		}
 
 		for {
-			fmt.Printf("Iteration %d, priority queue: %s\n", i, pq)
+			//fmt.Printf("Iteration %d, priority queue: %s\n", i, pq)
 			bestToken = heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
-			fmt.Printf("\ttokenInfoCircularList: %s\n", tokenInfoCircularList)
+			//fmt.Printf("\ttokenInfoCircularList: %s\n", tokenInfoCircularList)
 			candidate := getNavigableToken[*candidateTokenInfo](bestToken).getData()
 			// at this point i new tokens have already been added to the new instance,
 			// so we are looking for the (i + 1)st candidate. Therefore, the multiplier
 			// tho use in eveluateImprovement is (i + 1) / t.tokensPerInstance
-			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, float64(1+i)/float64(t.tokensPerInstance))
+			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, float64(addedTokens+1)/float64(t.tokensPerInstance))
 			nextBestToken := pq.Peek()
-			fmt.Printf("Understanding whether token %s [%.5f] is still the best. Its new weight is %.5f, and the current elemement with the max weight in pq is %s [%.5f]\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
+			//fmt.Printf("Understanding whether token %s [%.5f] is still the best. Its new weight is %.5f, and the current elemement with the max weight in pq is %s [%.5f]\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
 			if newImprovement >= nextBestToken.weight {
-				fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
+				//fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
 				candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 				break
 			}
@@ -636,13 +654,16 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 			bestToken = newWeightedNavigableToken[*candidateTokenInfo](newImprovement)
 			setNavigableToken[*candidateTokenInfo](bestToken, navigableToken)
 			heap.Push(pq, bestToken)
-			fmt.Printf("Token %s was not the best, so we put it back on pq and retry\n", bestToken.navigableToken)
+			//fmt.Printf("Token %s was not the best, so we put it back on pq and retry\n", bestToken.navigableToken)
 		}
 	}
 
-	min, max, stdev := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
+	finalStats := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
 	fmt.Printf("Final distribution: %s\n", tokenInfoCircularList.StringVerobose())
-	fmt.Printf("old min ownership: %.2f%%, old max ownership: %.2f%%, old stdev: %.2f\n", initMin, initMax, initStdev)
-	fmt.Printf("new min ownership: %.2f%%, new max ownership: %.2f%%, new stdev: %.2f\n", min, max, stdev)
+	fmt.Printf("Token - old min ownership: %.2f%%, old max ownership: %.2f%%, old stdev: %.2f, old sum: %.2f\n", initStats[0][0], initStats[0][1], initStats[0][2], initStats[0][3])
+	fmt.Printf("Instance - old min ownership: %.2f%%, old max ownership: %.2f%%, old stdev: %.2f, old sum: %.2f\n", initStats[1][0], initStats[1][1], initStats[1][2], initStats[1][3])
+	fmt.Printf("Token - new min ownership: %.2f%%, new max ownership: %.2f%%, new stdev: %.2f, new sum: %.2f\n", finalStats[0][0], finalStats[0][1], finalStats[0][2], finalStats[0][3])
+	fmt.Printf("Instance - new min ownership: %.2f%%, new max ownership: %.2f%%, new stdev: %.2f, new sum: %.2f\n", finalStats[1][0], finalStats[1][1], finalStats[1][2], finalStats[1][3])
+	fmt.Println(instanceInfoByInstance)
 	return tokenInfoCircularList, candidateTokenInfoCircularList
 }

@@ -1,7 +1,6 @@
 package tokendistributor
 
 import (
-	"fmt"
 	"math"
 	"testing"
 
@@ -46,11 +45,8 @@ func TestPerfectlySpacedSeedGenerator_Generate(t *testing.T) {
 		}
 	}
 
-	fmt.Println(seedByZone)
-
 	tokensCount := tokensPerInstance * len(zones)
 	offset := uint32(math.Ceil(float64(maxTokenValue) / float64(tokensCount)))
-	fmt.Println(offset)
 	diff := Token(offset * uint32(len(zones)))
 
 	for i := 0; i < tokensPerInstance-1; i++ {

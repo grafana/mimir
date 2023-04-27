@@ -47,7 +47,7 @@ func (g RandomSeedGenerator) generateSeedByZone(zones []Zone, tokensPerInstance 
 		if slices.Contains(allSeeds, token) {
 			continue
 		}
-		allSeeds = append(allSeeds, Token(token))
+		allSeeds = append(allSeeds, token)
 		if len(allSeeds) == tokensCount {
 			break
 		}

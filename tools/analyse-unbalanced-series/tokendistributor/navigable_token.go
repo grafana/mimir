@@ -2,6 +2,7 @@ package tokendistributor
 
 import (
 	"fmt"
+	"strings"
 )
 
 type navigableTokenInterface interface {
@@ -69,7 +70,7 @@ func (e *navigableToken[T]) String() string {
 }
 
 func (e *navigableToken[T]) StringVerbose() string {
-	return fmt.Sprintf("%d[%s-%s-%.2f]", e.data.getToken(), e.getData().getOwningInstance().instanceId, e.getData().getOwningInstance().zone.zone, e.getData().getReplicatedOwnership())
+	return fmt.Sprintf("%d[%s-%s-%.2f]%.2f", e.data.getToken(), e.getData().getOwningInstance().instanceId, e.getData().getOwningInstance().zone.zone, e.getData().getOwningInstance().ownership, e.getData().getReplicatedOwnership())
 }
 
 type CircularList[T navigableTokenInterface] struct {
@@ -136,23 +137,33 @@ func (c *CircularList[T]) Clear() *navigableToken[T] {
 func (c *CircularList[T]) String() string {
 	return c.toString(func(element *navigableToken[T]) string {
 		return element.String()
-	})
+	}, false)
 }
 
 func (c *CircularList[T]) StringVerobose() string {
 	return c.toString(func(element *navigableToken[T]) string {
 		return element.StringVerbose()
-	})
+	}, true)
 }
 
-func (c *CircularList[T]) toString(elementToString func(token *navigableToken[T]) string) string {
+func (c *CircularList[T]) toString(elementToString func(token *navigableToken[T]) string, newline bool) string {
 	if c.head == nil {
 		return "[]"
 	}
 	last := c.head.prev
-	result := fmt.Sprintf("head=")
-	for curr := c.head; curr != last; curr = curr.next {
-		result = result + fmt.Sprintf("%v<->", elementToString(curr))
+	result := strings.Builder{}
+	separator := "<->"
+	if newline {
+		separator += "\n"
+		result.WriteString("\n")
 	}
-	return result + fmt.Sprintf("%v<->head", last)
+	result.WriteString("head=")
+	if newline {
+		result.WriteString("\n")
+	}
+	for curr := c.head; curr != last; curr = curr.next {
+		result.WriteString(fmt.Sprintf("%v%s", elementToString(curr), separator))
+	}
+	result.WriteString(fmt.Sprintf("%v<->head", elementToString(last)))
+	return result.String()
 }
