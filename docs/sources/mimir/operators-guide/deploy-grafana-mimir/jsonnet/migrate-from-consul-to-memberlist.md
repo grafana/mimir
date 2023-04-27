@@ -3,8 +3,7 @@ aliases:
   - ../../deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
   - migrating-from-consul-to-memberlist/
 description:
-  Learn how to migrate from using Consul as KV store for hash rings to
-  using memberlist without any downtime.
+  Migrating from Consul to memberlist KV store for hash rings without downtime involves transferring key-value data from one data store to another with minimal disruption to the application or service that uses the data. By learning about the differences between Consul and memberlist KV stores, planning the migration, implementing the transfer, managing the process, and evaluating the results, the user can successfully migrate to the new store while ensuring performance, reliability, and scalability.
 menuTitle: Migrate from Consul to memberlist
 title: Migrate from Consul to memberlist KV store for hash rings without downtime
 weight: 40
@@ -12,7 +11,7 @@ weight: 40
 
 # Migrate from Consul to memberlist KV store for hash rings without downtime
 
-Mimir Jsonnet uses memberlist as KV store for hash rings since Mimir 2.2.0.
+Mimir Jsonnet now uses memberlist as the KV store for hash rings since Mimir 2.2.0.
 
 Memberlist can be disabled by using the following configuration:
 
