@@ -9,7 +9,7 @@ weight: 30
 
 The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
 
-Incoming series from [distributors]({{< relref "distributor.md" >}}) are not immediately written to the long-term storage but are either kept in ingesters memory or offloaded to ingesters disk.
+Incoming time series data from [distributors]({{< relref "distributor.md" >}}) are temporarily stored in the ingester's memory or offloaded to disk before being written to long-term storage.
 Eventually, all series are written to disk and periodically uploaded (by default every two hours) to the long-term storage.
 For this reason, the [queriers]({{< relref "querier.md" >}}) might need to fetch samples from both ingesters and long-term storage while executing a query on the read path.
 
@@ -37,11 +37,11 @@ Ingesters store recently received samples in-memory in order to perform write de
 If the ingesters immediately write received samples to the long-term storage, the system would have difficulty scaling due to the high pressure on the long-term storage.
 For this reason, the ingesters batch and compress samples in-memory and periodically upload them to the long-term storage.
 
-Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
+Write de-amplification is a key factor in reducing Mimir's total cost of ownership (TCO).
 
 ## Ingesters failure and data loss
 
-If an ingester process crashes or exits abruptly, all the in-memory series that have not yet been uploaded to the long-term storage could be lost.
+If an ingester process crashes or exits abruptly, any in-memory time series data that have not yet been uploaded to long-term storage might be lost.
 There are the following ways to mitigate this failure mode:
 
 - Replication
@@ -63,7 +63,8 @@ If multiple ingesters fail, time series might be lost if the failure affects all
 The write-ahead log (WAL) writes all incoming series to a persistent disk until the series are uploaded to the long-term storage.
 If an ingester fails, a subsequent process restart replays the WAL and recovers the in-memory series samples.
 
-Contrary to the sole replication, and given that the persistent disk data is not lost, in the event of the failure of multiple ingesters, each ingester recovers the in-memory series samples from WAL after a subsequent restart.
+Unlike sole replication, the WAL ensures that in-memory time series data are not lost in the case of multiple ingester failures. Each ingester can recover the data from the WAL after a subsequent restart.
+
 Replication is still recommended in order to gracefully handle a single ingester failure.
 
 ### Write-behind log
