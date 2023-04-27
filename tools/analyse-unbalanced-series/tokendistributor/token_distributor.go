@@ -59,28 +59,28 @@ func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceB
 	}
 }
 
-func (t TokenDistributor) getInstanceCount() int {
+func (t *TokenDistributor) getInstanceCount() int {
 	return len(t.tokensByInstance)
 }
 
-func (t TokenDistributor) getOptimalTokenOwnership() float64 {
+func (t *TokenDistributor) getOptimalTokenOwnership() float64 {
 	maxTokenAsFloat64 := float64(t.maxTokenValue)
 	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+t.tokensPerInstance)
 }
 
 // calculateReplicatedOwnership calculated the replicated weight of the given token with its given replicaStart.
 // The replicated weight is basically the distance between replicaStart's predecessor and the token itself.
-func (t TokenDistributor) calculateReplicatedOwnership(token, replicaStart navigableTokenInterface) float64 {
+func (t *TokenDistributor) calculateReplicatedOwnership(token, replicaStart navigableTokenInterface) float64 {
 	return t.calculateDistanceAsFloat64(replicaStart.getPrevious(), token)
 }
 
 // calculateReplicatedOwnership calculated the replicated weight of the given token with its given replicaStart.
 // The replicated weight is basically the distance between replicaStart's predecessor and the token itself.
-func (t TokenDistributor) calculateDistanceAsFloat64(first, second navigableTokenInterface) float64 {
+func (t *TokenDistributor) calculateDistanceAsFloat64(first, second navigableTokenInterface) float64 {
 	return float64(first.getToken().distance(second.getToken(), t.maxTokenValue))
 }
 
-func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceInfo, map[Zone]*zoneInfo) {
+func (t *TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceInfo, map[Zone]*zoneInfo) {
 	zoneInfoByZone := make(map[Zone]*zoneInfo)
 	instanceInfoByInstance := make(map[Instance]*instanceInfo, len(t.tokensByInstance))
 	for instance, tokens := range t.tokensByInstance {
@@ -95,7 +95,7 @@ func (t TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceIn
 // The resulting circularList is created starting from the slice of sorted tokens sortedTokens, and represent the actual
 // ring. For tokenInfo its replica start (tokenInfo.replicaStart) and expandable (tokenInfo.expandable) are calculated
 // and stored
-func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
+func (t *TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
 	circularList := newCircularList[*tokenInfo]()
 	for _, token := range t.sortedTokens {
 		instanceInfo := instanceInfoByInstance[t.instanceByToken[token]]
@@ -115,7 +115,7 @@ func (t TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map
 // createCandidateTokenInfoCircularList creates a circularList whose elements are of type candidateTokenInfo.
 // The resulting circularList is created starting from a circularList of tokenInfo elements in such a way that between
 // each 2 tokenInfos belonging to the former, a candidateTokenInfo is created in the middle of the 2 tokenInfos.
-func (t TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircularList *CircularList[*tokenInfo], newInstanceInfo *instanceInfo, initialTokenOwnership float64) *CircularList[*candidateTokenInfo] {
+func (t *TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircularList *CircularList[*tokenInfo], newInstanceInfo *instanceInfo, initialTokenOwnership float64) *CircularList[*candidateTokenInfo] {
 	circularList := newCircularList[*candidateTokenInfo]()
 	curr := tokenInfoCircularList.head
 	for {
@@ -135,7 +135,7 @@ func (t TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircular
 	return &circularList
 }
 
-func (t TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
+func (t *TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
 	currentToken := tokenInfo.getToken()
 	nextToken := tokenInfo.getNext().getToken()
 	return currentToken.split(nextToken, t.maxTokenValue)
@@ -156,7 +156,7 @@ func (t TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
 // 3) if the replica set is full, but it neither starts nor ends with a token from newInstanceZone (e.g., replica sets
 // "zone-a"->"zone-b"->"zone-c" and "zone-c"-"zone-b"-"zone-a" can be extended by "zone-b", but replica sets
 // "zone-b"->"zone-a"->"zone-c" and "zone-a"->"zone-c"->"zone-b" cannot be extended by "zone-b"
-func (t TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) (navigableTokenInterface, bool) {
+func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) (navigableTokenInterface, bool) {
 	var (
 		navigableTokenZone = navigableToken.getOwningInstance().zone
 		prevZoneInfo       = &LastZoneInfo
@@ -219,7 +219,7 @@ func (t TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navig
 // populateTokenInfo gets as input a tokenInfo, and it calculates and updates its replica start and expandable information
 // in the ring. Moreover, it updates the replicated weight information of both token itself and the instance that
 // corresponds to that node.
-func (t TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZone *zoneInfo) {
+func (t *TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZone *zoneInfo) {
 	replicaStart, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstanceZone)
 	tokenInfo.setReplicaStart(replicaStart)
 	tokenInfo.setExpandable(expandable)
@@ -232,13 +232,13 @@ func (t TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZon
 // populateCandidateTokenInfo gets as input a candidateTokenInfo, it calculates and sets its replica start and expandable
 // information starting from the position in the ring that corresponds to candidateTokenInfo's host, i.e., the token after
 // which the candidate is being added to the ring
-func (t TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candidateTokenInfo, newInstanceZone *zoneInfo) {
+func (t *TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candidateTokenInfo, newInstanceZone *zoneInfo) {
 	replicaStart, expandable := t.calculateReplicaStartAndExpansion(candidateTokenInfo, newInstanceZone)
 	candidateTokenInfo.setReplicaStart(replicaStart)
 	candidateTokenInfo.setExpandable(expandable)
 }
 
-func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, optimalTokenOwnership, multiplier float64) float64 {
+func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, optimalTokenOwnership, multiplier float64) float64 {
 	newInstance := candidate.getOwningInstance()
 	host := candidate.host
 	next := host.getNext()
@@ -376,7 +376,7 @@ func calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership floa
 	return (sq(newOwnership-optimalTokenOwnership) - sq(oldOwnership-optimalTokenOwnership)) / sq(float64(tokenCount))
 }
 
-func (t TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *CircularList[*candidateTokenInfo], optimalTokenOwnership float64, tokenCount int) *PriorityQueue[*candidateTokenInfo] {
+func (t *TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *CircularList[*candidateTokenInfo], optimalTokenOwnership float64, tokenCount int) *PriorityQueue[*candidateTokenInfo] {
 	pq := newPriorityQueue[*candidateTokenInfo](len(t.sortedTokens), true)
 	head := candidateTokenInfoCircularList.head
 	curr := head
@@ -394,7 +394,7 @@ func (t TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *Ci
 	return pq
 }
 
-func (t TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candidateTokenInfo) {
+func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candidateTokenInfo) {
 	host := candidate.host
 	next := host.getNext()
 	newInstance := candidate.getOwningInstance()
@@ -473,7 +473,7 @@ func (t TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candida
 	}
 }
 
-func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) []Token {
+func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
 	t.instanceByToken[token] = instance.instanceId
@@ -483,10 +483,9 @@ func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token T
 	}
 	tokens = append(tokens, token)
 	t.tokensByInstance[instance.instanceId] = tokens
-	return t.sortedTokens
 }
 
-func (t TokenDistributor) AddInstance(instance Instance, zone Zone) ([]Token, *CircularList[*tokenInfo]) {
+func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
 	t.replicationStrategy.addInstance(instance, zone)
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -506,12 +505,9 @@ func (t TokenDistributor) AddInstance(instance Instance, zone Zone) ([]Token, *C
 	fmt.Printf("\tbestToken - token: %s, weight: %.8f\n", bestToken.navigableToken, bestToken.weight)
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
-	for i := 0; i < t.tokensPerInstance; i++ {
+	for i := 0; i < t.tokensPerInstance-1; i++ {
 		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
-		t.sortedTokens = t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
-		fmt.Printf("Tokens sorted %v\n", t.sortedTokens)
-		fmt.Printf("Instance by token %v\n", t.instanceByToken)
-		fmt.Printf("Tokens by instance %v\n", t.tokensByInstance)
+		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
 
 		for {
 			fmt.Printf("Iteration %d, priority queue: %s\n", i, pq)
@@ -536,5 +532,5 @@ func (t TokenDistributor) AddInstance(instance Instance, zone Zone) ([]Token, *C
 	}
 
 	fmt.Printf("Final distribution: %s\n", tokenInfoCircularList.StringVerobose())
-	return t.sortedTokens, tokenInfoCircularList
+	return tokenInfoCircularList, candidateTokenInfoCircularList
 }

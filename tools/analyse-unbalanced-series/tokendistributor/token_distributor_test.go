@@ -280,7 +280,8 @@ func TestTokenDistributor_AddInstance(t *testing.T) {
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
-	tokens, list := tokenDistributor.AddInstance(newInstance, newInstanceZone)
-	fmt.Println(tokens)
-	fmt.Println(list)
+	tokenList, candidateList := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	fmt.Println(tokenDistributor.sortedTokens)
+	fmt.Println(tokenList)
+	fmt.Println(candidateList)
 }
