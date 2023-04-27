@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if not .Values.enterprise.enabled -}}
 {{- if .Values.nginx.enabled }}
 apiVersion: apps/v1
@@ -140,3 +141,4 @@ spec:
         {{- end }}
 {{- end -}}
 {{- end -}}
+{{- end }}

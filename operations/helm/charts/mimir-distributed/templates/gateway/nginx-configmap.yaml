@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and (not .Values.enterprise.enabled) .Values.gateway.enabledNonEnterprise -}}
 apiVersion: v1
 kind: ConfigMap
@@ -10,3 +11,4 @@ data:
   nginx.conf: |
     {{- tpl .Values.gateway.nginx.config.file . | nindent 4 }}
 {{- end -}}
+{{- end }}

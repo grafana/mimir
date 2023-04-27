@@ -1,0 +1,81 @@
+# This is an example setup for monolithic mimir deployment
+
+deploymentMode: monolithic
+
+fullnameOverride: mimir
+
+serviceAccount:
+  annotations:
+    "eks.amazonaws.com/role-arn": "arn:aws:iam::829850591703:role/multi-az-eks-multi-az-mimir"
+
+mimir:
+  structuredConfig:
+    limits:
+      # Delete from storage metrics data older than 62 days.
+      compactor_blocks_retention_period: 62d
+    common:
+      storage:
+        backend: s3
+        s3:
+          endpoint: s3.eu-west-1.amazonaws.com
+          region: eu-west-1
+    blocks_storage:
+      storage_prefix: blocks
+      s3:
+        bucket_name: multi-az-eks-multi-az-mimir
+    alertmanager_storage:
+      storage_prefix: alertmanager
+      s3:
+        bucket_name: multi-az-eks-multi-az-mimir
+    ruler_storage:
+      storage_prefix: ruler
+      s3:
+        bucket_name: multi-az-eks-multi-az-mimir
+
+monolithic:
+  replicas: 3
+  persistentVolume:
+    enabled: true
+    size: "8Gi"
+    storageClass: gp3-3000-125
+  priorityClassName: "optional-rescheduling-priority-multi-az"
+    # The zone aware replication doesn't yet make a lot of difference, since it is not used at query side yet. This is
+    # however planned in an upcoming release, and therefore it's best to have this configuration already enabled.
+  zoneAwareReplication:
+    enabled: true
+    topologyKey: "topology.kubernetes.io/zone"  # This generates default anti-affinity rules
+    zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
+    - name: zone-a
+      nodeSelector:
+        topology.kubernetes.io/zone: eu-west-1a
+    - name: zone-b
+      nodeSelector:
+        topology.kubernetes.io/zone: eu-west-1b
+    - name: zone-c
+      nodeSelector:
+        topology.kubernetes.io/zone: eu-west-1c
+  compression:
+    enabled: true
+
+nginx:
+  replicas: 1
+  priorityClassName: "mandatory-rescheduling-priority-multi-az"
+  ingress:
+    enabled: true
+    hosts:
+      - host: "mimir.multi-az.test.ngdata.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+    # empty, disabled.
+
+# Disable Minio, we use S3 storage instead
+minio:
+  enabled: false
+  replicas: 0
+
+# The Alert manager is currently not used. When enabling, it has to be configured for zone aware replication similar to
+# monolithic setup.
+alertmanager:
+  enabled: false

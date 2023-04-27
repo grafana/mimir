@@ -1,3 +1,4 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- $clusterPort := regexReplaceAll ".+[:]" (default "0.0.0.0:9094" (include "mimir.alertmanagerClusterBindAddress" .) ) "" -}}
 apiVersion: v1
@@ -32,3 +33,4 @@ spec:
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
 {{- end -}}
+{{- end }}

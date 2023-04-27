@@ -1,3 +1,5 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "alertmanager" "memberlist" true) }}
 {{- end -}}
+{{- end }}

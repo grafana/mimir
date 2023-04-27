@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and (eq (include "mimir.gateway.isEnabled" .) "true") .Values.gateway.ingress.enabled -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -42,3 +43,4 @@ spec:
           {{- end }}
     {{- end }}
 {{- end -}}
+{{- end }}

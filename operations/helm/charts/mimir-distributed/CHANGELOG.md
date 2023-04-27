@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Support monolithic deployment with the helm chart. #4832
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
 * [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340

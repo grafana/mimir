@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.nginx.route.enabled }}
 kind: Route
 apiVersion: route.openshift.io/v1
@@ -21,5 +22,6 @@ spec:
 {{- if .Values.nginx.route.tls }}
   tls:
     {{- toYaml .Values.nginx.route.tls | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}

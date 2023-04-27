@@ -1,3 +1,5 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.nginx.enabled (not .Values.enterprise.enabled) -}}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "nginx") }}
 {{- end -}}
+{{- end }}

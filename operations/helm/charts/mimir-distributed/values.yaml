@@ -30,6 +30,8 @@ nameOverride: null
 # Note: Grafana provided dashboards rely on the default naming and will need changes.
 fullnameOverride: null
 
+deploymentMode: microservices
+
 image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
@@ -154,7 +156,7 @@ mimir:
     {{- end }}
 
     alertmanager:
-      data_dir: /data
+      data_dir: "/data/alertmanager"
       enable_api: true
       external_url: /alertmanager
       {{- if .Values.alertmanager.zoneAwareReplication.enabled }}
@@ -239,7 +241,7 @@ mimir:
       max_opening_blocks_concurrency: 4
       symbols_flushers_concurrency: 4
       first_level_compaction_wait_period: 25m
-      data_dir: "/data"
+      data_dir: "/data/compactor"
       sharding_ring:
         wait_stability_min_duration: 1m
         heartbeat_period: 1m
@@ -262,8 +264,10 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
+      {{- if eq .Values.deploymentMode "microservices" }}
       {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+      {{- end }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
       log_query_request_headers: X-Access-Policy-Name,X-Token-Name
@@ -272,12 +276,17 @@ mimir:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
+      {{- if eq .Values.deploymentMode "microservices" }}
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- else }}
       frontend_address: {{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
+      {{- else if eq .Values.deploymentMode "monolithic" }}
+      frontend_address: {{ include "mimir.resourceName" (dict "ctx" . "component" "monolithic") }}-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
+      {{- end }}
 
+    {{- if eq .Values.deploymentMode "microservices" }}
     {{- if and .Values.enterprise.enabled }}
     gateway:
       proxy:
@@ -312,16 +321,20 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- end}}
     {{- end }}
+    {{- end }}
 
     ingester:
       ring:
         final_sleep: 0s
         num_tokens: 512
-        tokens_file_path: /data/tokens
+        tokens_file_path: /data/ingester/tokens
         unregister_on_shutdown: false
         heartbeat_period: 2m
         heartbeat_timeout: 10m
-        {{- if .Values.ingester.zoneAwareReplication.enabled }}
+        {{- if or 
+             (and (eq .Values.deploymentMode "microservices") .Values.ingester.zoneAwareReplication.enabled) 
+             (and (eq .Values.deploymentMode "monolithic") .Values.monolithic.zoneAwareReplication.enabled) 
+        }}
         zone_awareness_enabled: true
         {{- end }}
 
@@ -330,6 +343,7 @@ mimir:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
 
+    {{- if eq .Values.deploymentMode "microservices" }}
     {{- if .Values.enterprise.enabled }}
     instrumentation:
       enabled: {{ and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
@@ -340,6 +354,7 @@ mimir:
 
     license:
       path: "/license/license.jwt"
+    {{- end }}
     {{- end }}
 
     limits:
@@ -369,12 +384,20 @@ mimir:
       max_outstanding_requests_per_tenant: 800
 
     ruler:
+      {{- if eq .Values.deploymentMode "microservices" }}
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
+      {{- else if eq .Values.deploymentMode "monolithic" }}
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
+      {{- end }}      
       enable_api: true
-      rule_path: /data
+      rule_path: "/data/ruler"
       {{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
       query_frontend:
+        {{- if eq .Values.deploymentMode "microservices" }}
         address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+        {{- else if eq .Values.deploymentMode "monolithic" }}
+        address: dns:///{{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+        {{- end }}   
       {{- end }}
 
     {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") }}
@@ -407,16 +430,23 @@ mimir:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
         wait_stability_min_duration: 1m
-        {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
+        {{- if or 
+             (and (eq .Values.deploymentMode "microservices") .Values.store_gateway.zoneAwareReplication.enabled) 
+             (and (eq .Values.deploymentMode "monolithic") .Values.monolithic.zoneAwareReplication.enabled) 
+        }}
         kvstore:
           prefix: multi-zone/
         {{- end }}
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
-        {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
+        {{- if or 
+             (and (eq .Values.deploymentMode "microservices") .Values.store_gateway.zoneAwareReplication.enabled) 
+             (and (eq .Values.deploymentMode "monolithic") .Values.monolithic.zoneAwareReplication.enabled) 
+        }}
         zone_awareness_enabled: true
         {{- end }}
 
+    {{- if eq .Values.deploymentMode "microservices" }}
     {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
     graphite:
       enabled: true
@@ -441,7 +471,8 @@ mimir:
           memcached:
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
-    {{- end}}
+    {{- end }}
+    {{- end }}
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   #
@@ -3235,70 +3266,125 @@ nginx:
 
           # Distributor endpoints
           location /distributor {
-            set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $distributor {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /api/v1/push {
-            set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $distributor {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location /otlp/v1/metrics {
-            set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $distributor {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Alertmanager endpoints
           location {{ template "mimir.alertmanagerHttpPrefix" . }} {
-            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /multitenant_alertmanager/status {
-            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /multitenant_alertmanager/configs {
-            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /api/v1/alerts {
-            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $alertmanager {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Ruler endpoints
           location {{ template "mimir.prometheusHttpPrefix" . }}/config/v1/rules {
-            set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $ruler {{ template "mimir.fullname" . }}-monolithic.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$ruler:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/rules {
-            set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $ruler {{ template "mimir.fullname" . }}-monolithic.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$ruler:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           location {{ template "mimir.prometheusHttpPrefix" . }}/api/v1/alerts {
-            set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $ruler {{ template "mimir.fullname" . }}-monolithic.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$ruler:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /ruler/ring {
-            set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $ruler {{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $ruler {{ template "mimir.fullname" . }}-monolithic.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$ruler:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Rest of {{ template "mimir.prometheusHttpPrefix" . }} goes to the query frontend
           location {{ template "mimir.prometheusHttpPrefix" . }} {
-            set $query_frontend {{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $query_frontend {{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $query_frontend {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$query_frontend:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Buildinfo endpoint can go to any component
           location = /api/v1/status/buildinfo {
-            set $query_frontend {{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
-            proxy_pass      http://$query_frontend:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $query_frontend {{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $query_frontend {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}            proxy_pass      http://$query_frontend:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Compactor endpoint for uploading blocks
           location /api/v1/upload/block/ {
-            set $compactor {{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- if eq .Values.deploymentMode "microservices" }}
+              set $compactor {{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- else if eq .Values.deploymentMode "monolithic" }}
+              set $compactor {{ template "mimir.fullname" . }}-monolithic-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            {{- end }}
             proxy_pass      http://$compactor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
@@ -4786,6 +4872,240 @@ continuous_test:
 
   tolerations: []
   terminationGracePeriodSeconds: 30
+
+monolithic:
+  # -- Total number of replicas for the monolithic across all availability zones
+  # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
+  # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
+  #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
+  replicas: 3
+
+  # -- Allows to override the container image of the alertmanager component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
+  # TODO Currently I have only foreseen to enable compression for the monolithic deployment mode
+  compression:
+    enabled: false
+    algorithm: snappy
+  statefulSet:
+    enabled: true
+
+  service:
+    annotations: {}
+    labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
+
+  # -- Optionally set the scheduler for pods of the monolithic deployment
+  schedulerName: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  # Additional monolithic container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # -- The name of the PriorityClass for monolithic pods
+  priorityClassName: null
+
+  # -- Pod Disruption Budget for monolithic, this will be applied across availability zones to prevent losing redundancy
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  podManagementPolicy: Parallel
+
+  # -- NodeSelector to pin monolithic pods to certain set of nodes. This is ignored when monolithic.zoneAwareReplication.enabled=true.
+  nodeSelector: {}
+  # -- Pod affinity settings for the monolithic. This is ignored when monolithic.zoneAwareReplication.enabled=true.
+  affinity: {}
+
+  # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
+  # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
+  # It is recommended to replace this with requiredDuringSchedulingIgnoredDuringExecution podAntiAffinity rules when
+  # deploying to production.
+  topologySpreadConstraints:
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
+
+  annotations: {}
+
+  persistentVolume:
+    # If true and monolithic.statefulSet.enabled is true,
+    # Monolithic will create/use a Persistent Volume Claim
+    # If false, use emptyDir
+    #
+    enabled: true
+
+    # Monolithic data Persistent Volume Claim template name
+    #
+    name: storage
+
+    # Monolithic data Persistent Volume Claim annotations
+    #
+    annotations: {}
+
+    # Monolithic data Persistent Volume access modes
+    # Must match those of existing PV or dynamic provisioner
+    # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    accessModes:
+      - ReadWriteOnce
+
+    # Monolithic data Persistent Volume size
+    size: 2Gi
+
+    # Subdirectory of Monolithic data Persistent Volume to mount
+    # Useful if the volume's root directory is not empty
+    subPath: ''
+
+
+    # Monolithic data Persistent Volume Storage Class
+    # If defined, storageClassName: <storageClass>
+    # If set to "-", storageClassName: "", which disables dynamic provisioning
+    # If undefined (the default) or set to null, no storageClassName spec is
+    #   set, choosing the default provisioner.
+    #
+    # storageClass: "-"
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 60
+
+  # -- SecurityContext override for monolithic pods
+  securityContext: {}
+
+  # -- The SecurityContext for monolithic containers
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  # -- updateStrategy of the monolithic statefulset. This is ignored when monolithic.zoneAwareReplication.enabled=true.
+  statefulStrategy:
+    type: RollingUpdate
+
+  terminationGracePeriodSeconds: 900
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+  extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 1000
+
+  # -- Options to configure zone-aware replication for monolithic
+  # Example configuration with full geographical redundancy:
+  # rollout_operator:
+  #   enabled: true
+  # monolithic:
+  #   zoneAwareReplication:
+  #     enabled: true
+  #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
+  #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-a
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-b
+  #     - name: zone-c
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-c
+  #
+  zoneAwareReplication:
+    # -- Enable zone-aware replication for ingester
+    enabled: true
+    # -- Maximum number of ingesters that can be unavailable per zone during rollout
+    maxUnavailable: 50
+    # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
+    # E.g.: topologyKey: 'kubernetes.io/hostname'
+    topologyKey: null
+    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    migration:
+      # -- Indicate if migration is ongoing for multi zone ingester
+      enabled: false
+      # -- Exclude default zone on write path
+      excludeDefaultZone: false
+      # -- Enable zone-awareness, read path only
+      readPath: false
+      # -- Total number of replicas to start in availability zones when migration is enabled
+      replicas: 0
+      # -- Scale default zone ingesters to 0
+      scaleDownDefaultZone: false
+      # -- Enable zone-awareness, write path only
+      writePath: false
+    # -- Zone definitions for monolithic zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
+    zones:
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-a
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-a
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Monolithic data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-b
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-b
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Monolithic data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
+      # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+      - name: zone-c
+        # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+        # nodeSelector:
+        #   topology.kubernetes.io/zone: zone-c
+        nodeSelector: null
+        # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+        extraAffinity: {}
+        # -- Monolithic data Persistent Volume Storage Class
+        # If defined, storageClassName: <storageClass>
+        # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+        # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+        storageClass: null
+
 
 # -- Add dynamic manifests via values. Example:
 # extraObjects:

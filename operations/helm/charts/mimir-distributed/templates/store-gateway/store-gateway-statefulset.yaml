@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -221,6 +222,7 @@ spec:
           {{- end }}
 
 ---
+{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

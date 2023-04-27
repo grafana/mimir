@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -169,3 +170,4 @@ spec:
         - name: active-queries
           emptyDir: {}
 {{- end -}}
+{{- end }}

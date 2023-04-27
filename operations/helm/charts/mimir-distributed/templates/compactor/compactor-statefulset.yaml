@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.compactor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -189,4 +190,5 @@ spec:
               {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
+{{- end }}
 {{- end }}
