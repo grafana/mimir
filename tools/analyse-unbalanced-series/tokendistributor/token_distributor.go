@@ -347,7 +347,7 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 		newOwnership = prevInstance.adjustedOwnership
 		oldOwnership = prevInstance.ownership
 		tokenCount := float64(prevInstance.tokenCount)
-		diff := sq(newOwnership/tokenCount-optimalTokenOwnership) - sq(oldOwnership/tokenCount-optimalTokenOwnership)
+		diff := sq(oldOwnership/tokenCount-optimalTokenOwnership) - sq(newOwnership/tokenCount-optimalTokenOwnership)
 		prevInstance = currInstance.precededBy
 		currInstance.precededBy = nil
 		currInstance.zone.precededBy = nil
@@ -365,7 +365,7 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 	}
 	fmt.Printf("\tEvaluation of candidate %d: returning %.8f\n", candidate.getToken(), -improvement)
 
-	return -improvement
+	return improvement
 }
 
 func sq(value float64) float64 {
@@ -373,7 +373,7 @@ func sq(value float64) float64 {
 }
 
 func calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership float64, tokenCount int) float64 {
-	return (sq(newOwnership-optimalTokenOwnership) - sq(oldOwnership-optimalTokenOwnership)) / sq(float64(tokenCount))
+	return (sq(oldOwnership-optimalTokenOwnership) - sq(newOwnership-optimalTokenOwnership)) / sq(float64(tokenCount))
 }
 
 func (t *TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *CircularList[*candidateTokenInfo], optimalTokenOwnership float64, tokenCount int) *PriorityQueue[*candidateTokenInfo] {
@@ -505,7 +505,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	fmt.Printf("\tbestToken - token: %s, weight: %.8f\n", bestToken.navigableToken, bestToken.weight)
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
-	for i := 0; i < t.tokensPerInstance-1; i++ {
+	for i := 1; i < t.tokensPerInstance; i++ {
 		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
 		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
 
@@ -515,7 +515,10 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 			fmt.Printf("\tbestToken - token: %s, weight: %.8f\n", bestToken.navigableToken, bestToken.weight)
 			fmt.Printf("\ttokenInfoCircularList: %s\n", tokenInfoCircularList)
 			candidate := getNavigableToken[*candidateTokenInfo](bestToken).getData()
-			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, 1.0/float64(t.tokensPerInstance))
+			// at this point i new tokens have already been added to the new instance,
+			// so we are looking for the (i + 1)st candidate. Therefore, the multiplier
+			// tho use in eveluateImprovement is (i + 1) / t.tokensPerInstance
+			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, float64(1+i)/float64(t.tokensPerInstance))
 			nextBestToken := pq.Peek()
 			fmt.Printf("Understanding whether token %s (previous weight %.8f) is still the best. Its new weight is %.8f, and the current elemement with the min weight in pq is %s (%.8f)\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
 			if newImprovement >= nextBestToken.weight {
