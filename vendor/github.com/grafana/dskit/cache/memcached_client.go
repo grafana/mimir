@@ -488,7 +488,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 		bucketed[addrString] = append(bucketed[addrString], key)
 	}
 
-	var out []string
+	out := make([]string, 0, len(keys))
 	for srv := range bucketed {
 		out = append(out, bucketed[srv]...)
 	}
