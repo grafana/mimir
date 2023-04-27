@@ -16,12 +16,13 @@ const (
 	newInstanceZone   Zone     = "zone-b"
 	newInstance       Instance = "instance-4"
 	maxToken          Token    = 1000
+	replicationFactor          = 3
 )
 
 func createTokenDistributor(maxTokenValue Token) *TokenDistributor {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZones()
 	replicationStrategy := newZoneAwareReplicationStrategy(zonesCount, zoneByInstance, nil, nil)
-	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zoneByInstance, tokensPerInstance, replicationStrategy)
+	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zonesCount, zoneByInstance, tokensPerInstance, replicationStrategy)
 	tokenDistributor.maxTokenValue = maxTokenValue
 	return tokenDistributor
 }
@@ -29,7 +30,7 @@ func createTokenDistributor(maxTokenValue Token) *TokenDistributor {
 func createTokenDistributorWithInitialEvenDistribution(start, maxTokenValue, tokensPerInstanceCount, zonesCount int) *TokenDistributor {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZonesEven50(start, maxTokenValue, tokensPerInstanceCount, zonesCount)
 	replicationStrategy := newZoneAwareReplicationStrategy(zonesCount, zoneByInstance, nil, nil)
-	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zoneByInstance, tokensPerInstance, replicationStrategy)
+	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zonesCount, zoneByInstance, tokensPerInstance, replicationStrategy)
 	tokenDistributor.maxTokenValue = Token(maxTokenValue)
 	return tokenDistributor
 }
@@ -295,4 +296,43 @@ func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
 	fmt.Println(tokenDistributor.sortedTokens)
 	fmt.Println(tokenList)
 	fmt.Println(candidateList)
+}
+
+func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
+	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy)
+	instances := []Instance{"A", "B", "C"}
+	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+
+	for i := range instances {
+		require.Len(t, tokenDistributor.sortedTokens, i*tokensPerInstance)
+		require.Len(t, tokenDistributor.seedByZone, zonesCount)
+		require.Len(t, tokenDistributor.seedByZone[zones[i]], tokensPerInstance)
+		_, ok := tokenDistributor.tokensByInstance[instances[i]]
+		require.NotNil(t, ok)
+		tokenDistributor.AddInstance(instances[i], zones[i])
+		require.Len(t, tokenDistributor.sortedTokens, (i+1)*tokensPerInstance)
+		require.Nil(t, tokenDistributor.seedByZone[zones[i]])
+		_, ok = tokenDistributor.tokensByInstance[instances[i]]
+		require.True(t, ok)
+		slices.IsSorted(tokenDistributor.sortedTokens)
+	}
+}
+
+func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
+	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy)
+	tokenDistributor.maxTokenValue = maxToken
+	instances := []Instance{"A", "B", "C"}
+	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+
+	for i := range instances {
+		tokenDistributor.AddInstance(instances[i], zones[i])
+	}
+
+	for i := range instances {
+		tokenDistributor.AddInstance(instances[i], zones[i])
+	}
+
+	require.Len(t, tokenDistributor.sortedTokens, 6*tokensPerInstance)
 }

@@ -4,7 +4,9 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
+	"time"
 
 	"golang.org/x/exp/slices"
 )
@@ -22,26 +24,31 @@ type TokenDistributor struct {
 	maxTokenValue       Token
 	zoneByInstance      map[Instance]Zone
 	zones               []Zone
+	seedByZone          map[Zone][]Token
 }
 
-func newTokenDistributor(tokensPerInstance int, replicationStrategy ReplicationStrategy) *TokenDistributor {
+func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy) *TokenDistributor {
 	sortedTokens := make([]Token, 0, initialInstanceCount*tokensPerInstance)
 	instanceByToken := make(map[Token]Instance, initialInstanceCount*tokensPerInstance)
 	tokensByInstance := make(map[Instance][]Token, initialInstanceCount)
 	zoneByInstance := make(map[Instance]Zone, initialInstanceCount)
 
-	return &TokenDistributor{
+	tokenDistributor := &TokenDistributor{
 		sortedTokens:        sortedTokens,
 		instanceByToken:     instanceByToken,
 		zoneByInstance:      zoneByInstance,
+		zones:               generateZones(zonesCount),
 		replicationStrategy: replicationStrategy,
 		tokensByInstance:    tokensByInstance,
 		maxTokenValue:       maxTokenValue,
+		tokensPerInstance:   tokensPerInstance,
 	}
+	tokenDistributor.generatePerfectlySpacedSeed()
+	return tokenDistributor
 }
 
 // newTokenDistributorFromInitializedInstances supposes that the ring already contains some instances with tokensPerInstance tokens each
-func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceByToken map[Token]Instance, zoneByInstance map[Instance]Zone, tokensPerInstance int, replicationStrategy ReplicationStrategy) *TokenDistributor {
+func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceByToken map[Token]Instance, zonesCount int, zoneByInstance map[Instance]Zone, tokensPerInstance int, replicationStrategy ReplicationStrategy) *TokenDistributor {
 	tokensByInstance := make(map[Instance][]Token, len(sortedTokens)/tokensPerInstance)
 	for token, instance := range instanceByToken {
 		tokens, ok := tokensByInstance[instance]
@@ -59,6 +66,7 @@ func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceB
 		sortedTokens:        tokens,
 		instanceByToken:     instanceByToken,
 		zoneByInstance:      zoneByInstance,
+		zones:               generateZones(zonesCount),
 		replicationStrategy: replicationStrategy,
 		tokensPerInstance:   tokensPerInstance,
 		tokensByInstance:    tokensByInstance,
@@ -66,35 +74,51 @@ func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceB
 	}
 }
 
-/*func (t *TokenDistributor) generatePerfectlySpacedSeed(numZones, tokensPerInstance int, maxTokenValue uint32, now time.Time) *ring.Desc {
-	return generateRingWithTokensGenerator(numIngesters, numZones, now, func(ingesterID int, ringDesc *ring.Desc) []uint32 {
-		tokens := make([]uint32, 0, numTokensPerIngester)
+func generateZones(zonesCount int) []Zone {
+	zones := make([]Zone, 0, zonesCount)
+	for i := 0; i < zonesCount; i++ {
+		zones = append(zones, Zone("zone-"+string(rune('a'+i))))
+	}
+	return zones
+}
 
-		tokensOffset := maxTokenValue / uint32(tokensPerInstance)
-		startToken := (tokensOffset / uint32(numIngesters)) * uint32(ingesterID)
-		for t := uint32(0); t < uint32(numTokensPerIngester); t++ {
-			tokens = append(tokens, startToken+(t*tokensOffset))
-		}
-
-		return tokens
-	})
-
-	for i := 0; i < tokensPerInstance; i++ {
-		// Get the zone letter starting from "a".
-		zoneID := "zone-" + string(rune('a'+(i%numZones)))
-		ingesterID := fmt.Sprintf("ingester-%s-%d", zoneID, i/numZones)
-
-		desc.Ingesters[ingesterID] = ring.InstanceDesc{
-			Addr:                ingesterID,
-			Timestamp:           now.Unix(),
-			State:               ring.ACTIVE,
-			Tokens:              generateTokens(i, desc),
-			Zone:                zoneID,
-			RegisteredTimestamp: now.Unix(),
+func (t *TokenDistributor) generatePerfectlySpacedSeed() {
+	allSeeds := make([]Token, 0, t.tokensPerInstance*len(t.zones))
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	tokensCount := t.tokensPerInstance * len(t.zones)
+	offset := uint32(t.maxTokenValue) / uint32(tokensCount)
+	curr := uint32(r.Intn(int(t.maxTokenValue)))
+	for i := 0; i < tokensCount; i++ {
+		allSeeds = append(allSeeds, Token(curr))
+		if uint32(t.maxTokenValue)-offset < curr {
+			curr -= uint32(t.maxTokenValue) - offset
+		} else {
+			curr += offset
 		}
 	}
 
-}*/
+	slices.Sort(allSeeds)
+
+	t.seedByZone = make(map[Zone][]Token, len(t.zones))
+	for i, token := range allSeeds {
+		zone := t.zones[i%len(t.zones)]
+		currSeed, ok := t.seedByZone[zone]
+		if !ok {
+			currSeed = make([]Token, 0, t.tokensPerInstance)
+		}
+		currSeed = append(currSeed, token)
+		t.seedByZone[zone] = currSeed
+	}
+}
+
+func (t *TokenDistributor) addTokenToInstance(instance Instance, token Token) {
+	tokens, ok := t.tokensByInstance[instance]
+	if !ok {
+		tokens = make([]Token, 0, t.tokensPerInstance)
+	}
+	tokens = append(tokens, token)
+	t.tokensByInstance[instance] = tokens
+}
 
 func (t *TokenDistributor) getInstanceCount() int {
 	return len(t.tokensByInstance)
@@ -548,16 +572,27 @@ func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token 
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
 	t.instanceByToken[token] = instance.instanceId
-	tokens, ok := t.tokensByInstance[instance.instanceId]
-	if !ok {
-		tokens = make([]Token, 0, t.tokensPerInstance)
+	t.addTokenToInstance(instance.instanceId, token)
+}
+
+func (t *TokenDistributor) addFirstInstanceOfZone(instance Instance, zone Zone) {
+	for _, token := range t.seedByZone[zone] {
+		t.sortedTokens = append(t.sortedTokens, token)
+		t.addTokenToInstance(instance, token)
+		t.instanceByToken[token] = instance
 	}
-	tokens = append(tokens, token)
-	t.tokensByInstance[instance.instanceId] = tokens
+	t.seedByZone[zone] = nil
+	slices.Sort(t.sortedTokens)
 }
 
 func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
 	t.replicationStrategy.addInstance(instance, zone)
+	if t.seedByZone[zone] != nil {
+		t.addFirstInstanceOfZone(instance, zone)
+		t.seedByZone[zone] = nil
+		return nil, nil
+	}
+
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
 	if !ok {
@@ -577,7 +612,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
-	for i := 1; i < t.tokensPerInstance; i++ {
+	for i := 0; i < t.tokensPerInstance; i++ {
 		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
 		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
 

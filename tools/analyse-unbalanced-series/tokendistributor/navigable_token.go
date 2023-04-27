@@ -126,6 +126,13 @@ func (c *CircularList[T]) remove(element *navigableToken[T]) *navigableToken[T] 
 	return c.head
 }
 
+func (c *CircularList[T]) Clear() *navigableToken[T] {
+	for curr := c.head; curr != nil; {
+		curr = c.remove(curr)
+	}
+	return c.head
+}
+
 func (c *CircularList[T]) String() string {
 	return c.toString(func(element *navigableToken[T]) string {
 		return element.String()
@@ -143,7 +150,7 @@ func (c *CircularList[T]) toString(elementToString func(token *navigableToken[T]
 		return "[]"
 	}
 	last := c.head.prev
-	result := fmt.Sprintf("[head=")
+	result := fmt.Sprintf("head=")
 	for curr := c.head; curr != last; curr = curr.next {
 		result = result + fmt.Sprintf("%v<->", elementToString(curr))
 	}
