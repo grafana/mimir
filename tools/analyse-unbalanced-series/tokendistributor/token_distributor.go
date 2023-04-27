@@ -45,8 +45,12 @@ func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceB
 		tokens = append(tokens, token)
 		tokensByInstance[instance] = tokens
 	}
+	tokens := make([]Token, 0, initialInstanceCount*tokensPerInstance)
+	for _, token := range sortedTokens {
+		tokens = append(tokens, token)
+	}
 	return &TokenDistributor{
-		sortedTokens:        sortedTokens,
+		sortedTokens:        tokens,
 		instanceByToken:     instanceByToken,
 		replicationStrategy: replicationStrategy,
 		tokensPerInstance:   tokensPerInstance,
@@ -265,6 +269,7 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 	//
 
 	newInstanceZone := newInstance.zone
+	newInstance.precededBy = newInstance
 	prevInstance := newInstance
 	visitedZonesCount := 0
 	for currToken := next; visitedZonesCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
@@ -338,7 +343,7 @@ func (t TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, opt
 
 	// Go through all visited instances and zones, add recorder adjustedOwnership and clear visited instances and zones
 	currInstance := prevInstance
-	for currInstance != newInstance {
+	for currInstance != nil {
 		newOwnership = prevInstance.adjustedOwnership
 		oldOwnership = prevInstance.ownership
 		tokenCount := float64(prevInstance.tokenCount)
@@ -372,7 +377,7 @@ func calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership floa
 }
 
 func (t TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *CircularList[*candidateTokenInfo], optimalTokenOwnership float64, tokenCount int) *PriorityQueue[*candidateTokenInfo] {
-	pq := newPriorityQueue[*candidateTokenInfo](len(t.sortedTokens), false)
+	pq := newPriorityQueue[*candidateTokenInfo](len(t.sortedTokens), true)
 	head := candidateTokenInfoCircularList.head
 	curr := head
 	for {
@@ -468,7 +473,7 @@ func (t TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candida
 	}
 }
 
-func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
+func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) []Token {
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
 	t.instanceByToken[token] = instance.instanceId
@@ -478,9 +483,10 @@ func (t TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token T
 	}
 	tokens = append(tokens, token)
 	t.tokensByInstance[instance.instanceId] = tokens
+	return t.sortedTokens
 }
 
-func (t TokenDistributor) AddInstance(instance Instance, zone Zone) {
+func (t TokenDistributor) AddInstance(instance Instance, zone Zone) ([]Token, *CircularList[*tokenInfo]) {
 	t.replicationStrategy.addInstance(instance, zone)
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -495,27 +501,40 @@ func (t TokenDistributor) AddInstance(instance Instance, zone Zone) {
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
 	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)
+	fmt.Printf("Priority queue: %s\n", pq)
 	bestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+	fmt.Printf("\tbestToken - token: %s, weight: %.8f\n", bestToken.navigableToken, bestToken.weight)
 	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
 	for i := 0; i < t.tokensPerInstance; i++ {
 		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
-		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+		t.sortedTokens = t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+		fmt.Printf("Tokens sorted %v\n", t.sortedTokens)
+		fmt.Printf("Instance by token %v\n", t.instanceByToken)
+		fmt.Printf("Tokens by instance %v\n", t.tokensByInstance)
 
 		for {
+			fmt.Printf("Iteration %d, priority queue: %s\n", i, pq)
 			bestToken = heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
-			candidateTokenInfoCircularList.remove(bestToken.navigableToken)
+			fmt.Printf("\tbestToken - token: %s, weight: %.8f\n", bestToken.navigableToken, bestToken.weight)
+			fmt.Printf("\ttokenInfoCircularList: %s\n", tokenInfoCircularList)
 			candidate := getNavigableToken[*candidateTokenInfo](bestToken).getData()
 			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, 1.0/float64(t.tokensPerInstance))
-			nextBestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
+			nextBestToken := pq.Peek()
+			fmt.Printf("Understanding whether token %s (previous weight %.8f) is still the best. Its new weight is %.8f, and the current elemement with the min weight in pq is %s (%.8f)\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
 			if newImprovement >= nextBestToken.weight {
+				fmt.Printf("Token %s is the best candidate\n", bestToken.navigableToken)
+				candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 				break
 			}
 			navigableToken := getNavigableToken[*candidateTokenInfo](bestToken)
 			bestToken = newWeightedNavigableToken[*candidateTokenInfo](newImprovement)
 			setNavigableToken[*candidateTokenInfo](bestToken, navigableToken)
 			heap.Push(pq, bestToken)
+			fmt.Printf("Token %s was not the best, so we put it back on pq and retry\n", bestToken.navigableToken)
 		}
 	}
 
+	fmt.Printf("Final distribution: %s\n", tokenInfoCircularList.StringVerobose())
+	return t.sortedTokens, tokenInfoCircularList
 }

@@ -68,6 +68,10 @@ func (e *navigableToken[T]) String() string {
 	return fmt.Sprintf("%d", e.data.getToken())
 }
 
+func (e *navigableToken[T]) StringVerbose() string {
+	return fmt.Sprintf("%d[%s-%s-%.2f]", e.data.getToken(), e.getData().getOwningInstance().instanceId, e.getData().getOwningInstance().zone.zone, e.getData().getReplicatedOwnership())
+}
+
 type CircularList[T navigableTokenInterface] struct {
 	head *navigableToken[T]
 }
@@ -123,13 +127,25 @@ func (c *CircularList[T]) remove(element *navigableToken[T]) *navigableToken[T] 
 }
 
 func (c *CircularList[T]) String() string {
+	return c.toString(func(element *navigableToken[T]) string {
+		return element.String()
+	})
+}
+
+func (c *CircularList[T]) StringVerobose() string {
+	return c.toString(func(element *navigableToken[T]) string {
+		return element.StringVerbose()
+	})
+}
+
+func (c *CircularList[T]) toString(elementToString func(token *navigableToken[T]) string) string {
 	if c.head == nil {
 		return "[]"
 	}
 	last := c.head.prev
 	result := fmt.Sprintf("[head=")
 	for curr := c.head; curr != last; curr = curr.next {
-		result = result + fmt.Sprintf("%v<->", curr)
+		result = result + fmt.Sprintf("%v<->", elementToString(curr))
 	}
 	return result + fmt.Sprintf("%v<->head", last)
 }
