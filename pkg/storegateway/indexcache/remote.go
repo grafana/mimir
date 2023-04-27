@@ -169,7 +169,6 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 	offset += copy(key[offset:], blockID.String())
 	offset += copy(key[offset:], separator)
 	base64.RawURLEncoding.Encode(key[offset:], lblHash[0:])
-	offset += len(lblHash)
 
 	// Convert []byte to string with no extra allocation.
 	return *(*string)(unsafe.Pointer(&key))
