@@ -17,6 +17,23 @@
       container.mixin.readinessProbe.httpGet.withPort($._config.server_http_port) +
       container.mixin.readinessProbe.withInitialDelaySeconds(15) +
       container.mixin.readinessProbe.withTimeoutSeconds(1),
+
+    // parseCPU is used for conversion of Kubernetes CPU units to the corresponding float value of CPU cores.
+    // Moreover, the function assumes the input is in a correct Kubernetes format, i.e., an integer, a float,
+    // a string representation of an integer or a float, or a string containing a number ending with 'm'
+    // representing a number of millicores.
+    // Examples:
+    // parseCPU(10) = parseCPU("10") = 10
+    // parseCPU(4.5) = parse("4.5") = 4.5
+    // parseCPU("3000m") = 3000 / 1000
+    // parseCPU("3580m") = 3580 / 1000
+    // parseCPU("3980.7m") = 3980.7 / 1000
+    // parseCPU(0.5) = parse("0.5") = parse("500m") = 0.5
+    parseCPU(v)::
+      if std.isString(v) && std.endsWith(v, 'm') then std.parseJson(std.rstripChars(v, 'm')) / 1000
+      else if std.isString(v) then std.parseJson(v)
+      else if std.isNumber(v) then v
+      else 0,
   },
 
   // Utility to create an headless service used to discover replicas of a Mimir deployment.
