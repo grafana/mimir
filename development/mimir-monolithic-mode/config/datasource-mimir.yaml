@@ -6,6 +6,7 @@ datasources:
   uid: mimir
   orgID: 1
   url: http://mimir-1:8001/prometheus
+  isDefault: true
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:

@@ -6,6 +6,7 @@ datasources:
   uid: mimir
   orgID: 1
   url: http://mimir-read-1:8080/prometheus
+  isDefault: true
   jsonData:
     prometheusType: Mimir
 
