@@ -347,12 +347,11 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets = append(flagSets, extraFlags...)
 	commonFlags := mergeFlags(flagSets...)
-	backendFlags := mergeFlags(commonFlags, map[string]string{"-ruler.alertmanager-url": "http://localhost:8080/alertmanager"})
 
 	cluster := readWriteModeCluster{
 		readInstance:    e2emimir.NewReadInstance("mimir-read-1", commonFlags),
 		writeInstance:   e2emimir.NewWriteInstance("mimir-write-1", commonFlags),
-		backendInstance: e2emimir.NewBackendInstance("mimir-backend-1", backendFlags),
+		backendInstance: e2emimir.NewBackendInstance("mimir-backend-1", commonFlags),
 	}
 	require.NoError(t, s.StartAndWaitReady(cluster.readInstance, cluster.writeInstance, cluster.backendInstance))
 

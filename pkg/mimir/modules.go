@@ -671,6 +671,14 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	if t.Cfg.Ruler.AlertmanagerURL == "" && t.ModuleManager.IsModuleRegistered(AlertManager) {
+		localAddress := t.Cfg.Server.HTTPListenAddress
+		if localAddress == "" {
+			localAddress = "http://127.0.0.1"
+		}
+		t.Cfg.Ruler.AlertmanagerURL = fmt.Sprintf("%v:%d%v", localAddress, t.Cfg.Server.HTTPListenPort, t.Cfg.API.AlertmanagerHTTPPrefix)
+	}
+
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var embeddedQueryable prom_storage.Queryable
