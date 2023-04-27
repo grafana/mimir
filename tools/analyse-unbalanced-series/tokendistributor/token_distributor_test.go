@@ -21,7 +21,7 @@ const (
 func createTokenDistributor(maxTokenValue Token) *TokenDistributor {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZones()
 	replicationStrategy := newZoneAwareReplicationStrategy(zonesCount, zoneByInstance, nil, nil)
-	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, tokensPerInstance, replicationStrategy)
+	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zoneByInstance, tokensPerInstance, replicationStrategy)
 	tokenDistributor.maxTokenValue = maxTokenValue
 	return tokenDistributor
 }
@@ -29,7 +29,7 @@ func createTokenDistributor(maxTokenValue Token) *TokenDistributor {
 func createTokenDistributorWithInitialEvenDistribution(start, maxTokenValue, tokensPerInstanceCount, zonesCount int) *TokenDistributor {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZonesEven50(start, maxTokenValue, tokensPerInstanceCount, zonesCount)
 	replicationStrategy := newZoneAwareReplicationStrategy(zonesCount, zoneByInstance, nil, nil)
-	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, tokensPerInstance, replicationStrategy)
+	tokenDistributor := newTokenDistributorFromInitializedInstances(sortedRingTokens, ringInstanceByToken, zoneByInstance, tokensPerInstance, replicationStrategy)
 	tokenDistributor.maxTokenValue = Token(maxTokenValue)
 	return tokenDistributor
 }
@@ -277,6 +277,17 @@ func TestTokenDistributor_NonSoQuale(t *testing.T) {
 
 func TestTokenDistributor_AddInstance(t *testing.T) {
 	tokenDistributor := createTokenDistributor(maxToken)
+	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
+	fmt.Println(tokenCircularList)
+	fmt.Println(candidateTokenCircularList)
+	tokenList, candidateList := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	fmt.Println(tokenDistributor.sortedTokens)
+	fmt.Println(tokenList)
+	fmt.Println(candidateList)
+}
+
+func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
+	tokenDistributor := createTokenDistributorWithInitialEvenDistribution(50, 1200, tokensPerInstance, zonesCount)
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
