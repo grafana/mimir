@@ -43,7 +43,7 @@ The following stateful components have limitations when scaling down:
 
 ### Scaling down Alertmanagers
 
-Scaling down [Alertmanagers]({{< relref "../architecture/components/alertmanager.md" >}}) can result in downtime.
+Scaling down [Alertmanagers]({{< relref "../../references/architecture/components/alertmanager.md" >}}) can result in downtime.
 
 Consider the following guidelines when you scale down Alertmanagers:
 
@@ -54,7 +54,7 @@ Consider the following guidelines when you scale down Alertmanagers:
 
 ### Scaling down ingesters
 
-[Ingesters]({{< relref "../architecture/components/ingester.md" >}}) store recently received samples in memory.
+[Ingesters]({{< relref "../../references/architecture/components/ingester.md" >}}) store recently received samples in memory.
 When an ingester shuts down, because of a scale down operation, the samples stored in the ingester cannot be discarded in order to guarantee no data loss.
 
 You might experience the following challenges when you scale down ingesters:
@@ -72,7 +72,7 @@ You might experience the following challenges when you scale down ingesters:
 - When you scale down ingesters, the querier might temporarily return partial results.
 
   The blocks an ingester uploads to the long-term storage are not immediately available for querying.
-  It takes the [queriers]({{< relref "../architecture/components/querier.md" >}}) and [store-gateways]({{< relref "../architecture/components/store-gateway.md" >}}) some time before a newly uploaded block is available for querying.
+  It takes the [queriers]({{< relref "../../references/architecture/components/querier.md" >}}) and [store-gateways]({{< relref "../../references/architecture/components/store-gateway.md" >}}) some time before a newly uploaded block is available for querying.
   If you scale down two or more ingesters in a short period of time, queries might return partial results.
 
 #### Scaling down ingesters deployed in a single zone (default)
@@ -144,7 +144,7 @@ The required amount of time to wait depends on your configuration and it's the m
 
 ### Scaling down store-gateways
 
-To guarantee no downtime when scaling down [store-gateways]({{< relref "../architecture/components/store-gateway.md" >}}), complete the following steps:
+To guarantee no downtime when scaling down [store-gateways]({{< relref "../../references/architecture/components/store-gateway.md" >}}), complete the following steps:
 
 1. Ensure at least `-store-gateway.sharding-ring.replication-factor` store-gateway instances are running (three when running Grafana Mimir with the default configuration).
 1. Scale down no more than two store-gateways at the same time.

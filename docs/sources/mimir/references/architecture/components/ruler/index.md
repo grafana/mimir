@@ -112,7 +112,7 @@ There is more than one way to manage alerting and recording rules.
 ### Via the `mimirtool` CLI tool
 
 The `mimirtool rules` command offers utility subcommands for linting, formatting, and uploading rules to Grafana Mimir.
-For more information, refer to the [`mimirtool rules`]({{< relref "../../../tools/mimirtool.md#rules" >}}).
+For more information, refer to the [`mimirtool rules`]({{< relref "../../../../operators-guide/tools/mimirtool.md#rules" >}}).
 
 ### Via the `grafana/mimir/operations/mimir-rules-action` GitHub Action
 

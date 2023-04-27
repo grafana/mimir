@@ -16,7 +16,7 @@ You can configure the object storage retention to automatically delete all of th
 
 ## Configure the storage retention
 
-The [compactor]({{< relref "../operators-guide/architecture/components/compactor/index.md" >}}) is the Mimir component that is responsible for enforcing the storage retention.
+The [compactor]({{< relref "../references/architecture/components/compactor/index.md" >}}) is the Mimir component that is responsible for enforcing the storage retention.
 To configure the storage retention, set the CLI flag `-compactor.blocks-retention-period` or change the following YAML configuration:
 
 ```yaml

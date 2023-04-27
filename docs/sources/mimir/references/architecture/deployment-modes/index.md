@@ -73,4 +73,4 @@ Similar to the other modes, each Grafana Mimir process is invoked with its `-tar
 
 ![Mimir's read-write deployment mode](read-write-mode.svg)
 
-Read-Write mode is only available in [Jsonnet]({{< relref "../../deploy-grafana-mimir/jsonnet/deploy.md" >}}).
+Read-Write mode is only available in [Jsonnet]({{< relref "../../../operators-guide/deploy-grafana-mimir/jsonnet/deploy.md" >}}).
