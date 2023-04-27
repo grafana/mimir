@@ -5,6 +5,7 @@ std.manifestYamlDoc({
     self.read +
     self.backend +
     self.minio +
+    self.grafana + 
     self.grafana_agent +
     self.memcached +
     {},
@@ -69,6 +70,20 @@ std.manifestYamlDoc({
   memcached:: {
     memcached: {
       image: 'memcached:1.6.19-alpine',
+    },
+  },
+
+  grafana:: {
+    grafana: {
+      image: 'grafana/grafana:9.4.3',
+      environment: [
+        'GF_AUTH_ANONYMOUS_ENABLED=true',
+        'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+      ],
+      volumes: [
+        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+      ],
+      ports: ['3000:3000'],
     },
   },
 
