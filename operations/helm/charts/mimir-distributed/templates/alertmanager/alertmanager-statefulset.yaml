@@ -1,3 +1,4 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
@@ -211,6 +212,7 @@ spec:
           {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "alertmanager") | nindent 10 }}
 
 ---
+{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

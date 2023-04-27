@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.distributor.enabled }}
 apiVersion: v1
 kind: Service
@@ -33,4 +34,5 @@ spec:
     {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 4 }}
+{{- end }}
 {{- end }}

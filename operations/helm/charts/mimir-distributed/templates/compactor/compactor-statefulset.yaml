@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.compactor.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -162,4 +163,5 @@ spec:
           securityContext:
             {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }}
           {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "compactor") | nindent 10 }}
+{{- end }}
 {{- end }}

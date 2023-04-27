@@ -403,6 +403,7 @@ Examples:
 */}}
 {{- define "mimir.componentSectionFromName" -}}
 {{- $componentsMap := dict
+  "monolithic" "monolithic"
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"
@@ -446,6 +447,7 @@ mimir.vaultAgent.annotations takes 2 arguments
 */}}
 {{- define "mimir.vaultAgent.annotations" -}}
 {{- $vaultEnabledComponents := dict
+  "monolithic" true
   "admin-api" true
   "alertmanager" true
   "compactor" true
@@ -544,7 +546,7 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 
 {{- $requestedReplicas := $componentSection.replicas -}}
-{{- if and (has .component (list "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
+{{- if and (has .component (list "monolithic" "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
 {{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
 {{- end -}}
 {{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}

@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if (eq (include "mimir.gateway.isEnabled" .) "true") }}
 {{- with .Values.gateway }}
 apiVersion: apps/v1
@@ -152,3 +153,4 @@ spec:
         {{- end }}
 {{- end -}}
 {{- end -}}
+{{- end }}

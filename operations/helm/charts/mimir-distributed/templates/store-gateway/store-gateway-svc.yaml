@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.store_gateway.enabled }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -44,6 +45,7 @@ spec:
     {{- include "mimir.selectorLabels" $args | nindent 4 }}
 
 ---
+{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

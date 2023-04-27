@@ -1,1 +1,3 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- include "mimir.memcached.statefulSet" (dict "ctx" $ "component" "metadata-cache" ) }}
+{{- end }}
