@@ -872,7 +872,8 @@ overrides:
 	require.Equal(t, cfg.LimitsConfig.QueryIngestersWithin, model.Duration(duration))
 
 	// start services
-	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	require.NoError(t, m.StartAsync(ctx))
 	require.NoError(t, m.AwaitHealthy(ctx))
 
