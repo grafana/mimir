@@ -125,14 +125,19 @@ message QueryResponse {
 // If streaming chunks is not enabled with PreferStreamingChunks: QueryStreamResponse contains a batch of timeseries
 // chunks or timeseries. Only one of these series will be populated.
 //
-// If streaming chunks is enabled with PreferStreamingChunks: QueryStreamResponse contains a batch of series labels
-// (sorted in series order) or batch of chunks (sorted in series order). Only one of these will be populated.
+// If streaming chunks is enabled with PreferStreamingChunks: QueryStreamResponse contains either:
+// - a batch of series labels (sorted in series order), with is_end_of_series_stream=true for the last batch or
+// - a batch of chunks (sorted in series order).
+//
+// Only one of these two options will be populated.
 message QueryStreamResponse {
   repeated TimeSeriesChunk chunkseries = 1 [(gogoproto.nullable) = false];
   repeated cortexpb.TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
 
   repeated QueryStreamSeries series = 3 [(gogoproto.nullable) = false];
-  repeated QueryStreamSeriesChunks chunks = 4 [(gogoproto.nullable) = false];
+  bool is_end_of_series_stream = 4;
+
+  repeated QueryStreamSeriesChunks chunks = 5 [(gogoproto.nullable) = false];
 }
 
 message QueryStreamSeries {

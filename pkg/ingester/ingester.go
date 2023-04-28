@@ -1717,14 +1717,13 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 		}
 	}
 
-	// Send any remaining series.
-	if len(seriesInBatch) > 0 {
-		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Series: seriesInBatch,
-		})
-		if err != nil {
-			return nil, err
-		}
+	// Send any remaining series, and signal that there are no more.
+	err = client.SendQueryStream(stream, &client.QueryStreamResponse{
+		Series:              seriesInBatch,
+		IsEndOfSeriesStream: true,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Ensure no error occurred while iterating the series set.
