@@ -51,9 +51,6 @@ type queryShardingMetrics struct {
 	shardingSuccesses      prometheus.Counter
 	shardedQueries         prometheus.Counter
 	shardedQueriesPerQuery prometheus.Histogram
-
-	regexpMatcherCount          prometheus.Counter
-	regexpMatcherOptimizedCount prometheus.Counter
 }
 
 // newQueryShardingMiddleware creates a middleware that will split queries by shard.
@@ -86,14 +83,6 @@ func newQueryShardingMiddleware(
 			Name:    "cortex_frontend_sharded_queries_per_query",
 			Help:    "Number of sharded queries a single query has been rewritten to.",
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
-		}),
-		regexpMatcherCount: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_regexp_matcher_count",
-			Help: "Total number of regexp matchers",
-		}),
-		regexpMatcherOptimizedCount: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_regexp_matcher_optimized_count",
-			Help: "Total number of optimized regexp matchers",
 		}),
 	}
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -286,17 +275,13 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		return 1
 	}
 
-	regexpMatcherStats := getRegexpMatcherStats(queryExpr)
-	s.queryShardingMetrics.regexpMatcherCount.Add(float64(regexpMatcherStats.count))
-	s.queryShardingMetrics.regexpMatcherOptimizedCount.Add(float64(regexpMatcherStats.countIsOptimized))
-
 	// Ensure there's no regexp matcher longer than the configured limit.
 	maxRegexpSizeBytes := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.QueryShardingMaxRegexpSizeBytes)
 	if maxRegexpSizeBytes > 0 {
-		if regexpMatcherStats.longestBytes > maxRegexpSizeBytes {
+		if longest := longestRegexpMatcherBytes(queryExpr); longest > maxRegexpSizeBytes {
 			level.Debug(spanLog).Log(
 				"msg", "query sharding has been disabled because the query contains a regexp matcher longer than the limit",
-				"longest regexp bytes", regexpMatcherStats.longestBytes,
+				"longest regexp bytes", longest,
 				"limit bytes", maxRegexpSizeBytes,
 			)
 
@@ -458,16 +443,10 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
 }
 
-type regexpMatcherStats struct {
-	longestBytes     int
-	count            int
-	countIsOptimized int
-}
-
-// getRegexpMatcherStats returns the regexp matcher stats found in the query,
-// or empty struct if the query has no regexp matcher.
-func getRegexpMatcherStats(expr parser.Expr) regexpMatcherStats {
-	var res regexpMatcherStats
+// longestRegexpMatcherBytes returns the length (in bytes) of the longest regexp
+// matcher found in the query, or 0 if the query has no regexp matcher.
+func longestRegexpMatcherBytes(expr parser.Expr) int {
+	var longest int
 
 	for _, selectors := range parser.ExtractSelectors(expr) {
 		for _, matcher := range selectors {
@@ -475,13 +454,9 @@ func getRegexpMatcherStats(expr parser.Expr) regexpMatcherStats {
 				continue
 			}
 
-			res.longestBytes = util_math.Max(res.longestBytes, len(matcher.Value))
-			res.count++
-			if matcher.IsRegexOptimized() {
-				res.countIsOptimized++
-			}
+			longest = util_math.Max(longest, len(matcher.Value))
 		}
 	}
 
-	return res
+	return longest
 }
