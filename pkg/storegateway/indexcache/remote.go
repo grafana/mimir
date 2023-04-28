@@ -33,6 +33,7 @@ const (
 
 var (
 	postingsCacheKeyLabelHashBufferPool = sync.Pool{New: func() any {
+		// We assume the label name/value pair is typically not longer than 1KB.
 		b := make([]byte, 1024)
 		return &b
 	}}
