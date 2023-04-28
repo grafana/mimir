@@ -1,4 +1,5 @@
 ---
+aliases: ../../../operators-guide/architecture/components/query-scheduler/
 title: "(Optional) Grafana Mimir query-scheduler"
 menuTitle: "(Optional) Query-scheduler"
 description: "The query-scheduler distributes work to queriers."

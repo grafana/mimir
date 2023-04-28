@@ -1,4 +1,5 @@
 ---
+aliases: ../../../operators-guide/architecture/components/querier/
 title: "Grafana Mimir querier"
 menuTitle: "Querier"
 description: "The querier evaluates PromQL expressions."

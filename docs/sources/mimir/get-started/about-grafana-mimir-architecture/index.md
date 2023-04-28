@@ -1,4 +1,5 @@
 ---
+aliases: ../operators-guide/architecture/about-grafana-mimir-architecture/
 title: "Grafana Mimir architecture"
 menuTitle: "Grafana Mimir architecture"
 description: "Learn about the Grafana Mimir architecture."

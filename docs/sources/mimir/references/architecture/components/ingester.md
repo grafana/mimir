@@ -1,4 +1,5 @@
 ---
+aliases: ../../../operators-guide/architecture/components/ingester/
 title: "Grafana Mimir ingester"
 menuTitle: "Ingester"
 description: "The ingester writes incoming series to long-term storage."

@@ -1,4 +1,5 @@
 ---
+aliases: ../../../operators-guide/architecture/components/store-gateway/
 title: "Grafana Mimir store-gateway"
 menuTitle: "Store-gateway"
 description: "The store-gateway queries blocks from long-term storage."
