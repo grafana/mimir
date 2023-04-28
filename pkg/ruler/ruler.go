@@ -881,6 +881,12 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 	return groupDescs, nil
 }
 
+// IsMaxRuleGroupsLimited returns true if there is a limit set for the max
+// number of rule groups for the tenant.
+func (r *Ruler) IsMaxRuleGroupsLimited(userID string) bool {
+	return r.limits.RulerMaxRuleGroupsPerTenant(userID) > 0
+}
+
 // AssertMaxRuleGroups limit has not been reached compared to the current
 // number of total rule groups in input and returns an error if so.
 func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {

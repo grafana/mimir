@@ -1471,6 +1471,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -1579,7 +1580,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1695,7 +1698,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1811,7 +1816,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -2171,6 +2178,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2347,6 +2355,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2523,6 +2532,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2667,7 +2677,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -2795,7 +2807,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -2923,7 +2937,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -72,7 +74,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 				label1: value1,
 				label2: value2,
 			},
-			expectedMisses: nil,
+			expectedMisses: []labels.Label{},
 		},
 		"should return hits and misses on partial hits": {
 			setup: []mockedPostings{
@@ -125,6 +127,46 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
 			}
 		})
+	}
+}
+
+func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
+	const (
+		numHits   = 10000
+		numMisses = 10000
+	)
+
+	var (
+		ctx     = context.Background()
+		userID  = "user-1"
+		blockID = ulid.MustNew(1, nil)
+	)
+
+	// Generate the labels for which we're going to fetch the postings.
+	fetchLabels := make([]labels.Label, 0, numHits+numMisses)
+	for i := 0; i < numHits+numMisses; i++ {
+		fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+	}
+
+	client := newMockedRemoteCacheClient(nil)
+	c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+	assert.NoError(b, err)
+
+	// Store the postings expected before running the benchmark.
+	for i := 0; i < numHits; i++ {
+		c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+	}
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		hits, misses := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
+		if len(hits) != numHits {
+			b.Fatalf("unexpected hits (expected: %d, got: %d)", numHits, len(hits))
+		}
+		if len(misses) != numMisses {
+			b.Fatalf("unexpected misses (expected: %d, got: %d)", numMisses, len(hits))
+		}
 	}
 }
 
@@ -708,6 +750,79 @@ func BenchmarkStringCacheKeys(b *testing.B) {
 			expandedPostingsCacheKey(userID, uid, lmKey, "strategy")
 		}
 	})
+}
+
+func TestPostingsCacheKey_ShouldOnlyAllocateOncePerCall(t *testing.T) {
+	const numRuns = 1000
+
+	blockID := ulid.MustNew(1, nil)
+	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
+
+	actualAllocs := testing.AllocsPerRun(numRuns, func() {
+		postingsCacheKey("user-1", blockID, lbl)
+	})
+
+	// Allow for 1 extra allocation here, reported when running the test with -race.
+	assert.LessOrEqual(t, actualAllocs, 2.0)
+}
+
+func TestPostingsCacheKeyLabelHash_ShouldNotAllocateMemory(t *testing.T) {
+	const numRuns = 1000
+
+	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
+
+	actualAllocs := testing.AllocsPerRun(numRuns, func() {
+		postingsCacheKeyLabelHash(lbl)
+	})
+
+	// Allow for 1 extra allocation here, reported when running the test with -race.
+	assert.LessOrEqual(t, actualAllocs, 1.0)
+}
+
+func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
+	const (
+		numWorkers       = 10
+		numRunsPerWorker = 10000
+	)
+
+	// Generate a different label per worker, and their expected hash.
+	inputPerWorker := make([]labels.Label, 0, numWorkers)
+	expectedPerWorker := make([][]byte, 0, numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		inputPerWorker = append(inputPerWorker, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", w)})
+
+		hash := postingsCacheKeyLabelHash(inputPerWorker[w])
+		expectedPerWorker = append(expectedPerWorker, hash[0:])
+	}
+
+	// Sanity check: ensure expected hashes are different for each worker.
+	for w := 0; w < numWorkers; w++ {
+		for c := 0; c < numWorkers; c++ {
+			if w == c {
+				continue
+			}
+
+			require.NotEqual(t, expectedPerWorker[w], expectedPerWorker[c])
+		}
+	}
+
+	// Run workers, each generating the hash for their own label.
+	wg := sync.WaitGroup{}
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			defer wg.Done()
+
+			for r := 0; r < numRunsPerWorker; r++ {
+				actual := postingsCacheKeyLabelHash(inputPerWorker[workerID])
+				assert.Equal(t, expectedPerWorker[workerID], actual[0:])
+			}
+		}(w)
+	}
+
+	wg.Wait()
 }
 
 type mockedPostings struct {

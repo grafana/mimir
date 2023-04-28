@@ -34,6 +34,7 @@ The process formally starts with the initial pre-release, but some preparations 
 - There may be some actions left to address when cutting this release.
   The release shepherd is responsible for going through TODOs in the repository and verifying that nothing is that is due this release is forgotten.
 - On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release.
+  New branch `release-<major>-<minor>` should be branched out from latest weekly release `r<xxx>`, where <xxx> is the weekly release number.
   In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
 - With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any end user production environment for at least 1 week.
   This is typically done at Grafana Labs.
@@ -48,13 +49,17 @@ See the next section for details on cutting an individual release.
 The quick and easy way to create a GitHub issue using the following template and follow the instructions from the issue itself.
 If something is not clear, you can get back to this document to learn more about the process.
 
+> **Note:** Branches with `release-` prefix in the name are protected, use some different branch name for making your PRs, for example `my/release-notes`.
+
 ````markdown
 ### Publish the release candidate
 
 - [ ] Begin drafting the [release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
-  - Write release notes to `main`, then cherry pick them into the release branch
-  - Don't block on it to publish the release candidate
+  - Create the release notes PR targeting the main branch
+  - This step shouldn't block from publishing release candidate
+  - After the release notes PR is merged (which usually happen after RC is published), cherry-pick them into the release branch
 - [ ] Wait for any open PR we want to get merged before cutting the release candidate
+  - We shouldn't wait for the open PRs beyond the scheduled release date
   - [ ] Eventually open a PR for every experimental feature we want to promote to stable
   - [ ] Eventually open a PR to remove any deprecated feature or configuration option that should be removed in this release
 - [ ] Update `CHANGELOG.md`
@@ -67,7 +72,7 @@ If something is not clear, you can get back to this document to learn more about
 - [ ] Create new release branch
   - [ ] Create the branch
     ```bash
-    git checkout main
+    git checkout r<xxx> # xxx is the latest weekly release
     git checkout -b release-<version>
     git push -u origin release-<version>
     ```
@@ -90,7 +95,8 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-  - [ ] Announce the release candidate on socials
+  - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
+  - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
   - _This is addressed by Grafana Labs_
 
@@ -283,6 +289,8 @@ according to [Branch management and versioning strategy](#branch-management-and-
 You can add this label before or after the PR is merged. Grafanabot will open a PR targeting the release
 branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and
 [PR#2364 (backport PR)](https://github.com/grafana/mimir/pull/2364) for an example pair.
+
+In case the automated backport failed, follow the steps from grafanabot's comment to do a manual cherry-pick.
 
 ### Merging release branch into main
 

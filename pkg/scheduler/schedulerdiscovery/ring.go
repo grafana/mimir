@@ -51,6 +51,7 @@ type RingConfig struct {
 	InstanceInterfaceNames []string `yaml:"instance_interface_names" doc:"default=[<private network interfaces>]"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
+	EnableIPv6             bool     `yaml:"instance_enable_ipv6" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -76,11 +77,12 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceAddr, "query-scheduler.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, "query-scheduler.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, "query-scheduler.ring.instance-id", hostname, "Instance ID to register in the ring.")
+	f.BoolVar(&cfg.EnableIPv6, "query-scheduler.ring.instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
 }
 
 // ToBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig based on the query-scheduler ring config.
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger, cfg.EnableIPv6)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
