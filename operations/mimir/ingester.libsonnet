@@ -34,6 +34,12 @@
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
       'ingester.ring.tokens-file-path': '/data/tokens',
+
+      // When running vertical autoscaling (e.g. Grafana Labs "automated scaling"), which sets
+      // the CPU request based on the actual utilization, we don't want an higher CPU to be
+      // requested just because it spikes during the WAL replay. Therefore, the WAL replay
+      // concurrency is chosen in such a way that it is always less than the current CPU request.
+      'blocks-storage.tsdb.wal-replay-concurrency': std.max(1, std.floor($.util.parseCPU($.ingester_container.resources.requests.cpu) - 1)),
     } + $.mimirRuntimeConfigFile,
 
   ingester_ports:: $.util.defaultPorts,

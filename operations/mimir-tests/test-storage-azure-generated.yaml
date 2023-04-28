@@ -981,6 +981,7 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.azure.account-key=azure-account-key
         - -common.storage.azure.account-name=azure-account-name
         - -common.storage.backend=azure

@@ -58,6 +58,7 @@ data:
       tsdb:
         dir: /data/tsdb
         head_compaction_interval: 15m
+        wal_replay_concurrency: 3
     cluster_name: test-enterprise-configmap-values
     compactor:
       compaction_interval: 30m

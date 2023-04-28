@@ -1542,6 +1542,7 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1655,6 +1656,7 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1768,6 +1770,7 @@ spec:
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
