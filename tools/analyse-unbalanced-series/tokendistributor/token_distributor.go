@@ -413,86 +413,70 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 	return improvement
 }
 
-func (t *TokenDistributor) getStats(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) [2][6]float64 {
-	result := [2][6]float64{}
+func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) Statistics {
+	statisticType := make(map[string]StatisticType, 2)
+	token := StatisticType{}
+	instance := StatisticType{}
+
 	totalTokens := float64(t.maxTokenValue) * float64(t.replicationStrategy.getReplicationFactor())
 	head := tokenInfoCircularList.head
 	curr := head
-	result[0][0] = math.MaxFloat64
-	result[0][1] = math.SmallestNonzeroFloat64
-	result[0][2] = math.MaxFloat64
-	result[0][3] = math.SmallestNonzeroFloat64
-	result[0][4] = 0.0
-	result[0][5] = 0.0
-	result[1][0] = math.MaxFloat64
-	result[1][1] = math.SmallestNonzeroFloat64
-	result[1][2] = math.MaxFloat64
-	result[1][3] = math.SmallestNonzeroFloat64
-	result[1][4] = 0.0
-	result[1][5] = 0.0
+	token.minDistanceFromOptimalTokenOwnership = math.MaxFloat64
+	token.maxDistanceFromOptimalTokenOwnership = math.SmallestNonzeroFloat64
+	token.minOwnership = math.MaxFloat64
+	token.maxOwnership = math.SmallestNonzeroFloat64
+	token.optimalTokenOwnership = optimalTokenOwnership
+	token.standardDeviation = 0.0
+	token.sum = 0.0
+	instance.minDistanceFromOptimalTokenOwnership = math.MaxFloat64
+	instance.maxDistanceFromOptimalTokenOwnership = math.SmallestNonzeroFloat64
+	instance.minOwnership = math.MaxFloat64
+	instance.maxOwnership = math.SmallestNonzeroFloat64
+	instance.optimalTokenOwnership = float64(t.tokensPerInstance) * optimalTokenOwnership
+	instance.standardDeviation = 0.0
+	instance.sum = 0.0
 	for {
 		dist := curr.getData().getReplicatedOwnership() / optimalTokenOwnership
 		currTokensPercentage := curr.getData().getReplicatedOwnership() * 100.00 / totalTokens
-		if result[0][0] > dist {
-			result[0][0] = dist
+		if token.minDistanceFromOptimalTokenOwnership > dist {
+			token.minDistanceFromOptimalTokenOwnership = dist
 		}
-		if result[0][1] < dist {
-			result[0][1] = dist
+		if token.maxDistanceFromOptimalTokenOwnership < dist {
+			token.maxDistanceFromOptimalTokenOwnership = dist
 		}
-		if result[0][2] > currTokensPercentage {
-			result[0][2] = currTokensPercentage
+		if token.minOwnership > currTokensPercentage {
+			token.minOwnership = currTokensPercentage
 		}
-		if result[0][3] < currTokensPercentage {
-			result[0][3] = currTokensPercentage
+		if token.maxOwnership < currTokensPercentage {
+			token.maxOwnership = currTokensPercentage
 		}
-		result[0][4] = result[0][4] + sq(dist-1.0)
-		result[0][5] = result[0][5] + curr.getData().getReplicatedOwnership()
+		token.standardDeviation += +sq(dist - 1.0)
+		token.sum += curr.getData().getReplicatedOwnership()
+
 		dist = curr.getData().getOwningInstance().ownership / (optimalTokenOwnership * float64(t.tokensPerInstance))
 		currTokensPercentage = curr.getData().getOwningInstance().ownership * 100.00 / totalTokens
-		if result[1][0] > dist {
-			result[1][0] = dist
+		if instance.minDistanceFromOptimalTokenOwnership > dist {
+			instance.minDistanceFromOptimalTokenOwnership = dist
 		}
-		if result[1][1] < dist {
-			result[1][1] = dist
+		if instance.maxDistanceFromOptimalTokenOwnership < dist {
+			instance.maxDistanceFromOptimalTokenOwnership = dist
 		}
-		if result[1][2] > currTokensPercentage {
-			result[1][2] = currTokensPercentage
+		if instance.minOwnership > currTokensPercentage {
+			instance.minOwnership = currTokensPercentage
 		}
-		if result[1][3] < currTokensPercentage {
-			result[1][3] = currTokensPercentage
+		if instance.maxOwnership < currTokensPercentage {
+			instance.maxOwnership = currTokensPercentage
 		}
-		result[1][4] = result[1][4] + sq(dist-1.0)
-		result[1][5] = result[1][5] + curr.getData().getOwningInstance().ownership
+		instance.standardDeviation += +sq(dist - 1.0)
+		instance.sum += curr.getData().getOwningInstance().ownership
 		curr = curr.next
 		if curr == head {
 			break
 		}
 	}
-	head = tokenInfoCircularList.head
-	curr = head
-	termInstance := newInstanceInfo("term", nil, 0)
-	prevInstance := termInstance
-	for {
-		instance := curr.getData().getOwningInstance()
-		if instance.precededBy == nil {
-			//fmt.Printf("Instance [%s-%s-%.2f] visited\n", curr.getData().getOwningInstance().instanceId, curr.getData().getOwningInstance().zone.zone, curr.getData().getOwningInstance().ownership)
-			instance.precededBy = prevInstance
-			prevInstance = instance
-		}
-
-		curr = curr.next
-		if curr == head {
-			break
-		}
-	}
-	currInstance := prevInstance
-	for currInstance != termInstance {
-		prevInstance = currInstance.precededBy
-		currInstance.precededBy = nil
-		currInstance = prevInstance
-	}
-
-	return result
+	statisticType["token"] = token
+	statisticType["instance"] = instance
+	return Statistics{types: statisticType}
 }
 
 func sq(value float64) float64 {
@@ -654,7 +638,6 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceZone)
 	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
 	optimalTokenOwnership := t.getOptimalTokenOwnership()
-	initStats := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
 	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
 	instanceInfoByInstance[instance] = newInstanceInfo
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
@@ -702,16 +685,30 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		}
 	}
 
-	finalStats := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
-	fmt.Printf("Final distribution: %s\n", tokenInfoCircularList)
-	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", optimalTokenOwnership, optimalTokenOwnership*float64(t.tokensPerInstance))
-	fmt.Printf("Token    - old min dist from opt: %6.2f, old max dist from opt: %6.2f, old min ownership: %6.2f%%, old max ownership: %6.2f%%, old stdev: %6.2f, old sum: %6.2f\n", initStats[0][0], initStats[0][1], initStats[0][2], initStats[0][3], initStats[0][4], initStats[0][5])
-	fmt.Printf("Instance - old min dist from opt: %6.2f, old max dist from opt: %6.2f, old min ownership: %6.2f%%, old max ownership: %6.2f%%, old stdev: %6.2f, old sum: %6.2f\n", initStats[1][0], initStats[1][1], initStats[1][2], initStats[1][3], initStats[1][4], initStats[1][5])
-	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", finalStats[0][0], finalStats[0][1], finalStats[0][2], finalStats[0][3], initStats[0][4], initStats[0][5])
-	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", finalStats[1][0], finalStats[1][1], finalStats[1][2], finalStats[1][3], initStats[1][4], initStats[1][5])
+	stat := t.getStatistics(tokenInfoCircularList, optimalTokenOwnership)
+	tokenStat := stat.types["token"]
+	instanceStat := stat.types["instance"]
+	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
+	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
+	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
 	for instance := range t.tokensByInstance {
 		fmt.Printf("[%s-%.2f] ", instance, instanceInfoByInstance[instance].ownership)
 	}
 	fmt.Println("\n-----------------------------------------------------------")
+
 	return tokenInfoCircularList, candidateTokenInfoCircularList
+}
+
+type Statistics struct {
+	types map[string]StatisticType
+}
+
+type StatisticType struct {
+	optimalTokenOwnership                float64
+	minDistanceFromOptimalTokenOwnership float64
+	maxDistanceFromOptimalTokenOwnership float64
+	minOwnership                         float64
+	maxOwnership                         float64
+	standardDeviation                    float64
+	sum                                  float64
 }

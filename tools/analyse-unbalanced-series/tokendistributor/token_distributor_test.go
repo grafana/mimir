@@ -351,18 +351,21 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 }
 
 func TestTokenDistributor_Generation(t *testing.T) {
-	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, TestSeedGenerator{})
-	tokenDistributor.maxTokenValue = maxToken
+	iterations := 10
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 	numberOfInstancesPerZone := 22
 	tokensPerInstance := 4
 
-	for i := 0; i < numberOfInstancesPerZone; i++ {
-		for j := 0; j < len(zones); j++ {
-			instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-			tokenDistributor.AddInstance(instance, zones[j])
+	for it := 0; it < iterations; it++ {
+		replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), math.MaxUint32, replicationStrategy, TestSeedGenerator{})
+
+		for i := 0; i < numberOfInstancesPerZone; i++ {
+			for j := 0; j < len(zones); j++ {
+				instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
+				tokenDistributor.AddInstance(instance, zones[j])
+			}
 		}
+		require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
 	}
-	require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
 }
