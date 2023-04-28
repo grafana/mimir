@@ -26,6 +26,7 @@ data:
         sync_dir: /data/tsdb-sync
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
     compactor:
       compaction_interval: 30m
       data_dir: /data

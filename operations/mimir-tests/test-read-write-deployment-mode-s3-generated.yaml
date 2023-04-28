@@ -1344,6 +1344,7 @@ spec:
         - -blocks-storage.s3.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=s3
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
@@ -1473,6 +1474,7 @@ spec:
         - -blocks-storage.s3.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=s3
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
@@ -1602,6 +1604,7 @@ spec:
         - -blocks-storage.s3.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=s3
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com

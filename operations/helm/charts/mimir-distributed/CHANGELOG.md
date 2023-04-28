@@ -39,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
 * [ENHANCEMENT] Update minio subchart to `5.0.7`. #4705
+* [ENHANCEMENT] Configure ingester TSDB head compaction interval to 15m. #4870
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573

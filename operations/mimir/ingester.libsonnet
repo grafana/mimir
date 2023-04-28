@@ -28,6 +28,9 @@
       'blocks-storage.tsdb.block-ranges-period': '2h',
       'blocks-storage.tsdb.ship-interval': '1m',
 
+      // Spread TSDB head compaction over a wider time range.
+      'blocks-storage.tsdb.head-compaction-interval': '15m',
+
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
       'ingester.ring.tokens-file-path': '/data/tokens',
