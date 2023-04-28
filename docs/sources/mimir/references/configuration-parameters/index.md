@@ -749,34 +749,6 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
-
-forwarding:
-  # (experimental) Enables the feature to forward certain metrics in
-  # remote_write requests, depending on defined rules.
-  # CLI flag: -distributor.forwarding.enabled
-  [enabled: <boolean> | default = false]
-
-  # (experimental) Maximum concurrency at which forwarding requests get
-  # performed.
-  # CLI flag: -distributor.forwarding.request-concurrency
-  [request_concurrency: <int> | default = 10]
-
-  # (experimental) Timeout for requests to ingestion endpoints to which we
-  # forward metrics.
-  # CLI flag: -distributor.forwarding.request-timeout
-  [request_timeout: <duration> | default = 2s]
-
-  # (experimental) If disabled then forwarding requests are always considered to
-  # be successful, errors are ignored.
-  # CLI flag: -distributor.forwarding.propagate-errors
-  [propagate_errors: <boolean> | default = true]
-
-  # Configures the gRPC client used to communicate between the distributors and
-  # the configured remote write endpoints used by the metrics forwarding
-  # feature.
-  # The CLI flags prefix for this block configuration is:
-  # distributor.forwarding.grpc-client
-  [grpc_client: <grpc_client>]
 ```
 
 ### ingester
@@ -2001,7 +1973,6 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
-- `distributor.forwarding.grpc-client`
 - `ingester.client`
 - `querier.frontend-client`
 - `query-frontend.grpc-client-config`
