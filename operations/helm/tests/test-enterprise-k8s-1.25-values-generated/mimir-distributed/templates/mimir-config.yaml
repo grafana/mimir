@@ -57,6 +57,7 @@ data:
         secret_access_key: supersecret
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
     cluster_name: test-enterprise-k8s-1.25-values
     compactor:
       compaction_interval: 30m

@@ -1579,6 +1579,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
@@ -1695,6 +1696,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
@@ -1811,6 +1813,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
@@ -2667,6 +2670,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
@@ -2795,6 +2799,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
@@ -2923,6 +2928,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
