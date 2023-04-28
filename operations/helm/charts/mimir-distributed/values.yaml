@@ -209,6 +209,7 @@ mimir:
       {{- end }}
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
 
     {{- if .Values.enterprise.enabled }}
     cluster_name: "{{ .Release.Name }}"
