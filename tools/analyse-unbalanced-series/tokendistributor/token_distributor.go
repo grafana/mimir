@@ -500,7 +500,8 @@ func (t *TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *C
 	return pq
 }
 
-func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candidateTokenInfo) {
+func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidate *navigableToken[*candidateTokenInfo]) {
+	candidate := navigableCandidate.getData()
 	host := candidate.host
 	next := host.getNext()
 	newInstance := candidate.getOwningInstance()
@@ -508,7 +509,9 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candid
 	old := newInstance.ownership
 	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
 	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
-	newTokenInfo.setReplicatedOwnership(t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface)))
+	newReplicatedOwnership := t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface))
+	newTokenInfo.setReplicatedOwnership(newReplicatedOwnership)
+	newInstance.ownership += newReplicatedOwnership
 	navigableToken := newNavigableTokenInfo(newTokenInfo)
 	navigableToken.insertBefore(next.getNavigableToken())
 
@@ -578,7 +581,57 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(candidate *candid
 		currZone.precededBy = nil
 		currZone = prevZone
 	}
+
+	// we need to refresh the next candidate, because it might have been affected by these changes
+	nextCandidate := navigableCandidate.next.getData()
+	if t.calculateReplicatedOwnership(nextCandidate, nextCandidate.getReplicaStart().(navigableTokenInterface)) > t.calculateDistanceAsFloat64(candidate, nextCandidate) {
+		// if current replica start of the next candidate is more distant from the next candidate than candidate,
+		// then candidate is the new barrier of the next candidate
+		nextCandidate.setReplicaStart(next)
+	}
+
 	fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getToken(), newInstance, old, newInstance.ownership)
+}
+
+func (t *TokenDistributor) addCandidateToTokenInfoCircularList1(candidate *navigableToken[*candidateTokenInfo]) {
+	host := candidate.getData().host
+	next := host.getNext()
+	newInstance := candidate.getData().getOwningInstance()
+	newInstanceZone := newInstance.zone
+	old := newInstance.ownership
+	newTokenInfo := newTokenInfo(newInstance, candidate.getData().getToken())
+	newTokenInfo.setReplicaStart(candidate.getData().getReplicaStart())
+	//newTokenInfo.setReplicatedOwnership(t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface)))
+	navigableToken := newNavigableTokenInfo(newTokenInfo)
+	navigableToken.insertBefore(next.getNavigableToken())
+	t.populateTokenInfo(newTokenInfo, newInstanceZone)
+
+	visitedZonesCount := 0
+	prevZone := &LastZoneInfo
+	for currToken := next; visitedZonesCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
+		candidate = candidate.next
+		t.populateCandidateTokenInfo(candidate.getData(), newInstanceZone)
+		currInstance := currToken.getOwningInstance()
+		currZone := currInstance.zone
+		// if this zone has already been visited, we go on
+		if currZone.precededBy != nil {
+			continue
+		}
+		// otherwise we mark this zone as visited and increase the counter of visited zones
+		currZone.precededBy = prevZone
+		prevZone = currZone
+		visitedZonesCount++
+
+		t.populateTokenInfo(currToken.getNavigableToken().getData(), newInstanceZone)
+	}
+
+	currZone := prevZone
+	for currZone != &LastZoneInfo {
+		prevZone = currZone.precededBy
+		currZone.precededBy = nil
+		currZone = prevZone
+	}
+	fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getData().getToken(), newInstance, old, newInstance.ownership)
 }
 
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
@@ -616,19 +669,20 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	optimalTokenOwnership := t.getOptimalTokenOwnership()
 	initStats := t.getStats(tokenInfoCircularList, optimalTokenOwnership)
 	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
-	newInstanceInfo.ownership = float64(t.tokensPerInstance) * optimalTokenOwnership
+	//newInstanceInfo.ownership = float64(t.tokensPerInstance) * optimalTokenOwnership
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
 	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)
 	//fmt.Printf("Priority queue: %s\n", pq)
 	bestToken := heap.Pop(pq).(*WeightedNavigableToken[*candidateTokenInfo])
 	//fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
-	candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 
 	addedTokens := 0
 	for {
-		t.addCandidateToTokenInfoCircularList(bestToken.navigableToken.getData())
+		bestCandidate := bestToken.navigableToken
+		t.addCandidateToTokenInfoCircularList(bestCandidate)
 		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+		candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 		addedTokens++
 		if addedTokens == t.tokensPerInstance {
 			break
@@ -647,7 +701,6 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 			//fmt.Printf("Understanding whether token %s [%.5f] is still the best. Its new weight is %.5f, and the current elemement with the max weight in pq is %s [%.5f]\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
 			if newImprovement >= nextBestToken.weight {
 				//fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
-				candidateTokenInfoCircularList.remove(bestToken.navigableToken)
 				break
 			}
 			navigableToken := getNavigableToken[*candidateTokenInfo](bestToken)

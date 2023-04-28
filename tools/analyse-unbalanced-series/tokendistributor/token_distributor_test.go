@@ -159,28 +159,41 @@ func TestTokenDistributor_AddCandidateToTokenInfoCircularList(t *testing.T) {
 	}
 	require.NotEqual(t, head, curr)
 
-	oldReplicaSetMap, _ := createReplicaStartAndReplicatedOwnershipMaps(tokenDistributor, tokenInfoCircularList)
+	oldReplicaSetMap, oldOwnership := createReplicaStartAndReplicatedOwnershipMaps(tokenDistributor, tokenInfoCircularList)
 
-	tokenDistributor.addCandidateToTokenInfoCircularList(curr.getData())
-	verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList)
+	bestCandidate := curr.getData()
+	bestCandidate.getOwningInstance().ownership = 0
+	next0 := tokenDistributor.calculateReplicatedOwnership(curr.getNext(), curr.getNext().getReplicaStart().(navigableTokenInterface))
+	tokenDistributor.addCandidateToTokenInfoCircularList(curr)
+	next1 := tokenDistributor.calculateReplicatedOwnership(curr.getNext(), curr.getNext().getReplicaStart().(navigableTokenInterface))
+	fmt.Println(next1, next0)
 
 	first := tokenInfoCircularList.head
 	currTokenInfo := first.next
 	for ; currTokenInfo != first; currTokenInfo = currTokenInfo.next {
 		currToken := currTokenInfo.getData().getToken()
+		currInstance := currTokenInfo.getData().getOwningInstance()
+		diff := Token(736).distance(Token(770), tokenDistributor.maxTokenValue)
 		switch currToken {
 		case Token(770):
 			require.Equal(t, Token(736), currTokenInfo.getPrev().getToken())
 			require.Equal(t, Token(804), currTokenInfo.getNext().getToken())
 			require.Equal(t, Token(770), currTokenInfo.getData().getReplicaStart().getToken())
 			require.Equal(t, float64(Token(736).distance(Token(770), tokenDistributor.maxTokenValue)), currTokenInfo.getData().getReplicatedOwnership())
+			require.Equal(t, float64(diff), currInstance.ownership)
 		case Token(853):
 			require.Equal(t, Token(804), currTokenInfo.getPrev().getToken())
 			require.Equal(t, Token(902), currTokenInfo.getNext().getToken())
 			require.Equal(t, Token(804), currTokenInfo.getData().getReplicaStart().getToken())
 			require.Equal(t, float64(Token(770).distance(Token(853), tokenDistributor.maxTokenValue)), currTokenInfo.getData().getReplicatedOwnership())
+			require.Equal(t, oldOwnership[currInstance.instanceId]-float64(diff), currInstance.ownership)
 		default:
 			require.Equal(t, oldReplicaSetMap[currToken], currTokenInfo.getData().getReplicaStart().getToken())
+			if currInstance.zone.zone != newInstanceZone {
+				require.Equal(t, oldOwnership[currInstance.instanceId], currInstance.ownership)
+			} else {
+				require.Equal(t, oldOwnership[currInstance.instanceId]-float64(diff), currInstance.ownership)
+			}
 		}
 	}
 }
