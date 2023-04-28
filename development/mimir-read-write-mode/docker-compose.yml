@@ -167,4 +167,11 @@
       - "9000:9000"
     "volumes":
       - ".data-minio:/data:delegated"
+  "nginx":
+    "hostname": "nginx"
+    "image": "nginxinc/nginx-unprivileged:1.22-alpine"
+    "ports":
+      - "9095:9095"
+    "volumes":
+      - "./config:/etc/nginx"
 "version": "3.4"

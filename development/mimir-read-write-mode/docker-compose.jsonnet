@@ -4,6 +4,7 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.nginx + 
     self.minio +
     self.grafana +
     self.grafana_agent +
@@ -55,6 +56,15 @@ std.manifestYamlDoc({
       target: 'backend',
       publishedHttpPort: 8007,
     }),
+  },
+
+  nginx:: {
+    nginx: {
+      hostname: 'nginx',
+      image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      ports: ['9095:9095'],
+      volumes: ['./config:/etc/nginx'],
+    },
   },
 
   minio:: {
