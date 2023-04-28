@@ -59,6 +59,8 @@ patches:
     patch: |-
       - op: remove
         path: /config/blocks_storage/tsdb/head_compaction_interval
+      - op: remove
+        path: /config/blocks_storage/tsdb/wal_replay_concurrency
 
   - target:
       kind: MimirConfig
