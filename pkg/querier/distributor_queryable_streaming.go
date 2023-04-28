@@ -24,7 +24,7 @@ type streamingChunkSeries struct {
 	mint, maxt        int64
 
 	ingesters []struct {
-		streamer    ingesterSeriesStreamer
+		streamer    SeriesStreamer
 		seriesIndex uint64
 	}
 }
@@ -50,11 +50,18 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	return s.chunkIteratorFunc(chunks, model.Time(s.mint), model.Time(s.maxt))
 }
 
-type ingesterSeriesStreamer struct {
+type SeriesStreamer struct {
 	client       client.Ingester_QueryStreamClient
 	buffer       chan streamedIngesterSeries
 	errChan      chan error
-	seriesLabels []labels.Labels // TODO: need to make sure when creating these that we use a single instance of labels.Labels for identical series across ingesters
+	SeriesLabels []labels.Labels
+}
+
+func NewSeriesStreamer(client client.Ingester_QueryStreamClient, seriesLabels []labels.Labels) *SeriesStreamer {
+	return &SeriesStreamer{
+		client:       client,
+		SeriesLabels: seriesLabels,
+	}
 }
 
 type streamedIngesterSeries struct {
@@ -62,9 +69,22 @@ type streamedIngesterSeries struct {
 	seriesIndex uint64
 }
 
-func (s *ingesterSeriesStreamer) StartBuffering() {
+// Close cleans up any resources associated with this SeriesStreamer.
+// This method should only be called if StartBuffering is never called.
+func (s *SeriesStreamer) Close() error {
+	return s.client.CloseSend()
+}
+
+// StartBuffering begins streaming series' chunks from the ingester associated with
+// this SeriesStreamer. Once all series have been consumed with GetChunks, all resources
+// associated with this SeriesStreamer are cleaned up.
+// If an error occurs while streaming, the next call to GetChunks will return an error.
+func (s *SeriesStreamer) StartBuffering() {
+	// TODO: need a way to cancel this method and close the stream cleanly
+	// Or can we rely on the gRPC call's context being cancelled?
+
 	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
-	s.errChan = make(chan error, 1)
+	s.errChan = make(chan error, 1)                  // Buffered channel so that if an error occurs, this goroutine doesn't wait for it to be handled and immediately begins cleaning up.
 
 	go func() {
 		defer s.client.CloseSend()
@@ -83,8 +103,8 @@ func (s *ingesterSeriesStreamer) StartBuffering() {
 				return
 			}
 
-			for _, series := range msg.Chunks {
-				chunks, err := chunkcompat.FromChunks(s.seriesLabels[nextSeriesIndex], series.Chunks)
+			for _, series := range msg.SeriesChunks {
+				chunks, err := chunkcompat.FromChunks(s.SeriesLabels[nextSeriesIndex], series.Chunks)
 				if err != nil {
 					s.errChan <- err
 					return
@@ -101,7 +121,9 @@ func (s *ingesterSeriesStreamer) StartBuffering() {
 	}()
 }
 
-func (s *ingesterSeriesStreamer) GetChunks(seriesIndex uint64) ([]chunk.Chunk, error) {
+// GetChunks returns the chunks for the series with index seriesIndex.
+// This method must be called with monotonically increasing values of seriesIndex.
+func (s *SeriesStreamer) GetChunks(seriesIndex uint64) ([]chunk.Chunk, error) {
 	select {
 	case err := <-s.errChan:
 		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)

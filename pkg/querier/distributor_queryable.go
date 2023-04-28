@@ -39,11 +39,15 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-// FIXME: does this (and the Distributor interface above) belong in this package?
+// FIXME: does this belong in this package?
 // (it creates a dependency on this package from the distributor package)
 type DistributorQueryStreamResponse struct {
-	Chunkseries []client.TimeSeriesChunk
-	Timeseries  []mimirpb.TimeSeries
+	Chunkseries     []client.TimeSeriesChunk
+	Timeseries      []mimirpb.TimeSeries
+	SeriesStreamers []*SeriesStreamer
+
+	// Unique series that can be streamed from SeriesStreamers.
+	StreamingSeriesLabels []labels.Labels
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {

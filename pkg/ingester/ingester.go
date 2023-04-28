@@ -1780,7 +1780,7 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 		if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= queryStreamBatchSize {
 			// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Chunks: seriesInBatch,
+				SeriesChunks: seriesInBatch,
 			})
 			if err != nil {
 				return 0, err
@@ -1797,7 +1797,7 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 	// Send any remaining series.
 	if batchSizeBytes != 0 {
 		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Chunks: seriesInBatch,
+			SeriesChunks: seriesInBatch,
 		})
 		if err != nil {
 			return 0, err

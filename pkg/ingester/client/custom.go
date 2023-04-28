@@ -5,14 +5,13 @@
 
 package client
 
-// ChunksCount returns the number of chunks in response.
-func (m *QueryStreamResponse) ChunksCount() int {
-	if len(m.Chunkseries) == 0 {
+func ChunksCount(series []TimeSeriesChunk) int {
+	if len(series) == 0 {
 		return 0
 	}
 
 	count := 0
-	for _, entry := range m.Chunkseries {
+	for _, entry := range series {
 		count += len(entry.Chunks)
 	}
 	return count
@@ -30,9 +29,4 @@ func ChunksSize(series []TimeSeriesChunk) int {
 		}
 	}
 	return size
-}
-
-// ChunksSize returns the size of all chunks in the response.
-func (m *QueryStreamResponse) ChunksSize() int {
-	return ChunksSize(m.Chunkseries)
 }
