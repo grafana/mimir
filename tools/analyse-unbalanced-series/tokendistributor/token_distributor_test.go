@@ -294,7 +294,7 @@ func TestTokenDistributor_AddInstance(t *testing.T) {
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
-	tokenList, candidateList := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	tokenList, candidateList, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
 	fmt.Println(tokenDistributor.sortedTokens)
 	fmt.Println(tokenList)
 	fmt.Println(candidateList)
@@ -305,7 +305,7 @@ func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
-	tokenList, candidateList := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	tokenList, candidateList, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
 	fmt.Println(tokenDistributor.sortedTokens)
 	fmt.Println(tokenList)
 	fmt.Println(candidateList)
@@ -353,19 +353,60 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 func TestTokenDistributor_Generation(t *testing.T) {
 	iterations := 10
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
-	numberOfInstancesPerZone := 22
-	tokensPerInstance := 4
+	numberOfInstancesPerZone := 70
+	tokensPerInstance := 64
+	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {
 		replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), math.MaxUint32, replicationStrategy, TestSeedGenerator{})
+		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), math.MaxUint32, replicationStrategy, PerfectlySpacedSeedGenerator{})
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			for j := 0; j < len(zones); j++ {
 				instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-				tokenDistributor.AddInstance(instance, zones[j])
+				_, _, stat := tokenDistributor.AddInstance(instance, zones[j])
+				stats = append(stats, stat)
 			}
 		}
 		require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
 	}
+	statistics := getAverageStatistics(stats)
+	tokenStat := statistics.types["token"]
+	instanceStat := statistics.types["instance"]
+	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
+	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
+	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
+}
+
+func getAverageStatistics(stats []Statistics) Statistics {
+	combinedType := make(map[string]StatisticType)
+	combinedType["token"] = StatisticType{}
+	combinedType["instance"] = StatisticType{}
+	size := float64(len(stats))
+
+	for _, singleStatistics := range stats {
+		for key, statisticType := range singleStatistics.types {
+			var combinedResult StatisticType
+			if key == "token" {
+				combinedResult = combinedType["token"]
+			} else {
+				combinedResult = combinedType["instance"]
+			}
+			combinedResult.optimalTokenOwnership = statisticType.optimalTokenOwnership
+			combinedResult.minDistanceFromOptimalTokenOwnership += statisticType.minDistanceFromOptimalTokenOwnership / size
+			combinedResult.maxDistanceFromOptimalTokenOwnership += statisticType.maxDistanceFromOptimalTokenOwnership / size
+			combinedResult.minOwnership += statisticType.minOwnership / size
+			combinedResult.maxOwnership += statisticType.maxOwnership / size
+			combinedResult.standardDeviation += statisticType.standardDeviation / size
+			combinedResult.sum = statisticType.sum
+			if key == "token" {
+				combinedType["token"] = combinedResult
+			} else {
+				combinedType["instance"] = combinedResult
+			}
+		}
+	}
+
+	return Statistics{types: combinedType}
+
 }

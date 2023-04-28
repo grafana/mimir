@@ -621,12 +621,12 @@ func (t *TokenDistributor) addFirstInstanceOfZone(instance Instance, zone Zone) 
 	slices.Sort(t.sortedTokens)
 }
 
-func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
+func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], Statistics) {
 	t.replicationStrategy.addInstance(instance, zone)
 	if t.seedByZone[zone] != nil {
 		t.addFirstInstanceOfZone(instance, zone)
 		t.seedByZone[zone] = nil
-		return nil, nil
+		return nil, nil, Statistics{}
 	}
 
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
@@ -650,10 +650,10 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	addedTokens := 0
 	for {
 		bestCandidate := bestToken.navigableToken
-		for instance := range t.tokensByInstance {
+		/*for instance := range t.tokensByInstance {
 			fmt.Printf("[%s-%.2f] ", instance, instanceInfoByInstance[instance].ownership)
 		}
-		fmt.Println()
+		fmt.Println()*/
 		t.addCandidateToTokenInfoCircularList(bestCandidate)
 		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
 		candidateTokenInfoCircularList.remove(bestToken.navigableToken)
@@ -686,17 +686,17 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	}
 
 	stat := t.getStatistics(tokenInfoCircularList, optimalTokenOwnership)
-	tokenStat := stat.types["token"]
+	/*tokenStat := stat.types["token"]
 	instanceStat := stat.types["instance"]
 	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
 	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
-	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
-	for instance := range t.tokensByInstance {
+	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)*/
+	/*for instance := range t.tokensByInstance {
 		fmt.Printf("[%s-%.2f] ", instance, instanceInfoByInstance[instance].ownership)
 	}
-	fmt.Println("\n-----------------------------------------------------------")
+	fmt.Println("\n-----------------------------------------------------------")*/
 
-	return tokenInfoCircularList, candidateTokenInfoCircularList
+	return tokenInfoCircularList, candidateTokenInfoCircularList, stat
 }
 
 type Statistics struct {
