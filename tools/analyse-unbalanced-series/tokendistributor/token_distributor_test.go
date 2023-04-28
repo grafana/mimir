@@ -334,7 +334,7 @@ func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
 
 func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, TestSeedGenerator{})
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
 	tokenDistributor.maxTokenValue = maxToken
 	instances := []Instance{"A-1", "B-1", "C-1"}
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
@@ -348,4 +348,21 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	}
 
 	require.Len(t, tokenDistributor.sortedTokens, 6*tokensPerInstance)
+}
+
+func TestTokenDistributor_Generation(t *testing.T) {
+	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, TestSeedGenerator{})
+	tokenDistributor.maxTokenValue = maxToken
+	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+	numberOfInstancesPerZone := 22
+	tokensPerInstance := 4
+
+	for i := 0; i < numberOfInstancesPerZone; i++ {
+		for j := 0; j < len(zones); j++ {
+			instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
+			tokenDistributor.AddInstance(instance, zones[j])
+		}
+	}
+	require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
 }
