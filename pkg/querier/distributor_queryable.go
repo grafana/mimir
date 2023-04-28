@@ -29,7 +29,7 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error)
+	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (DistributorQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
@@ -37,6 +37,13 @@ type Distributor interface {
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
+}
+
+// FIXME: does this (and the Distributor interface above) belong in this package?
+// (it creates a dependency on this package from the distributor package)
+type DistributorQueryStreamResponse struct {
+	Chunkseries []client.TimeSeriesChunk
+	Timeseries  []mimirpb.TimeSeries
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {

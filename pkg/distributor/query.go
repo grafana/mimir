@@ -21,6 +21,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -54,7 +55,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 }
 
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
-func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*ingester_client.QueryStreamResponse, error) {
+func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (querier.DistributorQueryStreamResponse, error) {
 	var result *ingester_client.QueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
@@ -77,7 +78,15 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 		}
 		return nil
 	})
-	return result, err
+
+	if result == nil {
+		return querier.DistributorQueryStreamResponse{}, err
+	}
+
+	return querier.DistributorQueryStreamResponse{
+		Chunkseries: result.Chunkseries,
+		Timeseries:  result.Timeseries,
+	}, err
 }
 
 // GetIngesters returns a replication set including all ingesters.

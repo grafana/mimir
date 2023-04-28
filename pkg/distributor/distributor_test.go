@@ -1016,7 +1016,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
 
-			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -1028,14 +1028,14 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
 
-			var response model.Matrix
-			if series == nil {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
+			var m model.Matrix
+			if len(resp.Chunkseries) == 0 {
+				m, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
 			} else {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, series.Chunkseries)
+				m, err = chunkcompat.SeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedResponse.String(), response.String())
+			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
 			// Check how many ingesters have been queried.
 			// Due to the quorum the distributor could cancel the last request towards ingesters
@@ -1186,7 +1186,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	require.NoError(t, err)
 
 	// Use the resulting chunks size to calculate the limit as (series to add + our test series) * the response chunk size.
-	responseChunkSize := chunkSizeResponse.ChunksSize()
+	responseChunkSize := client.ChunksSize(chunkSizeResponse.Chunkseries)
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
