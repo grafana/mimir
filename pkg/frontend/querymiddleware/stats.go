@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -55,6 +56,10 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 
 	for _, selectors := range parser.ExtractSelectors(expr) {
 		for _, matcher := range selectors {
+			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
+				continue
+			}
+
 			s.regexpMatcherCount.Inc()
 			if matcher.IsRegexOptimized() {
 				s.regexpMatcherOptimizedCount.Inc()

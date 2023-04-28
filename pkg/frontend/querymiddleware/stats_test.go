@@ -42,7 +42,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_non_step_aligned_queries_total 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 3
+			cortex_query_frontend_regexp_matcher_count 1
 			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 1
