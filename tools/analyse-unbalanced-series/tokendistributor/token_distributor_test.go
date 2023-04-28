@@ -334,7 +334,7 @@ func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
 
 func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, TestSeedGenerator{})
 	tokenDistributor.maxTokenValue = maxToken
 	instances := []Instance{"A-1", "B-1", "C-1"}
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}

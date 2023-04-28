@@ -13,6 +13,16 @@ type SeedGenerator interface {
 	generateSeedByZone(zones []Zone, tokensPerInstance int, maxTokenValue Token) map[Zone][]Token
 }
 
+type TestSeedGenerator struct{}
+
+func (g TestSeedGenerator) generateSeedByZone(zones []Zone, tokensPerInstance int, maxTokenValue Token) map[Zone][]Token {
+	allSeeds := []Token{17, 101, 185, 269, 353, 437, 513, 597, 681, 765, 849, 933}
+	slices.Sort(allSeeds)
+	fmt.Println(allSeeds)
+
+	return distributeSortedTokensByZone(allSeeds, zones, tokensPerInstance)
+}
+
 type PerfectlySpacedSeedGenerator struct{}
 
 func (g PerfectlySpacedSeedGenerator) generateSeedByZone(zones []Zone, tokensPerInstance int, maxTokenValue Token) map[Zone][]Token {
