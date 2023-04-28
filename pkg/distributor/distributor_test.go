@@ -2393,31 +2393,6 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 	require.Equal(t, 10000, len(response.Items[0].Values))
 }
 
-// getIngestedMetrics takes a mock ingester and returns all the metric names which it has ingested.
-func getIngestedMetrics(ctx context.Context, t *testing.T, ingester *mockIngester) []string {
-	labelsClient, err := ingester.LabelNamesAndValues(ctx, nil)
-	assert.NoError(t, err)
-
-	labels, err := labelsClient.Recv()
-	assert.NoError(t, err)
-
-	resultsUniq := make(map[string]struct{}, len(labels.Items))
-	for _, label := range labels.Items {
-		if label.LabelName == "__name__" {
-			for _, value := range label.Values {
-				resultsUniq[value] = struct{}{}
-			}
-		}
-	}
-
-	results := make([]string, 0, len(resultsUniq))
-	for result := range resultsUniq {
-		results = append(results, result)
-	}
-
-	return results
-}
-
 func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (context.Context, []*Distributor) {
 	ctx := user.InjectOrgID(context.Background(), "cardinality-user")
 
@@ -3987,10 +3962,6 @@ outer:
 		return false
 	}
 	return true
-}
-
-func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
-	return ts
 }
 
 func TestDistributorValidation(t *testing.T) {
