@@ -5,7 +5,7 @@ std.manifestYamlDoc({
     self.read +
     self.backend +
     self.minio +
-    self.grafana + 
+    self.grafana +
     self.grafana_agent +
     self.memcached +
     {},

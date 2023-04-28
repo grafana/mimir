@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/zeropool"
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -32,10 +32,11 @@ const (
 )
 
 var (
-	postingsCacheKeyLabelHashBufferPool = zeropool.New[[]byte](func() []byte {
+	postingsCacheKeyLabelHashBufferPool = sync.Pool{New: func() any {
 		// We assume the label name/value pair is typically not longer than 1KB.
-		return make([]byte, 0, 1024)
-	})
+		b := make([]byte, 1024)
+		return &b
+	}}
 )
 
 // RemoteIndexCache is a memcached or redis based index cache.
@@ -183,7 +184,9 @@ func postingsCacheKeyLabelHash(l labels.Label) [blake2b.Size256]byte {
 	expectedLen := len(l.Name) + len(separator) + len(l.Value)
 
 	// Get a buffer from the pool and fill it with the label name/value pair to hash.
-	buf := postingsCacheKeyLabelHashBufferPool.Get()
+	bp := postingsCacheKeyLabelHashBufferPool.Get().(*[]byte)
+	buf := *bp
+
 	if cap(buf) < expectedLen {
 		buf = make([]byte, expectedLen)
 	} else {
@@ -203,7 +206,10 @@ func postingsCacheKeyLabelHash(l labels.Label) [blake2b.Size256]byte {
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
 	hash := blake2b.Sum256(buf)
-	postingsCacheKeyLabelHashBufferPool.Put(buf)
+
+	// Reuse the same pointer to put the buffer back into the pool.
+	*bp = buf
+	postingsCacheKeyLabelHashBufferPool.Put(bp)
 
 	return hash
 }
