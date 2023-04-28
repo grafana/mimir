@@ -12,6 +12,14 @@ datasources:
     exemplarTraceIdDestinations:
     - name: traceID
       datasourceUid: jaeger
+- name: Ruler
+  type: prometheus
+  access: proxy
+  uid: ruler
+  orgID: 1
+  url: http://ruler-1:8021/prometheus
+  jsonData:
+    prometheusType: Mimir
 - name: Jaeger
   type: jaeger
   access: proxy
