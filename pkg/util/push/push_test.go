@@ -174,6 +174,42 @@ func TestHandlerOTLPPush(t *testing.T) {
 	}
 }
 
+func TestHandler_NormalizeMetricNameByDefault(t *testing.T) {
+	md := pmetric.NewMetrics()
+
+	metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric.SetName("sum.test")
+	metric.SetUnit("s")
+
+	sum := metric.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	sum.SetIsMonotonic(true)
+
+	dp := sum.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	dp.SetDoubleValue(0)
+	dp.Attributes().PutStr("diff.label", "bar")
+
+	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+		request, err := pushReq.WriteRequest()
+		assert.NoError(t, err)
+
+		assert.Len(t, request.Timeseries, 1)
+		assert.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
+		assert.Equal(t, "sum_test_seconds_total", request.Timeseries[0].Labels[0].Value)
+
+		assert.Equal(t, "diff_label", request.Timeseries[0].Labels[1].Name)
+		assert.Equal(t, "bar", request.Timeseries[0].Labels[1].Value)
+
+		pushReq.CleanUp()
+		return &mimirpb.WriteResponse{}, nil
+	})
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
 func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	// https://github.com/grafana/mimir/issues/3037 is triggered by a single metric
 	// having two different datapoints that correspond to different Prometheus metrics.
@@ -194,19 +230,19 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint1.SetDoubleValue(0)
 	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().PutStr("diff_label", "bar")
+	datapoint1.Attributes().PutStr("diff.label", "bar")
 
 	datapoint2 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint2.SetDoubleValue(0)
 	attributes.CopyTo(datapoint2.Attributes())
-	datapoint2.Attributes().PutStr("diff_label", "baz")
+	datapoint2.Attributes().PutStr("diff.label", "baz")
 
 	datapoint3 := metric1.Gauge().DataPoints().AppendEmpty()
 	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint3.SetDoubleValue(0)
 	attributes.CopyTo(datapoint3.Attributes())
-	datapoint3.Attributes().PutStr("diff_label", "food")
+	datapoint3.Attributes().PutStr("diff.label", "food")
 
 	metric2 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric2.SetName(name)
@@ -246,7 +282,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	datapoint1.SetDoubleValue(0)
 	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().PutStr("diff_label", "bar")
+	datapoint1.Attributes().PutStr("diff.label", "bar")
 
 	metric2 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	metric2.SetName(name)
@@ -267,7 +303,8 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric3.SetName("http_request_duration_seconds")
+	metric3.SetName("http.request.duration")
+	metric3.SetUnit("s")
 	metric3.SetEmptyHistogram()
 	metric3.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 	datapoint3 := metric3.Histogram().DataPoints().AppendEmpty()

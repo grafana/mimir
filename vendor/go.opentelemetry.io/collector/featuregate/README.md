@@ -18,10 +18,11 @@ Once a `Gate` has been marked as `Stable`, it must have a `RemovalVersion` set.
 ```go
 var myFeatureGate = featuregate.GlobalRegistry().MustRegister(
 	"namespaced.uniqueIdentifier",
-	featuregate.Stable, 
+	featuregate.Stable,
+    featuregate.WithRegisterFromVersion("v0.65.0")
 	featuregate.WithRegisterDescription("A brief description of what the gate controls"),
 	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector/issues/6167"),
-	featuregate.WithRegisterRemovalVersion("v0.70.0"))
+	featuregate.WithRegisterToVersion("v0.70.0"))
 ```
 
 The status of the gate may later be checked by interrogating the global 
@@ -60,8 +61,10 @@ modeled after the [system used by Kubernetes](https://kubernetes.io/docs/referen
    through a `Gate`.
 2. A `beta` stage where the feature has been well tested and is enabled by 
    default but can be disabled through a `Gate`.
-3. A generally available stage where the feature is permanently enabled and 
+3. A generally available or `stable` stage where the feature is permanently enabled and 
    the `Gate` is no longer operative.
+4. A feature gate will be removed once it has been `stable` for at least two releases
+   of the collector.
 
 Features that prove unworkable in the `alpha` stage may be discontinued 
 without proceeding to the `beta` stage.  Features that make it to the `beta` 
