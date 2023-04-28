@@ -34,6 +34,26 @@
       else if std.isString(v) then std.parseJson(v)
       else if std.isNumber(v) then v
       else 0,
+
+    parseDuration(duration)::
+      if std.endsWith(duration, 's') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1))
+      else if std.endsWith(duration, 'm') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 60
+      else if std.endsWith(duration, 'h') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 3600
+      else
+        error 'unable to parse duration %s' % duration,
+
+    formatDuration(seconds)::
+      if seconds <= 60 then
+        '%ds' % seconds
+      else if seconds <= 3600 && seconds % 60 == 0 then
+        '%dm' % (seconds / 60)
+      else if seconds % 3600 == 0 then
+        '%dh' % (seconds / 3600)
+      else
+        '%dm%ds' % [seconds / 60, seconds % 60],
   },
 
   // Utility to create an headless service used to discover replicas of a Mimir deployment.

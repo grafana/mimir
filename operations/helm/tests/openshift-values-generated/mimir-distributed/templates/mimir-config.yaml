@@ -43,6 +43,7 @@ data:
       compaction_interval: 30m
       data_dir: /data
       deletion_delay: 2h
+      first_level_compaction_wait_period: 25m
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       sharding_ring:

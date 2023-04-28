@@ -1185,6 +1185,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
