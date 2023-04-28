@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -111,20 +112,21 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                   string
-		tenantID               string
-		blockID                string
-		body                   string
-		meta                   *metadata.Meta
-		retention              time.Duration
-		disableBlockUpload     bool
-		expBadRequest          string
-		expConflict            string
-		expUnprocessableEntity string
-		expEntityTooLarge      string
-		expInternalServerError bool
-		setUpBucketMock        func(bkt *bucket.ClientMock)
-		verifyUpload           func(*testing.T, *bucket.ClientMock)
+		name                    string
+		tenantID                string
+		blockID                 string
+		body                    string
+		meta                    *metadata.Meta
+		retention               time.Duration
+		disableBlockUpload      bool
+		expBadRequest           string
+		expConflict             string
+		expUnprocessableEntity  string
+		expEntityTooLarge       string
+		expInternalServerError  bool
+		setUpBucketMock         func(bkt *bucket.ClientMock)
+		verifyUpload            func(*testing.T, *bucket.ClientMock)
+		maxBlockUploadSizeBytes int64
 	}{
 		{
 			name:          "missing tenant ID",
@@ -428,6 +430,15 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expBadRequest:      "block upload is disabled",
 		},
 		{
+			name:                    "max block size exceeded",
+			tenantID:                tenantID,
+			blockID:                 blockID,
+			setUpBucketMock:         setUpPartialBlock,
+			meta:                    &validMeta,
+			maxBlockUploadSizeBytes: 1,
+			expBadRequest:           fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
+		},
+		{
 			name:            "valid request",
 			tenantID:        tenantID,
 			blockID:         blockID,
@@ -549,6 +560,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.userRetentionPeriods[tenantID] = tc.retention
 			cfgProvider.blockUploadEnabled[tenantID] = !tc.disableBlockUpload
+			cfgProvider.blockUploadMaxBlockSizeBytes[tenantID] = tc.maxBlockUploadSizeBytes
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
@@ -1478,6 +1490,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		indexInject      func(fname string)
 		chunkInject      func(fname string)
 		populateFileList bool
+		maximumBlockSize int64
 		verifyChunks     bool
 		missing          Missing
 		expectError      bool
@@ -1487,6 +1500,14 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			name:             "valid block",
 			lbls:             validLabels,
 			populateFileList: true,
+		},
+		{
+			name:             "maximum block size exceeded",
+			lbls:             validLabels,
+			populateFileList: true,
+			maximumBlockSize: 1,
+			expectError:      true,
+			expectedMsg:      fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
 		},
 		{
 			name:        "missing meta file",
@@ -1605,6 +1626,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			cfgProvider := newMockConfigProvider()
 			cfgProvider.blockUploadValidationEnabled[tenantID] = true
 			cfgProvider.verifyChunks[tenantID] = tc.verifyChunks
+			cfgProvider.blockUploadMaxBlockSizeBytes[tenantID] = tc.maximumBlockSize
 			c := &MultitenantCompactor{
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
@@ -1662,7 +1684,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, blockID, bkt, tenantID)
+			err = c.validateBlock(ctx, c.logger, blockID, meta, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)
@@ -1865,6 +1887,75 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
+		})
+	}
+}
+
+func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
+	const userID = "user"
+
+	type testCase struct {
+		maximumBlockSize int64
+		fileSizes        []int64
+		expectErr        bool
+	}
+
+	for name, tc := range map[string]testCase{
+		"no limit": {
+			maximumBlockSize: 0,
+			fileSizes:        []int64{math.MaxInt64},
+			expectErr:        false,
+		},
+		"under limit": {
+			maximumBlockSize: 4,
+			fileSizes:        []int64{1, 2},
+			expectErr:        false,
+		},
+		"under limit - zero size file included": {
+			maximumBlockSize: 2,
+			fileSizes:        []int64{1, 0},
+			expectErr:        false,
+		},
+		"under limit - negative size file included": {
+			maximumBlockSize: 2,
+			fileSizes:        []int64{2, -1},
+			expectErr:        true,
+		},
+		"exact limit": {
+			maximumBlockSize: 3,
+			fileSizes:        []int64{1, 2},
+			expectErr:        false,
+		},
+		"over limit": {
+			maximumBlockSize: 1,
+			fileSizes:        []int64{1, 1},
+			expectErr:        true,
+		},
+		"overflow": {
+			maximumBlockSize: math.MaxInt64,
+			fileSizes:        []int64{math.MaxInt64, math.MaxInt64, math.MaxInt64},
+			expectErr:        true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			files := make([]metadata.File, len(tc.fileSizes))
+			for i, size := range tc.fileSizes {
+				files[i] = metadata.File{SizeBytes: size}
+			}
+
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.blockUploadMaxBlockSizeBytes[userID] = tc.maximumBlockSize
+			c := &MultitenantCompactor{
+				logger:      log.NewNopLogger(),
+				cfgProvider: cfgProvider,
+			}
+
+			err := c.validateMaximumBlockSize(c.logger, files, userID)
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

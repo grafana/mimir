@@ -853,6 +853,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-max-block-size-bytes int
+    	Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.
   -compactor.block-upload-validation-enabled
     	Enable block upload validation for the tenant. (default true)
   -compactor.block-upload-verify-chunks

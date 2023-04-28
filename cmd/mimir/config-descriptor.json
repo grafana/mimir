@@ -3499,6 +3499,17 @@
         },
         {
           "kind": "field",
+          "name": "compactor_block_upload_max_block_size_bytes",
+          "required": false,
+          "desc": "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-upload-max-block-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",
