@@ -195,12 +195,12 @@ func (t Token) distance(next, maxTokenValue Token) uint32 {
 }
 
 func (t Token) split(next, maxTokenValue Token) Token {
-	dist := (t.distance(next, maxTokenValue) + 1) / 2
+	halfDist := (t.distance(next, maxTokenValue) + 1) / 2
 	distFromMax := uint32(maxTokenValue - t)
-	if distFromMax < dist {
-		return Token(distFromMax + dist)
+	if distFromMax < halfDist {
+		return Token(halfDist - distFromMax)
 	}
-	return Token(uint32(t) + dist)
+	return Token(uint32(t) + halfDist)
 }
 
 type Instance string
