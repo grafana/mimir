@@ -187,6 +187,13 @@ type Token uint32
 
 const maxTokenValue = math.MaxUint32
 
+func (t Token) next(maxTokenValue Token) Token {
+	if t >= maxTokenValue {
+		return 0
+	}
+	return t + 1
+}
+
 func (t Token) distance(next, maxTokenValue Token) uint32 {
 	if next < t {
 		return uint32(maxTokenValue - t + next)

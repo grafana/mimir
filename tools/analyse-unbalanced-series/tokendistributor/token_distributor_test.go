@@ -353,8 +353,8 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 	iterations := 10
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
-	numberOfInstancesPerZone := 22
-	tokensPerInstance := 128
+	numberOfInstancesPerZone := 70
+	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {

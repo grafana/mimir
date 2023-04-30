@@ -176,7 +176,11 @@ func (t *TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircula
 func (t *TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
 	currentToken := tokenInfo.getToken()
 	nextToken := tokenInfo.getNext().getToken()
-	return currentToken.split(nextToken, t.maxTokenValue)
+	candidate := currentToken.split(nextToken, t.maxTokenValue)
+	for slices.Contains(t.sortedTokens, candidate) {
+		candidate = candidate.next(t.maxTokenValue)
+	}
+	return candidate
 }
 
 // calculateReplicaStartAndExpansion crosses the ring backwards starting from the token corresponding to navigableToken,
@@ -209,7 +213,7 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 	// we are visiting tokens in "backwards" mode, i.e., by going towards the replica start
 	for {
 		currZone := curr.getOwningInstance().zone
-		if currZone.precededBy == nil {
+		if currZone.precededBy == nil || currZone.zone == SingleZone {
 			// if currZone has not been visited
 			// we mark zone as visited
 			currZone.precededBy = prevZoneInfo

@@ -52,6 +52,11 @@ func TestToken_Split(t *testing.T) {
 			expected: Token(maxTokenValue - 495),
 		},
 		{
+			token:    maxTokenValue - 10,
+			next:     100,
+			expected: Token(45),
+		},
+		{
 			token:    1,
 			next:     10,
 			expected: Token(6),
