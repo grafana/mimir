@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
@@ -29,7 +28,7 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
-	var chunks []chunk.Chunk // TODO: guess a size for this?
+	var rawChunks []client.Chunk // TODO: guess a size for this?
 
 	for _, source := range s.sources {
 		c, err := source.Streamer.GetChunks(source.SeriesIndex)
@@ -38,8 +37,12 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 			return series.NewErrIterator(err)
 		}
 
-		// TODO: deduplicate chunks (use similar function to accumulateChunks)
-		chunks = append(chunks, c...)
+		rawChunks = client.AccumulateChunks(rawChunks, c)
+	}
+
+	chunks, err := chunkcompat.FromChunks(s.labels, rawChunks)
+	if err != nil {
+		return series.NewErrIterator(err)
 	}
 
 	return s.chunkIteratorFunc(chunks, model.Time(s.mint), model.Time(s.maxt))
@@ -59,7 +62,7 @@ func NewSeriesStreamer(client client.Ingester_QueryStreamClient, seriesLabels []
 }
 
 type streamedIngesterSeries struct {
-	chunks      []chunk.Chunk
+	chunks      []client.Chunk
 	seriesIndex int
 	err         error
 }
@@ -104,14 +107,9 @@ func (s *SeriesStreamer) StartBuffering() {
 					return
 				}
 
-				chunks, err := chunkcompat.FromChunks(s.SeriesLabels[nextSeriesIndex], series.Chunks)
-				if err != nil {
-					s.buffer <- streamedIngesterSeries{err: err}
-					return
-				}
 
 				s.buffer <- streamedIngesterSeries{
-					chunks:      chunks,
+					chunks:      series.Chunks,
 					seriesIndex: nextSeriesIndex,
 				}
 
@@ -123,7 +121,7 @@ func (s *SeriesStreamer) StartBuffering() {
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
-func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]chunk.Chunk, error) {
+func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]client.Chunk, error) {
 	series, open := <-s.buffer
 
 	if !open {

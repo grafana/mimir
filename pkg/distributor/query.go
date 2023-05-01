@@ -207,7 +207,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	// be closed when all calls to ingesters have finished.
 	go func() {
 		// We keep track of the number of chunks that were able to be deduplicated entirely
-		// via the accumulateChunks function (fast) instead of needing to merge samples one
+		// via the AccumulateChunks function (fast) instead of needing to merge samples one
 		// by one (slow). Useful to verify the performance impact of things that potentially
 		// result in different samples being written to each ingester.
 		var numDeduplicatedChunks int
@@ -235,7 +235,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					existing.Labels = series.Labels
 
 					numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
-					existing.Chunks = accumulateChunks(existing.Chunks, series.Chunks)
+					existing.Chunks = ingester_client.AccumulateChunks(existing.Chunks, series.Chunks)
 
 					numDeduplicatedChunks += numPotentialChunks - len(existing.Chunks)
 					numTotalChunks += len(series.Chunks)
@@ -448,25 +448,4 @@ func sameSamples(a, b []mimirpb.Sample) bool {
 		}
 	}
 	return true
-}
-
-// Build a slice of chunks, eliminating duplicates.
-// This is O(N^2) but most of the time N is small.
-func accumulateChunks(a, b []ingester_client.Chunk) []ingester_client.Chunk {
-	ret := a
-	for j := range b {
-		if !containsChunk(a, b[j]) {
-			ret = append(ret, b[j])
-		}
-	}
-	return ret
-}
-
-func containsChunk(a []ingester_client.Chunk, b ingester_client.Chunk) bool {
-	for i := range a {
-		if a[i].Equal(b) {
-			return true
-		}
-	}
-	return false
 }
