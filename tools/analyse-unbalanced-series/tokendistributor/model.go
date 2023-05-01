@@ -6,11 +6,15 @@ import (
 )
 
 const (
-	SingleZone Zone = "zone-unique"
-	LastZone   Zone = "zone-#"
+	SingleZone   Zone     = "zone-unique"
+	LastZone     Zone     = "zone-#"
+	LastInstance Instance = "instance-#"
 )
 
-var LastZoneInfo = *newZoneInfo(LastZone)
+var (
+	LastZoneInfo     = *newZoneInfo(LastZone)
+	LastInstanceInfo = *newInstanceInfo(LastInstance, &LastZoneInfo, 0)
+)
 
 type zoneInfo struct {
 	zone       Zone

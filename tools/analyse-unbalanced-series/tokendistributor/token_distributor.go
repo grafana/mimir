@@ -117,7 +117,10 @@ func (t *TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceI
 	zoneInfoByZone := make(map[Zone]*zoneInfo)
 	instanceInfoByInstance := make(map[Instance]*instanceInfo, len(t.tokensByInstance))
 	for instance, tokens := range t.tokensByInstance {
-		zone := t.replicationStrategy.getZone(instance)
+		zone, ok := t.zoneByInstance[instance]
+		if !ok {
+			continue
+		}
 		zoneInfo, ok := zoneInfoByZone[zone]
 		if !ok {
 			zoneInfo = newZoneInfo(zone)
@@ -202,6 +205,7 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 	var (
 		navigableTokenZone = navigableToken.getOwningInstance().zone
 		prevZoneInfo       = &LastZoneInfo
+		prevInstanceInfo   = &LastInstanceInfo
 		diffZonesCount     = 0
 		expandable         = false
 		replicationFactor  = t.replicationStrategy.getReplicationFactor()
@@ -212,12 +216,15 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 
 	// we are visiting tokens in "backwards" mode, i.e., by going towards the replica start
 	for {
-		currZone := curr.getOwningInstance().zone
-		if currZone.precededBy == nil || currZone.zone == SingleZone {
+		currInstance := curr.getOwningInstance()
+		currZone := currInstance.zone
+		if !t.isAlreadyVisited(currInstance, currZone) {
 			// if currZone has not been visited
 			// we mark zone as visited
 			currZone.precededBy = prevZoneInfo
 			prevZoneInfo = currZone
+			currInstance.precededBy = prevInstanceInfo
+			prevInstanceInfo = currInstance
 			diffZonesCount++
 			if diffZonesCount == replicationFactor {
 				// we have obtained the full replica
@@ -248,13 +255,7 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 	}
 
 	// clean up visited zones
-	currZoneInfo := prevZoneInfo
-	for currZoneInfo != &LastZoneInfo {
-		prevZoneInfo = currZoneInfo.precededBy
-		currZoneInfo.precededBy = nil
-		currZoneInfo = prevZoneInfo
-	}
-
+	t.unvisitAll(prevInstanceInfo, prevZoneInfo)
 	return replicaStart, expandable
 }
 
@@ -322,9 +323,12 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 		currInstance := currToken.getOwningInstance()
 		currZone := currInstance.zone
 		// if this zone has already been visited, we go on
-		if currZone.precededBy != nil {
+		if t.isAlreadyVisited(currInstance, currZone) {
 			continue
 		}
+		/*if currZone.precededBy != nil && currZone.zone != SingleZone {
+			continue
+		}*/
 		// otherwise we mark this zone as visited and increase the counter of visited zones
 		currZone.precededBy = currZone
 		visitedZonesCount++
@@ -541,42 +545,95 @@ func (t *TokenDistributor) insertBefore(element, before *navigableToken[*tokenIn
 	}
 }
 
+func (t *TokenDistributor) isAlreadyVisited(instance *instanceInfo, zone *zoneInfo) bool {
+	if zone.zone == SingleZone {
+		// if it is a single zone mode, then we check whether the given instance has already been visited
+		return instance.precededBy != nil
+	}
+	// if it is a mulit-zone mode, we check whether the given zone has already been visited
+	return zone.precededBy != nil
+}
+
+func (t *TokenDistributor) unvisitAll(instance *instanceInfo, zone *zoneInfo) {
+	prevZone := zone
+	prevInstance := instance
+	currZone := prevZone
+	currInstance := prevInstance
+	for {
+		if currZone != &LastZoneInfo {
+			prevZone = currZone.precededBy
+			currZone.precededBy = nil
+			currZone = prevZone
+		}
+		if currInstance != &LastInstanceInfo {
+			prevInstance = currInstance.precededBy
+			currInstance.precededBy = nil
+			currInstance = prevInstance
+		}
+		if currZone == &LastZoneInfo && currInstance == &LastInstanceInfo {
+			break
+		}
+	}
+}
+
+func (t *TokenDistributor) checkReplicaStart(candidate *candidateTokenInfo) {
+	_, found := t.instanceByToken[candidate.getToken()]
+	t.instanceByToken[candidate.getToken()] = candidate.getOwningInstance().instanceId
+	rs, err := t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
+	if err != nil {
+		fmt.Printf("\t\tIt was not possible to find the replica start of token %d (%s) by using the replication strategy\n", candidate.getToken(), candidate.getOwningInstance())
+	}
+	if rs != candidate.getReplicaStart().getToken() {
+		fmt.Printf("\t\tReplica start of %d is %d according to the list, and %d according to the replication srategy\n", candidate.getToken(), candidate.getReplicaStart().getToken(), rs)
+	}
+	if !found {
+		delete(t.instanceByToken, candidate.getToken())
+	}
+}
+
 func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidate *navigableToken[*candidateTokenInfo], tokenInfoCircularList *CircularList[*tokenInfo]) {
 	candidate := navigableCandidate.getData()
 	host := candidate.host
 	next := host.getNext()
 	newInstance := candidate.getOwningInstance()
 	newInstanceZone := newInstance.zone
+	t.checkReplicaStart(candidate)
 	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
-	rs, err := t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
-	if err != nil {
-		panic(err)
-	}
-	if rs != candidate.getReplicaStart().getToken() {
-		fmt.Printf("\t\tReplica start of %d is %d according to the list, and %d according to the replication srategy\n", candidate.getToken(), candidate.getReplicaStart().getToken(), rs)
-	}
 	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
 	newReplicatedOwnership := t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface))
-	oldTokenOwnership := newTokenInfo.getReplicatedOwnership()
+	//oldTokenOwnership := newTokenInfo.getReplicatedOwnership()
 	newTokenInfo.setReplicatedOwnership(newReplicatedOwnership)
-	oldInst := newInstance.ownership
+	//oldInst := newInstance.ownership
 	newInstance.ownership += newReplicatedOwnership
-	fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), newInstance.instanceId, oldInst, newInstance.ownership)
+	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), newInstance.instanceId, oldInst, newInstance.ownership)
 	navigableToken := newNavigableTokenInfo(newTokenInfo)
 	t.insertBefore(navigableToken, next.getNavigableToken(), tokenInfoCircularList)
 
 	visitedZonesCount := 0
 	prevZone := &LastZoneInfo
+	prevInstance := &LastInstanceInfo
 	for currToken := next; visitedZonesCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
 		currInstance := currToken.getOwningInstance()
 		currZone := currInstance.zone
-		// if this zone has already been visited, we go on
-		if currZone.precededBy != nil {
+		if t.isAlreadyVisited(currInstance, currZone) {
 			continue
 		}
+		/*if currZone.zone == SingleZone {
+			// if we are in a single-zone mode, we check whether the current instance has been visited
+			if currInstance.precededBy != nil {
+				continue
+			}
+		} else {
+			// if we are in a multi-zone mode, we check whther the current zone has already been visited
+			if currZone.precededBy != nil {
+				continue
+			}
+		}*/
 		// otherwise we mark this zone as visited and increase the counter of visited zones
 		currZone.precededBy = prevZone
+		currInstance.precededBy = prevInstance
 		prevZone = currZone
+		prevInstance = currInstance
 		visitedZonesCount++
 
 		//newReplicaStart := currToken.getReplicaStart()
@@ -624,19 +681,32 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 		oldOwnership := currToken.getReplicatedOwnership()
 		newOwnership := t.calculateDistanceAsFloat64(barrier, currToken)
 		currToken.setReplicatedOwnership(newOwnership)
-		old := currInstance.ownership
+		//old := currInstance.ownership
 		currInstance.ownership += newOwnership - oldOwnership
-		if newOwnership != oldOwnership {
+		/*if newOwnership != oldOwnership {
 			fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", currToken.getToken(), oldOwnership, currToken.getReplicatedOwnership(), currInstance.instanceId, old, currInstance.ownership)
-		}
+		}*/
 	}
 
-	currZone := prevZone
-	for currZone != &LastZoneInfo {
-		prevZone = currZone.precededBy
-		currZone.precededBy = nil
-		currZone = prevZone
-	}
+	// we cancel all the "visited" info
+	t.unvisitAll(prevInstance, prevZone)
+	/*currZone := prevZone
+	currInstance := prevInstance
+	for {
+		if currZone != &LastZoneInfo {
+			prevZone = currZone.precededBy
+			currZone.precededBy = nil
+			currZone = prevZone
+		}
+		if currInstance != &LastInstanceInfo {
+			prevInstance = currInstance.precededBy
+			currInstance.precededBy = nil
+			currInstance = prevInstance
+		}
+		if currZone == &LastZoneInfo && currInstance == &LastInstanceInfo {
+			break
+		}
+	}*/
 
 	// we need to refresh the candidates that might have been affected by these changes
 	//nextCandidate := navigableCandidate.next.getData()
@@ -647,20 +717,21 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 		if t.calculateReplicatedOwnership(nextCandidate, nextCandidate.getReplicaStart().(navigableTokenInterface)) > t.calculateDistanceAsFloat64(candidate, nextCandidate) {
 			// if current replica start of the next candidate is more distant from the next candidate than candidate,
 			// then candidate is the new barrier of the next candidate
-			fmt.Printf("\tToken %d affected candidate %d, its replica start became %d\n", candidate.getToken(), nextCandidate.getToken(), next.getToken())
+			//fmt.Printf("\tToken %d affected candidate %d, its replica start became %d\n", candidate.getToken(), nextCandidate.getToken(), next.getToken())
 			nextCandidate.setReplicaStart(next)
 		} else {
 			break
 		}
 	}
 
-	fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership)
+	//fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership)
 }
 
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
 	t.instanceByToken[token] = instance.instanceId
+	t.zoneByInstance[instance.instanceId] = instance.zone.zone
 	t.addTokenToInstance(instance.instanceId, token)
 }
 
@@ -670,6 +741,7 @@ func (t *TokenDistributor) addFirstInstanceOfZone(instance Instance, zone Zone) 
 		t.addTokenToInstance(instance, token)
 		t.instanceByToken[token] = instance
 	}
+	t.zoneByInstance[instance] = zone
 	t.seedByZone[zone] = nil
 	slices.Sort(t.sortedTokens)
 }
@@ -761,7 +833,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	//stat.print()
 	printInstanceOwnership(instanceInfoByInstance)
 	//t.count(tokenInfoCircularList)
-	fmt.Println("-----------------------------------------------------------")
+	//fmt.Println("-----------------------------------------------------------")
 	if stat.types["instance"].sum != float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()) {
 		fmt.Printf("During insertion of instance %s sum of replication ownership was %.2f instead of %.2f\n", instance, stat.types["instance"].sum, float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()))
 	}

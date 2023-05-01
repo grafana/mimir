@@ -344,16 +344,16 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	}
 	instances = []Instance{"A-2", "B-2", "C-2", "A-3", "B-3", "C-3"}
 	for i := range instances {
-		tokenDistributor.AddInstance(instances[i], zones[i])
+		tokenDistributor.AddInstance(instances[i], zones[i%len(zones)])
 	}
 
-	require.Len(t, tokenDistributor.sortedTokens, 6*tokensPerInstance)
+	require.Len(t, tokenDistributor.sortedTokens, 9*tokensPerInstance)
 }
 
 func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 	iterations := 10
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
-	numberOfInstancesPerZone := 70
+	numberOfInstancesPerZone := 22
 	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
@@ -376,8 +376,8 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 
 func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 	iterations := 10
-	numberOfInstancesPerZone := 66
-	tokensPerInstance := 16
+	numberOfInstancesPerZone := 20
+	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {

@@ -38,35 +38,75 @@ func TestSimpleReplicationStrategy_GetReplicationSet(t *testing.T) {
 
 func TestSimpleReplicationStrategy_GetReplicationStart(t *testing.T) {
 	tests := map[string]struct {
+		replicationFactor        int
 		initialToken             Token
 		instance                 Instance
 		expectedReplicationStart Token
 	}{
-		"existing token preceded by the same instance": {
+		"existing token preceded by the same instance, rf=1": {
+			replicationFactor:        1,
 			initialToken:             48,
 			instance:                 "instance-2",
 			expectedReplicationStart: 48,
 		},
-		"non-existing token preceded by the same instance": {
+		"existing token preceded by the same instance, rf=3": {
+			replicationFactor:        3,
 			initialToken:             48,
 			instance:                 "instance-2",
 			expectedReplicationStart: 48,
 		},
-		"existing token preceded by different instance that does not form a full replica": {
+		"non-existing token preceded by the same instance, rf=1": {
+			replicationFactor:        1,
+			initialToken:             50,
+			instance:                 "instance-2",
+			expectedReplicationStart: 50,
+		},
+		"non-existing token preceded by the same instance, rf=3": {
+			replicationFactor:        3,
+			initialToken:             50,
+			instance:                 "instance-2",
+			expectedReplicationStart: 50,
+		},
+		"non-existing token preceded by different instance, rf=1": {
+			replicationFactor:        1,
+			initialToken:             97,
+			instance:                 "instance-1",
+			expectedReplicationStart: 97,
+		},
+		"existing token preceded by different instance that does not form a full replica, rf=3": {
+			replicationFactor:        3,
 			initialToken:             97,
 			instance:                 "instance-1",
 			expectedReplicationStart: 902,
 		},
-		"existing token preceded by different instance that form a full replica": {
+		"existing token preceded by different instance that form a full replica, rf=3": {
+			replicationFactor:        3,
 			initialToken:             194,
 			instance:                 "instance-0",
 			expectedReplicationStart: 853,
 		},
+		"non-existing token with non-existing instance, rf=3": {
+			replicationFactor:        3,
+			initialToken:             878,
+			instance:                 "instance-3",
+			expectedReplicationStart: 668,
+		},
+		"non-existing token with non-existing instance, rf=1": {
+			replicationFactor:        1,
+			initialToken:             878,
+			instance:                 "instance-3",
+			expectedReplicationStart: 878,
+		},
 	}
 	sortedRingTokens, ringInstanceByToken, _ := createRingTokensInstancesZones()
-	simpleReplicationStrategy := newSimpleReplicationStrategy(3, nil)
 	for _, testData := range tests {
+		simpleReplicationStrategy := newSimpleReplicationStrategy(testData.replicationFactor, nil)
+		_, found := ringInstanceByToken[testData.initialToken]
+		ringInstanceByToken[testData.initialToken] = testData.instance
 		replicaStart, err := simpleReplicationStrategy.getReplicaStart(testData.initialToken, sortedRingTokens, ringInstanceByToken)
+		if !found {
+			delete(ringInstanceByToken, testData.initialToken)
+		}
 		if err != nil {
 			errors.Wrap(err, "unable to get replica start")
 		}

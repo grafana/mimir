@@ -27,9 +27,6 @@ type ReplicationStrategy interface {
 
 	// addInstance add the given instance with the given zone to the replication strategy
 	addInstance(instance Instance, zone Zone)
-
-	// getZone returns the zone the given instance belongs to
-	getZone(instance Instance) Zone
 }
 
 // SimpleReplicationStrategy is an implementation of replicationStrategy which is not zone-aware
@@ -57,10 +54,6 @@ func newSimpleReplicationStrategy(replicationFactor int, bufInstances []Instance
 
 func (s SimpleReplicationStrategy) getReplicationFactor() int {
 	return s.replicationFactor
-}
-
-func (s SimpleReplicationStrategy) getZone(instance Instance) Zone {
-	return SingleZone
 }
 
 func (s SimpleReplicationStrategy) addInstance(instance Instance, zone Zone) {
@@ -132,6 +125,7 @@ func (s SimpleReplicationStrategy) getReplicaStart(terminalToken Token, sortedRi
 	)
 
 	//level.Debug(s.logger).Log("msg", fmt.Sprintf("Index %d  has been found for token %d", start, terminalToken))
+
 	// we go backwards and look for all possible ring tokens that could belong to the replication set ending in given terminalToken and terminalInstance
 	for i := start - 1; iterations < ringTokensCount; i-- {
 		if i < 0 {
@@ -148,7 +142,7 @@ func (s SimpleReplicationStrategy) getReplicaStart(terminalToken Token, sortedRi
 		// as soon as we find an instance corresponding to the terminal instance, we return currentReplicationStart
 		if terminalInstance == currentInstance {
 			//level.Info(s.logger).Log("msg", fmt.Sprintf("Instance %s corresponding to the final instance has been found. Returning token %d", currentInstance, currentReplicationStart))
-			return currentReplicationStart, nil
+			break
 		}
 
 		if slices.Contains(distinctInstances, currentInstance) {
@@ -156,6 +150,9 @@ func (s SimpleReplicationStrategy) getReplicaStart(terminalToken Token, sortedRi
 			continue
 		}
 		distinctInstances = append(distinctInstances, currentInstance)
+		if len(distinctInstances) == s.replicationFactor {
+			break
+		}
 		//level.Info(s.logger).Log("msg", fmt.Sprintf("Instance %s with token %d has been added to the replica set", currentInstance, currentToken))
 	}
 
@@ -193,10 +190,6 @@ func newZoneAwareReplicationStrategy(replicationFactor int, zoneByInstance map[I
 
 func (z ZoneAwareReplicationStrategy) addInstance(instance Instance, zone Zone) {
 	z.zonesByInstance[instance] = zone
-}
-
-func (z ZoneAwareReplicationStrategy) getZone(instance Instance) Zone {
-	return z.zonesByInstance[instance]
 }
 
 func (z ZoneAwareReplicationStrategy) getReplicationFactor() int {
