@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: release-name-mimir-overrides-exporter
+  name: gem-mimir-overrides-exporter
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: overrides-exporter
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -27,5 +27,5 @@ spec:
       targetPort: grpc
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: overrides-exporter

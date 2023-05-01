@@ -7,19 +7,19 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: release-name-mimir-make-minio-buckets
+  name: gem-mimir-make-minio-buckets
   namespace: "mimir"
   labels:
     app: mimir-distributed-make-bucket-job
     chart: mimir-distributed-4.3.1
-    release: release-name
+    release: gem
     heritage: Helm
 spec:
   template:
     metadata:
       labels:
         app: mimir-distributed-job
-        release: release-name
+        release: gem
     spec:
       restartPolicy: OnFailure      
       volumes:
@@ -27,9 +27,9 @@ spec:
           projected:
             sources:
             - configMap:
-                name: release-name-minio
+                name: gem-minio
             - secret:
-                name: release-name-minio
+                name: gem-minio
       containers:
       - name: minio-mc
         image: "quay.io/minio/mc:RELEASE.2022-12-13T00-23-28Z"
@@ -37,7 +37,7 @@ spec:
         command: ["/bin/sh", "/config/initialize"]
         env:
           - name: MINIO_ENDPOINT
-            value: release-name-minio
+            value: gem-minio
           - name: MINIO_PORT
             value: "9000"
         volumeMounts:

@@ -3,12 +3,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: release-name-mimir-query-scheduler
+  name: gem-mimir-query-scheduler
   namespace: "mimir"
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: query-scheduler
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -19,7 +19,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: release-name
+      app.kubernetes.io/instance: gem
       app.kubernetes.io/component: query-scheduler
   strategy:
     rollingUpdate:
@@ -31,14 +31,14 @@ spec:
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/instance: gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-scheduler
       annotations:
-        checksum/config: b832b9fdb617b3ff079571c8d81b37f6d0dda95bcd90e376341f1cbe166b133d
+        checksum/config: 911e9a33c77be2e68e27dad5d5f3955c187bfccc366e9334d87ab19b382e3bce
     spec:
-      serviceAccountName: release-name-mimir
+      serviceAccountName: gem-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -104,7 +104,7 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: release-name
+              app.kubernetes.io/instance: gem
               app.kubernetes.io/component: query-scheduler
       tolerations:
         []
@@ -112,13 +112,13 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: release-name-mimir-config
+            name: gem-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: release-name-mimir-runtime
+            name: gem-mimir-runtime
         - name: storage
           emptyDir: {}
         - name: active-queries
