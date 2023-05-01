@@ -1,0 +1,116 @@
+---
+# Source: mimir-distributed/templates/smoke-test/smoke-test-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: release-name-mimir-smoke-test
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/component: smoke-test
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+  namespace: "default"
+spec:
+  backoffLimit: 5
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-4.3.1
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/version: "2.7.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: smoke-test
+    spec:
+      serviceAccountName: release-name-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      containers:
+        - name: smoke-test
+          image: "grafana/mimir-continuous-test:2.7.2"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-tests.smoke-test"
+            - "-tests.write-endpoint=http://release-name-mimir-nginx.default.svc:80"
+            - "-tests.read-endpoint=http://release-name-mimir-nginx.default.svc:80/prometheus"
+            - "-tests.tenant-id="
+            - "-tests.write-read-series-test.num-series=1000"
+            - "-tests.write-read-series-test.max-query-age=48h"
+            - "-server.metrics-port=8080"
+          volumeMounts:
+          env:
+          envFrom:
+      restartPolicy: OnFailure
+      volumes:
+---
+# Source: mimir-distributed/templates/smoke-test/smoke-test-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: release-name-mimir-smoke-test
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/component: smoke-test
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+  namespace: "mimir"
+spec:
+  backoffLimit: 5
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-4.3.1
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/version: "2.7.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: smoke-test
+    spec:
+      serviceAccountName: release-name-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      containers:
+        - name: smoke-test
+          image: "grafana/mimir-continuous-test:2.7.2"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-tests.smoke-test"
+            - "-tests.write-endpoint=http://release-name-mimir-nginx.mimir.svc:80"
+            - "-tests.read-endpoint=http://release-name-mimir-nginx.mimir.svc:80/prometheus"
+            - "-tests.tenant-id="
+            - "-tests.write-read-series-test.num-series=1000"
+            - "-tests.write-read-series-test.max-query-age=48h"
+            - "-server.metrics-port=8080"
+          volumeMounts:
+          env:
+          envFrom:
+      restartPolicy: OnFailure
+      volumes:
