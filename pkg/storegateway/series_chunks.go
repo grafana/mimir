@@ -34,9 +34,19 @@ const (
 	// fine-grained chunks cache is enabled (byte slices have variable size and contain many chunks) or disabled (byte slices
 	// are at most 16KB each).
 	chunkBytesSlabSize = 160 * 1024
+
+	// Selected so that most series fit it and at the same time it's not too large for requests with few series.
+	// Most series are less than 4096 B.
+	seriesBytesSlabSize = 8 * 1024
 )
 
 var (
+	seriesBytesSlicePool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
+
 	seriesChunksSlicePool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.

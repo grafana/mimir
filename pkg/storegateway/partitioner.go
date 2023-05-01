@@ -9,6 +9,10 @@
 package storegateway
 
 import (
+	"encoding/binary"
+	"io"
+
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -129,4 +133,47 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 		parts = append(parts, p)
 	}
 	return
+}
+
+type uvarintSequenceReader struct {
+	offset uint64
+	r      io.Reader
+	b      [1]byte
+}
+
+var discardBuf [4096]byte
+
+func (r *uvarintSequenceReader) ReadNext(at uint64) (uint64, error) {
+	for at < r.offset {
+		b := discardBuf[:]
+		if uint64(len(b)) > at-r.offset {
+			b = discardBuf[:at-r.offset]
+		}
+		n, err := r.r.Read(b)
+		r.offset += uint64(n)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return 0, errors.Wrap(err, "discarding sequence reader")
+		}
+	}
+
+	return binary.ReadUvarint(r)
+}
+
+func (r *uvarintSequenceReader) ReadByte() (byte, error) {
+	n, err := r.r.Read(r.b[:])
+	r.offset += uint64(n)
+	if n == 1 {
+		// If there are read bytes we must ignore any error returned, even EOF.
+		return r.b[0], nil
+	}
+	return 0, err
+}
+
+func (r *uvarintSequenceReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.offset += uint64(n)
+	return n, err
 }

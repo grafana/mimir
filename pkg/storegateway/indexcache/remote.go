@@ -228,7 +228,7 @@ func (c *RemoteIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID s
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
-	keysMapping := map[storage.SeriesRef]string{}
+	keysMapping := make(map[storage.SeriesRef]string, len(ids))
 
 	for _, id := range ids {
 		key := seriesForRefCacheKey(userID, blockID, id)

@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
@@ -33,6 +35,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -628,9 +631,34 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
 	begin := time.Now()
 
-	b, err := r.block.readIndexRange(ctx, int64(start), int64(end-start))
+	reader, err := r.block.indexRangeReader(ctx, int64(start), int64(end-start))
 	if err != nil {
 		return errors.Wrap(err, "read series range")
+	}
+	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
+	byteReader := &uvarintSequenceReader{r: reader, offset: start}
+
+	for i, id := range ids {
+		size, err := byteReader.ReadNext(uint64(id))
+		if err != nil {
+			return err
+		}
+		seriesBytes := loaded.bytesPool.Get(int(size))
+		n, err := io.ReadFull(byteReader, seriesBytes)
+		if n != int(size) || (err != nil && errors.Is(err, io.EOF)) {
+			if i == 0 && refetch {
+				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, size)
+			}
+
+			// Inefficient, but should be rare.
+			r.block.metrics.seriesRefetches.Inc()
+			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", size, "max_series_size", maxSeriesSize)
+			// Fetch plus to get the size of next one if exists.
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(binary.MaxVarintLen64+size+1), loaded, stats)
+		}
+		loaded.addSeries(id, seriesBytes)
+
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
 	}
 
 	stats.update(func(stats *queryStats) {
@@ -639,32 +667,6 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		stats.seriesFetchDurationSum += time.Since(begin)
 		stats.seriesFetchedSizeSum += int(end - start)
 	})
-
-	for i, id := range ids {
-		c := b[uint64(id)-start:]
-
-		l, n := binary.Uvarint(c)
-		if n < 1 {
-			return errors.New("reading series length failed")
-		}
-		if len(c) < n+int(l) {
-			if i == 0 && refetch {
-				return errors.Errorf("invalid remaining size, even after refetch, remaining: %d, expected %d", len(c), n+int(l))
-			}
-
-			// Inefficient, but should be rare.
-			r.block.metrics.seriesRefetches.Inc()
-			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "id", id, "series length", n+int(l), "maxSeriesSize", maxSeriesSize)
-
-			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), loaded, stats)
-		}
-		c = c[n : n+int(l)]
-
-		loaded.addSeries(id, c)
-
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, c)
-	}
 	return nil
 }
 
@@ -694,13 +696,15 @@ func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (l
 // bucketIndexLoadedSeries holds the result of a series load operation.
 type bucketIndexLoadedSeries struct {
 	// Keeps the series that have been loaded from the index.
-	seriesMx sync.Mutex
-	series   map[storage.SeriesRef][]byte
+	seriesMx  sync.Mutex
+	bytesPool *pool.SafeSlabPool[byte]
+	series    map[storage.SeriesRef][]byte
 }
 
 func newBucketIndexLoadedSeries() *bucketIndexLoadedSeries {
 	return &bucketIndexLoadedSeries{
-		series: map[storage.SeriesRef][]byte{},
+		bytesPool: pool.NewSafeSlabPool[byte](seriesBytesSlicePool, seriesBytesSlabSize),
+		series:    map[storage.SeriesRef][]byte{},
 	}
 }
 
@@ -728,4 +732,8 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
 	return decodeSeries(b, lset, chks, skipChunks)
+}
+
+func (l *bucketIndexLoadedSeries) Release() {
+	l.bytesPool.Release()
 }
