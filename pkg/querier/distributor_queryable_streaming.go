@@ -73,11 +73,9 @@ func (s *SeriesStreamer) Close() error {
 // StartBuffering begins streaming series' chunks from the ingester associated with
 // this SeriesStreamer. Once all series have been consumed with GetChunks, all resources
 // associated with this SeriesStreamer are cleaned up.
-// If an error occurs while streaming, the next call to GetChunks will return an error.
+// If an error occurs while streaming, a subsequent call to GetChunks will return an error.
+// To cancel buffering, cancel the context associated with this SeriesStreamer's client.Ingester_QueryStreamClient.
 func (s *SeriesStreamer) StartBuffering() {
-	// TODO: need a way to cancel this method and close the stream cleanly
-	// Or can we rely on the gRPC call's context being cancelled?
-
 	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
 
 	go func() {

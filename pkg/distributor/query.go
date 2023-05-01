@@ -281,12 +281,15 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	}()
 
 	// Fetch samples from multiple ingesters, and send them to the results chan
-	_, err := replicationSet.Do(ctx, 0, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
+	_, err := replicationSet.Do(ctx, 0, func(_ context.Context, ing *ring.InstanceDesc) (interface{}, error) {
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
 			return nil, err
 		}
 
+		// FIXME: using parent context here (rather than context passed to this function by replicationSet.Do()) to avoid cancelling streaming requests
+		// when replicationSet.Do() returns, but this breaks aborting requests early if too many zones have failed or if we've received enough responses
+		// from other zones
 		stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
 			return nil, err
@@ -366,8 +369,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				case <-stop:
 					return nil, nil
 				case streamersChan <- streamer:
-					streamer.StartBuffering() // TODO: check this is aborted if the context.Context associated with this call is cancelled
-					closeStream = false       // The SeriesStreamer is responsible for closing the stream now.
+					streamer.StartBuffering()
+					closeStream = false // The SeriesStreamer is responsible for closing the stream now.
 					return nil, nil
 				}
 			} else if resp.IsEndOfSeriesStream {
