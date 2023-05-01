@@ -63,6 +63,8 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
+		req.PreferStreamingChunks = true // TODO: make this configurable
+
 		replicationSet, err := d.GetIngesters(ctx)
 		if err != nil {
 			return err
@@ -77,7 +79,7 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			s.LogKV(
 				"chunk-series", len(result.Chunkseries),
 				"time-series", len(result.Timeseries),
-				"streaming-series", len(result.StreamingSeriesLabels),
+				"streaming-series", len(result.StreamingSeries),
 			)
 		}
 		return nil
@@ -199,9 +201,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
 	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
-
-	streamingSeriesLabels := map[string]labels.Labels{}
-	var streamers []*querier.SeriesStreamer
+	hashToStreamingSeries := map[string]querier.StreamingSeries{}
 
 	// Start reading and accumulating responses. stopReading chan will
 	// be closed when all calls to ingesters have finished.
@@ -255,18 +255,27 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					hashToTimeSeries[key] = existing
 				}
 			case streamer := <-streamersChan:
-				// Use the same labels.Labels instance if we've already seen some of these series.
-				for i, seriesLabels := range streamer.SeriesLabels {
+				for seriesIndex, seriesLabels := range streamer.SeriesLabels {
 					key := ingester_client.LabelsToKeyString(seriesLabels)
+					series, exists := hashToStreamingSeries[key]
 
-					if existingLabels, exists := streamingSeriesLabels[key]; exists {
-						streamer.SeriesLabels[i] = existingLabels
+					if exists {
+						// Use the same labels.Labels instance if we've already seen this series.
+						streamer.SeriesLabels[seriesIndex] = series.Labels
 					} else {
-						streamingSeriesLabels[key] = seriesLabels
-					}
-				}
+						series = querier.StreamingSeries{
+							Labels:  series.Labels,
+							Sources: make([]querier.StreamingSeriesSource, 0, 3), // TODO: take capacity from number of zones
+						}
 
-				streamers = append(streamers, streamer)
+						hashToStreamingSeries[key] = series
+					}
+
+					series.Sources = append(series.Sources, querier.StreamingSeriesSource{
+						SeriesIndex: seriesIndex,
+						Streamer:    streamer,
+					})
+				}
 			}
 		}
 	}()
@@ -373,10 +382,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	<-doneReading
 	// Now turn the accumulated maps into slices.
 	resp := querier.DistributorQueryStreamResponse{
-		Chunkseries:           make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
-		Timeseries:            make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		SeriesStreamers:       streamers,
-		StreamingSeriesLabels: make([]labels.Labels, 0, len(streamingSeriesLabels)),
+		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
+		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
+		StreamingSeries: make([]querier.StreamingSeries, 0, len(hashToStreamingSeries)),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -384,11 +392,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)
 	}
-	for _, seriesLabels := range streamingSeriesLabels {
-		resp.StreamingSeriesLabels = append(resp.StreamingSeriesLabels, seriesLabels)
+	for _, series := range hashToStreamingSeries {
+		resp.StreamingSeries = append(resp.StreamingSeries, series)
 	}
 
-	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(streamingSeriesLabels)))
+	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
 	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries))) // TODO: accumulate this while streaming
 	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))    // TODO: accumulate this while streaming
 

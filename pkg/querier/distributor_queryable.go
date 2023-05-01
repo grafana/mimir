@@ -44,10 +44,17 @@ type Distributor interface {
 type DistributorQueryStreamResponse struct {
 	Chunkseries     []client.TimeSeriesChunk
 	Timeseries      []mimirpb.TimeSeries
-	SeriesStreamers []*SeriesStreamer
+	StreamingSeries []StreamingSeries
+}
 
-	// Unique series that can be streamed from SeriesStreamers.
-	StreamingSeriesLabels []labels.Labels
+type StreamingSeries struct {
+	Labels  labels.Labels
+	Sources []StreamingSeriesSource
+}
+
+type StreamingSeriesSource struct {
+	Streamer    *SeriesStreamer
+	SeriesIndex int
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {
@@ -181,6 +188,21 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	if len(serieses) > 0 {
 		sets = append(sets, series.NewConcreteSeriesSet(serieses))
+	}
+
+	streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
+	for _, s := range results.StreamingSeries {
+		streamingSeries = append(streamingSeries, &streamingChunkSeries{
+			labels:            s.Labels,
+			chunkIteratorFunc: q.chunkIterFn,
+			mint:              minT,
+			maxt:              maxT,
+			sources:           s.Sources,
+		})
+	}
+
+	if len(streamingSeries) > 0 {
+		sets = append(sets, series.NewConcreteSeriesSet(streamingSeries))
 	}
 
 	if len(sets) == 0 {

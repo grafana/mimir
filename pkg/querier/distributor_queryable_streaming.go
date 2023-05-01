@@ -18,15 +18,10 @@ import (
 )
 
 type streamingChunkSeries struct {
-	labels labels.Labels
-
+	labels            labels.Labels
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
-
-	ingesters []struct {
-		streamer    SeriesStreamer
-		seriesIndex uint64
-	}
+	sources           []StreamingSeriesSource
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -36,8 +31,8 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	var chunks []chunk.Chunk // TODO: guess a size for this?
 
-	for _, ingester := range s.ingesters {
-		c, err := ingester.streamer.GetChunks(ingester.seriesIndex)
+	for _, source := range s.sources {
+		c, err := source.Streamer.GetChunks(source.SeriesIndex)
 
 		if err != nil {
 			return series.NewErrIterator(err)
@@ -66,7 +61,7 @@ func NewSeriesStreamer(client client.Ingester_QueryStreamClient, seriesLabels []
 
 type streamedIngesterSeries struct {
 	chunks      []chunk.Chunk
-	seriesIndex uint64
+	seriesIndex int
 }
 
 // Close cleans up any resources associated with this SeriesStreamer.
@@ -91,7 +86,7 @@ func (s *SeriesStreamer) StartBuffering() {
 		defer close(s.buffer)
 		defer close(s.errChan)
 
-		nextSeriesIndex := uint64(0)
+		nextSeriesIndex := 0
 
 		for {
 			msg, err := s.client.Recv()
@@ -123,7 +118,7 @@ func (s *SeriesStreamer) StartBuffering() {
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
-func (s *SeriesStreamer) GetChunks(seriesIndex uint64) ([]chunk.Chunk, error) {
+func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]chunk.Chunk, error) {
 	select {
 	case err := <-s.errChan:
 		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
