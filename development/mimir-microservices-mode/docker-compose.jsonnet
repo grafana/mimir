@@ -228,8 +228,16 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      environment: [ 
+        'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
+        'DISTRIBUTOR_HOST=distributor-1:8000', 
+        'ALERT_MANAGER_HOST=alertmanager-1:8031',
+        'RULER_HOST=ruler-1:8021',
+        'QUERY_FRONTEND_HOST=query-frontend:8007',
+        'COMPACTOR_HOST=compactor:8007',
+      ],
       ports: ['8080:8080'],
-      volumes: ['./config:/etc/nginx'],
+      volumes: ['../common/config:/etc/nginx/templates'],
     },
   },
 
