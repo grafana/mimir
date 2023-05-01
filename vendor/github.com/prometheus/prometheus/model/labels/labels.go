@@ -169,11 +169,12 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			b = append(b, ls[i].Name...)
 			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
@@ -213,11 +214,12 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 	b.WriteByte(labelSep)
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			if b.Len() > 1 {
 				b.WriteByte(seps[0])
 			}
@@ -620,7 +622,7 @@ func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(ls Labels) {
 	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
 }
