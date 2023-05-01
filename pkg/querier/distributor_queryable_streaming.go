@@ -144,12 +144,16 @@ func (s *SeriesStreamer) StartBuffering() {
 func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]client.Chunk, error) {
 	series, open := <-s.buffer
 
-	// If the context has been cancelled, exit early.
-	if err := s.client.Context().Err(); err != nil {
-		return nil, err
-	}
-
 	if !open {
+		// If the context has been cancelled, report the cancellation.
+		// Note that we only check this if there are no series in the buffer as the context is always cancelled
+		// at the end of a successful request - so if we checked for an error even if there are series in the
+		// buffer, we might incorrectly report that the context has been cancelled, when in fact the request
+		// has concluded as expected.
+		if err := s.client.Context().Err(); err != nil {
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 	}
 
