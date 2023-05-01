@@ -323,7 +323,7 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
-// prefixOffsets returns the index of the first and last matching offset.
+// prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
 // prefixOffsets returns false when no offsets match this prefix.
 func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, found bool) {
 	// Find the first offset that is greater or equal to the value.
@@ -352,14 +352,12 @@ func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, foun
 		start--
 	}
 
+	// Find the first offset which is larger than the prefix and doesn't have the prefix.
+	// All values after that offset will not match the prefix.
 	end = sort.Search(len(e.offsets)-start, func(i int) bool {
 		return prefix < e.offsets[i+start].value && !strings.HasPrefix(e.offsets[i+start].value, prefix)
 	})
 	end += start
-	if end == len(e.offsets) {
-		end-- // we should return the index of the last matching value, if all values match, then this index is the last index
-	}
-
 	return start, end, true
 }
 
@@ -483,7 +481,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		return nil, nil
 	}
 
-	offsetsStart, offsetsEnd := 0, len(e.offsets)-1
+	offsetsStart, offsetsEnd := 0, len(e.offsets)
 	if prefix != "" {
 		offsetsStart, offsetsEnd, ok = e.prefixOffsets(prefix)
 		if !ok {
@@ -498,7 +496,10 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.ResetAt(e.offsets[offsetsStart].tableOff)
-	lastVal := e.offsets[offsetsEnd].value
+	lastVal := e.offsets[len(e.offsets)-1].value
+	if offsetsEnd < len(e.offsets) {
+		lastVal = e.offsets[offsetsEnd].value
+	}
 
 	var skip int
 	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
