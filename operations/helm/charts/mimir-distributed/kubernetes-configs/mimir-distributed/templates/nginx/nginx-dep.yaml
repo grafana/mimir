@@ -3,11 +3,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: release-name-mimir-nginx
+  name: gem-mimir-nginx
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: nginx
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -21,22 +21,22 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: release-name
+      app.kubernetes.io/instance: gem
       app.kubernetes.io/component: nginx
   template:
     metadata:
       annotations:
-        checksum/config: 64a0f842a637ed4a2d4cf424943369779560ef9e805b81aecd49b0ea43e16354
+        checksum/config: 8ed0bbd759ae67970d31f993dbf155d6f03416ad3f156cb856affd5c8b4646a0
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/instance: gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: nginx
       namespace: "mimir"
     spec:
-      serviceAccountName: release-name-mimir
+      serviceAccountName: gem-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -83,12 +83,12 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: release-name
+              app.kubernetes.io/instance: gem
               app.kubernetes.io/component: nginx
       volumes:
         - name: config
           configMap:
-            name: release-name-mimir-nginx
+            name: gem-mimir-nginx
         - name: tmp
           emptyDir: {}
         - name: docker-entrypoint-d-override

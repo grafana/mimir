@@ -3,11 +3,11 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: release-name-mimir-ingester-zone-a
+  name: gem-mimir-ingester-zone-a
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
@@ -24,13 +24,13 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: release-name
+      app.kubernetes.io/instance: gem
       app.kubernetes.io/component: ingester
       rollout-group: ingester
       zone: zone-a
   updateStrategy:
     type: OnDelete
-  serviceName: release-name-mimir-ingester-headless
+  serviceName: gem-mimir-ingester-headless
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -45,7 +45,7 @@ spec:
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/instance: gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
@@ -54,10 +54,10 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
-        checksum/config: b832b9fdb617b3ff079571c8d81b37f6d0dda95bcd90e376341f1cbe166b133d
+        checksum/config: 911e9a33c77be2e68e27dad5d5f3955c187bfccc366e9334d87ab19b382e3bce
       namespace: "mimir"
     spec:
-      serviceAccountName: release-name-mimir
+      serviceAccountName: gem-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -78,7 +78,7 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: release-name
+              app.kubernetes.io/instance: gem
               app.kubernetes.io/component: ingester
       tolerations:
         []
@@ -86,13 +86,13 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: release-name-mimir-config
+            name: gem-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: release-name-mimir-runtime
+            name: gem-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:
@@ -147,11 +147,11 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: release-name-mimir-ingester-zone-b
+  name: gem-mimir-ingester-zone-b
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
@@ -168,13 +168,13 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: release-name
+      app.kubernetes.io/instance: gem
       app.kubernetes.io/component: ingester
       rollout-group: ingester
       zone: zone-b
   updateStrategy:
     type: OnDelete
-  serviceName: release-name-mimir-ingester-headless
+  serviceName: gem-mimir-ingester-headless
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -189,7 +189,7 @@ spec:
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/instance: gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
@@ -198,10 +198,10 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
-        checksum/config: b832b9fdb617b3ff079571c8d81b37f6d0dda95bcd90e376341f1cbe166b133d
+        checksum/config: 911e9a33c77be2e68e27dad5d5f3955c187bfccc366e9334d87ab19b382e3bce
       namespace: "mimir"
     spec:
-      serviceAccountName: release-name-mimir
+      serviceAccountName: gem-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -222,7 +222,7 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: release-name
+              app.kubernetes.io/instance: gem
               app.kubernetes.io/component: ingester
       tolerations:
         []
@@ -230,13 +230,13 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: release-name-mimir-config
+            name: gem-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: release-name-mimir-runtime
+            name: gem-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:
@@ -291,11 +291,11 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: release-name-mimir-ingester-zone-c
+  name: gem-mimir-ingester-zone-c
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
@@ -312,13 +312,13 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: release-name
+      app.kubernetes.io/instance: gem
       app.kubernetes.io/component: ingester
       rollout-group: ingester
       zone: zone-c
   updateStrategy:
     type: OnDelete
-  serviceName: release-name-mimir-ingester-headless
+  serviceName: gem-mimir-ingester-headless
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -333,7 +333,7 @@ spec:
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: release-name
+        app.kubernetes.io/instance: gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
@@ -342,10 +342,10 @@ spec:
         rollout-group: ingester
         zone: zone-c
       annotations:
-        checksum/config: b832b9fdb617b3ff079571c8d81b37f6d0dda95bcd90e376341f1cbe166b133d
+        checksum/config: 911e9a33c77be2e68e27dad5d5f3955c187bfccc366e9334d87ab19b382e3bce
       namespace: "mimir"
     spec:
-      serviceAccountName: release-name-mimir
+      serviceAccountName: gem-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -366,7 +366,7 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: release-name
+              app.kubernetes.io/instance: gem
               app.kubernetes.io/component: ingester
       tolerations:
         []
@@ -374,13 +374,13 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: release-name-mimir-config
+            name: gem-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
         - name: runtime-config
           configMap:
-            name: release-name-mimir-runtime
+            name: gem-mimir-runtime
         - name: active-queries
           emptyDir: {}
       containers:

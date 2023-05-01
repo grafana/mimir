@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: release-name-mimir-alertmanager-fallback-config
+  name: gem-mimir-alertmanager-fallback-config
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"

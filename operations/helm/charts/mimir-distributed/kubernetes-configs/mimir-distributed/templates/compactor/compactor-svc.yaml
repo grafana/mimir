@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: release-name-mimir-compactor
+  name: gem-mimir-compactor
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
@@ -28,5 +28,5 @@ spec:
       targetPort: grpc
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: compactor

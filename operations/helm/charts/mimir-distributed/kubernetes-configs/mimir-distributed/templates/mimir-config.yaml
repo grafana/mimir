@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: release-name-mimir-config
+  name: gem-mimir-config
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
   namespace: "mimir"
@@ -26,7 +26,7 @@ data:
       s3:
         access_key_id: grafana-mimir
         bucket_name: mimir-ruler
-        endpoint: release-name-minio.mimir.svc:9000
+        endpoint: gem-minio.mimir.svc:9000
         insecure: true
         secret_access_key: supersecret
     blocks_storage:
@@ -37,7 +37,7 @@ data:
       s3:
         access_key_id: grafana-mimir
         bucket_name: mimir-tsdb
-        endpoint: release-name-minio.mimir.svc:9000
+        endpoint: gem-minio.mimir.svc:9000
         insecure: true
         secret_access_key: supersecret
       tsdb:
@@ -53,11 +53,11 @@ data:
       symbols_flushers_concurrency: 4
     frontend:
       parallelize_shardable_queries: true
-      scheduler_address: release-name-mimir-query-scheduler-headless.mimir.svc:9095
+      scheduler_address: gem-mimir-query-scheduler-headless.mimir.svc:9095
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400
-      scheduler_address: release-name-mimir-query-scheduler-headless.mimir.svc:9095
+      scheduler_address: gem-mimir-query-scheduler-headless.mimir.svc:9095
     ingester:
       ring:
         final_sleep: 0s
@@ -77,13 +77,13 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+release-name-mimir-gossip-ring.mimir.svc.cluster.local:7946
+      - dns+gem-mimir-gossip-ring.mimir.svc.cluster.local:7946
     querier:
       max_concurrent: 16
     query_scheduler:
       max_outstanding_requests_per_tenant: 800
     ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.release-name-mimir-alertmanager-headless.mimir.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.gem-mimir-alertmanager-headless.mimir.svc.cluster.local/alertmanager
       enable_api: true
       rule_path: /data
     ruler_storage:
@@ -91,7 +91,7 @@ data:
       s3:
         access_key_id: grafana-mimir
         bucket_name: mimir-ruler
-        endpoint: release-name-minio.mimir.svc:9000
+        endpoint: gem-minio.mimir.svc:9000
         insecure: true
         secret_access_key: supersecret
     runtime_config:

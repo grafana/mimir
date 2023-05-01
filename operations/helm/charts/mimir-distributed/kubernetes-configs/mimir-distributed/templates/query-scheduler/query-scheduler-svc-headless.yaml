@@ -3,12 +3,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: release-name-mimir-query-scheduler-headless
+  name: gem-mimir-query-scheduler-headless
   namespace: "mimir"
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: query-scheduler
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -30,5 +30,5 @@ spec:
       targetPort: grpc
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/instance: gem
     app.kubernetes.io/component: query-scheduler
