@@ -517,6 +517,7 @@ alertmanager:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
   readinessProbe:
@@ -628,6 +629,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -636,6 +642,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -644,6 +655,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
 
 distributor:
   replicas: 1
@@ -801,6 +817,8 @@ ingester:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `ingester.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
+    #
     # storageClass: "-"
 
   readinessProbe:
@@ -845,12 +863,15 @@ ingester:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
+  #       storageClass: storage-class-us-central1-a
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
+  #       storageClass: storage-class-us-central1-b
   #     - name: zone-c
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-c
+  #       storageClass: storage-class-us-central1-c
   #
   zoneAwareReplication:
     # -- Enable zone-aware replication for ingester
@@ -884,6 +905,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -892,6 +918,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -900,6 +931,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
 
 overrides_exporter:
   enabled: true
@@ -1344,6 +1380,7 @@ store_gateway:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
   readinessProbe:
@@ -1419,6 +1456,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1427,6 +1469,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1435,6 +1482,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
 
 compactor:
   replicas: 1

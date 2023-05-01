@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] You can now configure `storageClass` per zone for Alertmanager, StoreGateway and Ingester. #4234
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
 * [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
 * [FEATURE] Add support for Vault Agent. When enabled, the Pod annotations for TLS configurable components are updated to allow a running Vault Agent to fetch secrets from Vault and to inject them into a Pod. The annotations are updated for the following components: `admin-api`, `alertmanager`, `compactor`, `distributor`, `gateway`, `ingester`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler`, `ruler`, `store-gateway`. #4660
