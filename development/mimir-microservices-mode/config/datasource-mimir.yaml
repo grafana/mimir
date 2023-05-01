@@ -5,7 +5,7 @@ datasources:
   access: proxy
   uid: mimir
   orgID: 1
-  url: http://nginx:9095/prometheus
+  url: http://nginx:8080/prometheus
   isDefault: true
   jsonData:
     prometheusType: Mimir
