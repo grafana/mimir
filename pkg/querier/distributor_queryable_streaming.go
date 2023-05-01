@@ -81,6 +81,8 @@ func (s *SeriesStreamer) Close() error {
 func (s *SeriesStreamer) StartBuffering() {
 	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
 
+	// FIXME: is this goroutine leaked if nothing is consuming from the buffer but we haven't finished
+	// pushing series to the buffer from a message already received?
 	go func() {
 		defer s.client.CloseSend()
 		defer close(s.buffer)
