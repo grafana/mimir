@@ -67,12 +67,6 @@ type streamedIngesterSeries struct {
 	err         error
 }
 
-// Close cleans up any resources associated with this SeriesStreamer.
-// This method should only be called if StartBuffering is never called.
-func (s *SeriesStreamer) Close() error {
-	return s.client.CloseSend()
-}
-
 // StartBuffering begins streaming series' chunks from the ingester associated with
 // this SeriesStreamer. Once all series have been consumed with GetChunks, all resources
 // associated with this SeriesStreamer are cleaned up.
