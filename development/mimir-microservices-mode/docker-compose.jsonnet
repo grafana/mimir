@@ -29,6 +29,7 @@ std.manifestYamlDoc({
     self.compactor +
     self.rulers(2) +
     self.alertmanagers(3) +
+    self.nginx +
     self.minio +
     self.prometheus +
     self.grafana +
@@ -41,11 +42,13 @@ std.manifestYamlDoc({
 
   distributor:: {
     'distributor-1': mimirService({
+      name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
     }),
 
     'distributor-2': mimirService({
+      name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
     }),
@@ -53,6 +56,7 @@ std.manifestYamlDoc({
 
   ingesters:: {
     'ingester-1': mimirService({
+      name: 'ingester-1',
       target: 'ingester',
       httpPort: 8002,
       jaegerApp: 'ingester-1',
@@ -60,6 +64,7 @@ std.manifestYamlDoc({
     }),
 
     'ingester-2': mimirService({
+      name: 'ingester-2',
       target: 'ingester',
       httpPort: 8003,
       jaegerApp: 'ingester-2',
@@ -70,6 +75,7 @@ std.manifestYamlDoc({
   read_components::
     {
       querier: mimirService({
+        name: 'querier',
         target: 'querier',
         httpPort: 8004,
         extraArguments:
@@ -78,6 +84,7 @@ std.manifestYamlDoc({
       }),
 
       'query-frontend': mimirService({
+        name: 'query-frontend',
         target: 'query-frontend',
         httpPort: 8007,
         jaegerApp: 'query-frontend',
@@ -89,6 +96,7 @@ std.manifestYamlDoc({
     } + (
       if $._config.use_query_scheduler then {
         'query-scheduler': mimirService({
+          name: 'query-scheduler',
           target: 'query-scheduler',
           httpPort: 8011,
           extraArguments: '-query-frontend.max-total-query-length=8760h',
@@ -98,6 +106,7 @@ std.manifestYamlDoc({
 
   compactor:: {
     compactor: mimirService({
+      name: 'compactor',
       target: 'compactor',
       httpPort: 8006,
     }),
@@ -105,6 +114,7 @@ std.manifestYamlDoc({
 
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
+      name: 'ruler-' + id,
       target: 'ruler',
       httpPort: 8020 + id,
       jaegerApp: 'ruler-%d' % id,
@@ -114,6 +124,7 @@ std.manifestYamlDoc({
 
   alertmanagers(count):: if count <= 0 then {} else {
     ['alertmanager-%d' % id]: mimirService({
+      name: 'alertmanager-' + id,
       target: 'alertmanager',
       httpPort: 8030 + id,
       extraArguments: '-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id),
@@ -124,12 +135,14 @@ std.manifestYamlDoc({
 
   store_gateways:: {
     'store-gateway-1': mimirService({
+      name: 'store-gateway-1',
       target: 'store-gateway',
       httpPort: 8008,
       jaegerApp: 'store-gateway-1',
     }),
 
     'store-gateway-2': mimirService({
+      name: 'store-gateway-2',
       target: 'store-gateway',
       httpPort: 8009,
       jaegerApp: 'store-gateway-2',
@@ -145,6 +158,7 @@ std.manifestYamlDoc({
   local mimirService(serviceOptions) = {
     local defaultOptions = {
       local s = self,
+      name: error 'missing name',
       target: error 'missing target',
       jaegerApp: self.target,
       httpPort: error 'missing httpPort',
@@ -191,6 +205,7 @@ std.manifestYamlDoc({
       for key in std.objectFields(options.env)
       if options.env[key] != null
     ],
+    hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            if $._config.debug then [
@@ -206,6 +221,23 @@ std.manifestYamlDoc({
       image: 'consul',
       command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=info'],
       ports: ['8500:8500'],
+    },
+  },
+
+  nginx:: {
+    nginx: {
+      hostname: 'nginx',
+      image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      environment: [ 
+        'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
+        'DISTRIBUTOR_HOST=distributor-1:8000', 
+        'ALERT_MANAGER_HOST=alertmanager-1:8031',
+        'RULER_HOST=ruler-1:8021',
+        'QUERY_FRONTEND_HOST=query-frontend:8007',
+        'COMPACTOR_HOST=compactor:8007',
+      ],
+      ports: ['8080:8080'],
+      volumes: ['../common/config:/etc/nginx/templates'],
     },
   },
 

@@ -16,6 +16,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-1"
+    "hostname": "alertmanager-1"
     "image": "mimir"
     "ports":
       - "8031:8031"
@@ -39,6 +40,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-2"
+    "hostname": "alertmanager-2"
     "image": "mimir"
     "ports":
       - "8032:8032"
@@ -62,6 +64,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-3"
+    "hostname": "alertmanager-3"
     "image": "mimir"
     "ports":
       - "8033:8033"
@@ -85,6 +88,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=compactor"
+    "hostname": "compactor"
     "image": "mimir"
     "ports":
       - "8006:8006"
@@ -107,6 +111,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=distributor"
+    "hostname": "distributor-1"
     "image": "mimir"
     "ports":
       - "8000:8000"
@@ -129,6 +134,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=distributor"
+    "hostname": "distributor-2"
     "image": "mimir"
     "ports":
       - "8001:8001"
@@ -172,6 +178,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ingester-1"
+    "hostname": "ingester-1"
     "image": "mimir"
     "ports":
       - "8002:8002"
@@ -196,6 +203,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ingester-2"
+    "hostname": "ingester-2"
     "image": "mimir"
     "ports":
       - "8003:8003"
@@ -227,6 +235,20 @@
       - "9000:9000"
     "volumes":
       - ".data-minio:/data:delegated"
+  "nginx":
+    "environment":
+      - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
+      - "DISTRIBUTOR_HOST=distributor-1:8000"
+      - "ALERT_MANAGER_HOST=alertmanager-1:8031"
+      - "RULER_HOST=ruler-1:8021"
+      - "QUERY_FRONTEND_HOST=query-frontend:8007"
+      - "COMPACTOR_HOST=compactor:8007"
+    "hostname": "nginx"
+    "image": "nginxinc/nginx-unprivileged:1.22-alpine"
+    "ports":
+      - "8080:8080"
+    "volumes":
+      - "../common/config:/etc/nginx/templates"
   "otel_collector":
     "command":
       - "--config=/etc/otel-collector/otel-collector.yaml"
@@ -264,6 +286,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=querier"
+    "hostname": "querier"
     "image": "mimir"
     "ports":
       - "8004:8004"
@@ -287,6 +310,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=query-frontend"
+    "hostname": "query-frontend"
     "image": "mimir"
     "ports":
       - "8007:8007"
@@ -310,6 +334,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=query-scheduler"
+    "hostname": "query-scheduler"
     "image": "mimir"
     "ports":
       - "8011:8011"
@@ -333,6 +358,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ruler-1"
+    "hostname": "ruler-1"
     "image": "mimir"
     "ports":
       - "8021:8021"
@@ -356,6 +382,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ruler-2"
+    "hostname": "ruler-2"
     "image": "mimir"
     "ports":
       - "8022:8022"
@@ -379,6 +406,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=store-gateway-1"
+    "hostname": "store-gateway-1"
     "image": "mimir"
     "ports":
       - "8008:8008"
@@ -402,6 +430,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=store-gateway-2"
+    "hostname": "store-gateway-2"
     "image": "mimir"
     "ports":
       - "8009:8009"
