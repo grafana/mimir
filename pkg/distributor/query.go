@@ -186,6 +186,11 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
 }
 
+type streamerWithSeriesLabels struct {
+	streamer     *querier.SeriesStreamer
+	seriesLabels []labels.Labels
+}
+
 // queryIngesterStream queries the ingesters using the new streaming API.
 // TODO: break this method into smaller methods, it's enormous
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (querier.DistributorQueryStreamResponse, error) {
@@ -193,7 +198,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 		results       = make(chan *ingester_client.QueryStreamResponse)
-		streamersChan = make(chan *querier.SeriesStreamer)
+		streamersChan = make(chan streamerWithSeriesLabels)
 		// Note we can't signal goroutines to stop by closing 'results', because it has multiple concurrent senders.
 		stop        = make(chan struct{}) // Signal all background goroutines to stop.
 		doneReading = make(chan struct{}) // Signal that the reader has stopped.
@@ -254,15 +259,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 					hashToTimeSeries[key] = existing
 				}
-			case streamer := <-streamersChan:
-				for seriesIndex, seriesLabels := range streamer.SeriesLabels {
+			case s := <-streamersChan:
+				for seriesIndex, seriesLabels := range s.seriesLabels {
 					key := ingester_client.LabelsToKeyString(seriesLabels)
 					series, exists := hashToStreamingSeries[key]
 
-					if exists {
-						// Use the same labels.Labels instance if we've already seen this series.
-						streamer.SeriesLabels[seriesIndex] = series.Labels
-					} else {
+					if !exists {
 						series = querier.StreamingSeries{
 							Labels:  seriesLabels,
 							Sources: make([]querier.StreamingSeriesSource, 0, 3), // TODO: take capacity from number of zones
@@ -271,7 +273,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 					series.Sources = append(series.Sources, querier.StreamingSeriesSource{
 						SeriesIndex: seriesIndex,
-						Streamer:    streamer,
+						Streamer:    s.streamer,
 					})
 
 					hashToStreamingSeries[key] = series
@@ -361,14 +363,14 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 				}
 
-				streamer := querier.NewSeriesStreamer(stream, seriesLabels)
+				streamer := querier.NewSeriesStreamer(stream, len(seriesLabels))
 
 				// This goroutine could be left running after replicationSet.Do() returns,
 				// so check before writing to the results chan.
 				select {
 				case <-stop:
 					return nil, nil
-				case streamersChan <- streamer:
+				case streamersChan <- streamerWithSeriesLabels{streamer, seriesLabels}:
 					streamer.StartBuffering()
 					closeStream = false // The SeriesStreamer is responsible for closing the stream now.
 					return nil, nil

@@ -49,15 +49,15 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 }
 
 type SeriesStreamer struct {
-	client       client.Ingester_QueryStreamClient
-	buffer       chan streamedIngesterSeries
-	SeriesLabels []labels.Labels
+	client              client.Ingester_QueryStreamClient
+	buffer              chan streamedIngesterSeries
+	expectedSeriesCount int
 }
 
-func NewSeriesStreamer(client client.Ingester_QueryStreamClient, seriesLabels []labels.Labels) *SeriesStreamer {
+func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesStreamer {
 	return &SeriesStreamer{
-		client:       client,
-		SeriesLabels: seriesLabels,
+		client:              client,
+		expectedSeriesCount: expectedSeriesCount,
 	}
 }
 
@@ -93,8 +93,8 @@ func (s *SeriesStreamer) StartBuffering() {
 			msg, err := s.client.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					if nextSeriesIndex < len(s.SeriesLabels) {
-						s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", len(s.SeriesLabels), nextSeriesIndex)}
+					if nextSeriesIndex < s.expectedSeriesCount {
+						s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex)}
 					}
 				} else {
 					s.buffer <- streamedIngesterSeries{err: err}
@@ -104,8 +104,8 @@ func (s *SeriesStreamer) StartBuffering() {
 			}
 
 			for _, series := range msg.SeriesChunks {
-				if nextSeriesIndex >= len(s.SeriesLabels) {
-					s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive only %v series, but received more than this", len(s.SeriesLabels))}
+				if nextSeriesIndex >= s.expectedSeriesCount {
+					s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount)}
 					return
 				}
 
