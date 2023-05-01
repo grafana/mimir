@@ -894,6 +894,8 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 }
 
 func toLabels(t *testing.T, labelValuePairs []string) (result labels.Labels) {
+	t.Helper()
+
 	if len(labelValuePairs)%2 != 0 {
 		t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
 	}
@@ -904,6 +906,8 @@ func toLabels(t *testing.T, labelValuePairs []string) (result labels.Labels) {
 }
 
 func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
+	t.Helper()
+
 	summaryData := &dskit_metrics.SummaryData{}
 	for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(t, labelValuePairs)) {
 		summaryData.AddSummary(metric.GetSummary())
@@ -914,6 +918,8 @@ func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit
 }
 
 func numObservationsForHistogram(t *testing.T, histogramName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
+	t.Helper()
+
 	histogramData := &dskit_metrics.HistogramData{}
 	for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(t, labelValuePairs)) {
 		histogramData.AddHistogram(metric.GetHistogram())
