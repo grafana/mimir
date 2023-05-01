@@ -264,17 +264,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						streamer.SeriesLabels[seriesIndex] = series.Labels
 					} else {
 						series = querier.StreamingSeries{
-							Labels:  series.Labels,
+							Labels:  seriesLabels,
 							Sources: make([]querier.StreamingSeriesSource, 0, 3), // TODO: take capacity from number of zones
 						}
-
-						hashToStreamingSeries[key] = series
 					}
 
 					series.Sources = append(series.Sources, querier.StreamingSeriesSource{
 						SeriesIndex: seriesIndex,
 						Streamer:    streamer,
 					})
+
+					hashToStreamingSeries[key] = series
 				}
 			}
 		}
@@ -339,13 +339,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			} else if len(resp.Series) > 0 {
 				seriesLabels := make([]labels.Labels, 0, len(resp.Series))
 
-				for !resp.IsEndOfSeriesStream {
+				for {
 					for _, s := range resp.Series {
 						if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
 							return nil, validation.LimitError(limitErr.Error())
 						}
 
 						seriesLabels = append(seriesLabels, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+					}
+
+					if resp.IsEndOfSeriesStream {
+						break
 					}
 
 					resp, err = stream.Recv()

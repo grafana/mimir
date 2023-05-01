@@ -48,7 +48,6 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 type SeriesStreamer struct {
 	client       client.Ingester_QueryStreamClient
 	buffer       chan streamedIngesterSeries
-	errChan      chan error
 	SeriesLabels []labels.Labels
 }
 
@@ -62,6 +61,7 @@ func NewSeriesStreamer(client client.Ingester_QueryStreamClient, seriesLabels []
 type streamedIngesterSeries struct {
 	chunks      []chunk.Chunk
 	seriesIndex int
+	err         error
 }
 
 // Close cleans up any resources associated with this SeriesStreamer.
@@ -79,29 +79,36 @@ func (s *SeriesStreamer) StartBuffering() {
 	// Or can we rely on the gRPC call's context being cancelled?
 
 	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
-	s.errChan = make(chan error, 1)                  // Buffered channel so that if an error occurs, this goroutine doesn't wait for it to be handled and immediately begins cleaning up.
 
 	go func() {
 		defer s.client.CloseSend()
 		defer close(s.buffer)
-		defer close(s.errChan)
 
 		nextSeriesIndex := 0
 
 		for {
 			msg, err := s.client.Recv()
 			if err != nil {
-				if !errors.Is(err, io.EOF) {
-					s.errChan <- err
+				if errors.Is(err, io.EOF) {
+					if nextSeriesIndex < len(s.SeriesLabels) {
+						s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", len(s.SeriesLabels), nextSeriesIndex)}
+					}
+				} else {
+					s.buffer <- streamedIngesterSeries{err: err}
 				}
 
 				return
 			}
 
 			for _, series := range msg.SeriesChunks {
+				if nextSeriesIndex >= len(s.SeriesLabels) {
+					s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive only %v series, but received more than this", len(s.SeriesLabels))}
+					return
+				}
+
 				chunks, err := chunkcompat.FromChunks(s.SeriesLabels[nextSeriesIndex], series.Chunks)
 				if err != nil {
-					s.errChan <- err
+					s.buffer <- streamedIngesterSeries{err: err}
 					return
 				}
 
@@ -119,19 +126,19 @@ func (s *SeriesStreamer) StartBuffering() {
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]chunk.Chunk, error) {
-	select {
-	case err := <-s.errChan:
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
+	series, open := <-s.buffer
 
-	case series, open := <-s.buffer:
-		if !open {
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been closed", seriesIndex)
-		}
-
-		if series.seriesIndex != seriesIndex {
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, series.seriesIndex)
-		}
-
-		return series.chunks, nil
+	if !open {
+		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 	}
+
+	if series.err != nil {
+		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, series.err)
+	}
+
+	if series.seriesIndex != seriesIndex {
+		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, series.seriesIndex)
+	}
+
+	return series.chunks, nil
 }
