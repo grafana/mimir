@@ -812,10 +812,10 @@ func (m *QueryResponse) GetTimeseries() []mimirpb.TimeSeries {
 	return nil
 }
 
-// If streaming chunks is not enabled with PreferStreamingChunks: QueryStreamResponse contains a batch of timeseries
+// If streaming chunks is not enabled with prefer_streaming_chunks: QueryStreamResponse contains a batch of timeseries
 // chunks or timeseries. Only one of these series will be populated.
 //
-// If streaming chunks is enabled with PreferStreamingChunks: QueryStreamResponse contains either:
+// If streaming chunks is enabled with prefer_streaming_chunks: QueryStreamResponse contains either:
 // - a batch of series labels (sorted in series order), with is_end_of_series_stream=true for the last batch or
 // - a batch of chunks (sorted in series order).
 //
