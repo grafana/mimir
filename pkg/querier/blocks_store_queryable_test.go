@@ -2109,11 +2109,9 @@ func namesFromSeries(series ...labels.Labels) []string {
 func valuesFromSeries(name string, series ...labels.Labels) []string {
 	valuesMap := map[string]struct{}{}
 	for _, s := range series {
-		s.Range(func(l labels.Label) {
-			if l.Name == name {
-				valuesMap[l.Value] = struct{}{}
-			}
-		})
+		if value := s.Get(name); value != "" {
+			valuesMap[value] = struct{}{}
+		}
 	}
 
 	values := []string{}

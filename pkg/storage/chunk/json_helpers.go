@@ -23,7 +23,7 @@ func init() {
 // Override Prometheus' labels.Labels decoder which goes via a map
 func decodeLabels(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	labelsPtr := (*labels.Labels)(ptr)
-	builder := labels.ScratchBuilder{}
+	builder := labels.NewScratchBuilder(10)
 	iter.ReadMapCB(func(iter *jsoniter.Iterator, key string) bool {
 		value := iter.ReadString()
 		builder.Add(key, value)
