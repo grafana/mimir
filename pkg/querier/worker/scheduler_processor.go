@@ -153,8 +153,14 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		go func() {
 			defer inflightQuery.Store(false)
 
+			// Create a per-request context and cancel it once we're done processing the request.
+			// FIXME: should this go in github.com/weaveworks/common/httpgrpc/server/Server.Handle() instead?
+			// TODO: what about requests direct to the querier's HTTP Prometheus API endpoints?
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
 			// We need to inject user into context for sending response back.
-			ctx := user.InjectOrgID(ctx, request.UserID)
+			ctx = user.InjectOrgID(ctx, request.UserID)
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.

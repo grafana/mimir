@@ -80,9 +80,28 @@ func (s *SeriesStreamer) Close() error {
 // To cancel buffering, cancel the context associated with this SeriesStreamer's client.Ingester_QueryStreamClient.
 func (s *SeriesStreamer) StartBuffering() {
 	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
+	ctxDone := s.client.Context().Done()
 
-	// FIXME: is this goroutine leaked if nothing is consuming from the buffer but we haven't finished
-	// pushing series to the buffer from a message already received?
+	// Why does this exist?
+	// We want to make sure that the goroutine below is never leaked.
+	// The goroutine below could be leaked if nothing is reading from the buffer but it's still trying to send
+	// more series to a full buffer: it would block forever.
+	// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
+	// This only works correctly if the context is cancelled when the query request is complete (or cancelled),
+	// which is true at the time of writing.
+	writeToBufferOrAbort := func(msg streamedIngesterSeries) bool {
+		select {
+		case <-ctxDone:
+			return false
+		case s.buffer <- msg:
+			return true
+		}
+	}
+
+	tryToWriteErrorToBuffer := func(err error) {
+		writeToBufferOrAbort(streamedIngesterSeries{err: err})
+	}
+
 	go func() {
 		defer s.client.CloseSend()
 		defer close(s.buffer)
@@ -94,10 +113,10 @@ func (s *SeriesStreamer) StartBuffering() {
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					if nextSeriesIndex < s.expectedSeriesCount {
-						s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex)}
+						tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
 					}
 				} else {
-					s.buffer <- streamedIngesterSeries{err: err}
+					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
 				}
 
 				return
@@ -105,14 +124,13 @@ func (s *SeriesStreamer) StartBuffering() {
 
 			for _, series := range msg.SeriesChunks {
 				if nextSeriesIndex >= s.expectedSeriesCount {
-					s.buffer <- streamedIngesterSeries{err: fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount)}
+					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount))
 					return
 				}
 
 
-				s.buffer <- streamedIngesterSeries{
-					chunks:      series.Chunks,
-					seriesIndex: nextSeriesIndex,
+				if !writeToBufferOrAbort(streamedIngesterSeries{chunks: series.Chunks, seriesIndex: nextSeriesIndex}) {
+					return
 				}
 
 				nextSeriesIndex++
@@ -125,6 +143,11 @@ func (s *SeriesStreamer) StartBuffering() {
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]client.Chunk, error) {
 	series, open := <-s.buffer
+
+	// If the context has been cancelled, exit early.
+	if err := s.client.Context().Err(); err != nil {
+		return nil, err
+	}
 
 	if !open {
 		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
