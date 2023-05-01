@@ -62,7 +62,7 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
-      ports: ['9095:9095'],
+      ports: ['8080:8080'],
       volumes: ['./config:/etc/nginx'],
     },
   },
