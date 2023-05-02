@@ -59,6 +59,7 @@ var (
 	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
 	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
 	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file is not allowed")
+	errWebhookURLFileNotAllowed          = errors.New("setting Webhook url_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -388,6 +389,10 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
 			return err
 		}
+	case reflect.TypeOf(config.WebhookConfig{}):
+		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
+			return err
+		}
 	}
 
 	// If the input config is a struct, recursively iterate on all fields.
@@ -556,6 +561,15 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 func validateTelegramConfig(cfg config.TelegramConfig) error {
 	if cfg.BotTokenFile != "" {
 		return errTelegramBotTokenFileNotAllowed
+	}
+	return nil
+}
+
+// validateWebhookConfig validates the Webhook config and returns an error if it contains
+// settings not allowed by Mimir.
+func validateWebhookConfig(cfg config.WebhookConfig) error {
+	if cfg.URLFile != "" {
+		return errWebhookURLFileNotAllowed
 	}
 	return nil
 }

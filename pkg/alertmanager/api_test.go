@@ -695,6 +695,20 @@ alertmanager_config: |
 			err: errors.Wrap(errTelegramBotTokenFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "should return error if Webhook url_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url_file: /secrets
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errWebhookURLFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
 			name: "should return error if template is wrong",
 			cfg: `
 alertmanager_config: |
