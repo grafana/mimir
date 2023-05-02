@@ -1,0 +1,34 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: databricks-gem-mimir-query-scheduler-headless
+  namespace: "mimir"
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: query-scheduler

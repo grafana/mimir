@@ -46,6 +46,8 @@ spec:
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir

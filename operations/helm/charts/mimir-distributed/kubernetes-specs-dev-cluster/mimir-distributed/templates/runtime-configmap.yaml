@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: databricks-gem-mimir-runtime
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "mimir"
+data:
+  runtime.yaml: |
+    
+    {}

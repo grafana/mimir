@@ -63,7 +63,10 @@ global:
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
-  podAnnotations: {}
+  podAnnotations:
+    prometheus_io_scrape: "true"
+    # memcached pods don't use this port
+    prometheus_io_port: {{ include "mimir.serverHttpListenPort" .}}
 
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
@@ -202,8 +205,8 @@ mimir:
       {{- if .Values.minio.enabled }}
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
-        bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        bucket_name: mimir
+        endpoint: {{ .Values.minio.endpoint }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}

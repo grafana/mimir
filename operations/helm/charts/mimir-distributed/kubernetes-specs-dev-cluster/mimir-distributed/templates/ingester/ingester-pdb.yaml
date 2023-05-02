@@ -1,0 +1,21 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: databricks-gem-mimir-ingester
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  namespace: "mimir"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: databricks-gem
+      app.kubernetes.io/component: ingester
+  maxUnavailable: 1

@@ -1,0 +1,155 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: databricks-gem-mimir-ingester
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "mimir"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 27
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: databricks-gem
+      app.kubernetes.io/component: ingester
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: databricks-gem-mimir-ingester-headless
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "50Gi"
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-4.3.1
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: databricks-gem
+        app.kubernetes.io/version: "2.7.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: ingester
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        checksum/config: f6e5d792fb8766886d76f0cb264f7bc60e7c53effa6b09c1c35a71a08bae4b6c
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
+      namespace: "mimir"
+    spec:
+      serviceAccountName: databricks-gem-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: target
+                operator: In
+                values:
+                - ingester
+            topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                - ingester
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: databricks-gem
+              app.kubernetes.io/component: ingester
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 240
+      volumes:
+        - name: config
+          configMap:
+            name: databricks-gem-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: databricks-gem-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
+      containers:
+        - name: ingester
+          image: "grafana/mimir:2.7.2"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ingester"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-default"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            limits:
+              memory: 12Gi
+            requests:
+              cpu: 3.5
+              memory: 8Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:

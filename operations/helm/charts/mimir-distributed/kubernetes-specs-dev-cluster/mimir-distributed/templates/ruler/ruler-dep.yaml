@@ -1,0 +1,132 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: databricks-gem-mimir-ruler
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: ruler
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "mimir"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: databricks-gem
+      app.kubernetes.io/component: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-4.3.1
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: databricks-gem
+        app.kubernetes.io/version: "2.7.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: ruler
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        checksum/config: f6e5d792fb8766886d76f0cb264f7bc60e7c53effa6b09c1c35a71a08bae4b6c
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
+      namespace: "mimir"
+    spec:
+      serviceAccountName: databricks-gem-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      containers:
+        - name: ruler
+          image: "grafana/mimir:2.7.2"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=ruler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: databricks-gem
+              app.kubernetes.io/component: ruler
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          configMap:
+            name: databricks-gem-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: databricks-gem-mimir-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
