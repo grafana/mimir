@@ -1631,6 +1631,17 @@
         },
         {
           "kind": "field",
+          "name": "prefer_streaming_chunks",
+          "required": false,
+          "desc": "Stream chunks from ingesters if ingesters support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",

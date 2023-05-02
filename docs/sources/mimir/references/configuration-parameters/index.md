@@ -1059,6 +1059,10 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
+# (experimental) Stream chunks from ingesters if ingesters support this.
+# CLI flag: -querier.prefer-streaming-chunks
+[prefer_streaming_chunks: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent

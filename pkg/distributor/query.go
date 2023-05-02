@@ -63,7 +63,7 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
-		req.PreferStreamingChunks = true // TODO: make this configurable
+		req.PreferStreamingChunks = d.cfg.PreferStreamingChunks
 
 		replicationSet, err := d.GetIngesters(ctx)
 		if err != nil {
