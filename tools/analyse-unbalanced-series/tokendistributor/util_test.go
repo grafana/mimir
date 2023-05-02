@@ -1,6 +1,8 @@
 package tokendistributor
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func createRingTokensInstancesZones() ([]Token, map[Token]Instance, map[Instance]Zone) {
 	sortedRingTokens := []Token{48, 97, 194, 285, 380, 476, 572, 668, 736, 804, 853, 902}

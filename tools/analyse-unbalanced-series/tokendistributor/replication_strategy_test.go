@@ -133,7 +133,7 @@ func TestSimpleReplicationStrategy_ReplicationStartAndReplicationSetConsistency(
 
 func TestZoneAwareReplicationStrategy_GetReplicationSet(t *testing.T) {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZones()
-	replicationStrategy := newZoneAwareReplicationStrategy(3, zoneByInstance, nil, nil)
+	replicationStrategy := NewZoneAwareReplicationStrategy(3, zoneByInstance, nil, nil)
 	replicationSet, err := replicationStrategy.getReplicaSet(48, sortedRingTokens, ringInstanceByToken)
 	if err != nil {
 		errors.Wrap(err, "unable to get replication set")
@@ -161,7 +161,7 @@ func TestZoneAwareReplicationStrategy_GetReplicationSet(t *testing.T) {
 
 func TestZoneAwareReplicationStrategy_ReplicationStartAndReplicationSetConsistency(t *testing.T) {
 	sortedRingTokens, ringInstanceByToken, zoneByInstance := createRingTokensInstancesZones()
-	replicationStrategy := newZoneAwareReplicationStrategy(3, zoneByInstance, nil, nil)
+	replicationStrategy := NewZoneAwareReplicationStrategy(3, zoneByInstance, nil, nil)
 	for token, instance := range ringInstanceByToken {
 		replicaStart, err := replicationStrategy.getReplicaStart(token, sortedRingTokens, ringInstanceByToken)
 		if err != nil {

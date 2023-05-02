@@ -25,7 +25,7 @@ type TokenDistributor struct {
 	seedGenerator       SeedGenerator
 }
 
-func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy, seedGenerator SeedGenerator) *TokenDistributor {
+func NewTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy, seedGenerator SeedGenerator) *TokenDistributor {
 	sortedTokens := make([]Token, 0, initialInstanceCount*tokensPerInstance)
 	instanceByToken := make(map[Token]Instance, initialInstanceCount*tokensPerInstance)
 	tokensByInstance := make(map[Instance][]Token, initialInstanceCount)
@@ -232,7 +232,7 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 
 			rfm1 = replicaStart
 			// if we find an instance belonging to the same zone as tokenInfo, we have to break
-			if t.isBarrier(navigableToken, curr) {
+			if t.isBarrier(navigableToken.getOwningInstance(), currInstance) {
 				// inserting a new token from newInstanceZone at this boundary expands the replica set size,
 				// but only if the current token is not from that zone
 				// e.g., if navigableTokenZone is zone-a, and we are trying to place a token from zone-b (newInstanceZone),
@@ -259,16 +259,13 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 	return replicaStart, rfm1, expandable
 }
 
-func (t *TokenDistributor) isBarrier(navigableToken, possibleBarrier navigableTokenInterface) bool {
-	currentInstanceZone := navigableToken.getOwningInstance().zone
-	possibleBarrierZone := possibleBarrier.getOwningInstance().zone
+func (t *TokenDistributor) isBarrier(instance, possibleBarrier *instanceInfo) bool {
+	currentInstanceZone := instance.zone
+	possibleBarrierZone := possibleBarrier.zone
 	if possibleBarrierZone.zone != SingleZone {
 		return currentInstanceZone == possibleBarrierZone
 	}
-	if navigableToken == possibleBarrier {
-		return true
-	}
-	return false
+	return instance == possibleBarrier
 }
 
 func (t *TokenDistributor) isExpandable(currentInstance, newInstance *instanceInfo, differentRequired bool) bool {
@@ -687,7 +684,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 			} else {
 				continue
 			}
-		} else if t.isBarrier(currToken, newTokenInfo) {
+		} else if t.isBarrier(currInstance, newInstance) {
 			if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
 				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
 				// backwards, i.e., it is the direct predecessor of replica start of that token.
@@ -709,7 +706,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				currToken.setExpandable(false)
 				barrier = candidate
 				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
-			} else if t.isBarrier(currToken, host) {
+			} else if t.isBarrier(currInstance, host.getOwningInstance()) {
 
 			} else {
 				continue

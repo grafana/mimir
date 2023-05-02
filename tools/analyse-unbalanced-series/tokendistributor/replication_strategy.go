@@ -167,11 +167,11 @@ type ZoneAwareReplicationStrategy struct {
 	logger            log.Logger
 }
 
-// newZoneAwareReplicationStrategy creates a new ZoneAwareReplicationStrategy.
+// NewZoneAwareReplicationStrategy creates a new ZoneAwareReplicationStrategy.
 // replicationFactor is the required replication factor.
 // zoneByInstance maps instances to zones.
 // bufInstances and bufZones are slices to be overwritten for the return value to avoid memory allocation
-func newZoneAwareReplicationStrategy(replicationFactor int, zoneByInstance map[Instance]Zone, bufInstances []Instance, bufZones []Zone) ZoneAwareReplicationStrategy {
+func NewZoneAwareReplicationStrategy(replicationFactor int, zoneByInstance map[Instance]Zone, bufInstances []Instance, bufZones []Zone) ZoneAwareReplicationStrategy {
 	if bufInstances == nil {
 		bufInstances = make([]Instance, 0, GetBufferSize)
 	}
