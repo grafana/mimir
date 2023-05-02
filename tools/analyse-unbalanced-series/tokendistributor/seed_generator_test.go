@@ -1,22 +1,28 @@
 package tokendistributor
 
 import (
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
 
-func TestRandomSeedGenerator_Generate(t *testing.T) {
-	seedGenerator := RandomSeedGenerator{}
+func TestRandomSeedGenerator_GenerateMultiZone(t *testing.T) {
 	zones := []Zone{"a", "b", "c"}
-	seedByZone := seedGenerator.generateSeedByZone(zones, 4, 1000)
+	replicationFactor := 3
+	tokensPerInstance := 4
+	maxToken := Token(1000)
+	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
-		seed := seedByZone[zones[i]]
-		require.NotNil(t, seed)
-		require.Len(t, seed, tokensPerInstance)
-		require.True(t, slices.IsSorted(seed))
+		require.True(t, seedGenerator.hasNextSeed(zones[i]))
+		seeds, ok := seedGenerator.getNextSeed(zones[i])
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		require.False(t, seedGenerator.hasNextSeed(zones[i]))
+		seedByZone[zones[i]] = seeds
 	}
 
 	for i := 0; i < tokensPerInstance; i++ {
@@ -26,17 +32,22 @@ func TestRandomSeedGenerator_Generate(t *testing.T) {
 	}
 }
 
-func TestPerfectlySpacedSeedGenerator_Generate(t *testing.T) {
-	seedGenerator := PerfectlySpacedSeedGenerator{}
-	zones := []Zone{"a", "b", "c"}
+func TestRandomSeedGenerator_GenerateSingleZoneNoReplication(t *testing.T) {
+	zones := []Zone{SingleZone}
+	replicationFactor := 1
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedByZone := seedGenerator.generateSeedByZone(zones, tokensPerInstance, maxToken)
+	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
-		seed := seedByZone[zones[i]]
-		require.NotNil(t, seed)
-		require.Len(t, seed, tokensPerInstance)
-		require.True(t, slices.IsSorted(seed))
+		require.True(t, seedGenerator.hasNextSeed(zones[i]))
+		seeds, ok := seedGenerator.getNextSeed(zones[i])
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		require.False(t, seedGenerator.hasNextSeed(zones[i]))
+		seedByZone[zones[i]] = seeds
 	}
 
 	for i := 0; i < tokensPerInstance; i++ {
@@ -44,14 +55,108 @@ func TestPerfectlySpacedSeedGenerator_Generate(t *testing.T) {
 			require.True(t, seedByZone[zones[j]][i] < seedByZone[zones[j+1]][i])
 		}
 	}
+}
 
-	tokensCount := tokensPerInstance * len(zones)
-	offset := uint32(math.Ceil(float64(maxTokenValue) / float64(tokensCount)))
-	diff := Token(offset * uint32(len(zones)))
+func TestRandomSeedGenerator_GenerateSingleZoneWithReplication(t *testing.T) {
+	zones := []Zone{SingleZone}
+	replicationFactor := 3
+	tokensPerInstance := 4
+	maxToken := Token(1000)
+	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	allSeeds := make([][]Token, 0, replicationFactor)
+	for j := 0; j < replicationFactor; j++ {
+		require.True(t, seedGenerator.hasNextSeed(SingleZone))
+		seeds, ok := seedGenerator.getNextSeed(SingleZone)
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		allSeeds = append(allSeeds, make([]Token, 0, tokensPerInstance))
+		allSeeds[j] = append(allSeeds[j], seeds...)
+	}
 
-	for i := 0; i < tokensPerInstance-1; i++ {
-		for j := 0; j < len(zones); j++ {
-			require.LessOrEqual(t, seedByZone[zones[j]][i+1]-seedByZone[zones[j]][i+1], diff)
+	require.False(t, seedGenerator.hasNextSeed(SingleZone))
+
+	for i := 0; i < tokensPerInstance; i++ {
+		for j := 0; j < replicationFactor-1; j++ {
+			require.True(t, allSeeds[j][i] < allSeeds[j+1][i])
+		}
+	}
+}
+
+func TestPerfectlySpacedSeedGenerator_GenerateMultiZone(t *testing.T) {
+	zones := []Zone{"a", "b", "c"}
+	replicationFactor := 3
+	tokensPerInstance := 4
+	maxToken := Token(1000)
+	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedByZone := make(map[Zone][]Token, len(zones))
+	for i := range zones {
+		require.True(t, seedGenerator.hasNextSeed(zones[i]))
+		seeds, ok := seedGenerator.getNextSeed(zones[i])
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		require.False(t, seedGenerator.hasNextSeed(zones[i]))
+		seedByZone[zones[i]] = seeds
+	}
+
+	for i := 0; i < tokensPerInstance; i++ {
+		for j := 0; j < len(zones)-1; j++ {
+			require.True(t, seedByZone[zones[j]][i] < seedByZone[zones[j+1]][i])
+		}
+	}
+}
+
+func TestPerfectlySpacedSeedGenerator_GenerateSingleZoneNoReplication(t *testing.T) {
+	zones := []Zone{SingleZone}
+	replicationFactor := 1
+	tokensPerInstance := 4
+	maxToken := Token(1000)
+	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedByZone := make(map[Zone][]Token, len(zones))
+	for i := range zones {
+		require.True(t, seedGenerator.hasNextSeed(zones[i]))
+		seeds, ok := seedGenerator.getNextSeed(zones[i])
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		require.False(t, seedGenerator.hasNextSeed(zones[i]))
+		seedByZone[zones[i]] = seeds
+	}
+
+	for i := 0; i < tokensPerInstance; i++ {
+		for j := 0; j < len(zones)-1; j++ {
+			require.True(t, seedByZone[zones[j]][i] < seedByZone[zones[j+1]][i])
+		}
+	}
+}
+
+func TestPerfectlySpacedSeedGenerator_GenerateSingleZoneWithReplication(t *testing.T) {
+	zones := []Zone{SingleZone}
+	replicationFactor := 3
+	tokensPerInstance := 4
+	maxToken := Token(1000)
+	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	allSeeds := make([][]Token, 0, replicationFactor)
+	for j := 0; j < replicationFactor; j++ {
+		require.True(t, seedGenerator.hasNextSeed(SingleZone))
+		seeds, ok := seedGenerator.getNextSeed(SingleZone)
+		require.NotNil(t, seeds)
+		require.True(t, ok)
+		require.Len(t, seeds, tokensPerInstance)
+		require.True(t, slices.IsSorted(seeds))
+		allSeeds = append(allSeeds, make([]Token, 0, tokensPerInstance))
+		allSeeds[j] = append(allSeeds[j], seeds...)
+	}
+
+	require.False(t, seedGenerator.hasNextSeed(SingleZone))
+
+	for i := 0; i < tokensPerInstance; i++ {
+		for j := 0; j < replicationFactor-1; j++ {
+			require.True(t, allSeeds[j][i] < allSeeds[j+1][i])
 		}
 	}
 }

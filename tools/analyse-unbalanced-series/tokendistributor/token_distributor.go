@@ -22,7 +22,7 @@ type TokenDistributor struct {
 	maxTokenValue       Token
 	zoneByInstance      map[Instance]Zone
 	zones               []Zone
-	seedByZone          map[Zone][]Token
+	seedGenerator       SeedGenerator
 }
 
 func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token, replicationStrategy ReplicationStrategy, seedGenerator SeedGenerator) *TokenDistributor {
@@ -40,8 +40,8 @@ func newTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token,
 		tokensByInstance:    tokensByInstance,
 		maxTokenValue:       maxTokenValue,
 		tokensPerInstance:   tokensPerInstance,
+		seedGenerator:       seedGenerator,
 	}
-	tokenDistributor.seedByZone = seedGenerator.generateSeedByZone(tokenDistributor.zones, tokenDistributor.tokensPerInstance, tokenDistributor.maxTokenValue)
 	return tokenDistributor
 }
 
@@ -69,6 +69,7 @@ func newTokenDistributorFromInitializedInstances(sortedTokens []Token, instanceB
 		tokensPerInstance:   tokensPerInstance,
 		tokensByInstance:    tokensByInstance,
 		maxTokenValue:       maxTokenValue,
+		seedGenerator:       nil,
 	}
 }
 
@@ -131,7 +132,7 @@ func (t *TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceI
 // The resulting circularList is created starting from the slice of sorted tokens sortedTokens, and represent the actual
 // ring. For tokenInfo its replica start (tokenInfo.replicaStart) and expandable (tokenInfo.expandable) are calculated
 // and stored
-func (t *TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstanceZone *zoneInfo) *CircularList[*tokenInfo] {
+func (t *TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance map[Instance]*instanceInfo, newInstance *instanceInfo) *CircularList[*tokenInfo] {
 	circularList := newCircularList[*tokenInfo]()
 	for _, token := range t.sortedTokens {
 		instanceInfo := instanceInfoByInstance[t.instanceByToken[token]]
@@ -141,7 +142,7 @@ func (t *TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance ma
 
 	curr := circularList.head
 	for _ = range t.sortedTokens {
-		t.populateTokenInfo(curr.getData(), newInstanceZone)
+		t.populateTokenInfo(curr.getData(), newInstance)
 		curr = curr.next
 	}
 
@@ -162,7 +163,7 @@ func (t *TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircula
 		candidateTokenInfo.setReplicatedOwnership(initialTokenOwnership)
 		navigableToken := newNavigableCandidateTokenInfo(candidateTokenInfo)
 		circularList.insertLast(navigableToken)
-		t.populateCandidateTokenInfo(navigableToken.getData(), newInstanceInfo.zone)
+		t.populateCandidateTokenInfo(navigableToken.getData(), newInstanceInfo)
 
 		curr = curr.next
 		if curr == tokenInfoCircularList.head {
@@ -197,16 +198,16 @@ func (t *TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
 // 3) if the replica set is full, but it neither starts nor ends with a token from newInstanceZone (e.g., replica sets
 // "zone-a"->"zone-b"->"zone-c" and "zone-c"-"zone-b"-"zone-a" can be extended by "zone-b", but replica sets
 // "zone-b"->"zone-a"->"zone-c" and "zone-a"->"zone-c"->"zone-b" cannot be extended by "zone-b"
-func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navigableTokenInterface, newInstanceZone *zoneInfo) (navigableTokenInterface, bool) {
+func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navigableTokenInterface, newInstance *instanceInfo) (navigableTokenInterface, navigableTokenInterface, bool) {
 	var (
-		navigableTokenZone = navigableToken.getOwningInstance().zone
-		prevZoneInfo       = &LastZoneInfo
-		prevInstanceInfo   = &LastInstanceInfo
-		replicationsCount  = 0
-		expandable         = false
-		replicationFactor  = t.replicationStrategy.getReplicationFactor()
+		prevZoneInfo      = &LastZoneInfo
+		prevInstanceInfo  = &LastInstanceInfo
+		replicasCount     = 0
+		expandable        = false
+		replicationFactor = t.replicationStrategy.getReplicationFactor()
 		// replicaStart is the farthest away token before a token from the same zone is found
 		replicaStart = navigableToken
+		rfm1         = replicaStart
 		curr         = navigableToken.getPrevious()
 	)
 
@@ -217,18 +218,21 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 			// if the current instance (or zone according to the mode) has not been visited
 			// we mark it and its zone as visited
 			currZone := currInstance.zone
-			currZone.precededBy = prevZoneInfo
-			prevZoneInfo = currZone
+			if currZone.precededBy == nil {
+				currZone.precededBy = prevZoneInfo
+				prevZoneInfo = currZone
+			}
 			currInstance.precededBy = prevInstanceInfo
 			prevInstanceInfo = currInstance
-			replicationsCount++
-			if replicationsCount == replicationFactor {
+			replicasCount++
+			if replicasCount == replicationFactor {
 				// we have obtained the full replica
 				break
 			}
 
+			rfm1 = replicaStart
 			// if we find an instance belonging to the same zone as tokenInfo, we have to break
-			if currZone == navigableTokenZone {
+			if t.isBarrier(navigableToken, curr) {
 				// inserting a new token from newInstanceZone at this boundary expands the replica set size,
 				// but only if the current token is not from that zone
 				// e.g., if navigableTokenZone is zone-a, and we are trying to place a token from zone-b (newInstanceZone),
@@ -236,13 +240,13 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 				// "zone-b"->"zone-a"->"zone-b".
 				// On the other hand, a partial replica set "zone-b"->"zone-c"->"zone-b" cannot be extended by "zone-b"
 				// because that extension would split the replica in 2 different replicas
-				expandable = currZone != newInstanceZone
+				expandable = t.isExpandable(currInstance, newInstance, true) //currZone != newInstance.zone
 				break
 			}
 
 			// it is possible to expand the replica set size by inserting a token of newInstanceZone at
 			// replicaStart if there is another token from that zone in the middle
-			if currZone == newInstanceZone {
+			if t.isExpandable(currInstance, newInstance, false) {
 				expandable = true
 			}
 		}
@@ -252,15 +256,43 @@ func (t *TokenDistributor) calculateReplicaStartAndExpansion(navigableToken navi
 
 	// clean up visited instances and zones
 	t.unvisitAll(prevInstanceInfo, prevZoneInfo)
-	return replicaStart, expandable
+	return replicaStart, rfm1, expandable
+}
+
+func (t *TokenDistributor) isBarrier(navigableToken, possibleBarrier navigableTokenInterface) bool {
+	currentInstanceZone := navigableToken.getOwningInstance().zone
+	possibleBarrierZone := possibleBarrier.getOwningInstance().zone
+	if possibleBarrierZone.zone != SingleZone {
+		return currentInstanceZone == possibleBarrierZone
+	}
+	if navigableToken == possibleBarrier {
+		return true
+	}
+	return false
+}
+
+func (t *TokenDistributor) isExpandable(currentInstance, newInstance *instanceInfo, differentRequired bool) bool {
+	currentInstanceZone := currentInstance.zone
+	newInstanceZone := newInstance.zone
+	if newInstanceZone.zone != SingleZone {
+		if differentRequired {
+			return currentInstanceZone != newInstanceZone
+		}
+		return currentInstanceZone == newInstanceZone
+	}
+	if differentRequired {
+		return currentInstance != newInstance
+	}
+	return currentInstance == newInstance
 }
 
 // populateTokenInfo gets as input a tokenInfo, and it calculates and updates its replica start and expandable information
 // in the ring. Moreover, it updates the replicated weight information of both token itself and the instance that
 // corresponds to that node.
-func (t *TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZone *zoneInfo) {
-	replicaStart, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstanceZone)
+func (t *TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstance *instanceInfo) {
+	replicaStart, rfm1, expandable := t.calculateReplicaStartAndExpansion(tokenInfo, newInstance)
 	tokenInfo.setReplicaStart(replicaStart)
+	tokenInfo.setRfm1(rfm1)
 	tokenInfo.setExpandable(expandable)
 	newOwnership := t.calculateReplicatedOwnership(tokenInfo, replicaStart)
 	oldOwnership := tokenInfo.getReplicatedOwnership()
@@ -271,9 +303,10 @@ func (t *TokenDistributor) populateTokenInfo(tokenInfo *tokenInfo, newInstanceZo
 // populateCandidateTokenInfo gets as input a candidateTokenInfo, it calculates and sets its replica start and expandable
 // information starting from the position in the ring that corresponds to candidateTokenInfo's host, i.e., the token after
 // which the candidate is being added to the ring
-func (t *TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candidateTokenInfo, newInstanceZone *zoneInfo) {
-	replicaStart, expandable := t.calculateReplicaStartAndExpansion(candidateTokenInfo, newInstanceZone)
+func (t *TokenDistributor) populateCandidateTokenInfo(candidateTokenInfo *candidateTokenInfo, newInstance *instanceInfo) {
+	replicaStart, rfm1, expandable := t.calculateReplicaStartAndExpansion(candidateTokenInfo, newInstance)
 	candidateTokenInfo.setReplicaStart(replicaStart)
+	candidateTokenInfo.setRfm1(rfm1)
 	candidateTokenInfo.setExpandable(expandable)
 }
 
@@ -606,7 +639,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 	host := candidate.host
 	next := host.getNext()
 	newInstance := candidate.getOwningInstance()
-	newInstanceZone := newInstance.zone
+	//newInstanceZone := newInstance.zone
 	t.verifyReplicaStart(candidate)
 	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
 	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
@@ -630,9 +663,11 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 			continue
 		}
 		// otherwise we mark these instance and zone as visited and increase the counter of visited zones
-		currZone.precededBy = prevZone
+		if currZone.precededBy == nil {
+			currZone.precededBy = prevZone
+			prevZone = currZone
+		}
 		currInstance.precededBy = prevInstance
-		prevZone = currZone
 		prevInstance = currInstance
 		replicasCount++
 
@@ -652,7 +687,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 			} else {
 				continue
 			}
-		} else if currZone == newInstanceZone {
+		} else if t.isBarrier(currToken, newTokenInfo) {
 			if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
 				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
 				// backwards, i.e., it is the direct predecessor of replica start of that token.
@@ -674,6 +709,8 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				currToken.setExpandable(false)
 				barrier = candidate
 				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			} else if t.isBarrier(currToken, host) {
+
 			} else {
 				continue
 			}
@@ -718,15 +755,17 @@ func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token 
 	t.addTokenToInstance(instance.instanceId, token)
 }
 
-func (t *TokenDistributor) addFirstInstanceOfZone(instance Instance, zone Zone) {
-	for _, token := range t.seedByZone[zone] {
-		t.sortedTokens = append(t.sortedTokens, token)
-		t.addTokenToInstance(instance, token)
-		t.instanceByToken[token] = instance
+func (t *TokenDistributor) addTokensFromSeed(instance Instance, zone Zone) {
+	seed, ok := t.seedGenerator.getNextSeed(zone)
+	if ok {
+		for _, token := range seed {
+			t.sortedTokens = append(t.sortedTokens, token)
+			t.addTokenToInstance(instance, token)
+			t.instanceByToken[token] = instance
+		}
+		t.zoneByInstance[instance] = zone
+		slices.Sort(t.sortedTokens)
 	}
-	t.zoneByInstance[instance] = zone
-	t.seedByZone[zone] = nil
-	slices.Sort(t.sortedTokens)
 }
 
 func printInstanceOwnership(instanceInfoByInstance map[Instance]*instanceInfo) {
@@ -750,11 +789,15 @@ func printInstanceOwnership(instanceInfoByInstance map[Instance]*instanceInfo) {
 
 func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], Statistics) {
 	t.replicationStrategy.addInstance(instance, zone)
-	if t.seedByZone[zone] != nil {
+	if t.seedGenerator != nil && t.seedGenerator.hasNextSeed(zone) {
+		t.addTokensFromSeed(instance, zone)
+		return nil, nil, Statistics{}
+	}
+	/*if t.seedByZone[zone] != nil {
 		t.addFirstInstanceOfZone(instance, zone)
 		t.seedByZone[zone] = nil
 		return nil, nil, Statistics{}
-	}
+	}*/
 
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -762,11 +805,11 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		newInstanceZone = newZoneInfo(zone)
 		zoneInfoByZone[zone] = newInstanceZone
 	}
-	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceZone)
-	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
-	optimalTokenOwnership := t.getOptimalTokenOwnership()
 	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
 	instanceInfoByInstance[instance] = newInstanceInfo
+	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
+	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
+	optimalTokenOwnership := t.getOptimalTokenOwnership()
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
 	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)

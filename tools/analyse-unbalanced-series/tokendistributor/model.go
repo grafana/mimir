@@ -94,12 +94,16 @@ type tokenInfoInterface interface {
 	// setReplicatedOwnership sets the replicatedOwnership, i.r., the size of the range of tokens that are owned by
 	// this tokenInfoInterface
 	setReplicatedOwnership(replicatedOwnership float64)
+
+	getRfm1() tokenInfoInterface
+	setRfm1(token tokenInfoInterface)
 }
 
 type tokenInfo struct {
 	instance            *instanceInfo
 	token               Token
 	replicaStart        tokenInfoInterface
+	rfm1                tokenInfoInterface
 	expandable          bool
 	replicatedOwnership float64
 	navigableToken      *navigableToken[*tokenInfo]
@@ -144,6 +148,14 @@ func (ti *tokenInfo) getReplicaStart() tokenInfoInterface {
 
 func (ti *tokenInfo) setReplicaStart(replicaStart tokenInfoInterface) {
 	ti.replicaStart = replicaStart
+}
+
+func (ti *tokenInfo) getRfm1() tokenInfoInterface {
+	return ti.rfm1
+}
+
+func (ti *tokenInfo) setRfm1(rfm1 tokenInfoInterface) {
+	ti.rfm1 = rfm1
 }
 
 func (ti *tokenInfo) isExpandable() bool {

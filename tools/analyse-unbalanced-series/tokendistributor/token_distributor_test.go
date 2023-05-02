@@ -35,14 +35,14 @@ func createTokenDistributorWithInitialEvenDistribution(start, maxTokenValue, tok
 	return tokenDistributor
 }
 
-func createTokenInfoCircularList(tokenDistributor *TokenDistributor, newInstanceZone Zone) *CircularList[*tokenInfo] {
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	return tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone[newInstanceZone])
+func createTokenInfoCircularList(tokenDistributor *TokenDistributor, newInstance Instance) *CircularList[*tokenInfo] {
+	infoInstanceByInstance, _ := tokenDistributor.createInstanceAndZoneInfos()
+	return tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, infoInstanceByInstance[newInstance])
 }
 
 func createNewInstanceAncCircularListsWithVerification(t *testing.T, tokenDistributor *TokenDistributor, newInstance Instance, newInstanceZone Zone, verify bool) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
 	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, zoneInfoByZone[newInstanceZone])
+	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, infoInstanceByInstance[newInstance])
 	if verify {
 		require.True(t, verifyReplicaStartAndReplicatedOwnership(t, tokenDistributor, tokenInfoCircularList))
 	}
@@ -58,7 +58,7 @@ func createNewInstanceAncCircularListsWithVerification(t *testing.T, tokenDistri
 
 func TestTokenDistributor_CreateTokenInfoCircularList(t *testing.T) {
 	tokenDistributor := createTokenDistributor(maxToken)
-	tokenInfoCircularList := createTokenInfoCircularList(tokenDistributor, newInstanceZone)
+	tokenInfoCircularList := createTokenInfoCircularList(tokenDistributor, newInstance)
 	for _, token := range tokenDistributor.sortedTokens {
 		head := tokenInfoCircularList.head
 		fmt.Println(head.getData())
@@ -312,20 +312,17 @@ func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
 }
 
 func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
-	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
-	instances := []Instance{"A", "B", "C"}
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
+	instances := []Instance{"A", "B", "C"}
 
 	for i := range instances {
 		require.Len(t, tokenDistributor.sortedTokens, i*tokensPerInstance)
-		require.Len(t, tokenDistributor.seedByZone, zonesCount)
-		require.Len(t, tokenDistributor.seedByZone[zones[i]], tokensPerInstance)
 		_, ok := tokenDistributor.tokensByInstance[instances[i]]
 		require.NotNil(t, ok)
 		tokenDistributor.AddInstance(instances[i], zones[i])
 		require.Len(t, tokenDistributor.sortedTokens, (i+1)*tokensPerInstance)
-		require.Nil(t, tokenDistributor.seedByZone[zones[i]])
 		_, ok = tokenDistributor.tokensByInstance[instances[i]]
 		require.True(t, ok)
 		slices.IsSorted(tokenDistributor.sortedTokens)
@@ -333,11 +330,11 @@ func TestTokenDistributor_AddFirstInstanceOfAZone(t *testing.T) {
 }
 
 func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
+	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 	replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, PerfectlySpacedSeedGenerator{})
+	tokenDistributor := newTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 	tokenDistributor.maxTokenValue = maxToken
 	instances := []Instance{"A-1", "B-1", "C-1"}
-	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 
 	for i := range instances {
 		tokenDistributor.AddInstance(instances[i], zones[i])
@@ -353,13 +350,15 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 	iterations := 10
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+	replicationFactor := len(zones)
+	maxToken := Token(math.MaxUint32)
 	numberOfInstancesPerZone := 22
 	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {
 		replicationStrategy := newZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), math.MaxUint32, replicationStrategy, PerfectlySpacedSeedGenerator{})
+		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			for j := 0; j < len(zones); j++ {
@@ -376,13 +375,16 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 
 func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 	iterations := 10
+	replicationFactor := 1
+	maxToken := Token(math.MaxUint32)
+	zones := []Zone{SingleZone}
 	numberOfInstancesPerZone := 20
 	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {
-		replicationStrategy := newSimpleReplicationStrategy(1, nil)
-		tokenDistributor := newTokenDistributor(tokensPerInstance, 1, math.MaxUint32, replicationStrategy, PerfectlySpacedSeedGenerator{})
+		replicationStrategy := newSimpleReplicationStrategy(replicationFactor, nil)
+		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			instance := Instance(fmt.Sprintf("instance-%d", i))
@@ -401,13 +403,16 @@ func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 
 func TestTokenDistributor_Generation(t *testing.T) {
 	iterations := 10
-	numberOfInstancesPerZone := 22
-	tokensPerInstance := 64
+	replicationFactor := 3
+	maxToken := Token(1000)
+	zones := []Zone{SingleZone}
+	numberOfInstancesPerZone := 6
+	tokensPerInstance := 4
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {
-		replicationStrategy := newSimpleReplicationStrategy(3, nil)
-		tokenDistributor := newTokenDistributor(tokensPerInstance, 1, math.MaxUint32, replicationStrategy, PerfectlySpacedSeedGenerator{})
+		replicationStrategy := newSimpleReplicationStrategy(replicationFactor, nil)
+		tokenDistributor := newTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, newTestSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			instance := Instance(fmt.Sprintf("instance-%d", i))
