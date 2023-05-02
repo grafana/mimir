@@ -163,7 +163,7 @@
 ### Tools
 
 * [ENHANCEMENT] tsdb-index: iteration over index is now faster when any equal matcher is supplied. #4515
- 
+
 ## 2.8.0-rc.2
 
 ### Grafana Mimir
