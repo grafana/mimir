@@ -78,9 +78,12 @@ std.manifestYamlDoc({
   minio:: {
     minio: {
       image: 'minio/minio',
-      command: ['server', '/data'],
+      command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
-      ports: ['9000:9000'],
+      ports: [
+        '9000:9000',
+        '9001:9001',
+      ],
       volumes: ['.data-minio:/data:delegated'],
     },
   },
