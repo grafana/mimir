@@ -378,7 +378,7 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 			} else {
 				continue
 			}
-		} else if currZone == newInstanceZone {
+		} else if t.isBarrier(currInstance, newInstance) {
 			if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
 				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
 				// backwards, i.e., it is the direct predecessor of replica start of that token.
@@ -397,11 +397,13 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 			} else {
 				continue
 			}
-		} else if currZone == next.getOwningInstance().zone && currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
+		} else if t.isBarrier(currInstance, host.getOwningInstance()) {
+			barrier = candidate
+		} /*else if currZone == next.getOwningInstance().zone && currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
 			// If the barrier of the current token
 			// Does this really make sense?
 			barrier = next
-		}
+		}*/
 
 		oldOwnership = currToken.getReplicatedOwnership()
 		newOwnership = t.calculateDistanceAsFloat64(barrier, currToken)
@@ -673,12 +675,13 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 		if currToken.isExpandable() {
 			if currToken.getReplicaStart() == next {
 				// If currToken is expandable (wrt. candidate's zone), then it is possible to extend its replica set by adding
-				// a token from  candidate's zone as a direct predecessor of currToken replica start. Token candidate is being
-				// evaluated as the direct predecessor of token next, and therefore only that case would be valid here. In this
-				// case candidate would become the new replica start of currToken.
+				// a token from  candidate's zone as a direct predecessor of currToken replica start, without changing the
+				// replicated token ownership. Token candidate is being evaluated as the direct predecessor of token next,
+				// and therefore the only valid case here would be if the replica start of currToken is next, and its barrier
+				// is host. In this case candidate would become the new replica start of currToken.
 				currToken.setReplicaStart(newTokenInfo)
-				// since the new replica set is candidate, it cannot be extendable by another token from its zone
-				currToken.setExpandable(false)
+				// since the barrier didn't change, currToken remains expandable
+				currToken.setExpandable(true)
 				barrier = host
 				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
 			} else {
@@ -699,7 +702,6 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
 				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
 				// be node next.
-				//newReplicaStart = next
 				currToken.setReplicaStart(next)
 				// currToken and candidate belong to the same zone, and candidate is a new barrier of currToken. Hence,
 				// currToken cannot be expandable.
@@ -707,7 +709,9 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				barrier = candidate
 				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
 			} else if t.isBarrier(currInstance, host.getOwningInstance()) {
-
+				currToken.setReplicaStart(next)
+				barrier = candidate
+				currToken.setExpandable(false)
 			} else {
 				continue
 			}
