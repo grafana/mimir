@@ -1168,21 +1168,6 @@ How to **investigate**:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
-### MimirDistributorForwardingErrorRate
-
-This alert fires when the Distributor is trying to forward samples to a forwarding target, but the forwarding requests
-result in errors at a high rate.
-
-How it **works**:
-
-- The alert compares the total rate of forwarding requests to the rate of forwarding requests which result in an error.
-
-How to **investigate**:
-
-- Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
-- Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
-- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
-
 ### MimirRingMembersMismatch
 
 This alert fires when the number of ring members does not match the number of running replicas.

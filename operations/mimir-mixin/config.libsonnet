@@ -199,9 +199,6 @@
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
 
-    // Whether the Distributor's forwarding feature is enabled.
-    forwarding_enabled: false,
-
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
