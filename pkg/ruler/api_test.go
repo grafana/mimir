@@ -326,15 +326,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 			},
 		},
 		"Invalid type param": {
-			configuredRules: rulespb.RuleGroupList{
-				&rulespb.RuleGroupDesc{
-					Name:      "group1",
-					Namespace: "namespace1",
-					User:      userID,
-					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
-					Interval:  interval,
-				},
-			},
+			configuredRules: rulespb.RuleGroupList{},
 			queryParams:        "?type=foo",
 			limits:             validation.MockDefaultOverrides(),
 			expectedStatusCode: http.StatusBadRequest,
