@@ -793,7 +793,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		to   = from.Add(step)
 	)
 
-	labelsForShard := labelsForShardsGenerator(labels.FromStrings(labels.MetricName, "metric"), shards)
+	labelsForShard := labelsForShardsGenerator([]labels.Label{{Name: labels.MetricName, Value: "metric"}}, shards)
 	storageSeries := []*promql.StorageSeries{
 		newSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),
 		newSeries(labelsForShard(1), from, to, step, constant(evilFloatA)),
@@ -832,15 +832,19 @@ func TestQueryshardingDeterminism(t *testing.T) {
 
 // labelsForShardsGenerator returns a function that provides labels.Labels for the shard requested
 // A single generator instance generates different label sets.
-func labelsForShardsGenerator(base labels.Labels, shards uint64) func(shard uint64) labels.Labels {
+func labelsForShardsGenerator(base []labels.Label, shards uint64) func(shard uint64) labels.Labels {
 	i := 0
+	builder := labels.ScratchBuilder{}
 	return func(shard uint64) labels.Labels {
 		for {
 			i++
-			ls := make(labels.Labels, len(base)+1)
-			copy(ls, base)
-			ls[len(ls)-1] = labels.Label{Name: "__test_shard_adjuster__", Value: fmt.Sprintf("adjusted to be %s by %d", sharding.FormatShardIDLabelValue(shard, shards), i)}
-			sort.Sort(ls)
+			builder.Reset()
+			for _, l := range base {
+				builder.Add(l.Name, l.Value)
+			}
+			builder.Add("__test_shard_adjuster__", fmt.Sprintf("adjusted to be %s by %d", sharding.FormatShardIDLabelValue(shard, shards), i))
+			builder.Sort()
+			ls := builder.Labels()
 			// If this label value makes this labels combination fall into the desired shard, return it, otherwise keep trying.
 			if labels.StableHash(ls)%shards == shard {
 				return ls
@@ -2068,9 +2072,6 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 			})
 		}
 	}
-
-	// Ensure series labels are sorted.
-	sort.Sort(metric)
 
 	return promql.NewStorageSeries(promql.Series{
 		Metric:     metric,

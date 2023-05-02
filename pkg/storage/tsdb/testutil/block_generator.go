@@ -63,11 +63,6 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
-	// Ensure series labels are sorted.
-	for _, series := range specs {
-		sort.Sort(series.Labels)
-	}
-
 	// Ensure series are sorted.
 	sort.Slice(specs, func(i, j int) bool {
 		return labels.Compare(specs[i].Labels, specs[j].Labels) < 0
@@ -76,10 +71,10 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 	// Build symbols.
 	uniqueSymbols := map[string]struct{}{}
 	for _, series := range specs {
-		for _, l := range series.Labels {
+		series.Labels.Range(func(l labels.Label) {
 			uniqueSymbols[l.Name] = struct{}{}
 			uniqueSymbols[l.Value] = struct{}{}
-		}
+		})
 	}
 
 	symbols := []string{}

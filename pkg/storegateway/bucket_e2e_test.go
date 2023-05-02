@@ -442,7 +442,7 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
-	toLabels := func(labelValuePairs []string) (result labels.Labels) {
+	toLabels := func(labelValuePairs []string) (result []labels.Label) {
 		if len(labelValuePairs)%2 != 0 {
 			t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
 		}
@@ -488,7 +488,7 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	}
 }
 
-func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors labels.Labels) []*dto.Metric {
+func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors []labels.Label) []*dto.Metric {
 	var result []*dto.Metric
 	for _, m := range mf.GetMetric() {
 		if !util.MatchesSelectors(m, selectors) {

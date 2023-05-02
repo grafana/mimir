@@ -148,7 +148,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 			shardID = labels.StableHash(lbls) % uint64(shards)
 		}
 
-		for _, l := range lbls {
+		lbls.Range(func(l labels.Label) {
 			uniqueSymbols[l.Name] = struct{}{}
 			uniqueSymbols[l.Value] = struct{}{}
 
@@ -159,7 +159,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 				uniqueSymbolsPerShard[shardID][l.Name] = struct{}{}
 				uniqueSymbolsPerShard[shardID][l.Value] = struct{}{}
 			}
-		}
+		})
 	}
 
 	if p.Err() != nil {

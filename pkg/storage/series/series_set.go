@@ -285,17 +285,12 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 }
 
 func metricToLabels(m model.Metric) labels.Labels {
-	ls := make(labels.Labels, 0, len(m))
+	builder := labels.NewScratchBuilder(len(m))
 	for k, v := range m {
-		ls = append(ls, labels.Label{
-			Name:  string(k),
-			Value: string(v),
-		})
+		builder.Add(string(k), string(v))
 	}
-	// PromQL expects all labels to be sorted! In general, anyone constructing
-	// a labels.Labels list is responsible for sorting it during construction time.
-	sort.Sort(ls)
-	return ls
+	builder.Sort() // PromQL expects all labels to be sorted.
+	return builder.Labels()
 }
 
 type byLabels []storage.Series

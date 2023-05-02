@@ -1092,9 +1092,9 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	labelNames := map[string]struct{}{}
 	for seriesSet.Next() {
 		ls, _ := seriesSet.At()
-		for _, l := range ls {
+		ls.Range(func(l labels.Label) {
 			labelNames[l.Name] = struct{}{}
-		}
+		})
 	}
 	if seriesSet.Err() != nil {
 		return nil, errors.Wrap(seriesSet.Err(), "iterate series")

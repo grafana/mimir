@@ -175,7 +175,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 		it := newSeriesChunksSeriesSet(source)
 
 		lbls, chks := it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.NoError(t, it.Err())
 
@@ -195,7 +195,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 
 		require.False(t, it.Next())
 		lbls, chks = it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.NoError(t, it.Err())
 		require.True(t, releasers[0].isReleased())
@@ -207,7 +207,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 		it := newSeriesChunksSeriesSet(source)
 
 		lbls, chks := it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.NoError(t, it.Err())
 
@@ -247,7 +247,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 
 		require.False(t, it.Next())
 		lbls, chks = it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.NoError(t, it.Err())
 		require.True(t, releasers[0].isReleased())
@@ -261,7 +261,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 		it := newSeriesChunksSeriesSet(source)
 
 		lbls, chks := it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.NoError(t, it.Err())
 
@@ -281,7 +281,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 
 		require.False(t, it.Next())
 		lbls, chks = it.At()
-		require.Zero(t, lbls)
+		require.True(t, lbls.IsEmpty())
 		require.Zero(t, chks)
 		require.Equal(t, expectedErr, it.Err())
 
