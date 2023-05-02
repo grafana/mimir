@@ -217,12 +217,11 @@ func (b *Bot) getUpdates(offset, limit int, timeout time.Duration, allowed []str
 		"timeout": strconv.Itoa(int(timeout / time.Second)),
 	}
 
+	data, _ := json.Marshal(allowed)
+	params["allowed_updates"] = string(data)
+
 	if limit != 0 {
 		params["limit"] = strconv.Itoa(limit)
-	}
-	if len(allowed) > 0 {
-		data, _ := json.Marshal(allowed)
-		params["allowed_updates"] = string(data)
 	}
 
 	data, err := b.Raw("getUpdates", params)
