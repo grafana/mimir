@@ -634,5 +634,8 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to inject rows into dashboards at specific places that support it.
+    injectRows: {},
   },
 }

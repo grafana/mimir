@@ -137,6 +137,7 @@ local filename = 'mimir-writes.json';
         )
       )
     )
+    .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
     .addRow(
       $.row('Ingester')
       .addPanel(
