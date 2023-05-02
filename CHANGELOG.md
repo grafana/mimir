@@ -15,6 +15,7 @@
 * [ENHANCEMENT] Store-gateway: reduce memory allocations when looking up postings from cache. #4861 #4869
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
+* [CHANGE] Distributor: remove the "forwarding" feature as it isn't necessary anymore. #4876
 
 ### Documentation
 
