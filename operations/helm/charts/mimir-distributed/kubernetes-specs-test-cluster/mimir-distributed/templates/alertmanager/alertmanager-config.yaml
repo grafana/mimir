@@ -1,0 +1,23 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: databricks-gem-mimir-alertmanager-fallback-config
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {} 
+  namespace: "mimir"
+data:
+  alertmanager_fallback_config.yaml: |
+    receivers:
+        - name: default-receiver
+    route:
+        receiver: default-receiver
