@@ -60,7 +60,7 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 		resultsPerInstance := make([]string, 0, len(numTokensPerInstanceScenarios)+1)
 		resultsPerInstance = append(resultsPerInstance, string(instance))
 		for _, ownership := range result[instance] {
-			resultsPerInstance = append(resultsPerInstance, fmt.Sprintf("%.ff", ownership))
+			resultsPerInstance = append(resultsPerInstance, fmt.Sprintf("%.3f", ownership))
 		}
 		allIterationsResult = append(allIterationsResult, resultsPerInstance)
 	}
