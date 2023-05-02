@@ -27,7 +27,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.25.1-0.20230119163903-f59460bfd4bf
+	github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
 	github.com/prometheus/client_golang v1.15.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
@@ -115,7 +115,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.11.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.16.1 // indirect
 	github.com/aws/smithy-go v1.11.1 // indirect
-	github.com/benbjohnson/clock v1.3.0 // indirect
+	github.com/benbjohnson/clock v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
@@ -149,7 +149,7 @@ require (
 	github.com/go-openapi/spec v0.20.8 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
-	github.com/gofrs/uuid v4.3.1+incompatible // indirect
+	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/glog v1.0.0 // indirect
@@ -205,7 +205,7 @@ require (
 	github.com/prometheus/exporter-toolkit v0.9.1 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
-	github.com/rs/cors v1.8.3 // indirect
+	github.com/rs/cors v1.9.0 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sercand/kuberesolver v2.4.0+incompatible // indirect
@@ -237,7 +237,7 @@ require (
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/telebot.v3 v3.1.2 // indirect
+	gopkg.in/telebot.v3 v3.1.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20230303024457-afdc3dddf62d // indirect
 	k8s.io/utils v0.0.0-20230308161112-d77c459e9343 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect

@@ -473,7 +473,9 @@ type WebhookConfig struct {
 	HTTPConfig *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
 
 	// URL to send POST request to.
-	URL *URL `yaml:"url" json:"url"`
+	URL     *SecretURL `yaml:"url" json:"url"`
+	URLFile string     `yaml:"url_file" json:"url_file"`
+
 	// MaxAlerts is the maximum number of alerts to be sent per webhook message.
 	// Alerts exceeding this threshold will be truncated. Setting this to 0
 	// allows an unlimited number of alerts.
@@ -487,11 +489,16 @@ func (c *WebhookConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.URL == nil {
-		return fmt.Errorf("missing URL in webhook config")
+	if c.URL == nil && c.URLFile == "" {
+		return fmt.Errorf("one of url or url_file must be configured")
 	}
-	if c.URL.Scheme != "https" && c.URL.Scheme != "http" {
-		return fmt.Errorf("scheme required for webhook url")
+	if c.URL != nil && c.URLFile != "" {
+		return fmt.Errorf("at most one of url & url_file must be configured")
+	}
+	if c.URL != nil {
+		if c.URL.Scheme != "https" && c.URL.Scheme != "http" {
+			return fmt.Errorf("scheme required for webhook url")
+		}
 	}
 	return nil
 }
@@ -739,6 +746,7 @@ type TelegramConfig struct {
 
 	APIUrl               *URL   `yaml:"api_url" json:"api_url,omitempty"`
 	BotToken             Secret `yaml:"bot_token,omitempty" json:"token,omitempty"`
+	BotTokenFile         string `yaml:"bot_token_file,omitempty" json:"token_file,omitempty"`
 	ChatID               int64  `yaml:"chat_id,omitempty" json:"chat,omitempty"`
 	Message              string `yaml:"message,omitempty" json:"message,omitempty"`
 	DisableNotifications bool   `yaml:"disable_notifications,omitempty" json:"disable_notifications,omitempty"`
@@ -752,8 +760,11 @@ func (c *TelegramConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.BotToken == "" {
-		return fmt.Errorf("missing bot_token on telegram_config")
+	if c.BotToken == "" && c.BotTokenFile == "" {
+		return fmt.Errorf("missing bot_token or bot_token_file on telegram_config")
+	}
+	if c.BotToken != "" && c.BotTokenFile != "" {
+		return fmt.Errorf("at most one of bot_token & bot_token_file must be configured")
 	}
 	if c.ChatID == 0 {
 		return fmt.Errorf("missing chat_id on telegram_config")
