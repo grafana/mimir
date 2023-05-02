@@ -641,7 +641,7 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
