@@ -1,27 +1,13 @@
 # Changelog
 
-## 2.8.0-rc.2
-
-### Grafana Mimir
-
-* [ENHANCEMENT] Ruler: Improve rule upload performance when not enforcing per-tenant rule group limits. #4828
-
-## 2.8.0-rc.1
-
-### Grafana Mimir
-
-* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
-* [ENHANCEMENT] Go: update to 1.20.3. #4773
-* [BUGFIX] Packaging: fix preremove script preventing upgrades. #4801
-
-## 2.8.0-rc.0
+## 2.8.0
 
 ### Grafana Mimir
 
 * [CHANGE] Ingester: changed experimental CLI flag from `-out-of-order-blocks-external-label-enabled` to `-ingester.out-of-order-blocks-external-label-enabled` #4440
 * [CHANGE] Store-gateway: The following metrics have been removed: #4332
-    * `cortex_bucket_store_series_get_all_duration_seconds`
-    * `cortex_bucket_store_series_merge_duration_seconds`
+  * `cortex_bucket_store_series_get_all_duration_seconds`
+  * `cortex_bucket_store_series_merge_duration_seconds`
 * [CHANGE] Ingester: changed default value of `-blocks-storage.tsdb.retention-period` from `24h` to `13h`. If you're running Mimir with a custom configuration and you're overriding `-querier.query-store-after` to a value greater than the default `12h` then you should increase `-blocks-storage.tsdb.retention-period` accordingly. #4382
 * [CHANGE] Ingester: the configuration parameter `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup` has been deprecated and will be removed in Mimir 2.10. #4445
 * [CHANGE] Query-frontend: Cached results now contain timestamp which allows Mimir to check if cached results are still valid based on current TTL configured for tenant. Results cached by previous Mimir version are used until they expire from cache, which can take up to 7 days. If you need to use per-tenant TTL sooner, please flush results cache manually. #4439
@@ -101,6 +87,9 @@
 * [ENHANCEMENT] Ingester: improve performance when Active Series Tracker is in use. #4717
 * [ENHANCEMENT] Store-gateway: optionally select `-blocks-storage.bucket-store.series-selection-strategy`, which can limit the impact of large posting lists (when many series share the same label name and value). #4667 #4695 #4698
 * [ENHANCEMENT] Querier: Cache the converted float histogram from chunk iterator, hence there is no need to lookup chunk every time to get the converted float histogram. #4684
+* [ENHANCEMENT] Ruler: Improve rule upload performance when not enforcing per-tenant rule group limits. #4828
+* [ENHANCEMENT] Improved memory limit on the in-memory cache used for regular expression matchers. #4751
+* [ENHANCEMENT] Go: update to 1.20.3. #4773
 * [BUGFIX] Querier: Streaming remote read will now continue to return multiple chunks per frame after the first frame. #4423
 * [BUGFIX] Store-gateway: the values for `stage="processed"` for the metrics `cortex_bucket_store_series_data_touched` and  `cortex_bucket_store_series_data_size_touched_bytes` when using fine-grained chunks caching is now reporting the correct values of chunks held in memory. #4449
 * [BUGFIX] Compactor: fixed reporting a compaction error when compactor is correctly shut down while populating blocks. #4580
@@ -112,6 +101,7 @@
 * [BUGFIX] Query-frontend: fix query sharding for native histograms. #4666
 * [BUGFIX] Ring status page: fixed the owned tokens percentage value displayed. #4730
 * [BUGFIX] Querier: fixed chunk iterator that can return sample with wrong timestamp. #4450
+* [BUGFIX] Packaging: fix preremove script preventing upgrades. #4801
 
 ### Mixin
 
