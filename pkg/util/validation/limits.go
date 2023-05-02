@@ -61,15 +61,6 @@ func (e LimitError) Error() string {
 	return string(e)
 }
 
-// TODO remove Forwarding* types once `mimirtool config convert` targets a version that doesn't require them.
-type ForwardingRule struct {
-	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
-	Ingest bool `yaml:"ingest" json:"ingest"`
-}
-
-// ForwardingRules are keyed by metric names, excluding labels.
-type ForwardingRules map[string]ForwardingRule
-
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
