@@ -28,8 +28,8 @@ message RulesRequest {
     AnyRule = 0;
     AlertingRule = 1;
     RecordingRule = 2;
- }
- RuleType filter = 1;
+  }
+  RuleType filter = 1;
 }
 
 message RulesResponse {
