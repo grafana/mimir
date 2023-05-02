@@ -350,12 +350,12 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 }
 
 func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
-	iterations := 10
+	iterations := 3
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 	replicationFactor := len(zones)
 	maxToken := Token(math.MaxUint32)
-	numberOfInstancesPerZone := 22
-	tokensPerInstance := 64
+	numberOfInstancesPerZone := 30
+	tokensPerInstance := 512
 	stats := make([]Statistics, 0, iterations)
 
 	for it := 0; it < iterations; it++ {
@@ -398,9 +398,9 @@ func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 	statistics := GetAverageStatistics(stats)
 	tokenStat := statistics.CombinedStatistics["token"]
 	instanceStat := statistics.CombinedStatistics["instance"]
-	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
-	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
-	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
+	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.OptimalTokenOwnership, instanceStat.OptimalTokenOwnership)
+	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new Sum: %6.2f\n", tokenStat.MinDistanceFromOptimalTokenOwnership, tokenStat.MaxDistanceFromOptimalTokenOwnership, tokenStat.MinOwnership, tokenStat.MaxOwnership, tokenStat.StandardDeviation, tokenStat.Sum)
+	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new Sum: %6.2f\n", instanceStat.MinDistanceFromOptimalTokenOwnership, instanceStat.MaxDistanceFromOptimalTokenOwnership, instanceStat.MinOwnership, instanceStat.MaxOwnership, instanceStat.StandardDeviation, instanceStat.Sum)
 }
 
 func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
@@ -426,9 +426,9 @@ func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
 	statistics := GetAverageStatistics(stats)
 	tokenStat := statistics.CombinedStatistics["token"]
 	instanceStat := statistics.CombinedStatistics["instance"]
-	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
-	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
-	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
+	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.OptimalTokenOwnership, instanceStat.OptimalTokenOwnership)
+	fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new Sum: %6.2f\n", tokenStat.MinDistanceFromOptimalTokenOwnership, tokenStat.MaxDistanceFromOptimalTokenOwnership, tokenStat.MinOwnership, tokenStat.MaxOwnership, tokenStat.StandardDeviation, tokenStat.Sum)
+	fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new Sum: %6.2f\n", instanceStat.MinDistanceFromOptimalTokenOwnership, instanceStat.MaxDistanceFromOptimalTokenOwnership, instanceStat.MinOwnership, instanceStat.MaxOwnership, instanceStat.StandardDeviation, instanceStat.Sum)
 }
 
 func TestTokenDistributor_GenerationZoneAwareWithTokens(t *testing.T) {

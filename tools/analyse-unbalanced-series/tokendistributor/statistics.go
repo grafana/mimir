@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	tokenStatKey    = "token"
-	instanceStatKey = "instance"
+	TokenStatKey    = "token"
+	InstanceStatKey = "instance"
 )
 
 type Statistics struct {
@@ -18,67 +18,62 @@ type Statistics struct {
 }
 
 type StatisticType struct {
-	optimalTokenOwnership                float64
-	minDistanceFromOptimalTokenOwnership float64
-	maxDistanceFromOptimalTokenOwnership float64
-	minOwnership                         float64
-	maxOwnership                         float64
-	standardDeviation                    float64
-	sum                                  float64
+	OptimalTokenOwnership                float64
+	MinDistanceFromOptimalTokenOwnership float64
+	MaxDistanceFromOptimalTokenOwnership float64
+	MinOwnership                         float64
+	MaxOwnership                         float64
+	StandardDeviation                    float64
+	Spread                               float64
+	Sum                                  float64
 }
 
 func (s Statistics) Print() {
-	tokenStat, tokenStatFound := s.CombinedStatistics[tokenStatKey]
-	instanceStat, instanceStatFound := s.CombinedStatistics[instanceStatKey]
-	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
+	tokenStat, tokenStatFound := s.CombinedStatistics[TokenStatKey]
+	instanceStat, instanceStatFound := s.CombinedStatistics[InstanceStatKey]
+	fmt.Printf("Optimal token ownership: per token %.3f, per instance %.3f\n", tokenStat.OptimalTokenOwnership, instanceStat.OptimalTokenOwnership)
 	if tokenStatFound {
-		fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
+		fmt.Printf("Token    - min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %6.3f%%, max ownership: %6.3f%%, stdev: %6.3f, Spread: %6.3f, Sum: %6.3f\n", tokenStat.MinDistanceFromOptimalTokenOwnership, tokenStat.MaxDistanceFromOptimalTokenOwnership, tokenStat.MinOwnership, tokenStat.MaxOwnership, tokenStat.StandardDeviation, tokenStat.Spread, tokenStat.Sum)
 	}
 	if instanceStatFound {
-		fmt.Printf("Instance - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", instanceStat.minDistanceFromOptimalTokenOwnership, instanceStat.maxDistanceFromOptimalTokenOwnership, instanceStat.minOwnership, instanceStat.maxOwnership, instanceStat.standardDeviation, instanceStat.sum)
+		fmt.Printf("Instance - min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %6.3f%%, max ownership: %6.3f%%, stdev: %6.3f, Spread: %6.3f, Sum: %6.3f\n", instanceStat.MinDistanceFromOptimalTokenOwnership, instanceStat.MaxDistanceFromOptimalTokenOwnership, instanceStat.MinOwnership, instanceStat.MaxOwnership, instanceStat.StandardDeviation, instanceStat.Spread, instanceStat.Sum)
 	}
+	/*for instance, ownership := range s.RegisteredTokenOwnershipByInstance {
+		fmt.Printf("%10s: %6.3f\n", instance, ownership)
+	}*/
 }
 
 func GetAverageStatistics(stats []Statistics) Statistics {
 	combinedType := make(map[string]StatisticType)
-	combinedType[tokenStatKey] = StatisticType{}
-	combinedType[instanceStatKey] = StatisticType{}
+	combinedType[TokenStatKey] = StatisticType{}
+	combinedType[InstanceStatKey] = StatisticType{}
 	size := float64(len(stats))
-	perInstanceRegisteredTokenOwnership := make(map[Instance]float64, len(stats[0].RegisteredTokenOwnershipByInstance))
 
 	for _, singleStatistics := range stats {
 		for key, statisticType := range singleStatistics.CombinedStatistics {
 			var combinedResult StatisticType
-			if key == tokenStatKey {
-				combinedResult = combinedType[tokenStatKey]
+			if key == TokenStatKey {
+				combinedResult = combinedType[TokenStatKey]
 			} else {
-				combinedResult = combinedType[instanceStatKey]
+				combinedResult = combinedType[InstanceStatKey]
 			}
-			combinedResult.optimalTokenOwnership = statisticType.optimalTokenOwnership
-			combinedResult.minDistanceFromOptimalTokenOwnership += statisticType.minDistanceFromOptimalTokenOwnership / size
-			combinedResult.maxDistanceFromOptimalTokenOwnership += statisticType.maxDistanceFromOptimalTokenOwnership / size
-			combinedResult.minOwnership += statisticType.minOwnership / size
-			combinedResult.maxOwnership += statisticType.maxOwnership / size
-			combinedResult.standardDeviation += statisticType.standardDeviation / size
-			combinedResult.sum = statisticType.sum
-			if key == tokenStatKey {
-				combinedType[tokenStatKey] = combinedResult
+			combinedResult.OptimalTokenOwnership = statisticType.OptimalTokenOwnership
+			combinedResult.MinDistanceFromOptimalTokenOwnership += statisticType.MinDistanceFromOptimalTokenOwnership / size
+			combinedResult.MaxDistanceFromOptimalTokenOwnership += statisticType.MaxDistanceFromOptimalTokenOwnership / size
+			combinedResult.MinOwnership += statisticType.MinOwnership / size
+			combinedResult.MaxOwnership += statisticType.MaxOwnership / size
+			combinedResult.StandardDeviation += statisticType.StandardDeviation / size
+			combinedResult.Spread += statisticType.Spread / size
+			combinedResult.Sum = statisticType.Sum
+			if key == TokenStatKey {
+				combinedType[TokenStatKey] = combinedResult
 			} else {
-				combinedType[instanceStatKey] = combinedResult
+				combinedType[InstanceStatKey] = combinedResult
 			}
-		}
-		for instance, registeredTokenOwnership := range singleStatistics.RegisteredTokenOwnershipByInstance {
-			ownership, ok := perInstanceRegisteredTokenOwnership[instance]
-			if !ok {
-				ownership = 0.0
-			}
-			ownership += registeredTokenOwnership / size
-			perInstanceRegisteredTokenOwnership[instance] = ownership
 		}
 	}
 	return Statistics{
-		CombinedStatistics:                 combinedType,
-		RegisteredTokenOwnershipByInstance: perInstanceRegisteredTokenOwnership,
+		CombinedStatistics: combinedType,
 	}
 }
 
@@ -86,32 +81,32 @@ func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap ma
 	statisticType := make(map[string]StatisticType, 1)
 	instance := StatisticType{}
 
-	instance.minDistanceFromOptimalTokenOwnership = math.MaxFloat64
-	instance.maxDistanceFromOptimalTokenOwnership = math.SmallestNonzeroFloat64
-	instance.minOwnership = math.MaxFloat64
-	instance.maxOwnership = math.SmallestNonzeroFloat64
-	instance.optimalTokenOwnership = float64(tokenDistributor.tokensPerInstance) * optimalTimeseriesOwnership
-	instance.standardDeviation = 0.0
-	instance.sum = 0.0
+	instance.MinDistanceFromOptimalTokenOwnership = math.MaxFloat64
+	instance.MaxDistanceFromOptimalTokenOwnership = math.SmallestNonzeroFloat64
+	instance.MinOwnership = math.MaxFloat64
+	instance.MaxOwnership = math.SmallestNonzeroFloat64
+	instance.OptimalTokenOwnership = float64(tokenDistributor.tokensPerInstance) * optimalTimeseriesOwnership
+	instance.StandardDeviation = 0.0
+	instance.Sum = 0.0
 	for _, ownership := range ownershipMap {
 		dist := float64(ownership) / (optimalTimeseriesOwnership * float64(tokenDistributor.tokensPerInstance))
 		currTokensPercentage := float64(ownership) * 100.00 / float64(totalTimeseries)
-		if instance.minDistanceFromOptimalTokenOwnership > dist {
-			instance.minDistanceFromOptimalTokenOwnership = dist
+		if instance.MinDistanceFromOptimalTokenOwnership > dist {
+			instance.MinDistanceFromOptimalTokenOwnership = dist
 		}
-		if instance.maxDistanceFromOptimalTokenOwnership < dist {
-			instance.maxDistanceFromOptimalTokenOwnership = dist
+		if instance.MaxDistanceFromOptimalTokenOwnership < dist {
+			instance.MaxDistanceFromOptimalTokenOwnership = dist
 		}
-		if instance.minOwnership > currTokensPercentage {
-			instance.minOwnership = currTokensPercentage
+		if instance.MinOwnership > currTokensPercentage {
+			instance.MinOwnership = currTokensPercentage
 		}
-		if instance.maxOwnership < currTokensPercentage {
-			instance.maxOwnership = currTokensPercentage
+		if instance.MaxOwnership < currTokensPercentage {
+			instance.MaxOwnership = currTokensPercentage
 		}
-		instance.standardDeviation += +sq(dist - 1.0)
-		instance.sum += float64(ownership)
+		instance.StandardDeviation += +sq(dist - 1.0)
+		instance.Sum += float64(ownership)
 	}
-	statisticType[instanceStatKey] = instance
+	statisticType[InstanceStatKey] = instance
 	return Statistics{CombinedStatistics: statisticType}
 }
 
