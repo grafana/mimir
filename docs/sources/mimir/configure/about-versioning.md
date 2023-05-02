@@ -89,6 +89,7 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
