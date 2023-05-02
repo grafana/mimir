@@ -27,6 +27,7 @@
 ### Jsonnet
 
 * [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
+* [CHANGE] Update to v0.5.0 rollout-operator. #4893
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.head-compaction-interval=15m` to spread TSDB head compaction over a wider time range. #4870
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.wal-replay-concurrency` to CPU request minus 1. #4864
 * [ENHANCEMENT] Compactor: configure `-compactor.first-level-compaction-wait-period` to TSDB head compaction interval plus 10 minutes. #4872

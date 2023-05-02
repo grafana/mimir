@@ -357,7 +357,7 @@
       policyRule.withVerbs(['list', 'get', 'watch', 'delete']),
       policyRule.withApiGroups('apps') +
       policyRule.withResources(['statefulsets']) +
-      policyRule.withVerbs(['list', 'get', 'watch']),
+      policyRule.withVerbs(['list', 'get', 'watch', 'patch']),
       policyRule.withApiGroups('apps') +
       policyRule.withResources(['statefulsets/status']) +
       policyRule.withVerbs(['update']),
