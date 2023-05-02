@@ -126,8 +126,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 	localStats.chunksFetched += len(pIdxs)
 	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
 
-	var chunkLen int
-
 	seqReader := &uvarintSequenceReader{offset: part.Start, r: bufReader}
 	for i, pIdx := range pIdxs {
 		chunkDataLen, err := seqReader.ReadNext(uint64(pIdx.offset))
@@ -137,7 +135,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 
 		// Chunk length is 1 for chunk encoding and chunkDataLen for actual chunk data.
 		// There is also crc32 after the chunk, but we ignore that.
-		chunkLen = 1 + int(chunkDataLen)
+		chunkLen := 1 + int(chunkDataLen)
 		cb := chunksPool.Get(chunkLen)
 		_, err = seqReader.Read(cb)
 		// Unexpected EOF for last chunk could be a valid case. Any other errors are definitely real.
@@ -145,9 +143,14 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 			return errors.Wrapf(err, "read range for seq %d offset %x", seq, pIdx.offset)
 		}
 		if err == nil {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb), chunksPool)
+			chunk := rawChunk(cb)
+			typ, err := chunkEncoding(chunk.Encoding())
 			if err != nil {
-				return errors.Wrap(err, "populate chunk")
+				return err
+			}
+			res[pIdx.seriesEntry].chks[pIdx.chunkEntry].Raw = &storepb.Chunk{
+				Data: chunk.Bytes(), // the first byte is the chunk encoding
+				Type: typ,
 			}
 			localStats.chunksTouched++
 			localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
@@ -179,9 +182,9 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 	return nil
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
+func chunkEncoding(c chunkenc.Encoding) (storepb.Chunk_Encoding, error) {
 	var enc storepb.Chunk_Encoding
-	switch in.Encoding() {
+	switch c {
 	case chunkenc.EncXOR:
 		enc = storepb.Chunk_XOR
 	case chunkenc.EncHistogram:
@@ -189,9 +192,16 @@ func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.S
 	case chunkenc.EncFloatHistogram:
 		enc = storepb.Chunk_FloatHistogram
 	default:
-		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
+		return 0, errors.Errorf("unsupported chunk encoding %d", c)
 	}
+	return enc, nil
+}
 
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
+	enc, err := chunkEncoding(in.Encoding())
+	if err != nil {
+		return err
+	}
 	b := saveChunk(in.Bytes(), chunksPool)
 	out.Raw = &storepb.Chunk{Type: enc, Data: b}
 	return nil

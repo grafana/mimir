@@ -144,7 +144,10 @@ type uvarintSequenceReader struct {
 var discardBuf [4096]byte
 
 func (r *uvarintSequenceReader) ReadNext(at uint64) (uint64, error) {
-	for at < r.offset {
+	if at < r.offset {
+		panic("cannot reverse reader")
+	}
+	for at > r.offset {
 		b := discardBuf[:]
 		if uint64(len(b)) > at-r.offset {
 			b = discardBuf[:at-r.offset]
