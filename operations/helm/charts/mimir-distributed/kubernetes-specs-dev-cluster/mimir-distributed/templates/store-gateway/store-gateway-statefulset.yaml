@@ -45,7 +45,9 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
+        checksum/config: f6e5d792fb8766886d76f0cb264f7bc60e7c53effa6b09c1c35a71a08bae4b6c
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir

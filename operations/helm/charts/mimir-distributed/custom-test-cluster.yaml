@@ -23,18 +23,11 @@
 # MinIO is no longer enabled, and you are encouraged to use your cloud providers
 # object storage service such as S3 or GCS.
 
-alertmanager:
-  persistentVolume:
-    enabled: true
-  replicas: 2
-  resources:
-    limits:
-      memory: 1.4Gi
-    requests:
-      cpu: 1
-      memory: 1Gi
-  statefulSet:
-    enabled: true
+global:
+  podAnnotations:
+    prometheus_io_scrape: "true"
+    # memcached pods don't use this port
+    prometheus_io_port: "8080"
 
 compactor:
   persistentVolume:
@@ -47,7 +40,7 @@ compactor:
       memory: 1.5Gi
 
 distributor:
-  replicas: 2
+  replicas: 1
   resources:
     limits:
       memory: 5.7Gi
@@ -58,7 +51,7 @@ distributor:
 ingester:
   persistentVolume:
     size: 50Gi
-  replicas: 3
+  replicas: 2
   resources:
     limits:
       memory: 12Gi
@@ -91,28 +84,29 @@ ingester:
 
 admin-cache:
   enabled: true
-  replicas: 2
+  replicas: 1
 
 chunks-cache:
   enabled: true
-  replicas: 2
+  replicas: 1
 
 index-cache:
   enabled: true
-  replicas: 3
+  replicas: 1
 
 metadata-cache:
   enabled: true
 
 results-cache:
   enabled: true
-  replicas: 2
+  replicas: 1
 
 minio:
   enabled: true # Will actually use an existing Minio deployment
   rootUser: minio
   rootPassword: minio123
-  
+  endpoint: minio-svc.thanos:9000
+
 overrides_exporter:
   replicas: 1
   resources:
@@ -140,19 +134,10 @@ query_frontend:
       cpu: 2
       memory: 2Gi
 
-ruler:
-  replicas: 1
-  resources:
-    limits:
-      memory: 2.8Gi
-    requests:
-      cpu: 1
-      memory: 2Gi
-
 store_gateway:
   persistentVolume:
     size: 10Gi
-  replicas: 3
+  replicas: 1
   resources:
     limits:
       memory: 2.1Gi
@@ -182,15 +167,6 @@ store_gateway:
     enabled: false
     topologyKey: 'kubernetes.io/hostname'
 
-nginx:
-  replicas: 1
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi
-
 # Grafana Enterprise Metrics feature related
 admin_api:
   replicas: 1
@@ -201,13 +177,7 @@ admin_api:
       cpu: 100m
       memory: 64Mi
 
-gateway:
-  replicas: 1
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi
-
 blocks_storage:
+  s3:
+    endpoint: minio-svc.thanos:9000
+    bucket_name: mimir

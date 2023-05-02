@@ -36,8 +36,9 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: chunks-cache
       annotations:
+        prometheus_io_port: "8080"
         prometheus_io_scrape: "true"
-        prometheus_io_port: "9150"
+
     spec:
       serviceAccountName: databricks-gem-mimir
       securityContext:

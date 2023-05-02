@@ -23,18 +23,11 @@
 # MinIO is no longer enabled, and you are encouraged to use your cloud providers
 # object storage service such as S3 or GCS.
 
-alertmanager:
-  persistentVolume:
-    enabled: true
-  replicas: 3
-  resources:
-    limits:
-      memory: 1.4Gi
-    requests:
-      cpu: 1
-      memory: 1Gi
-  statefulSet:
-    enabled: true
+global:
+  podAnnotations:
+    prometheus_io_scrape: "true"
+    # memcached pods don't use this port
+    prometheus_io_port: "8080"
 
 compactor:
   persistentVolume:
@@ -110,9 +103,7 @@ results-cache:
   allocatedMemory: 1024
 
 minio:
-  enabled: true # Will actually use an existing Minio deployment
-  rootUser: minio
-  rootPassword: minio123
+  enabled: false
 
 overrides_exporter:
   replicas: 1
@@ -140,15 +131,6 @@ query_frontend:
     requests:
       cpu: 2
       memory: 2Gi
-
-ruler:
-  replicas: 3
-  resources:
-    limits:
-      memory: 5.7Gi
-    requests:
-      cpu: 1
-      memory: 4Gi
 
 store_gateway:
   persistentVolume:
@@ -184,15 +166,6 @@ store_gateway:
     enabled: false
     topologyKey: 'kubernetes.io/hostname'
 
-nginx:
-  replicas: 3
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi
-
 # Grafana Enterprise Metrics feature related
 admin_api:
   replicas: 2
@@ -202,12 +175,3 @@ admin_api:
     requests:
       cpu: 100m
       memory: 64Mi
-
-gateway:
-  replicas: 3
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi

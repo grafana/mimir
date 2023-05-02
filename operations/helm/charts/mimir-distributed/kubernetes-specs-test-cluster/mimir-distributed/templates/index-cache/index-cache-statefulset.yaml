@@ -16,7 +16,7 @@ metadata:
   namespace: "mimir"
 spec:
   podManagementPolicy: Parallel
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -36,6 +36,8 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: index-cache
       annotations:
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
 
     spec:
       serviceAccountName: databricks-gem-mimir

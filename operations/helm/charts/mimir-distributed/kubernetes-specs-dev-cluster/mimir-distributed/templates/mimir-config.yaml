@@ -21,14 +21,6 @@ data:
       enable_api: true
       external_url: /alertmanager
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
-    alertmanager_storage:
-      backend: s3
-      s3:
-        access_key_id: minio
-        bucket_name: mimir-ruler
-        endpoint: databricks-gem-minio.mimir.svc:9000
-        insecure: true
-        secret_access_key: minio123
     blocks_storage:
       backend: s3
       bucket_store:
@@ -50,12 +42,6 @@ data:
             addresses: dns+databricks-gem-mimir-metadata-cache.mimir.svc:11211
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
-      s3:
-        access_key_id: minio
-        bucket_name: mimir-tsdb
-        endpoint: databricks-gem-minio.mimir.svc:9000
-        insecure: true
-        secret_access_key: minio123
       tsdb:
         dir: /data/tsdb
     compactor:
@@ -108,14 +94,6 @@ data:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.databricks-gem-mimir-alertmanager-headless.mimir.svc.cluster.local/alertmanager
       enable_api: true
       rule_path: /data
-    ruler_storage:
-      backend: s3
-      s3:
-        access_key_id: minio
-        bucket_name: mimir-ruler
-        endpoint: databricks-gem-minio.mimir.svc:9000
-        insecure: true
-        secret_access_key: minio123
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:

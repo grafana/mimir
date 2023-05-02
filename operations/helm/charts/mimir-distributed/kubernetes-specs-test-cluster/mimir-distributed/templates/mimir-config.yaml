@@ -52,8 +52,8 @@ data:
         sync_dir: /data/tsdb-sync
       s3:
         access_key_id: minio
-        bucket_name: mimir
-        endpoint: minio-svc.thanos:9000
+        bucket_name: mimir-tsdb
+        endpoint: databricks-gem-minio.mimir.svc:9000
         insecure: true
         secret_access_key: minio123
       tsdb:
@@ -112,8 +112,8 @@ data:
       backend: s3
       s3:
         access_key_id: minio
-        bucket_name: mimir-ruler
-        endpoint: databricks-gem-minio.mimir.svc:9000
+        endpoint: minio-svc.thanos:9000
+        bucket_name: mimir
         insecure: true
         secret_access_key: minio123
     runtime_config:

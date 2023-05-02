@@ -15,7 +15,7 @@ metadata:
     {}
   namespace: "mimir"
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: RollingUpdate
   selector:
@@ -27,6 +27,8 @@ spec:
     metadata:
       annotations:
         checksum/config: 2c4f8884f672a9a75e4d4810bc270d3be3e7c7eb9411f292557bec85bcfebfe1
+        prometheus_io_port: "8080"
+        prometheus_io_scrape: "true"
       labels:
         helm.sh/chart: mimir-distributed-4.3.1
         app.kubernetes.io/name: mimir
@@ -75,11 +77,7 @@ spec:
             - name: docker-entrypoint-d-override
               mountPath: /docker-entrypoint.d
           resources:
-            limits:
-              memory: 731Mi
-            requests:
-              cpu: 1
-              memory: 512Mi
+            {}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
