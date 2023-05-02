@@ -8,7 +8,7 @@ require (
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/felixge/fgprof v0.9.2
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.21.3
+	github.com/go-openapi/strfmt v0.21.7
 	github.com/go-openapi/swag v0.22.3
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
@@ -28,7 +28,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.25.1-0.20230119163903-f59460bfd4bf
-	github.com/prometheus/client_golang v1.14.0
+	github.com/prometheus/client_golang v1.15.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
@@ -41,7 +41,7 @@ require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.7.0
-	golang.org/x/net v0.8.0
+	golang.org/x/net v0.9.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.53.0
@@ -52,7 +52,7 @@ require (
 require (
 	cloud.google.com/go/storage v1.28.1
 	github.com/alecthomas/chroma v0.10.0
-	github.com/aws/aws-sdk-go v1.44.217
+	github.com/aws/aws-sdk-go v1.44.245
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
@@ -157,7 +157,7 @@ require (
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20230228050547-1710fef4ab10 // indirect
+	github.com/google/pprof v0.0.0-20230406165453-00490a63f317 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
@@ -220,22 +220,22 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
-	go.mongodb.org/mongo-driver v1.11.2 // indirect
+	go.mongodb.org/mongo-driver v1.11.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v0.73.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.73.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/mod v0.9.0 // indirect
-	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
-	golang.org/x/tools v0.7.0 // indirect
+	golang.org/x/mod v0.10.0 // indirect
+	golang.org/x/oauth2 v0.7.0 // indirect
+	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/tools v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
-	google.golang.org/protobuf v1.29.1 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20230303024457-afdc3dddf62d // indirect
@@ -244,7 +244,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230418223807-fc3fa8995a23
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230501052625-7b200a51c400
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

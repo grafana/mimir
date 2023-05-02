@@ -521,7 +521,7 @@ overrides:
 				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "range vector instead of instant vector",
@@ -529,7 +529,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "start after end",
@@ -599,7 +599,7 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
