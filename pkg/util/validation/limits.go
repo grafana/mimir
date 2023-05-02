@@ -61,6 +61,7 @@ func (e LimitError) Error() string {
 	return string(e)
 }
 
+// TODO remove Forwarding* types once `mimirtool config convert` targets a version that doesn't require them.
 type ForwardingRule struct {
 	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
 	Ingest bool `yaml:"ingest" json:"ingest"`
@@ -179,10 +180,6 @@ type Limits struct {
 	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
-
-	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
-	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
-	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 
 	extensions map[string]interface{}
 }
@@ -812,18 +809,6 @@ func (o *Overrides) AlertmanagerMaxAlertsCount(userID string) int {
 
 func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxAlertsSizeBytes
-}
-
-func (o *Overrides) ForwardingRules(user string) ForwardingRules {
-	return o.getOverridesForUser(user).ForwardingRules
-}
-
-func (o *Overrides) ForwardingEndpoint(user string) string {
-	return o.getOverridesForUser(user).ForwardingEndpoint
-}
-
-func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
-	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
 }
 
 func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
