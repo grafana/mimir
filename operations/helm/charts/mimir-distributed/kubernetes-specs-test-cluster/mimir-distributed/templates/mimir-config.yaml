@@ -76,11 +76,10 @@ data:
           addresses: dns+databricks-gem-mimir-results-cache.mimir.svc:11211
           max_item_size: 1048576
           timeout: 500ms
-      scheduler_address: databricks-gem-mimir-query-scheduler-headless.mimir.svc:9095
     frontend_worker:
+      frontend_address: databricks-gem-mimir-query-frontend-headless.mimir.svc:9095
       grpc_client_config:
         max_send_msg_size: 419430400
-      scheduler_address: databricks-gem-mimir-query-scheduler-headless.mimir.svc:9095
     ingester:
       ring:
         final_sleep: 0s

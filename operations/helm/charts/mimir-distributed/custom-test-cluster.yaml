@@ -181,3 +181,6 @@ blocks_storage:
   s3:
     endpoint: minio-svc.thanos:9000
     bucket_name: mimir
+
+query_scheduler:
+  enabled: false
