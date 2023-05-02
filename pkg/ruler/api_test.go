@@ -391,7 +391,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 			require.NoError(t, err)
 
 			if tc.expectedErrorType != "" {
-				assert.Equal(t, responseJSON.Status, "error")
+				assert.Equal(t, "error", responseJSON.Status)
 				assert.Equal(t, tc.expectedErrorType, responseJSON.ErrorType)
 				return
 			}
