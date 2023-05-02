@@ -13,7 +13,8 @@ const (
 )
 
 type Statistics struct {
-	types map[string]StatisticType
+	CombinedStatistics                 map[string]StatisticType
+	RegisteredTokenOwnershipByInstance map[Instance]float64
 }
 
 type StatisticType struct {
@@ -27,8 +28,8 @@ type StatisticType struct {
 }
 
 func (s Statistics) Print() {
-	tokenStat, tokenStatFound := s.types[tokenStatKey]
-	instanceStat, instanceStatFound := s.types[instanceStatKey]
+	tokenStat, tokenStatFound := s.CombinedStatistics[tokenStatKey]
+	instanceStat, instanceStatFound := s.CombinedStatistics[instanceStatKey]
 	fmt.Printf("Optimal token ownership: per token %.2f, per instance %.2f\n", tokenStat.optimalTokenOwnership, instanceStat.optimalTokenOwnership)
 	if tokenStatFound {
 		fmt.Printf("Token    - new min dist from opt: %6.2f, new max dist from opt: %6.2f, new min ownership: %6.2f%%, new max ownership: %6.2f%%, new stdev: %6.2f, new sum: %6.2f\n", tokenStat.minDistanceFromOptimalTokenOwnership, tokenStat.maxDistanceFromOptimalTokenOwnership, tokenStat.minOwnership, tokenStat.maxOwnership, tokenStat.standardDeviation, tokenStat.sum)
@@ -43,9 +44,10 @@ func GetAverageStatistics(stats []Statistics) Statistics {
 	combinedType[tokenStatKey] = StatisticType{}
 	combinedType[instanceStatKey] = StatisticType{}
 	size := float64(len(stats))
+	perInstanceRegisteredTokenOwnership := make(map[Instance]float64, len(stats[0].RegisteredTokenOwnershipByInstance))
 
 	for _, singleStatistics := range stats {
-		for key, statisticType := range singleStatistics.types {
+		for key, statisticType := range singleStatistics.CombinedStatistics {
 			var combinedResult StatisticType
 			if key == tokenStatKey {
 				combinedResult = combinedType[tokenStatKey]
@@ -65,8 +67,19 @@ func GetAverageStatistics(stats []Statistics) Statistics {
 				combinedType[instanceStatKey] = combinedResult
 			}
 		}
+		for instance, registeredTokenOwnership := range singleStatistics.RegisteredTokenOwnershipByInstance {
+			ownership, ok := perInstanceRegisteredTokenOwnership[instance]
+			if !ok {
+				ownership = 0.0
+			}
+			ownership += registeredTokenOwnership / size
+			perInstanceRegisteredTokenOwnership[instance] = ownership
+		}
 	}
-	return Statistics{types: combinedType}
+	return Statistics{
+		CombinedStatistics:                 combinedType,
+		RegisteredTokenOwnershipByInstance: perInstanceRegisteredTokenOwnership,
+	}
 }
 
 func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap map[Instance]int, optimalTimeseriesOwnership float64, totalTimeseries int) Statistics {
@@ -99,7 +112,7 @@ func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap ma
 		instance.sum += float64(ownership)
 	}
 	statisticType[instanceStatKey] = instance
-	return Statistics{types: statisticType}
+	return Statistics{CombinedStatistics: statisticType}
 }
 
 type SingleInstanceStatistics struct {

@@ -454,6 +454,7 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	statisticType := make(map[string]StatisticType, 2)
 	token := StatisticType{}
 	instance := StatisticType{}
+	registeredOwnersByInstance := make(map[Instance]float64, len(t.tokensByInstance))
 
 	totalTokens := float64(t.maxTokenValue) * float64(t.replicationStrategy.getReplicationFactor())
 	head := tokenInfoCircularList.head
@@ -506,6 +507,14 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 		}
 		instance.standardDeviation += +sq(dist - 1.0)
 		instance.sum += curr.getData().getOwningInstance().ownership
+
+		ownership, ok := registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId]
+		if !ok {
+			ownership = 0
+		}
+		ownership += curr.getData().getOwningInstance().ownership
+		registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId] = ownership
+
 		curr = curr.next
 		if curr == head {
 			break
@@ -513,7 +522,11 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	}
 	statisticType["token"] = token
 	statisticType["instance"] = instance
-	return Statistics{types: statisticType}
+
+	return Statistics{
+		CombinedStatistics:                 statisticType,
+		RegisteredTokenOwnershipByInstance: registeredOwnersByInstance,
+	}
 }
 
 func (t *TokenDistributor) count(tokenInfoCircularList *CircularList[*tokenInfo]) {
@@ -637,6 +650,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 	candidate := navigableCandidate.getData()
 	host := candidate.host
 	next := host.getNext()
+	change := 0.0
 	newInstance := candidate.getOwningInstance()
 	//newInstanceZone := newInstance.zone
 	t.verifyReplicaStart(candidate)
@@ -647,6 +661,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 	newTokenInfo.setReplicatedOwnership(newReplicatedOwnership)
 	//oldInst := newInstance.ownership
 	newInstance.ownership += newReplicatedOwnership
+	change += newReplicatedOwnership
 	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), newInstance.instanceId, oldInst, newInstance.ownership)
 	navigableToken := newNavigableTokenInfo(newTokenInfo)
 	t.insertBefore(navigableToken, next.getNavigableToken(), tokenInfoCircularList)
@@ -670,8 +685,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 		prevInstance = currInstance
 		replicasCount++
 
-		//newReplicaStart := currToken.getReplicaStart()
-		barrier := currToken.getReplicaStart().(navigableTokenInterface).getPrevious()
+		var barrier navigableTokenInterface
 		if currToken.isExpandable() {
 			if currToken.getReplicaStart() == next {
 				// If currToken is expandable (wrt. candidate's zone), then it is possible to extend its replica set by adding
@@ -697,7 +711,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
 				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
 				// In order to check whether the current barrier precedes candidate, we could compare the current
-				// replicated weight of currToken (i.e., the range of tokens from its barrier to curentToken itself)
+				// replicated weight of currToken (i.e., the range of tokens from its barrier to currentToken itself)
 				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
 				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
 				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
@@ -708,22 +722,31 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 				currToken.setExpandable(false)
 				barrier = candidate
 				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
-			} else if t.isBarrier(currInstance, host.getOwningInstance()) {
-				currToken.setReplicaStart(next)
-				barrier = candidate
-				currToken.setExpandable(false)
 			} else {
 				continue
+			}
+		} else if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
+			if currToken.getReplicaStart() == next.(navigableTokenInterface) {
+				barrier = candidate
+				currToken.setReplicaStart(next)
+				currToken.setExpandable(false)
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			} else {
+				barrier = currToken.getReplicaStart().(navigableTokenInterface)
+				currToken.setReplicaStart(barrier.getNext())
+				currToken.setExpandable(true)
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
 			}
 		}
 		oldOwnership := currToken.getReplicatedOwnership()
 		newOwnership := t.calculateDistanceAsFloat64(barrier, currToken)
 		currToken.setReplicatedOwnership(newOwnership)
 		//old := currInstance.ownership
+		change += newOwnership - oldOwnership
 		currInstance.ownership += newOwnership - oldOwnership
-		/*if newOwnership != oldOwnership {
-			fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", currToken.getToken(), oldOwnership, currToken.getReplicatedOwnership(), currInstance.instanceId, old, currInstance.ownership)
-		}*/
+		if newOwnership != oldOwnership {
+			//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", currToken.getToken(), oldOwnership, currToken.getReplicatedOwnership(), currInstance.instanceId, old, currInstance.ownership)
+		}
 	}
 
 	// we cancel all the "visited" info
@@ -745,7 +768,7 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 		}
 	}
 
-	//fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership)
+	//fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f (%.3f)\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership, change)
 }
 
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
@@ -786,6 +809,7 @@ func printInstanceOwnership(instanceInfoByInstance map[Instance]*instanceInfo) {
 		}
 		//fmt.Printf("[%s-%.2f] ", instance, instanceInfoByInstance[instance].ownership)
 	}
+	//fmt.Println()
 }
 
 func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], Statistics) {
@@ -794,11 +818,6 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		t.addTokensFromSeed(instance, zone)
 		return nil, nil, Statistics{}
 	}
-	/*if t.seedByZone[zone] != nil {
-		t.addFirstInstanceOfZone(instance, zone)
-		t.seedByZone[zone] = nil
-		return nil, nil, Statistics{}
-	}*/
 
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
 	newInstanceZone, ok := zoneInfoByZone[zone]
@@ -860,8 +879,8 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	printInstanceOwnership(instanceInfoByInstance)
 	//t.count(tokenInfoCircularList)
 	//fmt.Println("-----------------------------------------------------------")
-	if stat.types["instance"].sum != float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()) {
-		fmt.Printf("During insertion of instance %s sum of replication ownership was %.2f instead of %.2f\n", instance, stat.types["instance"].sum, float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()))
+	if stat.CombinedStatistics["instance"].sum != float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()) {
+		fmt.Printf("During insertion of instance %s sum of replication ownership was %.2f instead of %.2f\n", instance, stat.CombinedStatistics["instance"].sum, float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()))
 	}
 
 	return tokenInfoCircularList, candidateTokenInfoCircularList, stat

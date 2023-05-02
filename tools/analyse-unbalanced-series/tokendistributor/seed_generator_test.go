@@ -89,7 +89,7 @@ func TestPerfectlySpacedSeedGenerator_GenerateMultiZone(t *testing.T) {
 	replicationFactor := 3
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
 		require.True(t, seedGenerator.hasNextSeed(zones[i]))
@@ -114,7 +114,7 @@ func TestPerfectlySpacedSeedGenerator_GenerateSingleZoneNoReplication(t *testing
 	replicationFactor := 1
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
 		require.True(t, seedGenerator.hasNextSeed(zones[i]))
@@ -139,7 +139,7 @@ func TestPerfectlySpacedSeedGenerator_GenerateSingleZoneWithReplication(t *testi
 	replicationFactor := 3
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	allSeeds := make([][]Token, 0, replicationFactor)
 	for j := 0; j < replicationFactor; j++ {
 		require.True(t, seedGenerator.hasNextSeed(SingleZone))

@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-func main() {
+func main1() {
 	mimirDistributorURL := "http://localhost:8080"
 
 	logger := log.NewLogfmtLogger(os.Stdout)
