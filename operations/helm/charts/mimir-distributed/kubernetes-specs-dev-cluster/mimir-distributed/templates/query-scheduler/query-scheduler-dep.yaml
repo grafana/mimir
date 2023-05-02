@@ -1,28 +1,30 @@
 ---
-# Source: mimir-distributed/templates/distributor/distributor-dep.yaml
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: databricks-gem-mimir-distributor
+  name: databricks-gem-mimir-query-scheduler
+  namespace: "mimir"
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: databricks-gem
-    app.kubernetes.io/component: distributor
-    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/component: query-scheduler
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
-  namespace: "mimir"
 spec:
   replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: databricks-gem
-      app.kubernetes.io/component: distributor
+      app.kubernetes.io/component: query-scheduler
   strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:
@@ -32,13 +34,9 @@ spec:
         app.kubernetes.io/instance: databricks-gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: distributor
-        app.kubernetes.io/part-of: memberlist
+        app.kubernetes.io/component: query-scheduler
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
-        prometheus_io_scrape: "true"
-        prometheus_io_port: "8080"
-      namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
       securityContext:
@@ -51,21 +49,22 @@ spec:
       initContainers:
         []
       containers:
-        - name: distributor
+        - name: query-scheduler
           image: "grafana/mimir:2.7.2"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=distributor"
+            - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
+            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           volumeMounts:
-            - name: config
-              mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/mimir
+            - name: config
+              mountPath: /etc/mimir
             - name: storage
-              mountPath: "/data"
-              subPath: 
+              mountPath: /data
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -75,9 +74,6 @@ spec:
             - name: grpc
               containerPort: 9095
               protocol: TCP
-            - name: memberlist
-              containerPort: 7946
-              protocol: TCP
           livenessProbe:
             null
           readinessProbe:
@@ -86,11 +82,9 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits:
-              memory: 6Gi
             requests:
-              cpu: 2
-              memory: 4Gi
+              cpu: 100m
+              memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -111,10 +105,10 @@ spec:
             matchLabels:
               app.kubernetes.io/name: mimir
               app.kubernetes.io/instance: databricks-gem
-              app.kubernetes.io/component: distributor
+              app.kubernetes.io/component: query-scheduler
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: config
           configMap:

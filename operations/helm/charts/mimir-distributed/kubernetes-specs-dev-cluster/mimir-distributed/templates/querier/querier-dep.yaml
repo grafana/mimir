@@ -1,14 +1,14 @@
 ---
-# Source: mimir-distributed/templates/distributor/distributor-dep.yaml
+# Source: mimir-distributed/templates/querier/querier-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: databricks-gem-mimir-distributor
+  name: databricks-gem-mimir-querier
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: databricks-gem
-    app.kubernetes.io/component: distributor
+    app.kubernetes.io/component: querier
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -16,12 +16,12 @@ metadata:
     {}
   namespace: "mimir"
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: databricks-gem
-      app.kubernetes.io/component: distributor
+      app.kubernetes.io/component: querier
   strategy:
     type: RollingUpdate
   template:
@@ -32,13 +32,10 @@ spec:
         app.kubernetes.io/instance: databricks-gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: distributor
+        app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
-        prometheus_io_scrape: "true"
-        prometheus_io_port: "8080"
-      namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
       securityContext:
@@ -51,11 +48,11 @@ spec:
       initContainers:
         []
       containers:
-        - name: distributor
+        - name: querier
           image: "grafana/mimir:2.7.2"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=distributor"
+            - "-target=querier"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -87,10 +84,10 @@ spec:
             initialDelaySeconds: 45
           resources:
             limits:
-              memory: 6Gi
+              memory: 8.5Gi
             requests:
               cpu: 2
-              memory: 4Gi
+              memory: 6Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -111,10 +108,10 @@ spec:
             matchLabels:
               app.kubernetes.io/name: mimir
               app.kubernetes.io/instance: databricks-gem
-              app.kubernetes.io/component: distributor
+              app.kubernetes.io/component: querier
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: config
           configMap:

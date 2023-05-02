@@ -1,14 +1,14 @@
 ---
-# Source: mimir-distributed/templates/distributor/distributor-dep.yaml
+# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: databricks-gem-mimir-distributor
+  name: databricks-gem-mimir-alertmanager
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: databricks-gem
-    app.kubernetes.io/component: distributor
+    app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -16,14 +16,24 @@ metadata:
     {}
   namespace: "mimir"
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: databricks-gem
-      app.kubernetes.io/component: distributor
-  strategy:
+      app.kubernetes.io/component: alertmanager
+  updateStrategy:
     type: RollingUpdate
+  serviceName: databricks-gem-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
   template:
     metadata:
       labels:
@@ -32,12 +42,11 @@ spec:
         app.kubernetes.io/instance: databricks-gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: distributor
+        app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
-        prometheus_io_scrape: "true"
-        prometheus_io_port: "8080"
+        checksum/alertmanager-fallback-config: 184bc4f6d40500a15a4bf77db0004d89d31f7456bbe90a09f6e7c8543de9ac75
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
@@ -50,12 +59,45 @@ spec:
           type: RuntimeDefault
       initContainers:
         []
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: databricks-gem
+              app.kubernetes.io/component: alertmanager
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: databricks-gem-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: databricks-gem-mimir-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: databricks-gem-mimir-alertmanager-fallback-config
       containers:
-        - name: distributor
+        - name: alertmanager
           image: "grafana/mimir:2.7.2"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=distributor"
+            - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -65,7 +107,10 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            - name: tmp
+              mountPath: /tmp
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -87,10 +132,10 @@ spec:
             initialDelaySeconds: 45
           resources:
             limits:
-              memory: 6Gi
+              memory: 1.4Gi
             requests:
-              cpu: 2
-              memory: 4Gi
+              cpu: 1
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -99,33 +144,3 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: databricks-gem
-              app.kubernetes.io/component: distributor
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          configMap:
-            name: databricks-gem-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
-        - name: runtime-config
-          configMap:
-            name: databricks-gem-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}

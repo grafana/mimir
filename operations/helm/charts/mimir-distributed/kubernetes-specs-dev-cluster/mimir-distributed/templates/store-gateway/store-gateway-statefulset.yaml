@@ -1,14 +1,14 @@
 ---
-# Source: mimir-distributed/templates/distributor/distributor-dep.yaml
+# Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: databricks-gem-mimir-distributor
+  name: databricks-gem-mimir-store-gateway
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: databricks-gem
-    app.kubernetes.io/component: distributor
+    app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
@@ -16,14 +16,24 @@ metadata:
     {}
   namespace: "mimir"
 spec:
-  replicas: 2
+  replicas: 6
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: databricks-gem
-      app.kubernetes.io/component: distributor
-  strategy:
+      app.kubernetes.io/component: store-gateway
+  updateStrategy:
     type: RollingUpdate
+  serviceName: databricks-gem-mimir-store-gateway-headless
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "50Gi"
   template:
     metadata:
       labels:
@@ -32,12 +42,10 @@ spec:
         app.kubernetes.io/instance: databricks-gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: distributor
+        app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
-        prometheus_io_scrape: "true"
-        prometheus_io_port: "8080"
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
@@ -50,12 +58,55 @@ spec:
           type: RuntimeDefault
       initContainers:
         []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: target
+                operator: In
+                values:
+                - store-gateway
+            topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                - store-gateway
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: databricks-gem
+              app.kubernetes.io/component: store-gateway
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 240
+      volumes:
+        - name: config
+          configMap:
+            name: databricks-gem-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: databricks-gem-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
-        - name: distributor
+        - name: store-gateway
           image: "grafana/mimir:2.7.2"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=distributor"
+            - "-target=store-gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -65,7 +116,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -84,13 +134,13 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
-            initialDelaySeconds: 45
+            initialDelaySeconds: 60
           resources:
             limits:
-              memory: 6Gi
+              memory: 8.5Gi
             requests:
-              cpu: 2
-              memory: 4Gi
+              cpu: 1
+              memory: 6Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -99,33 +149,3 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: databricks-gem
-              app.kubernetes.io/component: distributor
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          configMap:
-            name: databricks-gem-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
-        - name: runtime-config
-          configMap:
-            name: databricks-gem-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}

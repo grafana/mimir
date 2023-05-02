@@ -16,7 +16,7 @@ metadata:
     {}
   namespace: "mimir"
 spec:
-  replicas: 2
+  replicas: 12
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -36,8 +36,6 @@ spec:
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
-        prometheus_io_scrape: "true"
-        prometheus_io_port: "8080"
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
@@ -87,7 +85,7 @@ spec:
             initialDelaySeconds: 45
           resources:
             limits:
-              memory: 6Gi
+              memory: 5.7Gi
             requests:
               cpu: 2
               memory: 4Gi

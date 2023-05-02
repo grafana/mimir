@@ -1,0 +1,107 @@
+---
+# Source: mimir-distributed/templates/chunks-cache/chunks-cache-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: databricks-gem-mimir-chunks-cache
+  labels:
+    helm.sh/chart: mimir-distributed-4.3.1
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: databricks-gem
+    app.kubernetes.io/component: memcached
+    app.kubernetes.io/version: "2.7.2"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "mimir"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 4
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: databricks-gem
+      app.kubernetes.io/component: chunks-cache
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: databricks-gem-mimir-chunks-cache
+
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: mimir-distributed-4.3.1
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: databricks-gem
+        app.kubernetes.io/version: "2.7.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: chunks-cache
+      annotations:
+        prometheus_io_scrape: "true"
+        prometheus_io_port: "9150"
+    spec:
+      serviceAccountName: databricks-gem-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      topologySpreadConstraints:
+        
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: memcached
+          image: memcached:1.6.17-alpine
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 9830Mi
+            requests:
+              cpu: 500m
+              memory: 9830Mi
+          ports:
+            - containerPort: 11211
+              name: client
+          args:
+            - -m 8192
+            - -o
+            - modern
+            - -I 1m
+            - -c 16384
+            - -v
+            - -u 11211
+          env:
+          envFrom:
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+        - name: exporter
+          image: prom/memcached-exporter:v0.6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9150
+              name: http-metrics
+          args:
+            - "--memcached.address=localhost:11211"
+            - "--web.listen-address=0.0.0.0:9150"
+          resources:
+            limits: {}
+            requests: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
