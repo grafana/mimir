@@ -97,7 +97,7 @@ func (s *SeriesStreamer) StartBuffering() {
 	}
 
 	go func() {
-		defer s.client.CloseSend()
+		defer s.client.CloseSend() //nolint:errcheck
 		defer close(s.buffer)
 
 		nextSeriesIndex := 0
@@ -121,7 +121,6 @@ func (s *SeriesStreamer) StartBuffering() {
 					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount))
 					return
 				}
-
 
 				if !writeToBufferOrAbort(streamedIngesterSeries{chunks: series.Chunks, seriesIndex: nextSeriesIndex}) {
 					return
