@@ -13,6 +13,12 @@ const (
 	initialInstanceCount = 66
 )
 
+var (
+	errorSplitToken = func(first, second Token) error {
+		return fmt.Errorf("it was impossible to find a token between %d and %d", first, second)
+	}
+)
+
 type TokenDistributor struct {
 	sortedTokens        []Token
 	instanceByToken     map[Token]Instance
@@ -158,13 +164,14 @@ func (t *TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircula
 	curr := tokenInfoCircularList.head
 	for {
 		currentTokenInfo := curr.getData()
-		candidateToken := t.calculateCandidateToken(currentTokenInfo)
-		candidateTokenInfo := newCandidateTokenInfo(newInstanceInfo, candidateToken, currentTokenInfo)
-		candidateTokenInfo.setReplicatedOwnership(initialTokenOwnership)
-		navigableToken := newNavigableCandidateTokenInfo(candidateTokenInfo)
-		circularList.insertLast(navigableToken)
-		t.populateCandidateTokenInfo(navigableToken.getData(), newInstanceInfo)
-
+		candidateToken, err := t.calculateCandidateToken(currentTokenInfo)
+		if err == nil {
+			candidateTokenInfo := newCandidateTokenInfo(newInstanceInfo, candidateToken, currentTokenInfo)
+			candidateTokenInfo.setReplicatedOwnership(initialTokenOwnership)
+			navigableToken := newNavigableCandidateTokenInfo(candidateTokenInfo)
+			circularList.insertLast(navigableToken)
+			t.populateCandidateTokenInfo(navigableToken.getData(), newInstanceInfo)
+		}
 		curr = curr.next
 		if curr == tokenInfoCircularList.head {
 			break
@@ -173,14 +180,17 @@ func (t *TokenDistributor) createCandidateTokenInfoCircularList(tokenInfoCircula
 	return &circularList
 }
 
-func (t *TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) Token {
+func (t *TokenDistributor) calculateCandidateToken(tokenInfo *tokenInfo) (Token, error) {
 	currentToken := tokenInfo.getToken()
 	nextToken := tokenInfo.getNext().getToken()
 	candidate := currentToken.split(nextToken, t.maxTokenValue)
-	for slices.Contains(t.sortedTokens, candidate) {
-		candidate = candidate.next(t.maxTokenValue)
+	if candidate == currentToken || candidate == nextToken {
+		return 0, errorSplitToken(currentToken, nextToken)
 	}
-	return candidate
+	if slices.Contains(t.sortedTokens, candidate) {
+		return 0, errorSplitToken(currentToken, nextToken)
+	}
+	return candidate, nil
 }
 
 // calculateReplicaStartAndExpansion crosses the ring backwards starting from the token corresponding to navigableToken,
@@ -613,7 +623,18 @@ func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) {
 		fmt.Printf("\t\tIt was not possible to find the replica start of token %d (%s) by using the replication strategy\n", candidate.getToken(), candidate.getOwningInstance())
 	}
 	if rs != candidate.getReplicaStart().getToken() {
-		fmt.Printf("\t\tReplica start of %d is %d according to the list, and %d according to the replication srategy\n", candidate.getToken(), candidate.getReplicaStart().getToken(), rs)
+		fmt.Printf("\t\tReplica start of %d(%s) is %d(%s) according to the list, and %d(%s) according to the replication srategy\n", candidate.getToken(), candidate.getOwningInstance().instanceId, candidate.getReplicaStart().getToken(), candidate.getReplicaStart().getOwningInstance().instanceId, rs, t.instanceByToken[rs])
+		/*rs, _ = t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
+		curr := candidate.getPrevious()
+		barrier := candidate.getReplicaStart().(navigableTokenInterface).getPrevious()
+		for {
+			fmt.Printf("[%s] ", curr)
+			curr = curr.getNext()
+			if curr == barrier {
+				fmt.Printf("[%s]\n", curr)
+				break
+			}
+		}*/
 	}
 	if !found {
 		delete(t.instanceByToken, candidate.getToken())
@@ -628,12 +649,151 @@ func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) {
 // that might be affected by this insertion are also modified in the list of candidates
 func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidate *navigableToken[*candidateTokenInfo], tokenInfoCircularList *CircularList[*tokenInfo]) {
 	candidate := navigableCandidate.getData()
+	newInstance := candidate.getOwningInstance()
+	t.populateCandidateTokenInfo(candidate, newInstance)
 	host := candidate.host
 	next := host.getNext()
 	change := 0.0
-	newInstance := candidate.getOwningInstance()
 	//newInstanceZone := newInstance.zone
 	t.verifyReplicaStart(candidate)
+	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
+	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
+	newReplicatedOwnership := t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface))
+	//oldTokenOwnership := newTokenInfo.getReplicatedOwnership()
+	newTokenInfo.setReplicatedOwnership(newReplicatedOwnership)
+	//oldInst := newInstance.ownership
+	newInstance.ownership += newReplicatedOwnership
+	change += newReplicatedOwnership
+	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), newInstance.instanceId, oldInst, newInstance.ownership)
+	navigableToken := newNavigableTokenInfo(newTokenInfo)
+	t.insertBefore(navigableToken, next.getNavigableToken(), tokenInfoCircularList)
+
+	replicasCount := 0
+	prevZone := &LastZoneInfo
+	prevInstance := &LastInstanceInfo
+	for currToken := next; replicasCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
+		currInstance := currToken.getOwningInstance()
+		currZone := currInstance.zone
+		// if the current instance has already been visited, we continue
+		if t.isAlreadyVisited(currInstance) {
+			continue
+		}
+		// otherwise we mark these instance and zone as visited and increase the counter of visited zones
+		if currZone.precededBy == nil {
+			currZone.precededBy = prevZone
+			prevZone = currZone
+		}
+		currInstance.precededBy = prevInstance
+		prevInstance = currInstance
+		replicasCount++
+
+		var barrier navigableTokenInterface
+		if currToken.isExpandable() {
+			if currToken.getReplicaStart() == next {
+				// If currToken is expandable (wrt. candidate's zone), then it is possible to extend its replica set by adding
+				// a token from  candidate's zone as a direct predecessor of currToken replica start, without changing the
+				// replicated token ownership. Token candidate is being evaluated as the direct predecessor of token next,
+				// and therefore the only valid case here would be if the replica start of currToken is next, and its barrier
+				// is host. In this case candidate would become the new replica start of currToken.
+				currToken.setReplicaStart(newTokenInfo)
+				// since the barrier didn't change, currToken remains expandable
+				currToken.setExpandable(true)
+				barrier = host
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			} else {
+				continue
+			}
+		} else if t.isBarrier(currInstance, newInstance) {
+			if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
+				// Barrier of a token is the first token belonging to the same zone of the former by crossing the ring
+				// backwards, i.e., it is the direct predecessor of replica start of that token.
+				// If currToken and candidate belong to the same zone, the only change that could happen here is if
+				// candidate becomes a new barrier of currToken, and this is possible only if the current barrier of
+				// currentToken precedes candidate.
+				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
+				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
+				// In order to check whether the current barrier precedes candidate, we could compare the current
+				// replicated weight of currToken (i.e., the range of tokens from its barrier to currentToken itself)
+				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
+				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
+				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
+				// be node next.
+				currToken.setReplicaStart(next)
+				// currToken and candidate belong to the same zone, and candidate is a new barrier of currToken. Hence,
+				// currToken cannot be expandable.
+				currToken.setExpandable(false)
+				barrier = candidate
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			} else {
+				continue
+			}
+		} else if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
+			if currToken.getReplicaStart() == next.(navigableTokenInterface) {
+				barrier = candidate
+				currToken.setReplicaStart(next)
+				currToken.setExpandable(false)
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			} else {
+				barrier = currToken.getReplicaStart().(navigableTokenInterface)
+				currToken.setReplicaStart(barrier.getNext())
+				currToken.setExpandable(true)
+				//fmt.Printf("\tToken %d got a new replica start %d and new barrier %d\n", currToken.getToken(), currToken.getReplicaStart().getToken(), barrier.getToken())
+			}
+		}
+		oldOwnership := currToken.getReplicatedOwnership()
+		newOwnership := t.calculateDistanceAsFloat64(barrier, currToken)
+		currToken.setReplicatedOwnership(newOwnership)
+		//old := currInstance.ownership
+		change += newOwnership - oldOwnership
+		currInstance.ownership += newOwnership - oldOwnership
+		/*if newOwnership != oldOwnership {
+			fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", currToken.getToken(), oldOwnership, currToken.getReplicatedOwnership(), currInstance.instanceId, old, currInstance.ownership)
+		}*/
+	}
+
+	// we cancel all the "visited" info
+	t.unvisitAll(prevInstance, prevZone)
+
+	// we need to refresh the candidates that might have been affected by these changes
+	//nextCandidate := navigableCandidate.next.getData()
+	/*nextNavigableCandidate := navigableCandidate
+	for {
+		nextNavigableCandidate = nextNavigableCandidate.next
+		nextCandidate := nextNavigableCandidate.getData()
+		if t.calculateReplicatedOwnership(nextCandidate, nextCandidate.getReplicaStart().(navigableTokenInterface)) > t.calculateDistanceAsFloat64(candidate, nextCandidate) {
+			// if current replica start of the next candidate is more distant from the next candidate than candidate,
+			// then candidate is the new barrier of the next candidate
+			//fmt.Printf("\tToken %d affected candidate %d, its replica start became %d\n", candidate.getToken(), nextCandidate.getToken(), next.getToken())
+			t.populateCandidateTokenInfo(nextCandidate, nextCandidate.getOwningInstance())
+			//nextCandidate.setReplicaStart(next)
+		} else {
+			break
+		}
+	}*/
+
+	//fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f (%.3f)\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership, change)
+}
+
+// addCandidateAndUpdateTokenInfoCircularList gets as parameters a navigableToken[*candidateTokenInfo], representing a
+// candidate token, and a CircularList[*tokenInfo], representing a circular list of tokens belonging to the ring, and
+// adds the former to the latter. In order to do that, a tokenInfo is created, inserted in the list, and all its relevant
+// information such as replica start, extensibility and replicated token ownership are calculated. Moreover, these details
+// are updated for all the tokens affected by this insertion.
+// Similarly, all the candidates following the candidate passed as parameter that might be affected by this insertion
+// are also modified in the list of candidates
+func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableCandidate *navigableToken[*candidateTokenInfo], tokenInfoCircularList *CircularList[*tokenInfo]) {
+	candidate := navigableCandidate.getData()
+	newInstance := candidate.getOwningInstance()
+	// update candidate details, that might have been affected by previous insertions
+	t.populateCandidateTokenInfo(candidate, newInstance)
+
+	// this is just a check to be used during the development phase
+	t.verifyReplicaStart(candidate)
+
+	host := candidate.host
+	next := host.getNext()
+	change := 0.0
+	//newInstanceZone := newInstance.zone
 	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
 	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
 	newReplicatedOwnership := t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface))
@@ -749,72 +909,6 @@ func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidat
 	}
 
 	fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f (%.3f)\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership, change)
-}
-
-func (t *TokenDistributor) addCandidateToTokenInfoCircularListAnotherWay(navigableCandidate *navigableToken[*candidateTokenInfo], tokenInfoCircularList *CircularList[*tokenInfo]) {
-	candidate := navigableCandidate.getData()
-	host := candidate.host
-	next := host.getNext()
-	change := 0.0
-	newInstance := candidate.getOwningInstance()
-	//newInstanceZone := newInstance.zone
-	t.verifyReplicaStart(candidate)
-	newTokenInfo := newTokenInfo(newInstance, candidate.getToken())
-	newTokenInfo.setReplicaStart(candidate.getReplicaStart())
-	newReplicatedOwnership := t.calculateReplicatedOwnership(newTokenInfo, newTokenInfo.getReplicaStart().(navigableTokenInterface))
-	//oldTokenOwnership := newTokenInfo.getReplicatedOwnership()
-	newTokenInfo.setReplicatedOwnership(newReplicatedOwnership)
-	//oldInst := newInstance.ownership
-	newInstance.ownership += newReplicatedOwnership
-	change += newReplicatedOwnership
-	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), newInstance.instanceId, oldInst, newInstance.ownership)
-	navigableToken := newNavigableTokenInfo(newTokenInfo)
-	t.insertBefore(navigableToken, next.getNavigableToken(), tokenInfoCircularList)
-
-	replicasCount := 0
-	prevZone := &LastZoneInfo
-	prevInstance := &LastInstanceInfo
-	for currToken := next; replicasCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
-		t.populateCandidateTokenInfo(candidate, newInstance)
-
-		currInstance := currToken.getOwningInstance()
-		currZone := currInstance.zone
-		// if the current instance has already been visited, we continue
-		if t.isAlreadyVisited(currInstance) {
-			continue
-		}
-		// otherwise we mark these instance and zone as visited and increase the counter of visited zones
-		if currZone.precededBy == nil {
-			currZone.precededBy = prevZone
-			prevZone = currZone
-		}
-		currInstance.precededBy = prevInstance
-		prevInstance = currInstance
-		replicasCount++
-
-		t.populateTokenInfo(currToken.getNavigableToken().getData(), newInstance)
-	}
-
-	// we cancel all the "visited" info
-	t.unvisitAll(prevInstance, prevZone)
-
-	// we need to refresh the candidates that might have been affected by these changes
-	//nextCandidate := navigableCandidate.next.getData()
-	nextNavigableCandidate := navigableCandidate
-	for {
-		nextNavigableCandidate = nextNavigableCandidate.next
-		nextCandidate := nextNavigableCandidate.getData()
-		if t.calculateReplicatedOwnership(nextCandidate, nextCandidate.getReplicaStart().(navigableTokenInterface)) > t.calculateDistanceAsFloat64(candidate, nextCandidate) {
-			// if current replica start of the next candidate is more distant from the next candidate than candidate,
-			// then candidate is the new barrier of the next candidate
-			//fmt.Printf("\tToken %d affected candidate %d, its replica start became %d\n", candidate.getToken(), nextCandidate.getToken(), next.getToken())
-			nextCandidate.setReplicaStart(next)
-		} else {
-			break
-		}
-	}
-
-	//fmt.Printf("Token %d has been added to the list, instance %s %.3f->%.3f (%.3f)\n", candidate.getToken(), newInstance, oldInst, newInstance.ownership, change)
 }
 
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {

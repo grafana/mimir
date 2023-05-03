@@ -276,7 +276,6 @@ func (z ZoneAwareReplicationStrategy) getReplicaStart(terminalToken Token, sorte
 			i += ringTokensCount
 		}
 		iterations++
-		currentReplicationStart = currentToken
 		currentToken = sortedRingTokens[i]
 		currentInstance, ok := ringInstanceByToken[currentToken]
 		if !ok {
@@ -296,6 +295,7 @@ func (z ZoneAwareReplicationStrategy) getReplicaStart(terminalToken Token, sorte
 			return currentReplicationStart, nil
 		}
 
+		currentReplicationStart = currentToken
 		if slices.Contains(distinctInstances, currentInstance) || slices.Contains(distinctZones, currentZone) {
 			//level.Debug(z.logger).Log("msg", fmt.Sprintf("Instance %s from zone %s with currentToken %d has been ignored because it is already present in the replication set", currentInstance, currentZone, currentToken))
 			continue
