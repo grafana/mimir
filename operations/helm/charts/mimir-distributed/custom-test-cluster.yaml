@@ -23,6 +23,9 @@
 # MinIO is no longer enabled, and you are encouraged to use your cloud providers
 # object storage service such as S3 or GCS.
 
+enterprise:
+  enabled: true
+
 global:
   podAnnotations:
     prometheus_io_scrape: "true"
