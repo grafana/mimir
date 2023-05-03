@@ -499,7 +499,8 @@ Return value:
     zoneName: {
       affinity: <affinity>,
       nodeSelector: <nodeSelector>,
-      replicas: <N>
+      replicas: <N>,
+      storageClass: <S>
     },
     ...
   }
@@ -510,7 +511,7 @@ which allows us to keep generating everything for the default zone.
 {{- define "mimir.zoneAwareReplicationMap" -}}
 {{- $zonesMap := (dict) -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
-{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas) -}}
+{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas "storageClass" $componentSection.storageClass) -}}
 
 {{- if $componentSection.zoneAwareReplication.enabled -}}
 {{- $numberOfZones := len $componentSection.zoneAwareReplication.zones -}}
@@ -529,6 +530,7 @@ which allows us to keep generating everything for the default zone.
   "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
+  "storageClass" $rolloutZone.storageClass
   ) -}}
 {{- end -}}
 {{- if $componentSection.zoneAwareReplication.migration.enabled -}}

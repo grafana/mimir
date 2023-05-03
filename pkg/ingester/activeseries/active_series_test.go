@@ -405,16 +405,18 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 	} {
 		b.Run(fmt.Sprintf("rounds=%d series=%d", tt.nRounds, tt.nSeries), func(b *testing.B) {
 			// Prepare series
+			const nLabels = 10
+			builder := labels.NewScratchBuilder(nLabels)
 			series := make([]labels.Labels, tt.nSeries)
 			hash := make([]uint64, tt.nSeries)
 			for s := 0; s < tt.nSeries; s++ {
-				lbls := make(labels.Labels, 10)
-				for i := 0; i < len(lbls); i++ {
+				builder.Reset()
+				for i := 0; i < nLabels; i++ {
 					// Label ~20B name, ~40B value.
-					lbls[i] = labels.Label{Name: fmt.Sprintf("abcdefghijabcdefghi%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcd%d", s)}
+					builder.Add(fmt.Sprintf("abcdefghijabcdefghi%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcd%d", s))
 				}
-				series[s] = lbls
-				hash[s] = lbls.Hash()
+				series[s] = builder.Labels()
+				hash[s] = series[s].Hash()
 			}
 
 			now := time.Now().UnixNano()

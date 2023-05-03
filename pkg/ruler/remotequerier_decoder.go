@@ -166,17 +166,17 @@ func (d protobufDecoder) decodeVector(v *mimirpb.VectorData) (promql.Vector, err
 
 func (protobufDecoder) metricToLabels(metric []string) (labels.Labels, error) {
 	if len(metric)%2 != 0 {
-		return nil, fmt.Errorf("metric is malformed, it contains an odd number of symbols: %d", len(metric))
+		return labels.EmptyLabels(), fmt.Errorf("metric is malformed, it contains an odd number of symbols: %d", len(metric))
 	}
 
 	labelCount := len(metric) / 2
-	m := make([]labels.Label, labelCount)
+	b := labels.NewScratchBuilder(labelCount)
 
 	for i := 0; i < labelCount; i++ {
-		m[i] = labels.Label{Name: metric[2*i], Value: metric[2*i+1]}
+		b.Add(metric[2*i], metric[2*i+1])
 	}
 
-	return m, nil
+	return b.Labels(), nil
 }
 
 func (protobufDecoder) dataTypeToHumanFriendlyName(resp mimirpb.QueryResponse) string {

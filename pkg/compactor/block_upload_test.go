@@ -1563,12 +1563,14 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name: "out of order labels",
 			lbls: func() []labels.Labels {
+				b := labels.NewScratchBuilder(2)
+				b.Add("d", "4")
+				b.Add("a", "1")
 				oooLabels := []labels.Labels{
-					labels.FromStrings("a", "1", "d", "4"),
+					b.Labels(), // Haven't called Sort(), so they will be out of order.
 					labels.FromStrings("b", "2"),
 					labels.FromStrings("c", "3"),
 				}
-				oooLabels[0].Swap(0, 1)
 				return oooLabels
 			},
 			expectError: true,
@@ -1611,7 +1613,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// create a test block
 			now := time.Now()
-			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), nil)
+			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
 			require.NoError(t, err)
 			testDir := filepath.Join(tmpDir, blockID.String())
 			meta, err := metadata.ReadFromDir(testDir)

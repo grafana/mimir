@@ -34,11 +34,12 @@ spec:
           {{- toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.ingester.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.ingester.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.ingester.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.ingester.persistentVolume.storageClass }}"
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:

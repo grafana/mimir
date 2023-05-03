@@ -234,26 +234,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('DistributorForwardingErrorRate'),
-          expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_errors_total{}[1m]))
-            /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_requests_total{}[1m]))
-            > 0.01
-          ||| % {
-            alert_aggregation_labels: $._config.alert_aggregation_labels,
-          },
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              %(product)s in %(alert_aggregation_variables)s has a high failure rate when forwarding samples.
-            ||| % $._config,
-          },
-        },
-        {
           // Alert if an ingester instance has no tenants assigned while other instances in the same cell do.
           alert: $.alertName('IngesterInstanceHasNoTenants'),
           'for': '1h',

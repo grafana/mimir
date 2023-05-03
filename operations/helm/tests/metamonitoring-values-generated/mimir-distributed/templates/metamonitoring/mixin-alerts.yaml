@@ -158,19 +158,6 @@ spec:
       for: 5m
       labels:
         severity: critical
-    - alert: MimirDistributorForwardingErrorRate
-      annotations:
-        message: |
-          Mimir in {{ $labels.cluster }}/{{ $labels.namespace }} has a high failure rate when forwarding samples.
-        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorforwardingerrorrate
-      expr: |
-        sum by (cluster, namespace) (rate(cortex_distributor_forward_errors_total{}[1m]))
-        /
-        sum by (cluster, namespace) (rate(cortex_distributor_forward_requests_total{}[1m]))
-        > 0.01
-      for: 5m
-      labels:
-        severity: critical
     - alert: MimirIngesterInstanceHasNoTenants
       annotations:
         message: Mimir ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace

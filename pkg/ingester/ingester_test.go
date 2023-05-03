@@ -5220,7 +5220,7 @@ func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mim
 	ss := make([]mimirpb.Sample, 0, series*samples)
 
 	for s := 0; s < series; s++ {
-		l := append(labels.FromStrings("series", strconv.Itoa(s)), baseLabels...)
+		l := labels.NewBuilder(baseLabels).Set("series", strconv.Itoa(s)).Labels()
 		for i := 0; i < samples; i++ {
 			ss = append(ss, mimirpb.Sample{
 				Value:       float64(i),
@@ -5755,12 +5755,8 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb
 	)
 
 	for j := 0; j < nSeries; j++ {
-		labels := benchmarkLabels.Copy()
-		for i := range labels {
-			if labels[i].Name == "cpu" {
-				labels[i].Value = fmt.Sprintf("cpu%02d", j)
-			}
-		}
+		b := labels.NewBuilder(benchmarkLabels).Set("cpu", fmt.Sprintf("cpu%02d", j))
+		labels := b.Labels()
 		allLabels = append(allLabels, labels)
 		allSamples = append(allSamples, mimirpb.Sample{TimestampMs: 0, Value: float64(j)})
 	}

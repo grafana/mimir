@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
     steps:
       - name: Check out repository
         uses: actions/checkout@v3

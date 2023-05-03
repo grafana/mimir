@@ -392,7 +392,10 @@ func findHistogramMatchingLabels(metrics dskit_metrics.MetricFamilyMap, name str
 		return nil, fmt.Errorf("no metric with name %v found", name)
 	}
 
-	l := labels.FromStrings(labelValuePairs...)
+	l := []labels.Label{}
+	for i := 0; i < len(labelValuePairs); i += 2 {
+		l = append(l, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
+	}
 	var matchingMetrics []*dto.Metric
 
 	for _, metric := range metricFamily.Metric {

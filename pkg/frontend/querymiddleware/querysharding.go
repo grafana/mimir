@@ -108,7 +108,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	// Parse the query.
 	queryExpr, err := parser.ParseExpr(r.GetQuery())
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 
 	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
@@ -251,7 +251,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
+		return "", nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 
 	shardedQuery, err := mapper.Map(expr)

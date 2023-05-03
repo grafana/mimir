@@ -56,8 +56,8 @@ func (j *job) conflicts(other *job) bool {
 	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		myLabels := labels.NewBuilder(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels()
-		otherLabels := labels.NewBuilder(labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels()
+		myLabels := labelsWithoutShard(j.blocksGroup.blocks[0].Thanos.Labels)
+		otherLabels := labelsWithoutShard(other.blocksGroup.blocks[0].Thanos.Labels)
 		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
