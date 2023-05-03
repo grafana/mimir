@@ -2,7 +2,7 @@
 
 ## unreleased 
 
-* [ENHANCEMENT] Go: update to 1.20.4. #4092
+* [ENHANCEMENT] Go: update to 1.20.4. #4903
 
 ## 2.6.1
 
