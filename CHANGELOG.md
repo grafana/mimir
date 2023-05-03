@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased 
+## unreleased
 
 * [ENHANCEMENT] Go: update to 1.20.4. #4903
 
