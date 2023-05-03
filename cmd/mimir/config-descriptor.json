@@ -1642,6 +1642,17 @@
         },
         {
           "kind": "field",
+          "name": "streaming_chunks_per_ingester_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": 128,
+          "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",

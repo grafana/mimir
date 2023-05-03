@@ -50,7 +50,8 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunks bool `yaml:"prefer_streaming_chunks" category:"experimental"`
+	PreferStreamingChunks                      bool `yaml:"prefer_streaming_chunks" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize int  `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -77,6 +78,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Stream chunks from ingesters if ingesters support this.")
+
+	// TODO: more science to pick this number
+	// Why 128 series / ingester?
+	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape interval, 120 samples per chunk with average chunk size of 300 B,
+	// 128 series would consume ~1 MB (26 chunks needed per series to cover 13 hours, so 7.8 KB needed per series).
+	// Note that this will not hold true for native histograms, which can be substantially larger.
+	f.IntVar(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 128, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0

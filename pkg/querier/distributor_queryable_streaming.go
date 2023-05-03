@@ -52,12 +52,14 @@ type SeriesStreamer struct {
 	client              client.Ingester_QueryStreamClient
 	buffer              chan streamedIngesterSeries
 	expectedSeriesCount int
+	seriesBufferSize    int
 }
 
-func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesStreamer {
+func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int, seriesBufferSize int) *SeriesStreamer {
 	return &SeriesStreamer{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
+		seriesBufferSize:    seriesBufferSize,
 	}
 }
 
@@ -73,7 +75,7 @@ type streamedIngesterSeries struct {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesStreamer's client.Ingester_QueryStreamClient.
 func (s *SeriesStreamer) StartBuffering() {
-	s.buffer = make(chan streamedIngesterSeries, 10) // TODO: what is a sensible buffer size?
+	s.buffer = make(chan streamedIngesterSeries, s.seriesBufferSize)
 	ctxDone := s.client.Context().Done()
 
 	// Why does this exist?

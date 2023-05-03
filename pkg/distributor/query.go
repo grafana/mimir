@@ -363,7 +363,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 				}
 
-				streamer := querier.NewSeriesStreamer(stream, len(seriesLabels))
+				// TODO: make buffer size smarter, for example:
+				// - buffer fewer series when selecting large time range (and therefore more chunks per series)
+				// - buffer fewer series per ingester when querying many ingesters (to control overall memory consumption)
+				// Note that this value does not control the size of messages sent by ingesters, which may be larger or smaller than this buffer size.
+				streamer := querier.NewSeriesStreamer(stream, len(seriesLabels), d.cfg.StreamingChunksPerIngesterSeriesBufferSize)
 
 				// This goroutine could be left running after replicationSet.Do() returns,
 				// so check before writing to the results chan.
@@ -406,7 +410,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	}
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
-	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries))) // TODO: accumulate this while streaming
+	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries))) // TODO: accumulate this while streaming (this includes the size of labels - do we want to include those here too?)
 	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))    // TODO: accumulate this while streaming
 
 	return resp, nil
