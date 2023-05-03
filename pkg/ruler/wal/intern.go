@@ -26,7 +26,7 @@ import (
 	"sync/atomic" //lint:ignore faillint TODO clean up with refactor
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promauto" //lint:ignore faillint TODO clean up with refactor
 )
 
 var interner = newPool()
