@@ -357,7 +357,7 @@ std.manifestYamlDoc({
         '--remote-url=http://distributor-2:8001/api/v1/push',
         '--remote-write-concurrency=5',
         '--remote-write-interval=10s',
-        '--series-count=1000',
+        '--series-count=10000',
         '--tenants-count=1',
         '--query-enabled=true',
         '--query-interval=1s',
