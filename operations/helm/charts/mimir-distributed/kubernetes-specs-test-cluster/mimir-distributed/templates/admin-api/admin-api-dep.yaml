@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/overrides-exporter/overrides-exporter-dep.yaml
+# Source: mimir-distributed/templates/admin-api/admin-api-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,10 +9,11 @@ metadata:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: databricks-gem
-    app.kubernetes.io/component: overrides-exporter
+    app.kubernetes.io/component: admin-api
+    app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
-  name: databricks-gem-mimir-overrides-exporter
+  name: databricks-gem-mimir-admin-api
   namespace: "mimir"
 spec:
   replicas: 1
@@ -20,7 +21,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: databricks-gem
-      app.kubernetes.io/component: overrides-exporter
+      app.kubernetes.io/component: admin-api
   strategy:
     type: RollingUpdate
   template:
@@ -31,7 +32,8 @@ spec:
         app.kubernetes.io/instance: databricks-gem
         app.kubernetes.io/version: "2.7.2"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: overrides-exporter
+        app.kubernetes.io/component: admin-api
+        app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: bce58b6ab956a043fc18f3e21081ffad86d3874c489ce9cd50945c7b74b90fe4
         prometheus_io_port: "8080"
@@ -47,22 +49,21 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        []
       containers:
-        - name: overrides-exporter
+        - name: admin-api
           image: "grafana/enterprise-metrics:v2.7.1"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=overrides-exporter"
+            - "-target=admin-api"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
+            - name: license
+              mountPath: /license
             - name: storage
               mountPath: "/data"
               subPath: 
@@ -75,11 +76,11 @@ spec:
             - name: grpc
               containerPort: 9095
               protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
           livenessProbe:
-            httpGet:
-              path: /ready
-              port: http-metrics
-            initialDelaySeconds: 45
+            null
           readinessProbe:
             httpGet:
               path: /ready
@@ -90,7 +91,7 @@ spec:
               memory: 128Mi
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -104,7 +105,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: databricks-gem
+              app.kubernetes.io/component: admin-api
       tolerations:
         []
       terminationGracePeriodSeconds: 60
@@ -115,12 +123,12 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: databricks-gem-mimir-license
         - name: runtime-config
           configMap:
             name: databricks-gem-mimir-runtime
+        - name: license
+          secret:
+            secretName: databricks-gem-mimir-license
         - name: storage
           emptyDir: {}
         - name: active-queries

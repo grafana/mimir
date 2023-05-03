@@ -45,7 +45,7 @@ spec:
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 69c2e33a93651b2f5caebc702472d42d8752114f6a972abddf7579b251865d62
+        checksum/config: bce58b6ab956a043fc18f3e21081ffad86d3874c489ce9cd50945c7b74b90fe4
         prometheus_io_port: "8080"
         prometheus_io_scrape: "true"
       namespace: "mimir"
@@ -83,6 +83,9 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: databricks-gem-mimir-license
         - name: runtime-config
           configMap:
             name: databricks-gem-mimir-runtime
@@ -90,7 +93,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
-          image: "grafana/mimir:2.7.2"
+          image: "grafana/enterprise-metrics:v2.7.1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"
@@ -99,6 +102,8 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
