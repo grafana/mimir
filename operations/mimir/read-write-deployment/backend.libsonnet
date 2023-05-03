@@ -15,18 +15,16 @@
   //
 
   mimir_backend_args::
-    $.store_gateway_args +
+    $.alertmanager_args +
     $.compactor_args +
+    $.overrides_exporter_args +
     $.query_scheduler_args +
     $.ruler_args +
-    $.overrides_exporter_args {
+    $.store_gateway_args {
       target: 'backend',
 
       // Do not conflict with /data/tsdb and /data/tokens used by store-gateway.
       'compactor.data-dir': '/data/compactor',
-
-      // Run the Alertmanager with the local filesystem, so we don't really use it as bundled with Alertmanager at Grafana Labs.
-      'alertmanager-storage.backend': 'filesystem',
 
       // Use ruler's remote evaluation mode.
       'querier.frontend-address': null,
