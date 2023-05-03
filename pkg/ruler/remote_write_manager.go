@@ -420,7 +420,7 @@ func NewRWMultiTenantManager(
 		"cortex_",
 		prometheus.WrapRegistererWith(
 			prometheus.Labels{"component": "ruler"},
-			prometheus.DefaultRegisterer,
+			reg,
 		),
 	)
 	dnsResolver := dns.NewProvider(logger, dnsProviderReg, dns.GolangResolverType)

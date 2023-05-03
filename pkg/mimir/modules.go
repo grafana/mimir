@@ -734,11 +734,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	// TODO probably want to change cortex prefix for open source
-	totalWrites := promauto.With(prometheus.DefaultRegisterer).NewCounter(prometheus.CounterOpts{
+	totalWrites := promauto.With(t.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
 	})
-	failedWrites := promauto.With(prometheus.DefaultRegisterer).NewCounter(prometheus.CounterOpts{
+	failedWrites := promauto.With(t.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_failed_total",
 		Help: "Number of failed write requests to ingesters.",
 	})
