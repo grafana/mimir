@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased 
+
+* [ENHANCEMENT] Go: update to 1.20.4. #4092
+
 ## 2.6.1
 
 ### Grafana Mimir
