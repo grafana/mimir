@@ -135,6 +135,16 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Adapt tsdb-index-health for blocks containing native histograms. #4186
 * [ENHANCEMENT] Adapt tsdb-chunks tool to handle native histograms. #4186
 
+## 2.6.2
+
+* [BUGFIX] Security: updates Go to version 1.20.4 to fix CVE-2023-24539, CVE-2023-24540, CVE-2023-29400. #4903
+
+## 2.6.1
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updates Go to version 1.20.3 to fix CVE-2023-24538 #4798
+
 ## 2.6.0
 
 ### Grafana Mimir
