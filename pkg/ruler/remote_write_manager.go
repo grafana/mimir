@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/weaveworks/common/user"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/wal"
 )
@@ -424,7 +423,7 @@ func NewRWMultiTenantManager(
 			prometheus.DefaultRegisterer,
 		),
 	)
-	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsResolver := dns.NewProvider(logger, dnsProviderReg, dns.GolangResolverType)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, logger, dnsResolver)
 	if err != nil {
 		return nil, err
