@@ -13,4 +13,5 @@ metadata:
   namespace: "mimir"
 data:
   runtime.yaml: |
+    
     {}
