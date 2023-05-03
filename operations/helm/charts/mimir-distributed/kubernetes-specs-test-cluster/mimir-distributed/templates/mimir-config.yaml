@@ -30,6 +30,8 @@ data:
         insecure: true
         secret_access_key: minio123
     blocks_storage:
+      tsdb:
+        out-of-order-capacity-max: 40
       backend: s3
       bucket_store:
         chunks_cache:
@@ -94,6 +96,8 @@ data:
       max_cache_freshness: 10m
       max_query_parallelism: 240
       max_total_query_length: 12000h
+      out_of_order_time_window: 5m
+      max_label_names_per_series: 40
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
