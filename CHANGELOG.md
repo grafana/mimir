@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.3
+
+### Grafana Mimir
+
+* [BUGFIX] Security: updates Go to version 1.20.4 to fix CVE-2023-24539, CVE-2023-24540, CVE-2023-29400. #4905
+
 ## 2.7.2
 
 ### Grafana Mimir
