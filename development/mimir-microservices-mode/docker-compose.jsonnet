@@ -18,6 +18,9 @@ std.manifestYamlDoc({
     // - memberlist (consul is not started at all)
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
+
+    // If true, a load generator is started.
+    enable_load_generator: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -38,6 +41,7 @@ std.manifestYamlDoc({
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
+    (if $._config.enable_load_generator then self.load_generator else {}) +
     {},
 
   distributor:: {
@@ -337,6 +341,24 @@ std.manifestYamlDoc({
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
+    },
+  },
+
+  load_generator:: {
+    'load-generator': {
+      image: 'pracucci/cortex-load-generator:add-query-support-8633d4e',
+      command: [
+        '--remote-url=http://distributor-2:8001/api/v1/push',
+        '--remote-write-concurrency=5',
+        '--remote-write-interval=10s',
+        '--series-count=1000',
+        '--tenants-count=1',
+        '--query-enabled=true',
+        '--query-interval=1s',
+        '--query-url=http://querier:8004/prometheus',
+        '--server-metrics-port=9900',
+      ],
+      ports: ['9900:9900']
     },
   },
 

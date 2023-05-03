@@ -70,6 +70,12 @@ receivers:
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/load-generator
+          static_configs:
+            - targets: ['load-generator:9900']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-microservices-mode'
 
 service:
   pipelines:
