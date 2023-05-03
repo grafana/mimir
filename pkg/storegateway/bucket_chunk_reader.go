@@ -8,6 +8,7 @@ package storegateway
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -126,31 +127,55 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 	localStats.chunksFetched += len(pIdxs)
 	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
 
-	seqReader := &uvarintSequenceReader{offset: part.Start, r: bufReader}
-	for i, pIdx := range pIdxs {
-		chunkDataLen, err := seqReader.ReadNext(uint64(pIdx.offset))
-		if err != nil {
-			return errors.Wrap(err, "parsing chunks")
-		}
+	var (
+		buf        = make([]byte, mimir_tsdb.EstimatedMaxChunkSize)
+		readOffset = int(pIdxs[0].offset)
 
-		// Chunk length is 1 for chunk encoding and chunkDataLen for actual chunk data.
-		// There is also crc32 after the chunk, but we ignore that.
-		chunkLen := 1 + int(chunkDataLen)
-		cb := chunksPool.Get(chunkLen)
-		_, err = seqReader.Read(cb)
+		// Save a few allocations.
+		written  int64
+		diff     uint32
+		chunkLen int
+		n        int
+	)
+
+	for i, pIdx := range pIdxs {
+		// Fast forward range reader to the next chunk start in case of sparse (for our purposes) byte range.
+		for readOffset < int(pIdx.offset) {
+			written, err = io.CopyN(io.Discard, bufReader, int64(pIdx.offset)-int64(readOffset))
+			if err != nil {
+				return errors.Wrap(err, "fast forward range reader")
+			}
+			readOffset += int(written)
+		}
+		// Use the chunk length estimation.
+		// However, declaration for length warns us this estimation can be wrong.
+		// This is handled further down below.
+		chunkLen = int(pIdx.length)
+		if i+1 < len(pIdxs) {
+			if diff = pIdxs[i+1].offset - pIdx.offset; int(diff) < chunkLen {
+				chunkLen = int(diff)
+			}
+		}
+		cb := buf[:chunkLen]
+		n, err = io.ReadFull(bufReader, cb)
+		readOffset += n
 		// Unexpected EOF for last chunk could be a valid case. Any other errors are definitely real.
 		if err != nil && !(errors.Is(err, io.ErrUnexpectedEOF) && i == len(pIdxs)-1) {
 			return errors.Wrapf(err, "read range for seq %d offset %x", seq, pIdx.offset)
 		}
-		if err == nil {
-			chunk := rawChunk(cb)
-			typ, err := chunkEncoding(chunk.Encoding())
+
+		chunkDataLen, n := binary.Uvarint(cb)
+		if n < 1 {
+			return errors.New("reading chunk length failed")
+		}
+
+		// Chunk length is n (number of bytes used to encode chunk data), 1 for chunk encoding and chunkDataLen for actual chunk data.
+		// There is also crc32 after the chunk, but we ignore that.
+		chunkLen = n + 1 + int(chunkDataLen)
+		if chunkLen <= len(cb) {
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb[n:chunkLen]), chunksPool)
 			if err != nil {
-				return err
-			}
-			res[pIdx.seriesEntry].chks[pIdx.chunkEntry].Raw = &storepb.Chunk{
-				Data: chunk.Bytes(), // the first byte is the chunk encoding
-				Type: typ,
+				return errors.Wrap(err, "populate chunk")
 			}
 			localStats.chunksTouched++
 			localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
@@ -169,7 +194,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 
 		localStats.chunksRefetched++
 		localStats.chunksRefetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(*nb), chunksPool)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -182,9 +207,9 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 	return nil
 }
 
-func chunkEncoding(c chunkenc.Encoding) (storepb.Chunk_Encoding, error) {
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
 	var enc storepb.Chunk_Encoding
-	switch c {
+	switch in.Encoding() {
 	case chunkenc.EncXOR:
 		enc = storepb.Chunk_XOR
 	case chunkenc.EncHistogram:
@@ -192,16 +217,9 @@ func chunkEncoding(c chunkenc.Encoding) (storepb.Chunk_Encoding, error) {
 	case chunkenc.EncFloatHistogram:
 		enc = storepb.Chunk_FloatHistogram
 	default:
-		return 0, errors.Errorf("unsupported chunk encoding %d", c)
+		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}
-	return enc, nil
-}
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
-	enc, err := chunkEncoding(in.Encoding())
-	if err != nil {
-		return err
-	}
 	b := saveChunk(in.Bytes(), chunksPool)
 	out.Raw = &storepb.Chunk{Type: enc, Data: b}
 	return nil
