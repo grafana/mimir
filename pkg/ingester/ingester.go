@@ -1739,9 +1739,19 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 
 	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
 	batchSizeBytes := 0
+
+	// TODO: just use a slice for this? We'll never have more than queryStreamBatchSize series
+	chunkSlicePool := sync.Pool{
+		New: func() any {
+			// TODO: guess what size this will be based on time range?
+			return []client.Chunk{}
+		},
+	}
+
 	for seriesIdx, it := range allIterators {
 		seriesChunks := client.QueryStreamSeriesChunks{
 			Series: uint64(seriesIdx),
+			Chunks: chunkSlicePool.Get().([]client.Chunk),
 		}
 
 		for it.Next() {
@@ -1788,6 +1798,10 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 
 			batchSizeBytes = 0
 			seriesInBatch = seriesInBatch[:0]
+
+			for _, s := range seriesInBatch {
+				chunkSlicePool.Put(s.Chunks)
+			}
 		}
 
 		seriesInBatch = append(seriesInBatch, seriesChunks)
