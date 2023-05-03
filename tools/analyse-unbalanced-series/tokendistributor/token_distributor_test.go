@@ -360,7 +360,7 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 
 	for it := 0; it < iterations; it++ {
 		replicationStrategy := NewZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
-		tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
+		tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, newTestSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			for j := 0; j < len(zones); j++ {
