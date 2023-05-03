@@ -35,7 +35,7 @@ spec:
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: f6e5d792fb8766886d76f0cb264f7bc60e7c53effa6b09c1c35a71a08bae4b6c
+        checksum/config: c156db92d37401a23ee5313c3fd134023403d38f951db1b8b7bb62806cfe9ed4
         prometheus_io_port: "8080"
         prometheus_io_scrape: "true"
       namespace: "mimir"
@@ -52,7 +52,7 @@ spec:
         []
       containers:
         - name: distributor
-          image: "grafana/mimir:2.7.2"
+          image: "grafana/enterprise-metrics:v2.7.1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"
@@ -61,6 +61,8 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
@@ -122,6 +124,9 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: databricks-gem-mimir-license
         - name: runtime-config
           configMap:
             name: databricks-gem-mimir-runtime
