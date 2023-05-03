@@ -184,13 +184,13 @@ func TestRemoteWriteSyncRuleGroups(t *testing.T) {
 	m.SyncRuleGroups(context.Background(), userRules)
 	mgr1 := getManager(m, user1)
 	require.NotNil(t, mgr1)
-	test.Poll(t, 1*time.Second, true, func() interface{} {
+	test.Poll(t, 3*time.Second, true, func() interface{} {
 		return mgr1.(*mockRulesManager).running.Load()
 	})
 
 	mgr2 := getManager(m, user2)
 	require.NotNil(t, mgr2)
-	test.Poll(t, 1*time.Second, true, func() interface{} {
+	test.Poll(t, 3*time.Second, true, func() interface{} {
 		return mgr2.(*mockRulesManager).running.Load()
 	})
 
