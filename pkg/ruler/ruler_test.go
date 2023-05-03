@@ -443,7 +443,7 @@ func TestGetRules(t *testing.T) {
 			for u := range allRulesByUser {
 				ctx := user.InjectOrgID(context.Background(), u)
 				forEachRuler(func(_ string, r *Ruler) {
-					rules, err := r.GetRules(ctx)
+					rules, err := r.GetRules(ctx, AnyRule)
 					require.NoError(t, err)
 					require.Equal(t, len(allRulesByUser[u]), len(rules))
 
