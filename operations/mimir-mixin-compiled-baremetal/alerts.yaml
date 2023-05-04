@@ -695,8 +695,26 @@ groups:
         }} got a corrupted TSDB WAL.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
     expr: |
-      rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
+      # alert when there are more than one corruptions
+      count by ($(per_cluster_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+      and
+      # and there is only one zone in this cluster
+      count by ($(per_cluster_label)s) (group by ($(per_cluster_label)s, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
     labels:
+      deployment: single-zone
+      severity: critical
+  - alert: MimirIngesterTSDBWALCorrupted
+    annotations:
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} got a corrupted TSDB WAL.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
+    expr: |
+      count by ($(per_cluster_label)s) (sum by ($(per_cluster_label)s, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+      and
+      # and there are multiple zones in this cluster
+      count by ($(per_cluster_label)s) (group by ($(per_cluster_label)s, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+    labels:
+      deployment: multi-zone
       severity: critical
   - alert: MimirIngesterTSDBWALWritesFailed
     annotations:

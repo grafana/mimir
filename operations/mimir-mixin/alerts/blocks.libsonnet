@@ -139,10 +139,31 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
-            rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
-          |||,
+            # alert when there are more than one corruptions
+            count by ($(per_cluster_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            and
+            # and there is only one zone in this cluster
+            count by ($(per_cluster_label)s) (group by ($(per_cluster_label)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+          ||| % $._config,
           labels: {
             severity: 'critical',
+            deployment: 'single-zone',
+          },
+          annotations: {
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('IngesterTSDBWALCorrupted'),
+          expr: |||
+            count by ($(per_cluster_label)s) (sum by ($(per_cluster_label)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            and
+            # and there are multiple zones in this cluster
+            count by ($(per_cluster_label)s) (group by ($(per_cluster_label)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+            deployment: 'multi-zone',
           },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
