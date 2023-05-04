@@ -68,16 +68,6 @@ func newStorageMetrics(r prometheus.Registerer) *storageMetrics {
 		Help: "Total number of samples appended to the WAL",
 	})
 
-	if r != nil {
-		r.MustRegister(
-			m.numActiveSeries,
-			m.numDeletedSeries,
-			m.totalCreatedSeries,
-			m.totalRemovedSeries,
-			m.totalAppendedSamples,
-		)
-	}
-
 	return &m
 }
 
