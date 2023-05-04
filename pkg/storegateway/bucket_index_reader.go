@@ -629,8 +629,8 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	return loaded, g.Wait()
 }
 
-var seriesBufioReaders = &sync.Pool{New: func() any {
-	return bufio.NewReaderSize(nil, 32*1024)
+var seriesOffsetReaders = &sync.Pool{New: func() any {
+	return &uvarintSequenceReader{r: bufio.NewReaderSize(nil, 32*1024)}
 }}
 
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
@@ -641,35 +641,35 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		return errors.Wrap(err, "read series range")
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
-	bufReader := seriesBufioReaders.Get().(*bufio.Reader)
-	defer seriesBufioReaders.Put(bufReader)
 
-	bufReader.Reset(reader)
-	defer bufReader.Reset(nil) // don't retain the underlying reader
+	offsetReader := seriesOffsetReaders.Get().(*uvarintSequenceReader)
+	defer seriesOffsetReaders.Put(offsetReader)
 
-	byteReader := &uvarintSequenceReader{r: bufReader, offset: start}
+	offsetReader.offset = start
+	offsetReader.r.Reset(reader)
+	defer offsetReader.r.Reset(nil) // don't retain the underlying reader
 
 	for i, id := range ids {
-		err := byteReader.SkipTo(uint64(id))
+		err := offsetReader.SkipTo(uint64(id))
 		if err != nil {
 			return err
 		}
-		size, err := binary.ReadUvarint(byteReader)
+		seriesSize, err := binary.ReadUvarint(offsetReader)
 		if err != nil {
 			return err
 		}
-		seriesBytes := loaded.bytesPool.Get(int(size))
-		n, err := io.ReadFull(byteReader, seriesBytes)
-		if n != int(size) || (err != nil && errors.Is(err, io.ErrUnexpectedEOF)) {
+		seriesBytes := loaded.bytesPool.Get(int(seriesSize))
+		n, err := io.ReadFull(offsetReader, seriesBytes)
+		if n != int(seriesSize) || (err != nil && errors.Is(err, io.ErrUnexpectedEOF)) {
 			if i == 0 && refetch {
-				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, size)
+				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, seriesSize)
 			}
 
 			// Inefficient, but should be rare.
 			r.block.metrics.seriesRefetches.Inc()
-			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", size, "max_series_size", maxSeriesSize)
+			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", maxSeriesSize)
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+size+1, loaded, stats)
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
 		} else if err != nil {
 			return errors.Wrapf(err, "fetching series %d from block %s", id, r.block.meta.ULID)
 		}
