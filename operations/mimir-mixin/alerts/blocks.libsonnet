@@ -156,6 +156,7 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
+            # alert when there are more than one corruptions
             count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
             and
             # and there are multiple zones
