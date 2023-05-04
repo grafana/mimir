@@ -629,6 +629,10 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	return loaded, g.Wait()
 }
 
+var seriesBufioReaders = &sync.Pool{New: func() any {
+	return bufio.NewReaderSize(nil, 32*1024)
+}}
+
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
 	begin := time.Now()
 
@@ -637,7 +641,13 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		return errors.Wrap(err, "read series range")
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
-	byteReader := &uvarintSequenceReader{r: bufio.NewReaderSize(reader, 128*1024), offset: start}
+	bufReader := seriesBufioReaders.Get().(*bufio.Reader)
+	defer seriesBufioReaders.Put(bufReader)
+
+	bufReader.Reset(reader)
+	defer bufReader.Reset(nil) // don't retain the underlying reader
+
+	byteReader := &uvarintSequenceReader{r: bufReader, offset: start}
 
 	for i, id := range ids {
 		size, err := byteReader.Uvarint(uint64(id))
