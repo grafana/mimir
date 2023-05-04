@@ -191,10 +191,9 @@ func TestBucketBlockSet_remove(t *testing.T) {
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
-func TestReadIndexCache_LoadSeries(t *testing.T) {
+func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
-	s := NewBucketStoreMetrics(nil)
 	b := &bucketBlock{
 		meta: &metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
@@ -203,7 +202,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 		},
 		bkt:        bkt,
 		logger:     log.NewNopLogger(),
-		metrics:    s,
+		metrics:    NewBucketStoreMetrics(nil),
 		indexCache: noopCache{},
 	}
 
@@ -223,32 +222,33 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	}
 
 	// Success with no refetches.
+	stats := newSafeQueryStats()
 	loaded := newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(0), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 0, stats.export().seriesRefetches)
 
 	// Success with 2 refetches.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(2), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 2, stats.export().seriesRefetches)
 
 	// Success with refetch on first element.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2: []byte("aaaaaaaaaa"),
 	}, loaded.series)
-	assert.Equal(t, float64(3), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 3, stats.export().seriesRefetches)
 
 	buf.Reset()
 	buf.PutByte(0)
@@ -258,7 +258,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	// Fail, but no recursion at least.
-	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), newSafeQueryStats()))
+	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), stats))
 }
 
 func TestBlockLabelNames(t *testing.T) {
