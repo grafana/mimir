@@ -9,10 +9,8 @@
 package storegateway
 
 import (
-	"encoding/binary"
-	"errors"
+	"bufio"
 	"fmt"
-	"io"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -138,51 +136,26 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 
 type uvarintSequenceReader struct {
 	offset uint64
-	r      io.Reader
-	b      [1]byte
+	r      *bufio.Reader
 }
 
-// discardBuf is a shared global buffer that you can use to discard bytes. The presumption
-// is that unsychronised access to the buffer is ok, because we don't care about the results.
-// This is a fewer-allocations alternative to io.CopyN + io.Discard, because io.CopyN allocates a buffer
-// on each invocation.
-var discardBuf [4096]byte
-
-// Uvarint returns a uvarint at the provided offset. The provided offset must be
-// greater than or equal to the current offset of the reader.
-func (r *uvarintSequenceReader) Uvarint(at uint64) (uint64, error) {
-	if at < r.offset {
-		return 0, fmt.Errorf("cannot reverse reader: offset %d, at %d", r.offset, at)
-	}
-	for at > r.offset {
-		b := discardBuf[:]
-		if uint64(len(b)) > at-r.offset {
-			b = discardBuf[:at-r.offset]
-		}
-		n, err := r.r.Read(b)
+// SkipTo skips to the provided offset.
+func (r *uvarintSequenceReader) SkipTo(at uint64) error {
+	if diff := int(at - r.offset); diff < 0 {
+		return fmt.Errorf("cannot reverse reader: offset %d, at %d", r.offset, at)
+	} else if diff > 0 {
+		n, err := r.r.Discard(diff)
 		r.offset += uint64(n)
-		if errors.Is(err, io.EOF) {
-			break
-		}
 		if err != nil {
-			return 0, fmt.Errorf("discarding sequence reader: %w", err)
+			return fmt.Errorf("discarding sequence reader: %w", err)
 		}
 	}
-
-	return binary.ReadUvarint(r)
+	return nil
 }
 
 func (r *uvarintSequenceReader) ReadByte() (byte, error) {
-	n, err := r.r.Read(r.b[:])
-	r.offset += uint64(n)
-	if n == 1 {
-		// If there are read bytes we must ignore any error returned, even EOF.
-		return r.b[0], nil
-	}
-	if n > 1 {
-		return 0, fmt.Errorf("read more than one bytes (%d)", n)
-	}
-	return 0, err
+	r.offset++
+	return r.r.ReadByte()
 }
 
 func (r *uvarintSequenceReader) Read(p []byte) (int, error) {
