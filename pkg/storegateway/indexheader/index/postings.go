@@ -28,10 +28,6 @@ type PostingOffsetTable interface {
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
-	// LabelValues returns a list of values for the label named name that match filter and have the prefix provided.
-	// The returned label values are sorted lexicographically.
-	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
-
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
@@ -258,21 +254,6 @@ func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.
 	return rng, true, nil
 }
 
-func (t *PostingOffsetTableV1) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	e, ok := t.postings[name]
-	if !ok {
-		return nil, nil
-	}
-	values := make([]string, 0, len(e))
-	for k := range e {
-		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, k)
-		}
-	}
-	slices.Sort(values)
-	return values, nil
-}
-
 func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
 	e, ok := t.postings[name]
 	if !ok {
@@ -451,29 +432,15 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	values, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
-	if err != nil {
-		return nil, errors.Wrap(err, "get label values")
-	}
-	return values, nil
-}
-
 func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
-	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetIdentity)
+	offsets, err := postingOffsets(t, name, prefix, filter)
 	if err != nil {
 		return nil, errors.Wrap(err, "get label values offsets")
 	}
 	return offsets, nil
 }
 
-// postingListOffsetIdentity can be used with postingOffsets.
-func postingListOffsetIdentity(offset PostingListOffset) PostingListOffset { return offset }
-
-// postingListOffsetValue can be used with postingOffsets.
-func postingListOffsetValue(offset PostingListOffset) string { return offset.LabelValue }
-
-func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, filter func(string) bool, extract func(PostingListOffset) T) (_ []T, err error) {
+func postingOffsets(t *PostingOffsetTableV2, name string, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -489,7 +456,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			return nil, nil
 		}
 	}
-	result := make([]T, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
+	result := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -578,7 +545,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
 				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
 			}
-			result = append(result, extract(currList))
+			result = append(result, currList)
 		}
 		if currentValueIsLast {
 			break
