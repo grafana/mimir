@@ -94,7 +94,7 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		numFailedNotifications: prometheus.NewDesc(
 			"cortex_alertmanager_notifications_failed_total",
 			"The total number of failed notifications.",
-			[]string{"user", "integration"}, nil),
+			[]string{"user", "integration", "reason"}, nil),
 		numNotificationRequestsTotal: prometheus.NewDesc(
 			"cortex_alertmanager_notification_requests_total",
 			"The total number of attempted notification requests.",
@@ -312,7 +312,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
 
 	data.SendSumOfCountersPerTenant(out, m.numNotifications, "alertmanager_notifications_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
-	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration", "reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsTotal, "alertmanager_notification_requests_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
