@@ -32,6 +32,8 @@ type alertmanagerMetrics struct {
 	nflogGCDuration              *prometheus.Desc
 	nflogSnapshotDuration        *prometheus.Desc
 	nflogSnapshotSize            *prometheus.Desc
+	nflogMaintenanceTotal        *prometheus.Desc
+	nflogMaintenanceErrorsTotal  *prometheus.Desc
 	nflogQueriesTotal            *prometheus.Desc
 	nflogQueryErrorsTotal        *prometheus.Desc
 	nflogQueryDuration           *prometheus.Desc
@@ -120,6 +122,14 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		nflogSnapshotSize: prometheus.NewDesc(
 			"cortex_alertmanager_nflog_snapshot_size_bytes",
 			"Size of the last notification log snapshot in bytes.",
+			nil, nil),
+		nflogMaintenanceTotal: prometheus.NewDesc(
+			"cortex_alertmanager_nflog_maintenance_total",
+			"How many maintenances were executed for the notification log.",
+			nil, nil),
+		nflogMaintenanceErrorsTotal: prometheus.NewDesc(
+			"cortex_alertmanager_nflog_maintenance_errors_total",
+			"How many maintenances were executed for the notification log that failed.",
 			nil, nil),
 		nflogQueriesTotal: prometheus.NewDesc(
 			"cortex_alertmanager_nflog_queries_total",
@@ -282,6 +292,8 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.nflogGCDuration
 	out <- m.nflogSnapshotDuration
 	out <- m.nflogSnapshotSize
+	out <- m.nflogMaintenanceTotal
+	out <- m.nflogMaintenanceErrorsTotal
 	out <- m.nflogQueriesTotal
 	out <- m.nflogQueryErrorsTotal
 	out <- m.nflogQueryDuration
@@ -333,6 +345,8 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfSummaries(out, m.nflogGCDuration, "alertmanager_nflog_gc_duration_seconds")
 	data.SendSumOfSummaries(out, m.nflogSnapshotDuration, "alertmanager_nflog_snapshot_duration_seconds")
 	data.SendSumOfGauges(out, m.nflogSnapshotSize, "alertmanager_nflog_snapshot_size_bytes")
+	data.SendSumOfCounters(out, m.nflogMaintenanceTotal, "alertmanager_nflog_maintenance_total")
+	data.SendSumOfCounters(out, m.nflogMaintenanceErrorsTotal, "alertmanager_nflog_maintenance_errors_total")
 	data.SendSumOfCounters(out, m.nflogQueriesTotal, "alertmanager_nflog_queries_total")
 	data.SendSumOfCounters(out, m.nflogQueryErrorsTotal, "alertmanager_nflog_query_errors_total")
 	data.SendSumOfHistograms(out, m.nflogQueryDuration, "alertmanager_nflog_query_duration_seconds")

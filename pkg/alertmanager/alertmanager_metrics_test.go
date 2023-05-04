@@ -71,6 +71,12 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		# HELP cortex_alertmanager_nflog_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
 		# TYPE cortex_alertmanager_nflog_gossip_messages_propagated_total counter
 		cortex_alertmanager_nflog_gossip_messages_propagated_total 111
+		# HELP cortex_alertmanager_nflog_maintenance_errors_total How many maintenances were executed for the notification log that failed.
+        # TYPE cortex_alertmanager_nflog_maintenance_errors_total counter
+        cortex_alertmanager_nflog_maintenance_errors_total 111
+        # HELP cortex_alertmanager_nflog_maintenance_total How many maintenances were executed for the notification log.
+        # TYPE cortex_alertmanager_nflog_maintenance_total counter
+        cortex_alertmanager_nflog_maintenance_total 111
 		# HELP cortex_alertmanager_nflog_queries_total Number of notification log queries were received.
 		# TYPE cortex_alertmanager_nflog_queries_total counter
 		cortex_alertmanager_nflog_queries_total 111
@@ -384,7 +390,12 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            # HELP cortex_alertmanager_nflog_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
         	            # TYPE cortex_alertmanager_nflog_gossip_messages_propagated_total counter
         	            cortex_alertmanager_nflog_gossip_messages_propagated_total 111
-
+						# HELP cortex_alertmanager_nflog_maintenance_errors_total How many maintenances were executed for the notification log that failed.
+						# TYPE cortex_alertmanager_nflog_maintenance_errors_total counter
+						cortex_alertmanager_nflog_maintenance_errors_total 111
+						# HELP cortex_alertmanager_nflog_maintenance_total How many maintenances were executed for the notification log.
+						# TYPE cortex_alertmanager_nflog_maintenance_total counter
+						cortex_alertmanager_nflog_maintenance_total 111
         	            # HELP cortex_alertmanager_nflog_queries_total Number of notification log queries were received.
         	            # TYPE cortex_alertmanager_nflog_queries_total counter
         	            cortex_alertmanager_nflog_queries_total 111
@@ -697,7 +708,12 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		# HELP cortex_alertmanager_nflog_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
     		# TYPE cortex_alertmanager_nflog_gossip_messages_propagated_total counter
     		cortex_alertmanager_nflog_gossip_messages_propagated_total 111
-
+			# HELP cortex_alertmanager_nflog_maintenance_errors_total How many maintenances were executed for the notification log that failed.
+			# TYPE cortex_alertmanager_nflog_maintenance_errors_total counter
+			cortex_alertmanager_nflog_maintenance_errors_total 111
+			# HELP cortex_alertmanager_nflog_maintenance_total How many maintenances were executed for the notification log.
+			# TYPE cortex_alertmanager_nflog_maintenance_total counter
+			cortex_alertmanager_nflog_maintenance_total 111
     		# HELP cortex_alertmanager_nflog_queries_total Number of notification log queries were received.
     		# TYPE cortex_alertmanager_nflog_queries_total counter
     		cortex_alertmanager_nflog_queries_total 111
@@ -957,6 +973,8 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	n.queryErrorsTotal.Add(base)
 	n.queryDuration.Observe(base)
 	n.propagatedMessagesTotal.Add(base)
+	n.maintenanceTotal.Add(base)
+	n.maintenanceErrorsTotal.Add(base)
 
 	nm := newNotifyMetrics(reg)
 	for i, integration := range integrations {
@@ -1003,6 +1021,8 @@ type nflogMetrics struct {
 	queryErrorsTotal        prometheus.Counter
 	queryDuration           prometheus.Histogram
 	propagatedMessagesTotal prometheus.Counter
+	maintenanceTotal        prometheus.Counter
+	maintenanceErrorsTotal  prometheus.Counter
 }
 
 func newNflogMetrics(r prometheus.Registerer) *nflogMetrics {
@@ -1021,6 +1041,14 @@ func newNflogMetrics(r prometheus.Registerer) *nflogMetrics {
 	m.snapshotSize = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name: "alertmanager_nflog_snapshot_size_bytes",
 		Help: "Size of the last notification log snapshot in bytes.",
+	})
+	m.maintenanceTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "alertmanager_nflog_maintenance_total",
+		Help: "How many maintenances were executed for the notification log.",
+	})
+	m.maintenanceErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "alertmanager_nflog_maintenance_errors_total",
+		Help: "How many maintenances were executed for the notification log that failed.",
 	})
 	m.queriesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_queries_total",
