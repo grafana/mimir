@@ -21,8 +21,8 @@ const (
 	ModeRing = "ring"
 
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
-	// set on the components running the alert-manager ring client.
-	sharedOptionWithRingClient = " When alert-manager ring-based service discovery is enabled, this option needs be set on alert-managers and rulers."
+	// set on the components running the alertmanager ring client.
+	sharedOptionWithRingClient = " When alertmanager ring-based service discovery is enabled, this option needs be set on alertmanagers and rulers."
 )
 
 var (
@@ -34,12 +34,12 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Service discovery mode that rulers use to find alert-manager instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
+	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Service discovery mode that rulers use to find alertmanager instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
 }
 
 func (cfg *Config) Validate() error {
 	if !util.StringsContain(modes, cfg.Mode) {
-		return fmt.Errorf("unsupported alert-manager service discovery mode (supported values are: %s)", strings.Join(modes, ", "))
+		return fmt.Errorf("unsupported alertmanager service discovery mode (supported values are: %s)", strings.Join(modes, ", "))
 	}
 	return nil
 }

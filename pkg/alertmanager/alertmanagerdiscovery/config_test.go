@@ -22,7 +22,7 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Mode = "xxx"
 			},
-			expectedErr: "unsupported alert-manager service discovery mode",
+			expectedErr: "unsupported alertmanager service discovery mode",
 		},
 	}
 

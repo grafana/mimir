@@ -157,7 +157,7 @@ func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 	}
 
 	if cfg.AlertManagerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.AlertmanagerURL != "" {
-		return fmt.Errorf("alert manager address cannot be specified when alert-manager service discovery mode is set to '%s'", schedulerdiscovery.ModeRing)
+		return fmt.Errorf("alert manager address cannot be specified when alertmanager service discovery mode is set to '%s'", schedulerdiscovery.ModeRing)
 	}
 
 	return nil

@@ -79,12 +79,12 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 // NewRing creates a new client ring for the clientComponent, with servicediscovery notification being sent to the receiver.
 func NewRing(cfg RingConfig, clientComponent string, receiver servicediscovery.Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
-	// Since this is a client for the alert-managers ring, we append "alert-manager-client" to the component to clearly differentiate it.
+	// Since this is a client for the alert-managers ring, we append "alertmanager-client" to the component to clearly differentiate it.
 	clientComponent += "-alertmanager-client"
 
 	client, err := ring.New(cfg.toRingConfig(), clientComponent, RingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize alert-managers' ring client")
+		return nil, errors.Wrap(err, "failed to initialize alertmanagers' ring client")
 	}
 	if err != nil {
 		return nil, err

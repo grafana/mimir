@@ -154,7 +154,7 @@ func (r *DefaultMultiTenantManager) running(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case err := <-r.discoveryWatcher.Chan():
-			return errors.Wrap(err, "alert-manager watcher subservice failed")
+			return errors.Wrap(err, "alertmanager watcher subservice failed")
 		}
 	} else {
 		<-ctx.Done()
@@ -259,7 +259,7 @@ func (r *DefaultMultiTenantManager) InstanceAdded(instance servicediscovery.Inst
 	if instance.InUse {
 		r.discoveryMtx.Lock()
 		defer r.discoveryMtx.Unlock()
-		level.Info(r.logger).Log("msg", "adding alert-manager instance", "addr", instance.Address)
+		level.Info(r.logger).Log("msg", "adding alertmanager instance", "addr", instance.Address)
 		r.discoveryConfigs[r.alertManagerHTTPAddress(instance)] = alertmanagerdiscovery.NewDiscoveryConfig(instance.Address)
 		r.updateNotifierConfig()
 	}
@@ -269,7 +269,7 @@ func (r *DefaultMultiTenantManager) InstanceAdded(instance servicediscovery.Inst
 func (r *DefaultMultiTenantManager) InstanceRemoved(instance servicediscovery.Instance) {
 	r.discoveryMtx.Lock()
 	defer r.discoveryMtx.Unlock()
-	level.Info(r.logger).Log("msg", "removing alert-manager instance", "addr", instance.Address)
+	level.Info(r.logger).Log("msg", "removing alertmanager instance", "addr", instance.Address)
 	delete(r.discoveryConfigs, r.alertManagerHTTPAddress(instance))
 	r.updateNotifierConfig()
 }

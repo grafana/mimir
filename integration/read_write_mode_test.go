@@ -238,11 +238,11 @@ func runAlertingRule(t *testing.T, testAlertName, seriesName, aggFunc string, ge
 		s,
 		map[string]string{
 			// Evaluate rules often and with no delay, so that we don't need to wait for metrics or alerts to show up.
-			"-ruler.evaluation-interval":            "2s",
-			"-ruler.poll-interval":                  "2s",
-			"-ruler.evaluation-delay-duration":      "0",
-			"-ruler.resend-delay":                   "2s",
-			"-alert-manager.service-discovery-mode": "ring",
+			"-ruler.evaluation-interval":           "2s",
+			"-ruler.poll-interval":                 "2s",
+			"-ruler.evaluation-delay-duration":     "0",
+			"-ruler.resend-delay":                  "2s",
+			"-alertmanager.service-discovery-mode": "ring",
 		},
 	)
 
