@@ -30,11 +30,11 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
 			replicationStrategy := tokdistr.NewZoneAwareReplicationStrategy(replicationFactor, make(map[tokdistr.Instance]tokdistr.Zone, initialInstanceCount), nil, nil)
 			tokenDistributor := tokdistr.NewTokenDistributor(numTokensPerInstance, len(zones), maxTokenValue, replicationStrategy, seedGeneratorProvider(zones, replicationFactor, numTokensPerInstance, maxTokenValue))
-			var stat tokdistr.Statistics
+			var stat *tokdistr.Statistics
 			for i := 0; i < instancesPerZone; i++ {
 				for j := 0; j < len(zones); j++ {
 					instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-					_, _, stat = tokenDistributor.AddInstance(instance, zones[j])
+					_, _, stat, _ = tokenDistributor.AddInstance(instance, zones[j])
 				}
 			}
 			result[it] = append(result[it], stat.CombinedStatistics[tokdistr.InstanceStatKey].Spread)
@@ -57,7 +57,7 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 		}
 		return res
 	})
-	output := "simulated-ring-with-different-tokens-per-instance-with-candidates-selection.csv"
+	output := fmt.Sprintf("simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", replicationFactor, formatEnabled(len(zones) > 1))
 	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
 	if err := w.writeCSV(filename); err != nil {
 		return err
@@ -75,5 +75,7 @@ func main() {
 	seedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
 		return tokdistr.NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxTokenValue)
 	}
+
+	// generate ring with different tokens per instance with replication and zone-awareness enabled
 	generateRingWithZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, seedGenerator)
 }

@@ -12,8 +12,9 @@ const (
 )
 
 var (
-	LastZoneInfo     = *newZoneInfo(LastZone)
-	LastInstanceInfo = *newInstanceInfo(LastInstance, &LastZoneInfo, 0)
+	LastZoneInfo     = newZoneInfo(LastZone)
+	LastInstanceInfo = newInstanceInfo(LastInstance, LastZoneInfo, 0)
+	SingleZoneInfo   = newZoneInfo(SingleZone)
 )
 
 type zoneInfo struct {

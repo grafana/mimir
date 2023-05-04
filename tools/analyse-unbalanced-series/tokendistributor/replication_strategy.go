@@ -124,15 +124,12 @@ func (s SimpleReplicationStrategy) getReplicaStart(terminalToken Token, sortedRi
 		currentToken            = terminalToken
 	)
 
-	//level.Debug(s.logger).Log("msg", fmt.Sprintf("Index %d  has been found for token %d", start, terminalToken))
-
 	// we go backwards and look for all possible ring tokens that could belong to the replication set ending in given terminalToken and terminalInstance
 	for i := start - 1; iterations < ringTokensCount; i-- {
 		if i < 0 {
 			i += ringTokensCount
 		}
 		iterations++
-		currentReplicationStart = currentToken
 		currentToken = sortedRingTokens[i]
 		currentInstance, ok := ringInstanceByToken[currentToken]
 		if !ok {
@@ -141,19 +138,17 @@ func (s SimpleReplicationStrategy) getReplicaStart(terminalToken Token, sortedRi
 		}
 		// as soon as we find an instance corresponding to the terminal instance, we return currentReplicationStart
 		if terminalInstance == currentInstance {
-			//level.Info(s.logger).Log("msg", fmt.Sprintf("Instance %s corresponding to the final instance has been found. Returning token %d", currentInstance, currentReplicationStart))
 			break
 		}
 
-		if slices.Contains(distinctInstances, currentInstance) {
-			//level.Debug(s.logger).Log("msg", fmt.Sprintf("Instance %s with currentToken %d has been ignored because it is already present in the replication set", currentInstance, currentToken))
-			continue
+		if !slices.Contains(distinctInstances, currentInstance) {
+			distinctInstances = append(distinctInstances, currentInstance)
+			if len(distinctInstances) == s.replicationFactor {
+				break
+			}
+
 		}
-		distinctInstances = append(distinctInstances, currentInstance)
-		if len(distinctInstances) == s.replicationFactor {
-			break
-		}
-		//level.Info(s.logger).Log("msg", fmt.Sprintf("Instance %s with token %d has been added to the replica set", currentInstance, currentToken))
+		currentReplicationStart = currentToken
 	}
 
 	return currentReplicationStart, nil

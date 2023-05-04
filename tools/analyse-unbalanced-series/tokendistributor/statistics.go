@@ -77,7 +77,7 @@ func GetAverageStatistics(stats []Statistics) Statistics {
 	}
 }
 
-func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap map[Instance]int, optimalTimeseriesOwnership float64, totalTimeseries int) Statistics {
+func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap map[Instance]int, optimalTimeseriesOwnership float64, totalTimeseries int) *Statistics {
 	statisticType := make(map[string]StatisticType, 1)
 	instance := StatisticType{}
 
@@ -107,7 +107,7 @@ func getTimeseriesStatistics(tokenDistributor *TokenDistributor, ownershipMap ma
 		instance.Sum += float64(ownership)
 	}
 	statisticType[InstanceStatKey] = instance
-	return Statistics{CombinedStatistics: statisticType}
+	return &Statistics{CombinedStatistics: statisticType}
 }
 
 type SingleInstanceStatistics struct {

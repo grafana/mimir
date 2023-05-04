@@ -236,9 +236,9 @@ func TestTokenDistributor_AddCandidateToTokenInfoCircularList(t *testing.T) {
 	bestCandidate := curr.getData()
 	bestCandidate.getOwningInstance().ownership = 0
 	next0 := tokenDistributor.calculateReplicatedOwnership(curr.getNext(), curr.getNext().getReplicaStart().(navigableTokenInterface))
-	tokenDistributor.addCandidateToTokenInfoCircularList(curr, tokenInfoCircularList)
+	tokenDistributor.addCandidateAndUpdateTokenInfoCircularList(curr, tokenInfoCircularList)
 	next1 := tokenDistributor.calculateReplicatedOwnership(curr.getNext(), curr.getNext().getReplicaStart().(navigableTokenInterface))
-	fmt.Println(next1, next0)
+	require.NotEqual(t, next1, next0)
 
 	first := tokenInfoCircularList.head
 	currTokenInfo := first.next
@@ -366,7 +366,7 @@ func TestTokenDistributor_AddInstance(t *testing.T) {
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
-	tokenList, candidateList, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	tokenList, candidateList, _, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
 	fmt.Println(tokenDistributor.sortedTokens)
 	fmt.Println(tokenList)
 	fmt.Println(candidateList)
@@ -377,7 +377,7 @@ func TestTokenDistributor_AddInstanceInitialEvenDistribution(t *testing.T) {
 	tokenCircularList, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
 	fmt.Println(tokenCircularList)
 	fmt.Println(candidateTokenCircularList)
-	tokenList, candidateList, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
+	tokenList, candidateList, _, _ := tokenDistributor.AddInstance(newInstance, newInstanceZone)
 	fmt.Println(tokenDistributor.sortedTokens)
 	fmt.Println(tokenList)
 	fmt.Println(candidateList)
@@ -436,9 +436,9 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			for j := 0; j < len(zones); j++ {
 				instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-				_, _, stat := tokenDistributor.AddInstance(instance, zones[j])
+				_, _, stat, _ := tokenDistributor.AddInstance(instance, zones[j])
 				fmt.Printf("Instance %s added\n", instance)
-				stats = append(stats, stat)
+				stats = append(stats, *stat)
 			}
 		}
 		require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
@@ -463,9 +463,9 @@ func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			instance := Instance(fmt.Sprintf("instance-%d", i))
-			_, _, stat := tokenDistributor.AddInstance(instance, SingleZone)
+			_, _, stat, _ := tokenDistributor.AddInstance(instance, SingleZone)
 			fmt.Printf("Instance %s added\n", instance)
-			stats = append(stats, stat)
+			stats = append(stats, *stat)
 		}
 		require.Len(t, tokenDistributor.sortedTokens, tokensPerInstance*numberOfInstancesPerZone)
 	}
@@ -476,7 +476,7 @@ func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
 	iterations := 10
 	replicationFactor := 3
-	maxToken := Token(math.MaxUint32)
+	maxToken := Token(maxTokenValue)
 	zones := []Zone{SingleZone}
 	numberOfInstancesPerZone := 66
 	tokensPerInstance := 64
@@ -489,9 +489,9 @@ func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			instance := Instance(fmt.Sprintf("instance-%d", i))
-			_, _, stat := tokenDistributor.AddInstance(instance, SingleZone)
+			_, _, stat, _ := tokenDistributor.AddInstance(instance, SingleZone)
 			fmt.Printf("Instance %s added\n", instance)
-			stats = append(stats, stat)
+			stats = append(stats, *stat)
 		}
 		require.Len(t, tokenDistributor.sortedTokens, tokensPerInstance*numberOfInstancesPerZone)
 	}
@@ -509,11 +509,11 @@ func TestTokenDistributor_GenerationZoneAwareWithTokens(t *testing.T) {
 	replicationStrategy := NewZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
 	tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
-	var stat Statistics
+	var stat *Statistics
 	for i := 0; i < numberOfInstancesPerZone; i++ {
 		for j := 0; j < len(zones); j++ {
 			instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-			_, _, stat = tokenDistributor.AddInstance(instance, zones[j])
+			_, _, stat, _ = tokenDistributor.AddInstance(instance, zones[j])
 		}
 	}
 	stat.Print()
