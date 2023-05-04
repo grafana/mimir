@@ -37,7 +37,7 @@ const (
 
 	// Selected so that most series fit it and at the same time it's not too large for requests with few series.
 	// Most series are less than 4096 B.
-	seriesBytesSlabSize = 8 * 1024
+	seriesBytesSlabSize = 16 * 1024
 )
 
 var (
