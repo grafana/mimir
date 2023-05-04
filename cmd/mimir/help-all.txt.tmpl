@@ -3,6 +3,8 @@ Usage of ./cmd/mimir/mimir:
     	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
+  -alert-manager.service-discovery-mode string
+    	[experimental] Service discovery mode that rulers use to find alert-manager instances. When alert-manager ring-based service discovery is enabled, this option needs be set on alert-managers and rulers. Supported values are: dns, ring. (default "dns")
   -alertmanager-storage.azure.account-key string
     	Azure storage account key
   -alertmanager-storage.azure.account-name string

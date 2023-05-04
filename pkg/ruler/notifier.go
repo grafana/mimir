@@ -9,12 +9,10 @@ import (
 	"context"
 	"flag"
 	"net/url"
-	"strings"
 	"sync"
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/crypto/tls"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -58,7 +56,7 @@ func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
 	}
 }
 
-// run starts the notifier. This function doesn't block and returns immediately.
+// run starts the discovery.Manager and notifier.Manager. This function doesn't block and returns immediately.
 func (rn *rulerNotifier) run() {
 	rn.wg.Add(2)
 	go func() {
@@ -73,6 +71,7 @@ func (rn *rulerNotifier) run() {
 	}()
 }
 
+// applyConfig applies the cfg to the notifier.Manager.
 func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 	if err := rn.notifier.ApplyConfig(cfg); err != nil {
 		return err
@@ -91,31 +90,20 @@ func (rn *rulerNotifier) stop() {
 	rn.wg.Wait()
 }
 
-// Builds a Prometheus config.Config from a ruler.Config with just the required
-// options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*config.Config, error) {
-	if rulerConfig.AlertmanagerURL == "" {
+// Builds a Prometheus config.Config for the discovery.Config elements.
+func buildNotifierConfig(rulerConfig *Config, discoveryConfigs map[string]discovery.Config) (*config.Config, error) {
+	if len(discoveryConfigs) == 0 {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
 	}
 
-	amURLs := strings.Split(rulerConfig.AlertmanagerURL, ",")
-	amConfigs := make([]*config.AlertmanagerConfig, 0, len(amURLs))
-
-	for _, rawURL := range amURLs {
-		isSD, qType, url, err := sanitizedAlertmanagerURL(rawURL)
+	var amConfigs []*config.AlertmanagerConfig
+	for amURL, dcfg := range discoveryConfigs {
+		amConfig, err := amConfigWithSD(rulerConfig, amURL, dcfg)
 		if err != nil {
 			return nil, err
 		}
-
-		var sdConfig discovery.Config
-		if isSD {
-			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
-		} else {
-			sdConfig = staticTarget(url)
-		}
-
-		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, sdConfig))
+		amConfigs = append(amConfigs, amConfig)
 	}
 
 	promConfig := &config.Config{
@@ -127,23 +115,28 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 	return promConfig, nil
 }
 
-func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) *config.AlertmanagerConfig {
+// amConfigWithSD builds a config.AlertmanagerConfig by combining the rulerCOnfig, url, and sdConfig.
+func amConfigWithSD(rulerConfig *Config, rawURL string, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
+	amURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              config.AlertmanagerAPIVersionV2,
-		Scheme:                  url.Scheme,
-		PathPrefix:              url.Path,
+		Scheme:                  amURL.Scheme,
+		PathPrefix:              amURL.Path,
 		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
 		ServiceDiscoveryConfigs: discovery.Configs{sdConfig},
 		HTTPClientConfig:        config_util.HTTPClientConfig{},
 	}
 
 	// Check the URL for basic authentication information first
-	if url.User != nil {
+	if amURL.User != nil {
 		amConfig.HTTPClientConfig.BasicAuth = &config_util.BasicAuth{
-			Username: url.User.Username(),
+			Username: amURL.User.Username(),
 		}
 
-		if password, isSet := url.User.Password(); isSet {
+		if password, isSet := amURL.User.Password(); isSet {
 			amConfig.HTTPClientConfig.BasicAuth.Password = config_util.Secret(password)
 		}
 	}
@@ -167,5 +160,5 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 		}
 	}
 
-	return amConfig
+	return amConfig, nil
 }

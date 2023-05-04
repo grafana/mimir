@@ -35,10 +35,13 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -98,8 +101,12 @@ type Config struct {
 	// Path to store rule files for prom manager.
 	RulePath string `yaml:"rule_path"`
 
-	// URL of the Alertmanager to send notifications to.
+	// URL of the alertmanager(s) to use in ModeDNS
 	AlertmanagerURL string `yaml:"alertmanager_url"`
+	// Specifies how alert managers should be discovered - injected internally
+	AlertManagerDiscovery alertmanagerdiscovery.Config `yaml:"-"`
+	// Alertmanager ring discovery configuration - injected internally
+	AlertManagerRing alertmanager.RingConfig `yaml:"-"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
@@ -147,6 +154,10 @@ func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 
 	if err := cfg.QueryFrontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
+	}
+
+	if cfg.AlertManagerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.AlertmanagerURL != "" {
+		return fmt.Errorf("alert manager address cannot be specified when alert-manager service discovery mode is set to '%s'", schedulerdiscovery.ModeRing)
 	}
 
 	return nil
@@ -234,6 +245,7 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 
 // MultiTenantManager is the interface of interaction with a Manager that is tenant aware.
 type MultiTenantManager interface {
+	services.Service
 	// SyncFullRuleGroups is used to sync the Manager with rules from the RuleStore.
 	// If existing user is missing in the ruleGroupsByUser map, its ruler manager will be stopped.
 	SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
@@ -248,7 +260,6 @@ type MultiTenantManager interface {
 	// groups is empty, then it means there are no rule groups owned by this ruler and it's safe to stop
 	// the tenant's ruler manager.
 	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
-
 	// GetRules fetches rules for a particular tenant (userID).
 	GetRules(userID string) []*promRules.Group
 
@@ -405,7 +416,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 func (r *Ruler) starting(ctx context.Context) error {
 	var err error
 
-	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool, r.outboundSyncQueue, r.outboundSyncQueueProcessor, r.inboundSyncQueue); err != nil {
+	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool, r.manager, r.outboundSyncQueue, r.outboundSyncQueueProcessor, r.inboundSyncQueue); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 

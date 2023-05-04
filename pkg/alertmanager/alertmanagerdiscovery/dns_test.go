@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ruler
+package alertmanagerdiscovery
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/dns"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -15,6 +16,47 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBuildDiscoveryConfigs(t *testing.T) {
+	t.Run("should build discovery config from valid url", func(t *testing.T) {
+		discoveryConfigs := make(map[string]discovery.Config)
+		err := BuildDiscoveryConfigs("http://0.0.0.0:1000/alertmanager", discoveryConfigs, 0, nil)
+		assert.NoError(t, err)
+		actualLabels := discoveryConfigs["http://0.0.0.0:1000/alertmanager"].(discovery.StaticConfig)[0].Targets[0]
+		assert.Equal(t, model.LabelSet{"__address__": "0.0.0.0:1000"}, actualLabels)
+	})
+
+	t.Run("should error on invalid input", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			amURL string
+			err   error
+		}{
+			{
+				name:  "with DNS service discovery and missing scheme",
+				amURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
+				err:   errors.New("improperly formatted alertmanager URL \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
+			},
+			{
+				name:  "with only dns+ prefix",
+				amURL: "dns+",
+				err:   errors.New("improperly formatted alertmanager URL \"\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
+			},
+			{
+				name:  "misspelled DNS SD format prefix (dnsserv+ vs dnssrv+)",
+				amURL: "dnsserv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
+				err:   errors.New("invalid DNS service discovery prefix \"dnsserv\""),
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := BuildDiscoveryConfigs(tt.amURL, nil, 0, nil)
+				require.EqualError(t, err, tt.err.Error())
+			})
+		}
+	})
+}
 
 func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 	const sourceAddress = "doesnt-matter.com"
@@ -68,7 +110,7 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			resolver.expectAnyResolveCall()
 			resolver.returnAddresses(tc.resolvedAddresses)
 
-			cfg := dnsServiceDiscovery{
+			cfg := DNSDiscoveryConfig{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           dns.A,
@@ -123,7 +165,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			resolver.expectResolveCalledWith(tc.expectedAddress)
 			resolver.returnAddresses(nil)
 
-			cfg := dnsServiceDiscovery{
+			cfg := DNSDiscoveryConfig{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           tc.qType,

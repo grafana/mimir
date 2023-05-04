@@ -46,6 +46,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -81,6 +82,7 @@ func defaultRulerConfig(t testing.TB) Config {
 	cfg.Ring.Common.InstanceAddr = "localhost"
 	cfg.Ring.Common.InstanceID = "localhost"
 	cfg.EnableQueryStats = false
+	cfg.AlertManagerDiscovery.Mode = alertmanagerdiscovery.ModeDNS
 
 	return cfg
 }
@@ -235,7 +237,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	manager, err := NewDefaultMultiTenantManager(cfg, "/alertmanager", managerFactory, prometheus.NewRegistry(), options.logger)
 	require.NoError(t, err)
 
 	return manager

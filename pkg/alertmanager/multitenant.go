@@ -37,6 +37,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -88,6 +89,8 @@ type MultitenantAlertmanagerConfig struct {
 	// For the state persister.
 	Persister PersisterConfig `yaml:",inline"`
 
+	ServiceDiscovery alertmanagerdiscovery.Config `yaml:",inline"`
+
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 }
@@ -116,6 +119,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.ServiceDiscovery.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 }
@@ -149,7 +153,7 @@ func (cfg *MultitenantAlertmanagerConfig) Validate() error {
 		return errZoneAwarenessEnabledWithoutZoneInfo
 	}
 
-	return nil
+	return cfg.ServiceDiscovery.Validate()
 }
 
 func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefix string, logger log.Logger) {

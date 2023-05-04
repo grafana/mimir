@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -27,9 +30,96 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestInstanceAdded(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	assert.Equal(t, len(m.discoveryConfigs), 0)
+
+	m.InstanceAdded(servicediscovery.Instance{
+		Address: "0.0.0.0",
+		InUse:   true,
+	})
+
+	actualLabels := m.discoveryConfigs["http://0.0.0.0/alertmanager"].(discovery.StaticConfig)[0].Targets[0]
+	assert.Equal(t, model.LabelSet{"__address__": "0.0.0.0"}, actualLabels)
+}
+
+func TestInstanceRemoved(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	assert.Equal(t, len(m.discoveryConfigs), 0)
+
+	instance := servicediscovery.Instance{
+		Address: "0.0.0.0",
+		InUse:   true,
+	}
+
+	m.InstanceAdded(instance)
+	assert.NotEmpty(t, m.discoveryConfigs)
+	m.InstanceRemoved(instance)
+	assert.Empty(t, m.discoveryConfigs)
+}
+
+func TestNewDefaultMultiTenantManager(t *testing.T) {
+	dir := t.TempDir()
+	t.Run("with dns discovery mode", func(t *testing.T) {
+		m, err := NewDefaultMultiTenantManager(Config{
+			RulePath:        dir,
+			AlertmanagerURL: "http://alertmanager-1:8031",
+			AlertManagerDiscovery: alertmanagerdiscovery.Config{
+				Mode: alertmanagerdiscovery.ModeDNS,
+			}}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
+
+		require.NoError(t, err)
+		_, containsDiscoveryConfig := m.discoveryConfigs["http://alertmanager-1:8031"]
+		assert.True(t, containsDiscoveryConfig)
+	})
+
+	t.Run("with ring discovery mode", func(t *testing.T) {
+		m, err := NewDefaultMultiTenantManager(Config{
+			RulePath: dir,
+			AlertManagerRing: alertmanager.RingConfig{
+				ReplicationFactor: 1,
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "mock",
+					},
+				},
+			},
+			AlertManagerDiscovery: alertmanagerdiscovery.Config{
+				Mode: alertmanagerdiscovery.ModeRing,
+			}}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
+
+		require.NoError(t, err)
+		assert.NotNil(t, m.discoveryService)
+	})
+}
+
+func TestUpdateNotifierConfigs(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
+	m.notifiers["user"] = newRulerNotifier(&notifier.Options{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, m.notifierCfg.AlertingConfig.AlertmanagerConfigs)
+
+	err = alertmanagerdiscovery.BuildDiscoveryConfigs("http://0.0.0.0:1000/alertmanager", m.discoveryConfigs, 0, nil)
+	require.NoError(t, err)
+	m.updateNotifierConfig()
+
+	// Assert that notifier config is updated when new discovery config is present
+	actualLabels := m.notifierCfg.AlertingConfig.AlertmanagerConfigs[0].ServiceDiscoveryConfigs[0].(discovery.StaticConfig)[0].Targets[0]
+	assert.Equal(t, model.LabelSet{"__address__": "0.0.0.0:1000"}, actualLabels)
+}
 
 func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 	const (
@@ -44,7 +134,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, "/alertmanager", managerMockFactory, nil, logger)
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -130,7 +220,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, "/alertmanager", managerMockFactory, nil, logger)
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 

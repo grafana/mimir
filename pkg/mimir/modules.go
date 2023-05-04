@@ -304,6 +304,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Ruler.AlertManagerRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
@@ -683,6 +684,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.AlertManagerDiscovery = t.Cfg.Alertmanager.ServiceDiscovery
+	t.Cfg.Ruler.AlertManagerRing = t.Cfg.Alertmanager.ShardingRing
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var embeddedQueryable prom_storage.Queryable
@@ -743,18 +746,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Registerer,
 	)
 
-	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
-	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
-	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
-		"cortex_",
-		prometheus.WrapRegistererWith(
-			prometheus.Labels{"component": "ruler"},
-			t.Registerer,
-		),
-	)
-
-	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, t.Cfg.API.AlertmanagerHTTPPrefix, managerFactory, t.Registerer, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}

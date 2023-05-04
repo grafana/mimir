@@ -238,10 +238,11 @@ func runAlertingRule(t *testing.T, testAlertName, seriesName, aggFunc string, ge
 		s,
 		map[string]string{
 			// Evaluate rules often and with no delay, so that we don't need to wait for metrics or alerts to show up.
-			"-ruler.evaluation-interval":       "2s",
-			"-ruler.poll-interval":             "2s",
-			"-ruler.evaluation-delay-duration": "0",
-			"-ruler.resend-delay":              "2s",
+			"-ruler.evaluation-interval":            "2s",
+			"-ruler.poll-interval":                  "2s",
+			"-ruler.evaluation-delay-duration":      "0",
+			"-ruler.resend-delay":                   "2s",
+			"-alert-manager.service-discovery-mode": "ring",
 		},
 	)
 
@@ -347,12 +348,11 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets = append(flagSets, extraFlags...)
 	commonFlags := mergeFlags(flagSets...)
-	backendFlags := mergeFlags(commonFlags, map[string]string{"-ruler.alertmanager-url": "http://localhost:8080/alertmanager"})
 
 	cluster := readWriteModeCluster{
 		readInstance:    e2emimir.NewReadInstance("mimir-read-1", commonFlags),
 		writeInstance:   e2emimir.NewWriteInstance("mimir-write-1", commonFlags),
-		backendInstance: e2emimir.NewBackendInstance("mimir-backend-1", backendFlags),
+		backendInstance: e2emimir.NewBackendInstance("mimir-backend-1", commonFlags),
 	}
 	require.NoError(t, s.StartAndWaitReady(cluster.readInstance, cluster.writeInstance, cluster.backendInstance))
 
