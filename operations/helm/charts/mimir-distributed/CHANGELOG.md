@@ -45,7 +45,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Configure ingester TSDB WAL replay concurrency to 3. #4864
 * [ENHANCEMENT] Configure compactor's first level compaction wait period to 25m. #4872
 * [ENHANCEMENT] You can now configure `storageClass` per zone for Alertmanager, StoreGateway and Ingester. #4234
-* [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
+* [BUGFIX] Helm-Chart: fix route to service port mapping. #4728
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
 * [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
