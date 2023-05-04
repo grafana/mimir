@@ -79,7 +79,7 @@ func (t *RemoteWriteAppendable) Appender(ctx context.Context) storage.Appender {
 	if err != nil {
 		level.Error(l).Log("msg", "error getting userID from context", "err", err)
 		// this should never happen, ctx always has a userID, but just to be doubly sure
-		return nil // TODO figure out non nil but not nop appender
+		return nil
 	}
 	if q := ctx.Value(promql.QueryOrigin{}); q != nil {
 		if ruleGroup, ok := q.(map[string]interface{})["ruleGroup"]; ok {

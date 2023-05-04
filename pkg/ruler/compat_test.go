@@ -433,7 +433,14 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
+			rulesManagerFactory := &RulesManagerFactory{
+				Cfg:               cfg,
+				Pusher:            pusher,
+				EmbeddedQueryable: federatedQueryable,
+				QueryFunc:         queryFunc,
+				Overrides:         options.limits,
+			}
+			managerFactory := rulesManagerFactory.Build()
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 

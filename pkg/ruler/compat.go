@@ -242,37 +242,45 @@ type RulesManager interface {
 	RuleGroups() []*rules.Group
 }
 
+// RulesManagerFactory is a struct that holds relevant components to generate a RulesManager
+type RulesManagerFactory struct {
+	Cfg               Config
+	Pusher            Pusher
+	EmbeddedQueryable storage.Queryable
+	QueryFunc         rules.QueryFunc
+	Overrides         RulesLimits
+	Registerer        prometheus.Registerer
+
+	TotalWrites   prometheus.Counter
+	FailedWrites  prometheus.Counter
+	TotalQueries  prometheus.Counter
+	FailedQueries prometheus.Counter
+}
+
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(
-	cfg Config,
-	p Pusher,
-	embeddedQueryable storage.Queryable,
-	queryFunc rules.QueryFunc,
-	overrides RulesLimits,
-	reg prometheus.Registerer,
-) ManagerFactory {
-	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+func (rm *RulesManagerFactory) Build() ManagerFactory {
+	rm.TotalWrites = promauto.With(rm.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
 	})
-	failedWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	rm.FailedWrites = promauto.With(rm.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_failed_total",
 		Help: "Number of failed write requests to ingesters.",
 	})
-
-	totalQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	rm.TotalQueries = promauto.With(rm.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_queries_total",
 		Help: "Number of queries executed by ruler.",
 	})
-	failedQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	rm.FailedQueries = promauto.With(rm.Registerer).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_queries_failed_total",
 		Help: "Number of failed queries by ruler.",
 	})
+
 	var rulerQuerySeconds *prometheus.CounterVec
-	if cfg.EnableQueryStats {
-		rulerQuerySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+	if rm.Cfg.EnableQueryStats {
+		rulerQuerySeconds = promauto.With(rm.Registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_query_seconds_total",
 			Help: "Total amount of wall clock time spent processing queries by the ruler.",
 		}, []string{"user"})
@@ -284,27 +292,27 @@ func DefaultTenantManagerFactory(
 		}
 		var wrappedQueryFunc rules.QueryFunc
 
-		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+		wrappedQueryFunc = MetricsQueryFunc(rm.QueryFunc, rm.TotalQueries, rm.FailedQueries)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:                  embeddedQueryable,
+			Appendable:                 NewPusherAppendable(rm.Pusher, userID, rm.Overrides, rm.TotalWrites, rm.FailedWrites),
+			Queryable:                  rm.EmbeddedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
-			ExternalURL:                cfg.ExternalURL.URL,
-			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
+			ExternalURL:                rm.Cfg.ExternalURL.URL,
+			NotifyFunc:                 rules.SendAlerts(notifier, rm.Cfg.ExternalURL.String()),
 			Logger:                     log.With(logger, "user", userID),
 			Registerer:                 reg,
-			OutageTolerance:            cfg.OutageTolerance,
-			ForGracePeriod:             cfg.ForGracePeriod,
-			ResendDelay:                cfg.ResendDelay,
+			OutageTolerance:            rm.Cfg.OutageTolerance,
+			ForGracePeriod:             rm.Cfg.ForGracePeriod,
+			ResendDelay:                rm.Cfg.ResendDelay,
 			AlwaysRestoreAlertState:    true,
 			DefaultEvaluationDelay: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.
-				return overrides.EvaluationDelay(userID)
+				return rm.Overrides.EvaluationDelay(userID)
 			},
 		})
 	}
