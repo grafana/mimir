@@ -345,15 +345,13 @@ func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
 		c := http.NewResponseController(w)
 		zero := time.Time{}
 
+		level.Info(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", r.URL)
+
 		if err := c.SetReadDeadline(zero); err != nil {
 			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", r.URL, "err", err)
-		} else {
-			level.Info(a.logger).Log("msg", "cleared read deadline on HTTP connection", "url", r.URL)
 		}
 		if err := c.SetWriteDeadline(zero); err != nil {
 			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", r.URL, "err", err)
-		} else {
-			level.Info(a.logger).Log("msg", "cleared write deadline on HTTP connection", "url", r.URL)
 		}
 
 		next.ServeHTTP(w, r)
