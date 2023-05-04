@@ -36,6 +36,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -651,6 +652,9 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	offsetReader.Reset(start, reader)
 	defer offsetReader.Reset(0, nil) // don't retain the underlying reader
 
+	bytesPool := pool.NewSlabPool[byte](seriesBytesSlicePool, seriesBytesSlabSize)
+	// We never release the pool and let the GC collect it in order to avoid a rance condition with the async sets of the cache.
+
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
 		err := offsetReader.SkipTo(uint64(id))
@@ -661,7 +665,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		if err != nil {
 			return err
 		}
-		seriesBytes := make([]byte, int(seriesSize))
+		seriesBytes := bytesPool.Get(int(seriesSize))
 		n, err := io.ReadFull(offsetReader, seriesBytes)
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			if i == 0 && refetch {
