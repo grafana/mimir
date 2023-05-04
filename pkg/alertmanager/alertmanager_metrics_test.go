@@ -245,6 +245,12 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		# HELP cortex_alertmanager_silences_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
 		# TYPE cortex_alertmanager_silences_gossip_messages_propagated_total counter
 		cortex_alertmanager_silences_gossip_messages_propagated_total 111
+		# HELP cortex_alertmanager_silences_maintenance_errors_total How many maintenances were executed for silences that failed.
+        # TYPE cortex_alertmanager_silences_maintenance_errors_total counter
+    	cortex_alertmanager_silences_maintenance_errors_total 111
+        # HELP cortex_alertmanager_silences_maintenance_total How many maintenances were executed for silences.
+        # TYPE cortex_alertmanager_silences_maintenance_total counter
+        cortex_alertmanager_silences_maintenance_total 111
 		# HELP cortex_alertmanager_silences_queries_total How many silence queries were received.
 		# TYPE cortex_alertmanager_silences_queries_total counter
 		cortex_alertmanager_silences_queries_total 111
@@ -564,6 +570,12 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            # HELP cortex_alertmanager_silences_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
         	            # TYPE cortex_alertmanager_silences_gossip_messages_propagated_total counter
         	            cortex_alertmanager_silences_gossip_messages_propagated_total 111
+						# HELP cortex_alertmanager_silences_maintenance_errors_total How many maintenances were executed for silences that failed.
+						# TYPE cortex_alertmanager_silences_maintenance_errors_total counter
+						cortex_alertmanager_silences_maintenance_errors_total 111
+						# HELP cortex_alertmanager_silences_maintenance_total How many maintenances were executed for silences.
+						# TYPE cortex_alertmanager_silences_maintenance_total counter
+						cortex_alertmanager_silences_maintenance_total 111
 
         	            # HELP cortex_alertmanager_silences_queries_total How many silence queries were received.
         	            # TYPE cortex_alertmanager_silences_queries_total counter
@@ -832,7 +844,12 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		# HELP cortex_alertmanager_silences_gossip_messages_propagated_total Number of received gossip messages that have been further gossiped.
     		# TYPE cortex_alertmanager_silences_gossip_messages_propagated_total counter
     		cortex_alertmanager_silences_gossip_messages_propagated_total 111
-
+			# HELP cortex_alertmanager_silences_maintenance_errors_total How many maintenances were executed for silences that failed.
+			# TYPE cortex_alertmanager_silences_maintenance_errors_total counter
+			cortex_alertmanager_silences_maintenance_errors_total 111
+			# HELP cortex_alertmanager_silences_maintenance_total How many maintenances were executed for silences.
+			# TYPE cortex_alertmanager_silences_maintenance_total counter
+			cortex_alertmanager_silences_maintenance_total 111
     		# HELP cortex_alertmanager_silences_queries_total How many silence queries were received.
     		# TYPE cortex_alertmanager_silences_queries_total counter
     		cortex_alertmanager_silences_queries_total 111
@@ -929,6 +946,8 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	s.silencesActive.Set(base)
 	s.silencesExpired.Set(base * 2)
 	s.silencesPending.Set(base * 3)
+	s.maintenanceTotal.Add(base)
+	s.maintenanceErrorsTotal.Add(base)
 
 	n := newNflogMetrics(reg)
 	n.gcDuration.Observe(base)
@@ -1035,6 +1054,8 @@ type silenceMetrics struct {
 	silencesPending         prometheus.Gauge
 	silencesExpired         prometheus.Gauge
 	propagatedMessagesTotal prometheus.Counter
+	maintenanceTotal        prometheus.Counter
+	maintenanceErrorsTotal  prometheus.Counter
 }
 
 func newSilenceMetrics(r prometheus.Registerer) *silenceMetrics {
@@ -1053,6 +1074,14 @@ func newSilenceMetrics(r prometheus.Registerer) *silenceMetrics {
 	m.snapshotSize = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name: "alertmanager_silences_snapshot_size_bytes",
 		Help: "Size of the last silence snapshot in bytes.",
+	})
+	m.maintenanceTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "alertmanager_silences_maintenance_total",
+		Help: "How many maintenances were executed for silences.",
+	})
+	m.maintenanceErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "alertmanager_silences_maintenance_errors_total",
+		Help: "How many maintenances were executed for silences that failed.",
 	})
 	m.queriesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_silences_queries_total",

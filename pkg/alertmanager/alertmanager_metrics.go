@@ -42,6 +42,8 @@ type alertmanagerMetrics struct {
 
 	// exported metrics, gathered from Alertmanager Silences
 	silencesGCDuration              *prometheus.Desc
+	silencesMaintenanceTotal        *prometheus.Desc
+	silencesMaintenanceErrorsTotal  *prometheus.Desc
 	silencesSnapshotDuration        *prometheus.Desc
 	silencesSnapshotSize            *prometheus.Desc
 	silencesQueriesTotal            *prometheus.Desc
@@ -142,6 +144,14 @@ func newAlertmanagerMetrics() *alertmanagerMetrics {
 		silencesGCDuration: prometheus.NewDesc(
 			"cortex_alertmanager_silences_gc_duration_seconds",
 			"Duration of the last silence garbage collection cycle.",
+			nil, nil),
+		silencesMaintenanceTotal: prometheus.NewDesc(
+			"cortex_alertmanager_silences_maintenance_total",
+			"How many maintenances were executed for silences.",
+			nil, nil),
+		silencesMaintenanceErrorsTotal: prometheus.NewDesc(
+			"cortex_alertmanager_silences_maintenance_errors_total",
+			"How many maintenances were executed for silences that failed.",
 			nil, nil),
 		silencesSnapshotDuration: prometheus.NewDesc(
 			"cortex_alertmanager_silences_snapshot_duration_seconds",
@@ -277,6 +287,8 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.nflogQueryDuration
 	out <- m.nflogPropagatedMessagesTotal
 	out <- m.silencesGCDuration
+	out <- m.silencesMaintenanceTotal
+	out <- m.silencesMaintenanceErrorsTotal
 	out <- m.silencesSnapshotDuration
 	out <- m.silencesSnapshotSize
 	out <- m.silencesQueriesTotal
@@ -327,6 +339,8 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.nflogPropagatedMessagesTotal, "alertmanager_nflog_gossip_messages_propagated_total")
 
 	data.SendSumOfSummaries(out, m.silencesGCDuration, "alertmanager_silences_gc_duration_seconds")
+	data.SendSumOfCounters(out, m.silencesMaintenanceTotal, "alertmanager_silences_maintenance_total")
+	data.SendSumOfCounters(out, m.silencesMaintenanceErrorsTotal, "alertmanager_silences_maintenance_errors_total")
 	data.SendSumOfSummaries(out, m.silencesSnapshotDuration, "alertmanager_silences_snapshot_duration_seconds")
 	data.SendSumOfGauges(out, m.silencesSnapshotSize, "alertmanager_silences_snapshot_size_bytes")
 	data.SendSumOfCounters(out, m.silencesQueriesTotal, "alertmanager_silences_queries_total")
