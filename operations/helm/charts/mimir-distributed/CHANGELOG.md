@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 120 seconds (increase form default 60 seconds). #4924
+
 ## 4.4.0
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
@@ -45,7 +47,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Configure ingester TSDB WAL replay concurrency to 3. #4864
 * [ENHANCEMENT] Configure compactor's first level compaction wait period to 25m. #4872
 * [ENHANCEMENT] You can now configure `storageClass` per zone for Alertmanager, StoreGateway and Ingester. #4234
-* [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 120 seconds (increase form default 60 seconds). #4924
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4728
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
