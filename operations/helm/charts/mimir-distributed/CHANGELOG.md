@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Remove the custom minio bucket creation job in favour of the minio subchart built in post-job.
+
 ## 4.4.0
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
