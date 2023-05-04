@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4930
+
 ## 4.4.0
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
