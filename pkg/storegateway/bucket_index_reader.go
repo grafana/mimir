@@ -662,7 +662,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		if err != nil {
 			return err
 		}
-		seriesBytes := loaded.bytesPool.Get(int(seriesSize))
+		seriesBytes := make([]byte, int(seriesSize))
 		n, err := io.ReadFull(offsetReader, seriesBytes)
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			if i == 0 && refetch {
