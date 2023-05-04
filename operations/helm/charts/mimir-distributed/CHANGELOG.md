@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4929
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4930
 
 ## 4.4.0
 
