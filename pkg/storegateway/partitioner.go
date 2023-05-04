@@ -178,6 +178,9 @@ func (r *uvarintSequenceReader) ReadByte() (byte, error) {
 		// If there are read bytes we must ignore any error returned, even EOF.
 		return r.b[0], nil
 	}
+	if n > 1 {
+		return 0, errors.Newf("read more than one bytes (%d)", n)
+	}
 	return 0, err
 }
 
