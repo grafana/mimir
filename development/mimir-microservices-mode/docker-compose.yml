@@ -152,15 +152,6 @@
       - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
-  "grafana-agent":
-    "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-prometheus.wal-directory=/tmp"
-    "image": "grafana/agent:v0.21.2"
-    "ports":
-      - "9091:9091"
-    "volumes":
-      - "./config:/etc/agent-config"
   "ingester-1":
     "build":
       "context": "."
@@ -252,14 +243,6 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "otel_collector":
-    "command":
-      - "--config=/etc/otel-collector/otel-collector.yaml"
-    "image": "otel/opentelemetry-collector-contrib:0.54.0"
-    "ports":
-      - "8083:8083"
-    "volumes":
-      - "./config:/etc/otel-collector"
   "prometheus":
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"

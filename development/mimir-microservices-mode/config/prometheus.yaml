@@ -33,6 +33,10 @@ scrape_configs:
         separator: '/'
         regex: '(.+?)(-\d+)?'
         replacement: '${1}'
+      - source_labels: ['pod']
+        target_label: 'container'
+        regex: '(.+?)(-\d+)?'
+        replacement: '${1}'
 
 remote_write:
   - url: http://distributor-1:8000/api/v1/push
