@@ -2715,7 +2715,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # expression matcher longer than the configured number of bytes. 0 to disable
 # the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
-[query_sharding_max_regexp_size_bytes: <int> | default = 0]
+[query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
 # (experimental) Split instant queries by an interval and execute in parallel. 0
 # to disable it.
