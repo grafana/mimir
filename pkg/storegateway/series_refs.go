@@ -827,7 +827,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		s.err = errors.Wrap(err, "preload series")
 		return false
 	}
-	defer loadedSeries.Release()
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.

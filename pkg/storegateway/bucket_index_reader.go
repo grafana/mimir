@@ -36,7 +36,6 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -723,15 +722,13 @@ func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (l
 // bucketIndexLoadedSeries holds the result of a series load operation.
 type bucketIndexLoadedSeries struct {
 	// Keeps the series that have been loaded from the index.
-	seriesMx  sync.Mutex
-	bytesPool *pool.SafeSlabPool[byte]
-	series    map[storage.SeriesRef][]byte
+	seriesMx sync.Mutex
+	series   map[storage.SeriesRef][]byte
 }
 
 func newBucketIndexLoadedSeries() *bucketIndexLoadedSeries {
 	return &bucketIndexLoadedSeries{
-		bytesPool: pool.NewSafeSlabPool[byte](seriesBytesSlicePool, seriesBytesSlabSize),
-		series:    map[storage.SeriesRef][]byte{},
+		series: map[storage.SeriesRef][]byte{},
 	}
 }
 
@@ -759,8 +756,4 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
 	return decodeSeries(b, lset, chks, skipChunks)
-}
-
-func (l *bucketIndexLoadedSeries) Release() {
-	l.bytesPool.Release()
 }
