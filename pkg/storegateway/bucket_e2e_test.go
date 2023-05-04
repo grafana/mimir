@@ -442,49 +442,19 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
 	require.NoError(t, err, "couldn't gather metrics from BucketStore")
 
-	toLabels := func(labelValuePairs []string) (result []labels.Label) {
-		if len(labelValuePairs)%2 != 0 {
-			t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
-		}
-		for i := 0; i < len(labelValuePairs); i += 2 {
-			result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
-		}
-		return
-	}
-
-	numObservationsForSummaries := func(summaryName string, labelValuePairs ...string) uint64 {
-		summaryData := &dskit_metrics.SummaryData{}
-		for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(labelValuePairs)) {
-			summaryData.AddSummary(metric.GetSummary())
-		}
-		m := &dto.Metric{}
-		require.NoError(t, summaryData.Metric(&prometheus.Desc{}).Write(m))
-		return m.GetSummary().GetSampleCount()
-	}
-
-	numObservationsForHistogram := func(histogramName string, labelValuePairs ...string) uint64 {
-		histogramData := &dskit_metrics.HistogramData{}
-		for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(labelValuePairs)) {
-			histogramData.AddHistogram(metric.GetHistogram())
-		}
-		m := &dto.Metric{}
-		require.NoError(t, histogramData.Metric(&prometheus.Desc{}).Write(m))
-		return m.GetHistogram().GetSampleCount()
-	}
-
 	if numSeries > 0 {
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_result_series"))
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "postings"))
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "series"))
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_result_series", metrics))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_request_stage_duration_seconds"))
-		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_refs_fetch_duration_seconds"))
+		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
+		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_refs_fetch_duration_seconds", metrics))
 	}
 	if numChunksPerSeries > 0 {
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))
-		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "chunks"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "chunks"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "chunks"))
 	}
 }
 
@@ -635,6 +605,35 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}
 }
 
+func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, registry *prometheus.Registry) {
+	t.Helper()
+
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err, "couldn't gather metrics from BucketStore")
+
+	if numLabelNames > 0 {
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
+
+		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
+		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_refs_fetch_duration_seconds", metrics))
+	}
+}
+
+func assertQueryStatsLabelValuesMetricsRecorded(t *testing.T, registry *prometheus.Registry) {
+	t.Helper()
+
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err, "couldn't gather metrics from BucketStore")
+
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "postings"))
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
+	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
+}
+
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -727,6 +726,8 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 				assert.NoError(t, err)
 
 				assert.Equal(t, tc.expected, vals.Names)
+
+				assertQueryStatsLabelNamesMetricsRecorded(t, len(tc.expected), s.metricsRegistry)
 			})
 		}
 	})
@@ -812,6 +813,8 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 				assert.NoError(t, err)
 
 				assert.Equal(t, tc.expected, emptyToNil(vals.Values))
+
+				assertQueryStatsLabelValuesMetricsRecorded(t, s.metricsRegistry)
 			})
 		}
 	})
@@ -888,4 +891,40 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		}
 		runTest(t, factory)
 	})
+}
+
+func toLabels(t *testing.T, labelValuePairs []string) (result labels.Labels) {
+	t.Helper()
+
+	if len(labelValuePairs)%2 != 0 {
+		t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
+	}
+	for i := 0; i < len(labelValuePairs); i += 2 {
+		result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
+	}
+	return
+}
+
+func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
+	t.Helper()
+
+	summaryData := &dskit_metrics.SummaryData{}
+	for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(t, labelValuePairs)) {
+		summaryData.AddSummary(metric.GetSummary())
+	}
+	m := &dto.Metric{}
+	require.NoError(t, summaryData.Metric(&prometheus.Desc{}).Write(m))
+	return m.GetSummary().GetSampleCount()
+}
+
+func numObservationsForHistogram(t *testing.T, histogramName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
+	t.Helper()
+
+	histogramData := &dskit_metrics.HistogramData{}
+	for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(t, labelValuePairs)) {
+		histogramData.AddHistogram(metric.GetHistogram())
+	}
+	m := &dto.Metric{}
+	require.NoError(t, histogramData.Metric(&prometheus.Desc{}).Write(m))
+	return m.GetHistogram().GetSampleCount()
 }
