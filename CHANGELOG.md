@@ -18,6 +18,7 @@
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
+* [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 
 ### Documentation
 
@@ -31,7 +32,7 @@
 
 * [CHANGE] Ruler: changed ruler autoscaling policy, extended scale down period from 60s to 600s. #4786
 * [CHANGE] Update to v0.5.0 rollout-operator. #4893
-* [CHANGE] Backend: add `alertmanager_args` to `mimir-backend` when running in read-write deployment mode. Remove hardcoded `filesystem` alertmanager storage. #4907
+* [CHANGE] Backend: add `alertmanager_args` to `mimir-backend` when running in read-write deployment mode. Remove hardcoded `filesystem` alertmanager storage. This moves alertmanager's data-dir to `/data/alertmanager` by default. #4907 #4921
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.head-compaction-interval=15m` to spread TSDB head compaction over a wider time range. #4870
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.wal-replay-concurrency` to CPU request minus 1. #4864
 * [ENHANCEMENT] Compactor: configure `-compactor.first-level-compaction-wait-period` to TSDB head compaction interval plus 10 minutes. #4872

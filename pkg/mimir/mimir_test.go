@@ -428,7 +428,6 @@ func TestConfigValidation(t *testing.T) {
 		})
 	}
 }
-
 func TestConfig_validateFilesystemPaths(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -439,6 +438,14 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 	}{
 		"should succeed with the default configuration": {
 			setup: func(cfg *Config) {},
+		},
+		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Backend}
+				cfg.Alertmanager.DataDir = "/data"
+				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
+			},
+			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
 		},
 		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
 			setup: func(cfg *Config) {

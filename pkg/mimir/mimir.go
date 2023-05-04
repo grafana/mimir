@@ -419,7 +419,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager) {
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
