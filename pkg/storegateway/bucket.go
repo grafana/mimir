@@ -900,6 +900,7 @@ func (s *BucketStore) recordSeriesStats(stats *queryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesProcessedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+	s.metrics.seriesRefetches.Add(float64(stats.seriesRefetches))
 }
 
 func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {

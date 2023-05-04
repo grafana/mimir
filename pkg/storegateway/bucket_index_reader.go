@@ -638,7 +638,7 @@ var seriesOffsetReaders = &sync.Pool{New: func() any {
 
 // loadSeries expects the provided ids to be sorted.
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
-	begin := time.Now()
+	defer r.recordLoadSeriesStats(stats, refetch, len(ids), start, end, time.Now())
 
 	reader, err := r.block.indexRangeReader(ctx, int64(start), int64(end-start))
 	if err != nil {
@@ -669,9 +669,8 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, seriesSize)
 			}
 
-			// Inefficient, but should be rare.
-			r.block.metrics.seriesRefetches.Inc()
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", maxSeriesSize)
+			// Inefficient, but should be rare.
 			// Fetch plus to get the size of next one if exists.
 			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
 		} else if err != nil {
@@ -681,14 +680,21 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 
 		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
 	}
+	return nil
+}
 
+func (r *bucketIndexReader) recordLoadSeriesStats(stats *safeQueryStats, refetch bool, numSeries int, start, end uint64, loadStartTime time.Time) {
 	stats.update(func(stats *queryStats) {
-		stats.seriesFetchCount++
-		stats.seriesFetched += len(ids)
-		stats.seriesFetchDurationSum += time.Since(begin)
+		if refetch {
+			stats.seriesRefetches++
+			// We don't track refetches in a lot of detail because they are rare
+			return
+		}
+		// only the root loadSeries will record the time
+		stats.seriesFetchDurationSum += time.Since(loadStartTime)
+		stats.seriesFetched += numSeries
 		stats.seriesFetchedSizeSum += int(end - start)
 	})
-	return nil
 }
 
 // Close released the underlying resources of the reader.
