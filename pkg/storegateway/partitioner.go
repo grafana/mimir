@@ -10,9 +10,10 @@ package storegateway
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -151,7 +152,7 @@ var discardBuf [4096]byte
 // greater than or equal to the current offset of the reader.
 func (r *uvarintSequenceReader) Uvarint(at uint64) (uint64, error) {
 	if at < r.offset {
-		return 0, errors.Newf("cannot reverse reader: offset %d, at %d", r.offset, at)
+		return 0, fmt.Errorf("cannot reverse reader: offset %d, at %d", r.offset, at)
 	}
 	for at > r.offset {
 		b := discardBuf[:]
@@ -164,7 +165,7 @@ func (r *uvarintSequenceReader) Uvarint(at uint64) (uint64, error) {
 			break
 		}
 		if err != nil {
-			return 0, errors.Wrap(err, "discarding sequence reader")
+			return 0, fmt.Errorf("discarding sequence reader: %w", err)
 		}
 	}
 
@@ -179,7 +180,7 @@ func (r *uvarintSequenceReader) ReadByte() (byte, error) {
 		return r.b[0], nil
 	}
 	if n > 1 {
-		return 0, errors.Newf("read more than one bytes (%d)", n)
+		return 0, fmt.Errorf("read more than one bytes (%d)", n)
 	}
 	return 0, err
 }
