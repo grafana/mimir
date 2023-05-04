@@ -649,9 +649,8 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	offsetReader := seriesOffsetReaders.Get().(*offsetTrackingReader)
 	defer seriesOffsetReaders.Put(offsetReader)
 
-	offsetReader.offset = start
-	offsetReader.r.Reset(reader)
-	defer offsetReader.r.Reset(nil) // don't retain the underlying reader
+	offsetReader.Reset(start, reader)
+	defer offsetReader.Reset(0, nil) // don't retain the underlying reader
 
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.

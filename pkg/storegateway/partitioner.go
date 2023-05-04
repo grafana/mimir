@@ -11,6 +11,7 @@ package storegateway
 import (
 	"bufio"
 	"fmt"
+	"io"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -164,4 +165,9 @@ func (r *offsetTrackingReader) Read(p []byte) (int, error) {
 	n, err := r.r.Read(p)
 	r.offset += uint64(n)
 	return n, err
+}
+
+func (r *offsetTrackingReader) Reset(offset uint64, reader io.Reader) {
+	r.r.Reset(reader)
+	r.offset = offset
 }
