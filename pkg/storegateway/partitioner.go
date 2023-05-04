@@ -153,11 +153,13 @@ func (r *offsetTrackingReader) SkipTo(at uint64) error {
 	return nil
 }
 
+// ReadByte implement io.ByteReader for compatibility with binary.ReadUvarint.
 func (r *offsetTrackingReader) ReadByte() (byte, error) {
 	r.offset++
 	return r.r.ReadByte()
 }
 
+// Read implements io.Reader.
 func (r *offsetTrackingReader) Read(p []byte) (int, error) {
 	n, err := r.r.Read(p)
 	r.offset += uint64(n)
