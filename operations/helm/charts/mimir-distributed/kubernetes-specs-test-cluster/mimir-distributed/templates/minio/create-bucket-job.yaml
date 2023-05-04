@@ -37,7 +37,7 @@ spec:
         command: ["/bin/sh", "/config/initialize"]
         env:
           - name: MINIO_ENDPOINT
-            value: minio-svc.thanos
+            value: databricks-gem-minio
           - name: MINIO_PORT
             value: "9000"
         volumeMounts:
