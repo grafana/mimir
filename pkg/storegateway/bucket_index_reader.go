@@ -639,7 +639,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	byteReader := &uvarintSequenceReader{r: reader, offset: start}
 
 	for i, id := range ids {
-		size, err := byteReader.ReadNext(uint64(id))
+		size, err := byteReader.Uvarint(uint64(id))
 		if err != nil {
 			return err
 		}

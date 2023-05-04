@@ -141,11 +141,17 @@ type uvarintSequenceReader struct {
 	b      [1]byte
 }
 
+// discardBuf is a shared global buffer that you can use to discard bytes. The presumption
+// is that unsychronised access to the buffer is ok, because we don't care about the results.
+// This is a fewer-allocations alternative to io.CopyN + io.Discard, because io.CopyN allocates a buffer
+// on each invocation.
 var discardBuf [4096]byte
 
-func (r *uvarintSequenceReader) ReadNext(at uint64) (uint64, error) {
+// Uvarint returns a uvarint at the provided offset. The provided offset must be
+// greater than or equal to the current offset of the reader.
+func (r *uvarintSequenceReader) Uvarint(at uint64) (uint64, error) {
 	if at < r.offset {
-		panic("cannot reverse reader")
+		return 0, errors.Newf("cannot reverse reader: offset %d, at %d", r.offset, at)
 	}
 	for at > r.offset {
 		b := discardBuf[:]
