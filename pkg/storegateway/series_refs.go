@@ -1224,6 +1224,7 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
+// postingsSetsIterator splits the provided postings into sets, while retaining their original order.
 type postingsSetsIterator struct {
 	postings []storage.SeriesRef
 

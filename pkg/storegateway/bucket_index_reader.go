@@ -65,12 +65,14 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 
 // ExpandedPostings returns postings in expanded list instead of index.Postings.
 // This is because we need to have them buffered anyway to perform efficient lookup
-// on object storage.
-// Found posting IDs (ps) are not strictly required to point to a valid Series, e.g. during
-// background garbage collections.
+// on object storage. The returned postings are sorted.
 //
-// Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
-// chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
+// Depending on the postingsSelectionStrategy there may be some pendingMatchers returned.
+// If pendingMatchers is not empty, then the returned postings may or may not match the pendingMatchers.
+// The caller is responsible for filtering the series of the postings with the pendingMatchers.
+//
+// Reminder: A posting is a reference (represented as a uint64) to a series, which points to the first
+// byte of a series in the index for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
@@ -598,6 +600,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 	return l, key, pendingMatchers, err
 }
 
+// preloadSeries expects the provided ids to be sorted.
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
 	defer span.Finish()
@@ -633,6 +636,7 @@ var seriesOffsetReaders = &sync.Pool{New: func() any {
 	return &offsetTrackingReader{r: bufio.NewReaderSize(nil, 32*1024)}
 }}
 
+// loadSeries expects the provided ids to be sorted.
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
 	begin := time.Now()
 
@@ -650,6 +654,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	defer offsetReader.r.Reset(nil) // don't retain the underlying reader
 
 	for i, id := range ids {
+		// We iterate the series in order assuming they are sorted.
 		err := offsetReader.SkipTo(uint64(id))
 		if err != nil {
 			return err

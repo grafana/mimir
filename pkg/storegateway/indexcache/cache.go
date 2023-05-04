@@ -56,6 +56,7 @@ type IndexCache interface {
 
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
+	// The order of the returned misses should be the same as their relative order in the provided ids.
 	FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
 
 	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
