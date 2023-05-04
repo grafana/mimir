@@ -44,6 +44,7 @@ data:
         "" "anonymous";
       }
     
+      proxy_read_timeout 120;
       server {
         listen 8080;
     
