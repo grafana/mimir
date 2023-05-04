@@ -538,6 +538,15 @@
         },
         {
           "kind": "field",
+          "name": "log_request_headers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "log_request_at_info_level_enabled",
           "required": false,
           "desc": "Optionally log requests at info level instead of debug level.",
@@ -546,6 +555,15 @@
           "fieldFlag": "server.log-request-at-info-level-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "log_request_exclude_headers_list",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
         },
         {
           "kind": "field",
