@@ -13,7 +13,7 @@ metadata:
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
   annotations:
-    {}
+    iamRole: arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2
   namespace: "mimir"
 spec:
   replicas: 6
