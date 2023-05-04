@@ -49,6 +49,7 @@
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
 * [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
+* [FEATURE] Alertmanager: added an experimental ring-based service discovery support for the alertmanager. Refer to [alertmanager configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/alertmanager#configuration) for more information. #4928
 * [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
 * [BUGFIX] Store-gateway: panics when decoding LabelValues responses that contain more than 655360 values. These responses are no longer cached. #5021
 

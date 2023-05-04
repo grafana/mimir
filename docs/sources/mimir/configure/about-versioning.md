@@ -52,6 +52,8 @@ The following features are currently experimental:
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
+- Alertmanager
+  - Ring-based service discovery (`-alertmanager.service-discovery-mode`)
   - Ruler storage cache
     - `-ruler-storage.cache.*`
 - Distributor
