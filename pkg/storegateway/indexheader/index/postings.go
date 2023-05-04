@@ -324,6 +324,7 @@ type postingValueOffsets struct {
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
+// If all offsets match the prefix, then end will equal the length of offsets.
 // prefixOffsets returns false when no offsets match this prefix.
 func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, found bool) {
 	// Find the first offset that is greater or equal to the value.
