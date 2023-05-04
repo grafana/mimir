@@ -354,7 +354,7 @@ func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, foun
 	}
 
 	// Find the first offset which is larger than the prefix and doesn't have the prefix.
-	// All values after that offset will not match the prefix.
+	// All values at and after that offset will not match the prefix.
 	end = sort.Search(len(e.offsets)-start, func(i int) bool {
 		return prefix < e.offsets[i+start].value && !strings.HasPrefix(e.offsets[i+start].value, prefix)
 	})
