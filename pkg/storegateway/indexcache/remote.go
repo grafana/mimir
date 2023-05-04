@@ -246,7 +246,10 @@ func (c *RemoteIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID s
 
 	// Construct the resulting hits map and list of missing keys. We iterate on the input
 	// list of ids to be able to easily create the list of ones in a single iteration.
-	hits = map[storage.SeriesRef][]byte{}
+	hits = make(map[storage.SeriesRef][]byte, len(results))
+	if numMisses := len(ids) - len(results); numMisses > 0 {
+		misses = make([]storage.SeriesRef, 0, numMisses)
+	}
 
 	for _, id := range ids {
 		key, ok := keysMapping[id]
