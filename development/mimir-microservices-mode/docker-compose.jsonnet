@@ -21,6 +21,12 @@ std.manifestYamlDoc({
 
     // If true, a load generator is started.
     enable_load_generator: true,
+
+    // If true, start and enable scraping by these components.
+    // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
+    enable_grafana_agent: false,
+    enable_prometheus: true, // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    enable_otel_collector: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -34,10 +40,10 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
-    self.prometheus +
+    (if $._config.enable_prometheus then self.prometheus else {}) +
     self.grafana +
-    self.grafana_agent +
-    self.otel_collector +
+    (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
+    (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
@@ -232,9 +238,9 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
-      environment: [ 
+      environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=distributor-1:8000', 
+        'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
         'RULER_HOST=ruler-1:8021',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
