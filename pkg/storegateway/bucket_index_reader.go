@@ -637,7 +637,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		return errors.Wrap(err, "read series range")
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
-	byteReader := &uvarintSequenceReader{r: bufio.NewReaderSize(reader, 64*1024), offset: start}
+	byteReader := &uvarintSequenceReader{r: bufio.NewReaderSize(reader, 32*1024), offset: start}
 
 	for i, id := range ids {
 		size, err := byteReader.Uvarint(uint64(id))
