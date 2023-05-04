@@ -140,10 +140,10 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(per_namespace_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
             and
             # and there is only one zone
-            count by (%(per_namespace_label)s) (group by (%(per_namespace_label)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
           ||| % $._config,
           labels: {
             severity: 'critical',
@@ -156,10 +156,10 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
-            count by (%(per_namespace_label)s) (sum by (%(per_namespace_label)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
             and
             # and there are multiple zones
-            count by (%(per_namespace_label)s) (group by (%(per_namespace_label)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
           ||| % $._config,
           labels: {
             severity: 'critical',
