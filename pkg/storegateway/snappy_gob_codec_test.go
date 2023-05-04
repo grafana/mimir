@@ -14,14 +14,14 @@ import (
 
 func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 	type testType struct {
-		LabelSets   []labels.Labels
+		LabelSets   [][]labels.Label
 		MatchersKey indexcache.LabelMatchersKey
 	}
 
 	entry := testType{
-		LabelSets: []labels.Labels{
-			labels.FromStrings("foo", "bar"),
-			labels.FromStrings("baz", "boo"),
+		LabelSets: [][]labels.Label{
+			{{Name: "foo", Value: "bar"}},
+			{{Name: "baz", Value: "boo"}},
 		},
 		MatchersKey: indexcache.CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")}),
 	}

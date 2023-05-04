@@ -27,6 +27,7 @@ prometheus:
                 - 'store-gateway-2:8009'
                 - 'query-scheduler:8011'
                 - 'memcached-exporter:9150'
+                - 'load-generator:9900'
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
@@ -38,6 +39,10 @@ prometheus:
             - source_labels: ['namespace', 'pod']
               target_label: 'job'
               separator: '/'
+              regex: '(.+?)(-\d+)?'
+              replacement: '${1}'
+            - source_labels: ['pod']
+              target_label: 'container'
               regex: '(.+?)(-\d+)?'
               replacement: '${1}'
 

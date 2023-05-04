@@ -458,7 +458,7 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	}
 }
 
-func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors labels.Labels) []*dto.Metric {
+func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors []labels.Label) []*dto.Metric {
 	var result []*dto.Metric
 	for _, m := range mf.GetMetric() {
 		if !util.MatchesSelectors(m, selectors) {

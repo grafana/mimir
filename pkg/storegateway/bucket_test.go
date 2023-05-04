@@ -2244,14 +2244,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2364,7 +2364,7 @@ func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels,
 	ref, err := app.Append(0, lbls, ts, random.Float64())
 	assert.NoError(t, err)
 	for i := 1; i < totalSamples; i++ {
-		_, err := app.Append(ref, nil, ts+step*int64(i), random.Float64())
+		_, err := app.Append(ref, lbls, ts+step*int64(i), random.Float64())
 		assert.NoError(t, err)
 	}
 	assert.NoError(t, app.Commit())
@@ -2779,16 +2779,17 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		lbls := labels.NewBuilder(opts.PrependLabels)
 		lbls.Set("foo", "bar")
 		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
+		ll := lbls.Labels()
 		ref, err := app.Append(
 			0,
-			lbls.Labels(),
+			ll,
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
 		assert.NoError(t, err)
 
 		for is := 1; is < opts.SamplesPerSeries; is++ {
-			_, err := app.Append(ref, nil, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
+			_, err := app.Append(ref, ll, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
 			assert.NoError(t, err)
 		}
 	}

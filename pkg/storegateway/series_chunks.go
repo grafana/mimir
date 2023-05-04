@@ -218,7 +218,7 @@ func (b *seriesChunksSeriesSet) Next() bool {
 // At returns the current series. The result from At() MUST not be retained after calling Next()
 func (b *seriesChunksSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 	if b.currOffset >= b.currSet.len() {
-		return nil, nil
+		return labels.EmptyLabels(), nil
 	}
 
 	return b.currSet.series[b.currOffset].lset, b.currSet.series[b.currOffset].chks

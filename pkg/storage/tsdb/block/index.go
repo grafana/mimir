@@ -274,15 +274,16 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 			return stats, errors.Wrap(err, "read series")
 		}
 		lset = builder.Labels()
-		if len(lset) == 0 {
+		if lset.IsEmpty() {
 			return stats, errors.Errorf("empty label set detected for series %d", id)
 		}
-		if lastLset != nil && labels.Compare(lastLset, lset) >= 0 {
+		if !lastLset.IsEmpty() && labels.Compare(lastLset, lset) >= 0 {
 			return stats, errors.Errorf("series %v out of order; previous %v", lset, lastLset)
 		}
-		l0 := lset[0]
-		for _, l := range lset[1:] {
-			if l.Name < l0.Name {
+		first := true
+		var lastName string
+		lset.Range(func(l labels.Label) {
+			if !first && l.Name < lastName {
 				stats.OutOfOrderLabels++
 				level.Warn(logger).Log("msg",
 					"out-of-order label set: known bug in Prometheus 2.8.0 and below",
@@ -290,8 +291,9 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 					"series", fmt.Sprintf("%d", id),
 				)
 			}
-			l0 = l
-		}
+			first = false
+			lastName = l.Name
+		})
 		if len(chks) == 0 {
 			return stats, errors.Errorf("empty chunks for series %d", id)
 		}
@@ -738,14 +740,14 @@ func rewrite(
 			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
 		}
 
-		for _, l := range s.lset {
+		s.lset.Range(func(l labels.Label) {
 			valset, ok := values[l.Name]
 			if !ok {
 				valset = stringset{}
 				values[l.Name] = valset
 			}
 			valset.set(l.Value)
-		}
+		})
 		postings.Add(i, s.lset)
 		i++
 		lastSet = s.lset
