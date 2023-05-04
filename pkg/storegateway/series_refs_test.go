@@ -1751,45 +1751,47 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	}
 
 	for name, setup := range testSetups {
-		for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
-			b.Run(name, func(b *testing.B) {
-				ctx, cancel := context.WithCancel(context.Background())
-				b.Cleanup(cancel)
+		b.Run(name, func(b *testing.B) {
+			for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
+				b.Run(testCase.name, func(b *testing.B) {
+					ctx, cancel := context.WithCancel(context.Background())
+					b.Cleanup(cancel)
 
-				var block = newTestBlock()
-				indexReader := block.indexReader(selectAllStrategy{})
-				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
+					var block = newTestBlock()
+					indexReader := block.indexReader(selectAllStrategy{})
+					b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
 
-				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+					hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
 
-				b.ResetTimer()
+					b.ResetTimer()
 
-				for i := 0; i < b.N; i++ {
-					iterator, err := openBlockSeriesChunkRefsSetsIterator(
-						ctx,
-						5000,
-						"",
-						indexReader,
-						setup.indexCache,
-						block.meta,
-						testCase.matchers,
-						nil,
-						cachedSeriesHasher{hashCache},
-						false, // we don't skip chunks, so we can measure impact in loading chunk refs too
-						block.meta.MinTime,
-						block.meta.MaxTime,
-						2,
-						newSafeQueryStats(),
-						nil,
-					)
-					require.NoError(b, err)
+					for i := 0; i < b.N; i++ {
+						iterator, err := openBlockSeriesChunkRefsSetsIterator(
+							ctx,
+							5000,
+							"",
+							indexReader,
+							setup.indexCache,
+							block.meta,
+							testCase.matchers,
+							nil,
+							cachedSeriesHasher{hashCache},
+							false, // we don't skip chunks, so we can measure impact in loading chunk refs too
+							block.meta.MinTime,
+							block.meta.MaxTime,
+							2,
+							newSafeQueryStats(),
+							nil,
+						)
+						require.NoError(b, err)
 
-					actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
-					assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
-					assert.NoError(b, iterator.Err())
-				}
-			})
-		}
+						actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
+						assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
+						assert.NoError(b, iterator.Err())
+					}
+				})
+			}
+		})
 	}
 }
 
