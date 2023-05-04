@@ -182,15 +182,16 @@ func TestRemoteWriteSyncRuleGroups(t *testing.T) {
 		},
 	}
 	m.SyncRuleGroups(context.Background(), userRules)
+	m.Start()
 	mgr1 := getManager(m, user1)
 	require.NotNil(t, mgr1)
-	test.Poll(t, 3*time.Second, true, func() interface{} {
+	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return mgr1.(*mockRulesManager).running.Load()
 	})
 
 	mgr2 := getManager(m, user2)
 	require.NotNil(t, mgr2)
-	test.Poll(t, 3*time.Second, true, func() interface{} {
+	test.Poll(t, 1*time.Second, true, func() interface{} {
 		return mgr2.(*mockRulesManager).running.Load()
 	})
 
@@ -273,13 +274,6 @@ func TestRemoteWriteSyncRuleGroups(t *testing.T) {
 }
 
 func getManager(m MultiTenantManager, user string) RulesManager {
-	dm, ok := m.(*DefaultMultiTenantManager)
-	if ok {
-		dm.userManagerMtx.RLock()
-		defer dm.userManagerMtx.RUnlock()
-
-		return dm.userManagers[user]
-	}
 	rwm, ok := m.(*RWMultiTenantManager)
 	if ok {
 		rwm.userManagerMtx.RLock()
@@ -287,6 +281,15 @@ func getManager(m MultiTenantManager, user string) RulesManager {
 
 		return rwm.userManagers[user]
 	}
+
+	dm, ok := m.(*DefaultMultiTenantManager)
+	if ok {
+		dm.userManagerMtx.RLock()
+		defer dm.userManagerMtx.RUnlock()
+
+		return dm.userManagers[user]
+	}
+
 	return nil
 }
 
