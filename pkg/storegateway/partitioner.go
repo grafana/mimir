@@ -134,13 +134,13 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 	return
 }
 
-type uvarintSequenceReader struct {
+type offsetTrackingReader struct {
 	offset uint64
 	r      *bufio.Reader
 }
 
 // SkipTo skips to the provided offset.
-func (r *uvarintSequenceReader) SkipTo(at uint64) error {
+func (r *offsetTrackingReader) SkipTo(at uint64) error {
 	if diff := int(at - r.offset); diff < 0 {
 		return fmt.Errorf("cannot reverse reader: offset %d, at %d", r.offset, at)
 	} else if diff > 0 {
@@ -153,12 +153,12 @@ func (r *uvarintSequenceReader) SkipTo(at uint64) error {
 	return nil
 }
 
-func (r *uvarintSequenceReader) ReadByte() (byte, error) {
+func (r *offsetTrackingReader) ReadByte() (byte, error) {
 	r.offset++
 	return r.r.ReadByte()
 }
 
-func (r *uvarintSequenceReader) Read(p []byte) (int, error) {
+func (r *offsetTrackingReader) Read(p []byte) (int, error) {
 	n, err := r.r.Read(p)
 	r.offset += uint64(n)
 	return n, err

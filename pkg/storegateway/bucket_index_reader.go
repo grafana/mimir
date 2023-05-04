@@ -630,7 +630,7 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 }
 
 var seriesOffsetReaders = &sync.Pool{New: func() any {
-	return &uvarintSequenceReader{r: bufio.NewReaderSize(nil, 32*1024)}
+	return &offsetTrackingReader{r: bufio.NewReaderSize(nil, 32*1024)}
 }}
 
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
@@ -642,7 +642,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
 
-	offsetReader := seriesOffsetReaders.Get().(*uvarintSequenceReader)
+	offsetReader := seriesOffsetReaders.Get().(*offsetTrackingReader)
 	defer seriesOffsetReaders.Put(offsetReader)
 
 	offsetReader.offset = start
