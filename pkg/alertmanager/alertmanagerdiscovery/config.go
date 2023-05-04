@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ModeFlagName = "alert-manager.service-discovery-mode"
+	ModeFlagName = "alertmanager.service-discovery-mode"
 
 	ModeDNS  = "dns"
 	ModeRing = "ring"
