@@ -645,7 +645,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		}
 		seriesBytes := loaded.bytesPool.Get(int(size))
 		n, err := io.ReadFull(byteReader, seriesBytes)
-		if n != int(size) || (err != nil && errors.Is(err, io.EOF)) {
+		if n != int(size) || (err != nil && errors.Is(err, io.ErrUnexpectedEOF)) {
 			if i == 0 && refetch {
 				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, size)
 			}
@@ -654,7 +654,9 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 			r.block.metrics.seriesRefetches.Inc()
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", size, "max_series_size", maxSeriesSize)
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(binary.MaxVarintLen64+size+1), loaded, stats)
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+size+1, loaded, stats)
+		} else if err != nil {
+			return errors.Wrapf(err, "fetching series %d from block %s", id, r.block.meta.ULID)
 		}
 		loaded.addSeries(id, seriesBytes)
 
