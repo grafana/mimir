@@ -43,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Configure ingester TSDB head compaction interval to 15m. #4870
 * [ENHANCEMENT] Configure ingester TSDB WAL replay concurrency to 3. #4864
 * [ENHANCEMENT] Configure compactor's first level compaction wait period to 25m. #4872
+* [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 120 seconds (increase form default 60 seconds). #4924
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
