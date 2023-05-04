@@ -24,6 +24,7 @@
       target: 'backend',
 
       // Do not conflict with /data/tsdb and /data/tokens used by store-gateway.
+      'alertmanager.storage.path': '/data/alertmanager',
       'compactor.data-dir': '/data/compactor',
 
       // Use ruler's remote evaluation mode.

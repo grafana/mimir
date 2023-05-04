@@ -813,7 +813,7 @@ spec:
         - -alertmanager-storage.s3.bucket-name=alerts-bucket
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=memberlist
-        - -alertmanager.storage.path=/data
+        - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
@@ -995,7 +995,7 @@ spec:
         - -alertmanager-storage.s3.bucket-name=alerts-bucket
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=memberlist
-        - -alertmanager.storage.path=/data
+        - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
@@ -1177,7 +1177,7 @@ spec:
         - -alertmanager-storage.s3.bucket-name=alerts-bucket
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=memberlist
-        - -alertmanager.storage.path=/data
+        - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
