@@ -497,9 +497,16 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.ResetAt(e.offsets[offsetsStart].tableOff)
-	lastVal := e.offsets[len(e.offsets)-1].value
-	if offsetsEnd < len(e.offsets) {
-		lastVal = e.offsets[offsetsEnd].value
+
+	// The last value of a label gets its own offset in e.offsets.
+	// If that value matches, then later we should use e.lastValOffset
+	// as the end offset of the value instead of reading the next value (because there will be no next value).
+	lastValMatches := offsetsEnd == len(e.offsets)
+	// noMoreMatchesMarkerVal is the value after which we know there are no more matching values.
+	// noMoreMatchesMarkerVal itself may or may not match.
+	noMoreMatchesMarkerVal := e.offsets[len(e.offsets)-1].value
+	if !lastValMatches {
+		noMoreMatchesMarkerVal = e.offsets[offsetsEnd].value
 	}
 
 	var skip int
@@ -519,7 +526,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 
 		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
 		isAMatch = prefixMatches && (filter == nil || filter(unsafeValue))
-		noMoreMatches = unsafeValue == lastVal || (!prefixMatches && prefix < unsafeValue)
+		noMoreMatches = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
@@ -559,7 +566,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		// If the current value matches, we need to also populate its end offset and then call the visitor.
 		if currentValueMatches {
 			// We peek at the next list, so we can use its offset as the end offset of the current one.
-			if currList.LabelValue == lastVal {
+			if currList.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {
