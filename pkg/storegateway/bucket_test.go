@@ -525,7 +525,7 @@ func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, o
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
-	const series = 500
+	const series = 50000
 
 	bucketBlockFactories := map[string]func() *bucketBlock{
 		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
@@ -1129,21 +1129,75 @@ func benchmarkExpandedPostings(
 	for _, testCase := range seriesSelectionTestCases(tb, series) {
 		tb.Run(testCase.name, func(tb test.TB) {
 			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
+
+			var allSeries []labels.Labels
+			if !tb.IsBenchmark() {
+				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+				require.NoError(tb, err)
+				allSeries = loadSeries(ctx, tb, allPostings, indexr)
+			}
+
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()
 			for i := 0; i < tb.N(); i++ {
 				p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
-
-				if err != nil {
-					tb.Fatal(err.Error())
-				}
-				if testCase.expectedSeriesLen != len(p) {
-					tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				assert.NoError(tb, err)
+				assert.Equal(tb, testCase.expectedSeriesLen, len(p))
+				if !tb.IsBenchmark() {
+					seriesThatMatch := filterSeries(allSeries, testCase.matchers)
+					seriesForPostings := loadSeries(ctx, tb, p, indexr)
+					assert.Equal(tb, seriesThatMatch, seriesForPostings)
 				}
 			}
 		})
 	}
+}
+
+// filterSeries modified series in place and returns a subslice of series.
+func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels {
+	writeIdx := 0
+	for i, s := range series {
+		matches := true
+		for _, m := range ms {
+			if !m.Matches(s.Get(m.Name)) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			series[writeIdx], series[i] = series[i], series[writeIdx]
+			writeIdx++
+		}
+	}
+	return series[:writeIdx]
+}
+
+func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, indexr *bucketIndexReader) []labels.Labels {
+	setIterator := newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		newPostingsSetsIterator(postings, 1000),
+		indexr,
+		noopCache{},
+		newSafeQueryStats(),
+		indexr.block.meta,
+		nil,
+		nil,
+		true,
+		0,
+		0,
+		"",
+		1,
+		log.NewNopLogger(),
+	)
+	series := make([]labels.Labels, 0, len(postings))
+	seriesIterator := newSeriesSetWithoutChunks(ctx, setIterator, newSafeQueryStats())
+	for seriesIterator.Next() {
+		lbls, _ := seriesIterator.At()
+		series = append(series, lbls)
+	}
+	require.NoError(tb, seriesIterator.Err())
+	return series
 }
 
 type seriesSelectionTestCase struct {

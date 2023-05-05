@@ -323,34 +323,43 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
-func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
+// prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
+// If all offsets match the prefix, then end will equal the length of offsets.
+// prefixOffsets returns false when no offsets match this prefix.
+func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, found bool) {
 	// Find the first offset that is greater or equal to the value.
-	offsetIdx := sort.Search(len(e.offsets), func(i int) bool {
+	start = sort.Search(len(e.offsets), func(i int) bool {
 		return prefix <= e.offsets[i].value
 	})
 
 	// We always include the last value in the offsets,
 	// and given that prefix is always less or equal than the value,
 	// we can conclude that there are no values with this prefix.
-	if offsetIdx == len(e.offsets) {
-		return 0, false
+	if start == len(e.offsets) {
+		return 0, 0, false
 	}
 
 	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
 	// Next values won't have the prefix, so we can return early.
-	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
-		return 0, false
+	if start == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
+		return 0, 0, false
 	}
 
 	// If the value is not equal to the prefix, this value might have the prefix.
 	// But maybe the values in the previous offset also had the prefix,
 	// so we need to step back one offset to find all values with this prefix.
 	// Unless, of course, we are at the first offset.
-	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
-		offsetIdx--
+	if start > 0 && e.offsets[start].value != prefix {
+		start--
 	}
 
-	return offsetIdx, true
+	// Find the first offset which is larger than the prefix and doesn't have the prefix.
+	// All values at and after that offset will not match the prefix.
+	end = sort.Search(len(e.offsets)-start, func(i int) bool {
+		return prefix < e.offsets[i+start].value && !strings.HasPrefix(e.offsets[i+start].value, prefix)
+	})
+	end += start
+	return start, end, true
 }
 
 type postingOffset struct {
@@ -473,22 +482,32 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		return nil, nil
 	}
 
-	offsetIdx := 0
+	offsetsStart, offsetsEnd := 0, len(e.offsets)
 	if prefix != "" {
-		offsetIdx, ok = e.prefixOffset(prefix)
+		offsetsStart, offsetsEnd, ok = e.prefixOffsets(prefix)
 		if !ok {
 			return nil, nil
 		}
 	}
-	result := make([]T, 0, (len(e.offsets)-offsetIdx)*t.postingOffsetsInMemSampling)
+	result := make([]T, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	d.ResetAt(e.offsets[offsetIdx].tableOff)
-	lastVal := e.offsets[len(e.offsets)-1].value
+	d.ResetAt(e.offsets[offsetsStart].tableOff)
+
+	// The last value of a label gets its own offset in e.offsets.
+	// If that value matches, then later we should use e.lastValOffset
+	// as the end offset of the value instead of reading the next value (because there will be no next value).
+	lastValMatches := offsetsEnd == len(e.offsets)
+	// noMoreMatchesMarkerVal is the value after which we know there are no more matching values.
+	// noMoreMatchesMarkerVal itself may or may not match.
+	noMoreMatchesMarkerVal := e.offsets[len(e.offsets)-1].value
+	if !lastValMatches {
+		noMoreMatchesMarkerVal = e.offsets[offsetsEnd].value
+	}
 
 	var skip int
 	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
@@ -507,7 +526,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 
 		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
 		isAMatch = prefixMatches && (filter == nil || filter(unsafeValue))
-		noMoreMatches = unsafeValue == lastVal || (!prefixMatches && prefix < unsafeValue)
+		noMoreMatches = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
@@ -547,7 +566,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		// If the current value matches, we need to also populate its end offset and then call the visitor.
 		if currentValueMatches {
 			// We peek at the next list, so we can use its offset as the end offset of the current one.
-			if currList.LabelValue == lastVal {
+			if currList.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
 				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 				currList.Off.End = e.lastValOffset
 			} else {
