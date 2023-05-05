@@ -97,6 +97,33 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				},
 			},
 		},
+		"multiple ingesters, each with different series, with earliest ingesters having last series": {
+			seriesSets: []ingesterSeries{
+				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
+				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
+				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
+			},
+			expected: []mergedSeries{
+				{
+					Labels: labels.FromStrings("some-label", "value-a"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-b"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-c"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					},
+				},
+			},
+		},
 	}
 
 	implementations := map[string]func([]ingesterSeries) []mergedSeries{
