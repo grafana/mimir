@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// NewGRPCClient returns a new gRPC client for the address, with insecure credentials and an opentracing interceptor configures.
+// NewGRPCClient returns a new gRPC client for the address, with insecure credentials and an opentracing interceptor configured.
 func NewGRPCClient(address string) (httpgrpc.HTTPClient, error) {
 	dialOptions := []grpc.DialOption{
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
