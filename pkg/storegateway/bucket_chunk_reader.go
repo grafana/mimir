@@ -6,11 +6,9 @@
 package storegateway
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"sort"
 
@@ -21,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"golang.org/x/sync/errgroup"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -112,12 +109,11 @@ func (r *bucketChunkReader) load(res []seriesChunks, chunksPool *pool.SafeSlabPo
 // different chunks in the res.
 func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	// Get a reader for the required range.
-	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
+	bucketReader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
 	if err != nil {
 		return errors.Wrap(err, "get range reader")
 	}
-	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
-	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
+	defer runutil.CloseWithLogOnErr(r.block.logger, bucketReader, "readChunkRange close range reader")
 
 	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
 	// all stats in a local instance and then merge it in the defer.
@@ -126,88 +122,62 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 
 	localStats.chunksFetched += len(pIdxs)
 	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
+	reader := seriesOffsetReaders.Get().(*offsetTrackingReader)
+	defer seriesOffsetReaders.Put(reader)
 
-	var (
-		buf        = make([]byte, mimir_tsdb.EstimatedMaxChunkSize)
-		readOffset = int(pIdxs[0].offset)
+	reader.Reset(uint64(pIdxs[0].offset), bucketReader)
+	defer reader.Release()
 
-		// Save a few allocations.
-		written  int64
-		diff     uint32
-		chunkLen int
-		n        int
-	)
+	var chunkDataLen uint64
 
 	for i, pIdx := range pIdxs {
 		// Fast forward range reader to the next chunk start in case of sparse (for our purposes) byte range.
-		for readOffset < int(pIdx.offset) {
-			written, err = io.CopyN(io.Discard, bufReader, int64(pIdx.offset)-int64(readOffset))
-			if err != nil {
-				return errors.Wrap(err, "fast forward range reader")
-			}
-			readOffset += int(written)
-		}
-		// Use the chunk length estimation.
-		// However, declaration for length warns us this estimation can be wrong.
-		// This is handled further down below.
-		chunkLen = int(pIdx.length)
-		if i+1 < len(pIdxs) {
-			if diff = pIdxs[i+1].offset - pIdx.offset; int(diff) < chunkLen {
-				chunkLen = int(diff)
-			}
-		}
-		cb := buf[:chunkLen]
-		n, err = io.ReadFull(bufReader, cb)
-		readOffset += n
-		// Unexpected EOF for last chunk could be a valid case. Any other errors are definitely real.
-		if err != nil && !(errors.Is(err, io.ErrUnexpectedEOF) && i == len(pIdxs)-1) {
-			return errors.Wrapf(err, "read range for seq %d offset %x", seq, pIdx.offset)
-		}
-
-		chunkDataLen, n := binary.Uvarint(cb)
-		if n < 1 {
-			return errors.New("reading chunk length failed")
-		}
-
-		// Chunk length is n (number of bytes used to encode chunk data), 1 for chunk encoding and chunkDataLen for actual chunk data.
-		// There is also crc32 after the chunk, but we ignore that.
-		chunkLen = n + 1 + int(chunkDataLen)
-		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb[n:chunkLen]), chunksPool)
-			if err != nil {
-				return errors.Wrap(err, "populate chunk")
-			}
-			localStats.chunksTouched++
-			localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
-			continue
-		}
-
-		// Read entire chunk into new buffer.
-		// TODO: readChunkRange call could be avoided for any chunk but last in this particular part.
-		nb, err := r.block.readChunkRange(ctx, seq, int64(pIdx.offset), int64(chunkLen), []byteRange{{offset: 0, length: chunkLen}})
+		err = reader.SkipTo(uint64(pIdx.offset))
 		if err != nil {
-			return errors.Wrapf(err, "preloaded chunk too small, expecting %d, and failed to fetch full chunk", chunkLen)
+			return errors.Wrap(err, "fast forward range reader")
 		}
-		if len(*nb) != chunkLen {
-			return errors.Errorf("preloaded chunk too small, expecting %d", chunkLen)
+		chunkDataLen, err = binary.ReadUvarint(reader)
+		if err != nil {
+			return errors.Wrap(err, "parsing reader")
+		}
+		chunkEncDataLen := int(chunkDataLen) + 1
+		cb := chunksPool.Get(chunkEncDataLen)
+		fullyRead, err := io.ReadFull(reader, cb)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			if i != len(pIdxs)-1 {
+				// Unexpected EOF for last chunk could be a valid case. Any other errors are definitely unexpected.
+				return errors.Wrapf(err, "read range for seq %d offset %x", seq, pIdx.offset)
+			}
+			refetchReader, err := r.block.chunkRangeReader(ctx, seq, int64(reader.offset), int64(chunkEncDataLen-fullyRead))
+			if err != nil {
+				return err // TODO dimitarvdimitrov better error msg
+			}
+			defer runutil.CloseWithLogOnErr(r.block.logger, refetchReader, "readChunkRange close refetch range reader")
+			refetchedRead, err := io.ReadFull(refetchReader, cb[fullyRead:])
+			if err != nil {
+				return err // TODO dimitarvdimitrov err msg
+			}
+			if refetchedRead+fullyRead != chunkEncDataLen {
+				return errors.New("couldn't refetch bytes")
+			}
+			localStats.chunksRefetched++
+			localStats.chunksRefetchedSizeSum += refetchedRead
+		} else if err != nil {
+			return errors.Wrap(err, "reading chunks")
 		}
 
-		localStats.chunksRefetched++
-		localStats.chunksRefetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk((*nb)[n:]), chunksPool)
+		// TODO dimitarvdimitrov remove double poling
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb))
 		if err != nil {
-			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
 		}
 		localStats.chunksTouched++
-		localStats.chunksTouchedSizeSum += chunkLen + crc32.Size
-
-		r.block.chunkPool.Put(nb)
+		localStats.chunksTouchedSizeSum += chunkEncDataLen
 	}
 	return nil
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk) error {
 	var enc storepb.Chunk_Encoding
 	switch in.Encoding() {
 	case chunkenc.EncXOR:
@@ -220,18 +190,8 @@ func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.S
 		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}
 
-	b := saveChunk(in.Bytes(), chunksPool)
-	out.Raw = &storepb.Chunk{Type: enc, Data: b}
+	out.Raw = &storepb.Chunk{Type: enc, Data: in.Bytes()}
 	return nil
-}
-
-// saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.
-// The buffer containing the chunk data is returned.
-// The returned slice becomes invalid once chunksPool is released.
-func saveChunk(b []byte, chunksPool *pool.SafeSlabPool[byte]) []byte {
-	dst := chunksPool.Get(len(b))
-	copy(dst, b)
-	return dst
 }
 
 type loadIdx struct {

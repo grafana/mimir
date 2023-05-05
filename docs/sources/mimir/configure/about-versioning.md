@@ -139,5 +139,9 @@ The following features are currently deprecated and will be **removed in Mimir 2
 
 The following features are currently deprecated and will be **removed in Mimir 2.10**:
 
+- Store-gateway
+  - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
+  - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+  - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
 - Ingester
   - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
