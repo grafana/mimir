@@ -22,24 +22,6 @@ type NoopPool struct{}
 func (NoopPool) Put(any)  {}
 func (NoopPool) Get() any { return nil }
 
-// Bytes is a pool of bytes that can be reused.
-type Bytes interface {
-	// Get returns a new byte slices that fits the given size.
-	Get(sz int) (*[]byte, error)
-	// Put returns a byte slice to the right bucket in the pool.
-	Put(b *[]byte)
-}
-
-// NoopBytes is pool that always allocated required slice on heap and ignore puts.
-type NoopBytes struct{}
-
-func (p NoopBytes) Get(sz int) (*[]byte, error) {
-	b := make([]byte, 0, sz)
-	return &b, nil
-}
-
-func (p NoopBytes) Put(*[]byte) {}
-
 // SlabPool wraps Interface and adds support to get a sub-slice of the data type T
 // from the pool, trying to fit the slices picked from the pool as much as possible.
 //
