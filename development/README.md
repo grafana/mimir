@@ -1,10 +1,15 @@
 # Mimir Development
 
-Mimir offers a few docker-compose based development environments for different [deployment modes][deployment-modes], including microservices mode, monolothic mode, and read-write mode.
+Mimir offers a few docker-compose based development environments for different [deployment modes][deployment-modes], including:
+
+- [Microservices mode](./mimir-microservices-mode)
+- [Monolothic mode](./mimir-monolithic-mode)
+- [Monolithic mode with swift storage](./mimir-monolithic-mode-with-swift-storage)
+- [Read-write mode](./mimir-read-write-mode)
 
 ## Running
 
-Choose one of the sub-folders for whichever Mimir deployment mode you want to run. Then, to build Mimir from source and run it via docker-compose, run:
+Choose a sub-folder for whichever Mimir deployment mode you want to run. Then, to build Mimir from source and run it via docker-compose, run:
 
 ```bash
 ./compose-up.sh
