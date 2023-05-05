@@ -650,7 +650,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	defer seriesOffsetReaders.Put(offsetReader)
 
 	offsetReader.Reset(start, reader)
-	defer offsetReader.Reset(0, nil) // don't retain the underlying reader
+	defer offsetReader.Release()
 
 	bytesPool := pool.NewSlabPool[byte](seriesBytesSlicePool, seriesBytesSlabSize)
 	// We never release the pool and let the GC collect it in order to avoid a rance condition with the async sets of the cache.

@@ -171,3 +171,7 @@ func (r *offsetTrackingReader) Reset(offset uint64, reader io.Reader) {
 	r.r.Reset(reader)
 	r.offset = offset
 }
+
+func (r *offsetTrackingReader) Release() {
+	r.Reset(0, nil)
+}
