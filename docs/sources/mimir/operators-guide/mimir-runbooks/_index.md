@@ -1669,7 +1669,7 @@ How it **works**:
 How to **fix** it:
 
 - Ensure all store-gateways are healthy.
-- Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#MimirStoreGatewayHasNotSyncTheBucket)).
+- Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#mimirstoregatewayhasnotsyncthebucket)).
 
 ### err-mimir-bucket-index-too-old
 

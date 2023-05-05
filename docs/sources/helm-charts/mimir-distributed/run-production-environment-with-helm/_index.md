@@ -218,6 +218,8 @@ To enable the PodSecurityPolicy admission controller for your Kubernetes
 cluster, refer to
 [How do I turn on an admission controller?](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#how-do-i-turn-on-an-admission-controller).
 
+For OpenShift-specific instructions see [Deploy on OpenShift](#deploy-on-openshift).
+
 ## Monitor the health of your Grafana Mimir cluster
 
 To monitor the health of your Grafana Mimir cluster, which is also known as
@@ -281,3 +283,55 @@ can set up redundant instances of Prometheus or Grafana Agent to
 write metrics to Mimir.
 
 For more information, see [Configure high-availability deduplication with Consul]({{< relref "./configure-helm-ha-deduplication-consul/">}}).
+
+## Deploy on OpenShift
+
+To deploy the `mimir-distributed` Helm chart on OpenShift you need to change some of the default values.
+Add the following YAML snippet to your values file.
+This will create a dedicated SecurityContextConstraints (SCC) resource for the `mimir-distributed` chart.
+
+```yaml
+rbac:
+  create: true
+  type: scc
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+rollout_operator:
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+```
+
+Alternatively, to deploy using the default SCC in your OpenShift cluster, add the following YAML snippet to your values file:
+
+```yaml
+rbac:
+  create: false
+  type: scc
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+rollout_operator:
+  podSecurityContext:
+    fsGroup: null
+    runAsGroup: null
+    runAsUser: null
+```
+
+> **Note**: When using `mimir-distributed` as a subchart, setting Helm values to `null` requires a workaround due to [a bug in Helm](https://github.com/helm/helm/issues/9027).
+> To set the PodSecurityContext fields to `null`, in addition to the YAML, set the values to `null` via the command line
+> when using `helm`. For example, to use `helm tempalte`:
+>
+> ```bash
+> helm template grafana/mimir-distributed -f values.yaml \
+>   --set 'mimir-distributed.rbac.podSecurityContext.fsGroup=null' \
+>   --set 'mimir-distributed.rbac.podSecurityContext.runAsUser=null' \
+>   --set 'mimir-distributed.rbac.podSecurityContext.runAsGroup=null' \
+>   --set 'mimir-distributed.rollout_operator.podSecurityContext.fsGroup=null' \
+>   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsUser=null' \
+>   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsGroup=null'
+> ```
