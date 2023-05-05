@@ -30,42 +30,13 @@ func TestBuildNotifierConfig(t *testing.T) {
 		err  error
 	}{
 		{
-			name: "with no valid hosts, returns an empty config",
+			name: "with no discovery config",
 			cfg:  &Config{},
 			dcfg: nil,
 			ncfg: &config.Config{},
 		},
 		{
-			name: "with a single URL and no service discovery",
-			cfg:  &Config{},
-			dcfg: map[string]discovery.Config{
-				"http://alertmanager.default.svc.cluster.local/alertmanager": discovery.StaticConfig{
-					{
-						Targets: []model.LabelSet{{"__address__": "alertmanager.default.svc.cluster.local"}},
-					},
-				},
-			},
-			ncfg: &config.Config{
-				AlertingConfig: config.AlertingConfig{
-					AlertmanagerConfigs: []*config.AlertmanagerConfig{
-						{
-							APIVersion: "v2",
-							Scheme:     "http",
-							PathPrefix: "/alertmanager",
-							ServiceDiscoveryConfigs: discovery.Configs{
-								discovery.StaticConfig{
-									{
-										Targets: []model.LabelSet{{"__address__": "alertmanager.default.svc.cluster.local"}},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "with a single URL, v2 API, and no service discovery",
+			name: "with a single URL",
 			cfg:  &Config{},
 			dcfg: map[string]discovery.Config{
 				"http://alertmanager.default.svc.cluster.local/alertmanager": discovery.StaticConfig{
@@ -123,7 +94,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with multiple URLs and no service discovery",
+			name: "with multiple URLs",
 			cfg:  &Config{},
 			dcfg: map[string]discovery.Config{
 				"http://alertmanager-0.default.svc.cluster.local/alertmanager": discovery.StaticConfig{
@@ -166,9 +137,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 				},
 			},
 		},
-
 		{
-			name: "with basic authentication URL and no service discovery",
+			name: "with basic authentication URL",
 			cfg:  &Config{},
 			dcfg: map[string]discovery.Config{
 				"http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager": discovery.StaticConfig{
@@ -200,7 +170,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with basic authentication URL and service discovery",
+			name: "with basic authentication URL and DNSSRV service discovery",
 			cfg:  &Config{},
 			dcfg: map[string]discovery.Config{
 				"dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager": alertmanagerdiscovery.DNSDiscoveryConfig{
@@ -230,7 +200,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with basic authentication URL, no service discovery, and explicit config",
+			name: "with basic authentication URL and notifier config",
 			cfg: &Config{
 				Notifier: NotifierConfig{
 					BasicAuth: util.BasicAuth{
@@ -269,7 +239,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "with multiple URLs and service discovery",
+			name: "with multiple URLs and DNS service discovery",
 			cfg: &Config{
 				AlertmanagerURL:             "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
 				AlertmanagerRefreshInterval: time.Second,

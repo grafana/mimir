@@ -42,8 +42,8 @@ type DefaultMultiTenantManager struct {
 	cfg Config
 
 	// Alertmanager discovery related fields
-	discoveryMtx           sync.Mutex                  // Guards dynamic config changes
-	discoveryConfigs       map[string]discovery.Config // Guarded by discoveryMtx
+	discoveryConfigsMtx    sync.Mutex                  // Guards dynamic config changes
+	discoveryConfigs       map[string]discovery.Config // Guarded by discoveryConfigsMtx
 	alertmanagerHTTPPrefix string                      // Used with ring based discovery
 	discoveryService       services.Service
 	discoveryWatcher       *services.FailureWatcher
@@ -114,17 +114,17 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 	}
 
 	var err error
-	switch cfg.AlertManagerDiscovery.Mode {
+	switch cfg.AlertmanagerDiscovery.Mode {
 	case alertmanagerdiscovery.ModeRing:
 		level.Info(logger).Log("msg", "using ring based alertmanager discovery")
-		m.discoveryService, err = alertmanager.NewRing(cfg.AlertManagerRing, "ruler", m, logger, reg)
+		m.discoveryService, err = alertmanager.NewRing(cfg.AlertmanagerRing, "ruler", m, logger, reg)
 		if err != nil {
 			return nil, err
 		}
 
 	default:
 		level.Info(logger).Log("msg", "using dns based alertmanager discovery")
-		dnsProvider := alertmanagerdiscovery.NewDNSProvider(reg)
+		dnsProvider := alertmanagerdiscovery.NewDNSProvider(reg, logger)
 		err = alertmanagerdiscovery.BuildDiscoveryConfigs(cfg.AlertmanagerURL, m.discoveryConfigs, cfg.AlertmanagerRefreshInterval, dnsProvider)
 		if err != nil {
 			return nil, err
@@ -257,8 +257,8 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 // InstanceAdded handles the addition of an instance to the alertmanager ring.
 func (r *DefaultMultiTenantManager) InstanceAdded(instance servicediscovery.Instance) {
 	if instance.InUse {
-		r.discoveryMtx.Lock()
-		defer r.discoveryMtx.Unlock()
+		r.discoveryConfigsMtx.Lock()
+		defer r.discoveryConfigsMtx.Unlock()
 		level.Info(r.logger).Log("msg", "adding alertmanager instance", "addr", instance.Address)
 		r.discoveryConfigs[r.alertManagerHTTPAddress(instance)] = alertmanagerdiscovery.NewDiscoveryConfig(instance.Address)
 		r.updateNotifierConfig()
@@ -267,8 +267,8 @@ func (r *DefaultMultiTenantManager) InstanceAdded(instance servicediscovery.Inst
 
 // InstanceRemoved handles the removal of an instance from the alertmanager ring.
 func (r *DefaultMultiTenantManager) InstanceRemoved(instance servicediscovery.Instance) {
-	r.discoveryMtx.Lock()
-	defer r.discoveryMtx.Unlock()
+	r.discoveryConfigsMtx.Lock()
+	defer r.discoveryConfigsMtx.Unlock()
 	level.Info(r.logger).Log("msg", "removing alertmanager instance", "addr", instance.Address)
 	delete(r.discoveryConfigs, r.alertManagerHTTPAddress(instance))
 	r.updateNotifierConfig()
@@ -289,17 +289,17 @@ func (r *DefaultMultiTenantManager) alertManagerHTTPAddress(instance servicedisc
 }
 
 // updateNotifierConfig builds a new notifier config and applies it to existing notifiers.
-// Must lock discoveryMtx prior to calling.
+// Must lock discoveryConfigsMtx prior to calling.
 func (r *DefaultMultiTenantManager) updateNotifierConfig() {
 	ncfg, err := buildNotifierConfig(&r.cfg, r.discoveryConfigs)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to build updated notifier config", "err", err)
 		return
 	}
-	r.notifierCfg = ncfg
 
 	r.notifiersMtx.Lock()
 	defer r.notifiersMtx.Unlock()
+	r.notifierCfg = ncfg
 	for _, n := range r.notifiers {
 		if err = n.applyConfig(r.notifierCfg); err != nil {
 			level.Error(r.logger).Log("msg", "unable to update notifier config", "err", err)
@@ -432,7 +432,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 			// When ring discovery mode is enabled, the address we discover is the alertmanager's GRPC address
 			// So we need to convert the request to GRPC before sending
-			if r.cfg.AlertManagerDiscovery.Mode == alertmanagerdiscovery.ModeRing {
+			if r.cfg.AlertmanagerDiscovery.Mode == alertmanagerdiscovery.ModeRing {
 				grpcReq, err := server.HTTPRequest(req)
 				if err != nil {
 					return nil, err

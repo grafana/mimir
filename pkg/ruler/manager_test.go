@@ -76,7 +76,7 @@ func TestNewDefaultMultiTenantManager(t *testing.T) {
 		m, err := NewDefaultMultiTenantManager(Config{
 			RulePath:        dir,
 			AlertmanagerURL: "http://alertmanager-1:8031",
-			AlertManagerDiscovery: alertmanagerdiscovery.Config{
+			AlertmanagerDiscovery: alertmanagerdiscovery.Config{
 				Mode: alertmanagerdiscovery.ModeDNS,
 			}}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
 
@@ -88,7 +88,7 @@ func TestNewDefaultMultiTenantManager(t *testing.T) {
 	t.Run("with ring discovery mode", func(t *testing.T) {
 		m, err := NewDefaultMultiTenantManager(Config{
 			RulePath: dir,
-			AlertManagerRing: alertmanager.RingConfig{
+			AlertmanagerRing: alertmanager.RingConfig{
 				ReplicationFactor: 1,
 				Common: util.CommonRingConfig{
 					KVStore: kv.Config{
@@ -96,7 +96,7 @@ func TestNewDefaultMultiTenantManager(t *testing.T) {
 					},
 				},
 			},
-			AlertManagerDiscovery: alertmanagerdiscovery.Config{
+			AlertmanagerDiscovery: alertmanagerdiscovery.Config{
 				Mode: alertmanagerdiscovery.ModeRing,
 			}}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
 

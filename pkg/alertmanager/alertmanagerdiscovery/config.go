@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	ModeFlagName = "alertmanager.service-discovery-mode"
-
 	ModeDNS  = "dns"
 	ModeRing = "ring"
 
@@ -34,7 +32,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Service discovery mode that rulers use to find alertmanager instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
+	f.StringVar(&cfg.Mode, "alertmanager.service-discovery-mode", ModeDNS, fmt.Sprintf("Service discovery mode that rulers use to find alertmanager instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
 }
 
 func (cfg *Config) Validate() error {

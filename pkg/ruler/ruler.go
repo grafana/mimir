@@ -156,7 +156,7 @@ func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
 	}
 
-	if cfg.AlertManagerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.AlertmanagerURL != "" {
+	if cfg.AlertmanagerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.AlertmanagerURL != "" {
 		return fmt.Errorf("alertmanager address cannot be specified when alertmanager service discovery mode is set to '%s'", schedulerdiscovery.ModeRing)
 	}
 

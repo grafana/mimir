@@ -229,10 +229,10 @@ func (w *querierWorker) InstanceAdded(instance servicediscovery.Instance) {
 		return
 	}
 
-	level.Info(w.log).Log("msg", "adding connection to query-scheduler", "addr", address, "in-use", instance.InUse)
+	level.Info(w.log).Log("msg", "adding connection", "addr", address, "in-use", instance.InUse)
 	conn, err := w.connect(context.Background(), address)
 	if err != nil {
-		level.Error(w.log).Log("msg", "error connecting to query-scheduler", "addr", address, "err", err)
+		level.Error(w.log).Log("msg", "error connecting", "addr", address, "err", err)
 		return
 	}
 
@@ -246,7 +246,7 @@ func (w *querierWorker) InstanceAdded(instance servicediscovery.Instance) {
 func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
 	address := instance.Address
 
-	level.Info(w.log).Log("msg", "removing connection to query-scheduler", "addr", address, "in-use", instance.InUse)
+	level.Info(w.log).Log("msg", "removing connection", "addr", address, "in-use", instance.InUse)
 
 	w.mu.Lock()
 	p := w.managers[address]

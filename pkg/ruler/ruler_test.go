@@ -82,7 +82,7 @@ func defaultRulerConfig(t testing.TB) Config {
 	cfg.Ring.Common.InstanceAddr = "localhost"
 	cfg.Ring.Common.InstanceID = "localhost"
 	cfg.EnableQueryStats = false
-	cfg.AlertManagerDiscovery.Mode = alertmanagerdiscovery.ModeDNS
+	cfg.AlertmanagerDiscovery.Mode = alertmanagerdiscovery.ModeDNS
 
 	return cfg
 }

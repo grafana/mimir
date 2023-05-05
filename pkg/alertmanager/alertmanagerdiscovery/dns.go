@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
@@ -17,8 +18,6 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -26,7 +25,7 @@ const (
 )
 
 // NewDNSProvider returns a new dns.Provider that can be used to build discovery.Config instances.
-func NewDNSProvider(reg prometheus.Registerer) *dns.Provider {
+func NewDNSProvider(reg prometheus.Registerer, logger log.Logger) *dns.Provider {
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
 	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
@@ -37,7 +36,7 @@ func NewDNSProvider(reg prometheus.Registerer) *dns.Provider {
 		),
 	)
 
-	return dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	return dns.NewProvider(logger, dnsProviderReg, dns.GolangResolverType)
 }
 
 // BuildDiscoveryConfigs populates a map of alert manager URLs to discovery.Config instances.
