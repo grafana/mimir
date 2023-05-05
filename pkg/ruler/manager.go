@@ -116,7 +116,7 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 	var err error
 	switch cfg.AlertManagerDiscovery.Mode {
 	case alertmanagerdiscovery.ModeRing:
-		level.Info(logger).Log("msg", "using ring based alert manager discovery")
+		level.Info(logger).Log("msg", "using ring based alertmanager discovery")
 		m.discoveryService, err = alertmanager.NewRing(cfg.AlertManagerRing, "ruler", m, logger, reg)
 		if err != nil {
 			return nil, err
