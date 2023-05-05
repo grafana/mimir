@@ -652,8 +652,9 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	offsetReader.Reset(start, reader)
 	defer offsetReader.Release()
 
-	bytesPool := pool.NewSlabPool[byte](seriesBytesSlicePool, seriesBytesSlabSize)
-	// We never release the pool and let the GC collect it in order to avoid a rance condition with the async sets of the cache.
+	// Use a slab pool to reduce allocations by sharding one large slice of bytes instead of allocating each series' bytes separately.
+	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
+	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
 
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
