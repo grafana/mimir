@@ -263,12 +263,12 @@ func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 			series := mergedSeries{
 				Labels: nextSeriesFromIngester,
 				// TODO: take capacity of this slice from number of zones?
-				Sources: []mergedSeriesSource{
-					{
-						Ingester:    nextIngester.IngesterName,
-						SeriesIndex: nextIngester.NextSeriesIndex,
-					},
-				},
+				Sources: make([]mergedSeriesSource, 1, 3),
+			}
+
+			series.Sources[0] = mergedSeriesSource{
+				Ingester:    nextIngester.IngesterName,
+				SeriesIndex: nextIngester.NextSeriesIndex,
 			}
 
 			allSeries = append(allSeries, series)
