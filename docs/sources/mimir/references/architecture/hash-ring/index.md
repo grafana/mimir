@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../operators-guide/architecture/hash-ring/
 title: "Grafana Mimir hash rings"
 menuTitle: "Hash rings"

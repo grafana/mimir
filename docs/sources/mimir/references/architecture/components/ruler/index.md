@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../../operators-guide/architecture/components/ruler/
 title: "(Optional) Grafana Mimir ruler"
 menuTitle: "(Optional) Ruler"

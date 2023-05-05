@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../../operators-guide/architecture/components/distributor/
 title: "Grafana Mimir distributor"
 menuTitle: "Distributor"

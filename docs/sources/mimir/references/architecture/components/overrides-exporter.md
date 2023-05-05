@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../../operators-guide/architecture/components/overrides-exporter/
 title: "(Optional) Grafana Mimir overrides-exporter"
 menuTitle: "(Optional) Overrides-exporter"

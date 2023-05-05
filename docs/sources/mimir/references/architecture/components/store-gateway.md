@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../../operators-guide/architecture/components/store-gateway/
 title: "Grafana Mimir store-gateway"
 menuTitle: "Store-gateway"

@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../operators-guide/architecture/deployment-modes/
 title: "Grafana Mimir deployment modes"
 menuTitle: "Deployment modes"

@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../operators-guide/architecture/key-value-store/
 title: "Grafana Mimir key-value store"
 menuTitle: "Key-value store"

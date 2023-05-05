@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../operators-guide/architecture/about-grafana-mimir-architecture/
 title: "Grafana Mimir architecture"
 menuTitle: "Grafana Mimir architecture"

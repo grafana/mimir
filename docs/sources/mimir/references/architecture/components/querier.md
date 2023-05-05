@@ -1,5 +1,5 @@
 ---
-aliases: 
+aliases:
   - ../../../operators-guide/architecture/components/querier/
 title: "Grafana Mimir querier"
 menuTitle: "Querier"
