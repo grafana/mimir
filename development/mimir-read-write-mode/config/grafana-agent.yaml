@@ -15,18 +15,21 @@ prometheus:
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-read-write-mode'
+                container: 'mimir-write'
         - job_name: mimir-read-write-mode/mimir-read
           static_configs:
             - targets: ['mimir-read-1:8080', 'mimir-read-2:8080']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-read-write-mode'
+                container: 'mimir-read'
         - job_name: mimir-read-write-mode/mimir-backend
           static_configs:
             - targets: ['mimir-backend-1:8080', 'mimir-backend-2:8080']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-read-write-mode'
+                container: 'mimir-backend'
 
       remote_write:
         - url: http://mimir-write-1:8080/api/v1/push

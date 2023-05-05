@@ -2995,7 +2995,7 @@
           "required": false,
           "desc": "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 4096,
           "fieldFlag": "query-frontend.query-sharding-max-regexp-size-bytes",
           "fieldType": "int",
           "fieldCategory": "experimental"

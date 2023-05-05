@@ -20,7 +20,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../operators-guide/architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}) for the grouping of components.
 
 ## Endpoints
 
@@ -266,7 +266,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../../operators-guide/architecture/components/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}).
 
 ### Remote write
 
@@ -332,7 +332,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../../operators-guide/architecture/components/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
 
 ### Flush chunks / blocks
 
@@ -408,7 +408,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../../operators-guide/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../operators-guide/architecture/components/query-frontend/index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../../references/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
 
 ### Instant query
 
