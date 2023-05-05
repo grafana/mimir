@@ -38,7 +38,7 @@ data:
       type: enterprise
     blocks_storage:
       backend: s3
-      storage_prefix: mimir_data
+      storage_prefix: mimirData
       s3:
         bucket_name: databricks-monitoring-bucket-dev-us-west-2
         endpoint: s3.us-west-2.amazonaws.com
