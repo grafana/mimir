@@ -24,4 +24,4 @@ The [mimir-microservices-mode](/mimir-microservices-mode) environment supports d
 
 
 [deployment-modes]: https://grafana.com/docs/mimir/latest/operators-guide/architecture/deployment-modes/
-[minio-creds]: https://github.com/grafana/mimir/blob/2917f0865603870d402b579593a1f122b9407f02/development/mimir-microservices-mode/config/mimir.yaml#L63-L64
+[minio-creds]: ./mimir-microservices-mode/config/mimir.yaml
