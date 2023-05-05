@@ -23,7 +23,7 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						mergeAndSortSeriesSets(seriesSets)
+						naiveMergeAndSortSeriesSets(seriesSets)
 					}
 				})
 			}
@@ -99,26 +99,34 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		},
 	}
 
+	implementations := map[string]func(map[string][]labels.Labels) []mergedSeries{
+		"naive": naiveMergeAndSortSeriesSets,
+	}
+
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			actual := mergeAndSortSeriesSets(testCase.seriesSets)
-			require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
+			for implementationName, implementationFunc := range implementations {
+				t.Run(implementationName, func(t *testing.T) {
+					actual := implementationFunc(testCase.seriesSets)
+					require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
 
-			for i := 0; i < len(actual); i++ {
-				actualSeries := actual[i]
-				expectedSeries := testCase.expected[i]
+					for i := 0; i < len(actual); i++ {
+						actualSeries := actual[i]
+						expectedSeries := testCase.expected[i]
 
-				require.Equal(t, expectedSeries.Labels, actualSeries.Labels)
+						require.Equal(t, expectedSeries.Labels, actualSeries.Labels)
 
-				// We don't care about the order.
-				require.ElementsMatch(t, expectedSeries.Sources, actualSeries.Sources, "series %v", actualSeries.Labels.String())
+						// We don't care about the order.
+						require.ElementsMatch(t, expectedSeries.Sources, actualSeries.Sources, "series %v", actualSeries.Labels.String())
+					}
+				})
 			}
 		})
 	}
 }
 
 // Equivalent of current naive implementation
-func mergeAndSortSeriesSets(seriesSets map[string][]labels.Labels) []mergedSeries {
+func naiveMergeAndSortSeriesSets(seriesSets map[string][]labels.Labels) []mergedSeries {
 	hashToStreamingSeries := map[string]mergedSeries{}
 
 	for ingester, ingesterSeries := range seriesSets {
