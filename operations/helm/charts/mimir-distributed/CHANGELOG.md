@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-## 4.4.0
+## 4.4.1
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
 * [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
