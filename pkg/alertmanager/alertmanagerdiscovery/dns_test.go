@@ -17,10 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildDiscoveryConfigs(t *testing.T) {
+func TestNewDiscoveryConfigs(t *testing.T) {
 	t.Run("should build discovery config from valid url", func(t *testing.T) {
-		discoveryConfigs := make(map[string]discovery.Config)
-		err := BuildDiscoveryConfigs("http://0.0.0.0:1000/alertmanager", discoveryConfigs, 0, nil)
+		discoveryConfigs, err := NewDiscoveryConfigs("http://0.0.0.0:1000/alertmanager", 0, nil)
 		assert.NoError(t, err)
 		actualLabels := discoveryConfigs["http://0.0.0.0:1000/alertmanager"].(discovery.StaticConfig)[0].Targets[0]
 		assert.Equal(t, model.LabelSet{"__address__": "0.0.0.0:1000"}, actualLabels)
@@ -51,7 +50,7 @@ func TestBuildDiscoveryConfigs(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				err := BuildDiscoveryConfigs(tt.amURL, nil, 0, nil)
+				_, err := NewDiscoveryConfigs(tt.amURL, 0, nil)
 				require.EqualError(t, err, tt.err.Error())
 			})
 		}

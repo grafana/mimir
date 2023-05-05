@@ -39,28 +39,29 @@ func NewDNSProvider(reg prometheus.Registerer, logger log.Logger) *dns.Provider 
 	return dns.NewProvider(logger, dnsProviderReg, dns.GolangResolverType)
 }
 
-// BuildDiscoveryConfigs populates a map of alert manager URLs to discovery.Config instances.
-func BuildDiscoveryConfigs(alertManagerUrls string, discoveryConfigs map[string]discovery.Config, alertmanagerRefreshInterval time.Duration, resolver *dns.Provider) error {
+// NewDiscoveryConfigs returns a map of alert manager URLs to discovery.Config instances.
+func NewDiscoveryConfigs(alertManagerUrls string, alertmanagerRefreshInterval time.Duration, resolver *dns.Provider) (map[string]discovery.Config, error) {
+	result := make(map[string]discovery.Config)
 	if alertManagerUrls != "" {
 		for _, rawURL := range strings.Split(alertManagerUrls, ",") {
 			isSD, qType, amURL, err := sanitizedAlertmanagerURL(rawURL)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if isSD {
-				discoveryConfigs[rawURL] = DNSDiscoveryConfig{
+				result[rawURL] = DNSDiscoveryConfig{
 					Resolver:        resolver,
 					RefreshInterval: alertmanagerRefreshInterval,
 					Host:            amURL.Host,
 					QType:           qType,
 				}
 			} else {
-				discoveryConfigs[rawURL] = NewDiscoveryConfig(amURL.Host)
+				result[rawURL] = NewDiscoveryConfig(amURL.Host)
 			}
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
 type DNSDiscoveryConfig struct {

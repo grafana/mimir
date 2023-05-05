@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/services"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -81,7 +82,6 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 
 	m := &DefaultMultiTenantManager{
 		cfg:                    cfg,
-		discoveryConfigs:       make(map[string]discovery.Config),
 		alertmanagerHTTPPrefix: alertmanagerHTTPPrefix,
 		discoveryWatcher:       services.NewFailureWatcher(),
 		managerFactory:         managerFactory,
@@ -113,6 +113,7 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 		logger:   logger,
 	}
 
+	var dnsProvider *dns.Provider
 	var err error
 	switch cfg.AlertmanagerDiscovery.Mode {
 	case alertmanagerdiscovery.ModeRing:
@@ -124,11 +125,12 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 
 	default:
 		level.Info(logger).Log("msg", "using dns based alertmanager discovery")
-		dnsProvider := alertmanagerdiscovery.NewDNSProvider(reg, logger)
-		err = alertmanagerdiscovery.BuildDiscoveryConfigs(cfg.AlertmanagerURL, m.discoveryConfigs, cfg.AlertmanagerRefreshInterval, dnsProvider)
-		if err != nil {
-			return nil, err
-		}
+		dnsProvider = alertmanagerdiscovery.NewDNSProvider(reg, logger)
+	}
+
+	m.discoveryConfigs, err = alertmanagerdiscovery.NewDiscoveryConfigs(cfg.AlertmanagerURL, cfg.AlertmanagerRefreshInterval, dnsProvider)
+	if err != nil {
+		return nil, err
 	}
 
 	m.notifierCfg, err = buildNotifierConfig(&cfg, m.discoveryConfigs)

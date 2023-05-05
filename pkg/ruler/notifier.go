@@ -71,7 +71,7 @@ func (rn *rulerNotifier) run() {
 	}()
 }
 
-// applyConfig applies the cfg to the notifier.Manager.
+// applyConfig applies the cfg to the notifier.Manager and discovery.Manager.
 func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 	if err := rn.notifier.ApplyConfig(cfg); err != nil {
 		return err

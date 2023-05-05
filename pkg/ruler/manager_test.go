@@ -112,13 +112,14 @@ func TestUpdateNotifierConfigs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, m.notifierCfg.AlertingConfig.AlertmanagerConfigs)
 
-	err = alertmanagerdiscovery.BuildDiscoveryConfigs("http://0.0.0.0:1000/alertmanager", m.discoveryConfigs, 0, nil)
+	amURL := "http://0.0.0.0:1000/alertmanager"
+	m.discoveryConfigs[amURL] = alertmanagerdiscovery.NewDiscoveryConfig(amURL)
 	require.NoError(t, err)
 	m.updateNotifierConfig()
 
 	// Assert that notifier config is updated when new discovery config is present
 	actualLabels := m.notifierCfg.AlertingConfig.AlertmanagerConfigs[0].ServiceDiscoveryConfigs[0].(discovery.StaticConfig)[0].Targets[0]
-	assert.Equal(t, model.LabelSet{"__address__": "0.0.0.0:1000"}, actualLabels)
+	assert.Equal(t, model.LabelSet{"__address__": model.LabelValue(amURL)}, actualLabels)
 }
 
 func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
