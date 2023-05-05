@@ -1,0 +1,1 @@
+{ "name": "databricks-all", "display_name": "databricks-all", "created_at": "2023-05-04T23:40:41.953793Z", "realms": [ { "tenant": "*", "cluster": "databricks-gem" } ], "scopes": [ "admin", "admin:read", "alerts:read", "alerts:write", "metrics:delete", "metrics:read", "metrics:write", "rules:read", "rules:write" ] }
