@@ -25,8 +25,7 @@ The Mimir configuration is available in each environment in the `/config` direct
 
 ## Debugging
 
-The [mimir-microservices-mode](/mimir-microservices-mode) environment supports debugging running components. To enable debug, set `debug: true` at the top of the [docker-compose.jsonnet](/mimir-microservices-mode/docker-compose.jsonnet). When Mimir is running, debug ports are at the service's API port + 10000. Run configurations for Goland are available in the [mimir-microservices-mode/goland](/mimir-microservices-mode/golang) folder, which will connect to each service on their debug port.
-
+The [mimir-microservices-mode](./mimir-microservices-mode) environment supports debugging running components. To enable debug, set `debug: true` at the top of the [docker-compose.jsonnet](./mimir-microservices-mode/docker-compose.jsonnet). When Mimir is running, debug ports are at the service's API port + 10000. Run configurations for Goland are available in the [mimir-microservices-mode/goland](./mimir-microservices-mode/goland) folder, which will connect to each service on their debug port.
 
 [deployment-modes]: https://grafana.com/docs/mimir/latest/operators-guide/architecture/deployment-modes/
 [minio-creds]: ./mimir-microservices-mode/config/mimir.yaml
