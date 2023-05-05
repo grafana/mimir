@@ -1,5 +1,6 @@
 ---
-aliases: ../../../operators-guide/architecture/components/distributor/
+aliases: 
+  - ../../../operators-guide/architecture/components/distributor/
 title: "Grafana Mimir distributor"
 menuTitle: "Distributor"
 description: "The distributor validates time-series data and sends the data to ingesters."

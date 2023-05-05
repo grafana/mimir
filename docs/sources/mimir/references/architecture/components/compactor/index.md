@@ -1,5 +1,6 @@
 ---
-aliases: ../../../operators-guide/architecture/components/compactor/
+aliases:
+  - ../../../operators-guide/architecture/components/compactor/
 title: "Grafana Mimir compactor"
 menuTitle: "Compactor"
 description: "The compactor increases query performance and reduces long-term storage usage."
