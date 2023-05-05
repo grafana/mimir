@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"container/heap"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -23,7 +24,8 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						naiveMergeAndSortSeriesSets(seriesSets)
+						heapMergeSeriesSets(seriesSets)
+						//naiveMergeAndSortSeriesSets(seriesSets)
 					}
 				})
 			}
@@ -39,6 +41,12 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		"no ingesters": {
 			seriesSets: []ingesterSeries{},
 			expected:   []mergedSeries{},
+		},
+		"single ingester, no series": {
+			seriesSets: []ingesterSeries{
+				{IngesterName: "ingester-1", Series: []labels.Labels{}},
+			},
+			expected: []mergedSeries{},
 		},
 		"single ingester, single series": {
 			seriesSets: []ingesterSeries{
@@ -124,10 +132,46 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				},
 			},
 		},
+		"multiple ingesters, each with multiple series": {
+			seriesSets: []ingesterSeries{
+				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-a"), labels.FromStrings("label-b", "value-a")}},
+				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}},
+				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}},
+			},
+			expected: []mergedSeries{
+				{
+					Labels: labels.FromStrings("label-a", "value-a"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-a", "value-b"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-a", "value-c"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-b", "value-a"),
+					Sources: []mergedSeriesSource{
+						{Ingester: "zone-a-ingester-1", SeriesIndex: 1},
+						{Ingester: "zone-b-ingester-1", SeriesIndex: 1},
+						{Ingester: "zone-c-ingester-1", SeriesIndex: 1},
+					},
+				},
+			},
+		},
 	}
 
 	implementations := map[string]func([]ingesterSeries) []mergedSeries{
 		"naive": naiveMergeAndSortSeriesSets,
+		"heap":  heapMergeSeriesSets,
 	}
 
 	for name, testCase := range testCases {
@@ -189,6 +233,60 @@ func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 	return allSeries
 }
 
+// Use a heap to merge lists of series from each ingester.
+// This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
+func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
+	ingesterPointers := make([]*ingesterSeries, len(ingesters))
+	for i, _ := range ingesters {
+		ingesterPointers[i] = &ingesters[i]
+	}
+
+	h := ingesterPriorityQueue(ingesterPointers)
+	heap.Init(&h)
+
+	// TODO: can we guess the size of this? Or calculate it by building a map of all series' hashes?
+	allSeries := []mergedSeries{}
+
+	for h.Len() > 0 {
+		nextIngester := h[0]
+
+		if len(nextIngester.Series) == nextIngester.NextSeriesIndex {
+			heap.Pop(&h)
+			continue
+		}
+
+		nextSeriesFromIngester := nextIngester.Series[nextIngester.NextSeriesIndex]
+		lastSeriesIndex := len(allSeries) - 1
+
+		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+			// First time we've seen this series.
+			series := mergedSeries{
+				Labels: nextSeriesFromIngester,
+				// TODO: take capacity of this slice from number of zones?
+				Sources: []mergedSeriesSource{
+					{
+						Ingester:    nextIngester.IngesterName,
+						SeriesIndex: nextIngester.NextSeriesIndex,
+					},
+				},
+			}
+
+			allSeries = append(allSeries, series)
+		} else {
+			// We've seen this series before.
+			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, mergedSeriesSource{
+				Ingester:    nextIngester.IngesterName,
+				SeriesIndex: nextIngester.NextSeriesIndex,
+			})
+		}
+
+		nextIngester.NextSeriesIndex++
+		heap.Fix(&h, 0)
+	}
+
+	return allSeries
+}
+
 // Equivalent of StreamingSeries
 type mergedSeries struct {
 	Labels  labels.Labels
@@ -204,6 +302,9 @@ type mergedSeriesSource struct {
 type ingesterSeries struct {
 	IngesterName string
 	Series       []labels.Labels
+
+	// HACK for heap sort
+	NextSeriesIndex int
 }
 
 func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterSeries {
@@ -242,3 +343,36 @@ type bySeriesLabels []mergedSeries
 func (b bySeriesLabels) Len() int           { return len(b) }
 func (b bySeriesLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b bySeriesLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels, b[j].Labels) < 0 }
+
+type ingesterPriorityQueue []*ingesterSeries
+
+func (pq ingesterPriorityQueue) Len() int { return len(pq) }
+
+func (pq ingesterPriorityQueue) Less(i, j int) bool {
+	if len(pq[i].Series) == pq[i].NextSeriesIndex {
+		return true
+	}
+
+	if len(pq[j].Series) == pq[j].NextSeriesIndex {
+		return false
+	}
+
+	return labels.Compare(pq[i].Series[pq[i].NextSeriesIndex], pq[j].Series[pq[j].NextSeriesIndex]) < 0
+}
+
+func (pq ingesterPriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *ingesterPriorityQueue) Push(x any) {
+	item := x.(*ingesterSeries)
+	*pq = append(*pq, item)
+}
+
+func (pq *ingesterPriorityQueue) Pop() any {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	*pq = old[0 : n-1]
+	return item
+}
