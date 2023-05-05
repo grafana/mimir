@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/bucket-index/
 title: "Grafana Mimir bucket index"
 menuTitle: "Bucket index"
 description: "The bucket index enhances query performance."

@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/memberlist-and-the-gossip-protocol/
 title: "Grafana Mimir memberlist and gossip protocol"
 menuTitle: "Memberlist and gossip protocol"
 description: "Memberlist manages Grafana Mimir cluster membership and node detection failure."

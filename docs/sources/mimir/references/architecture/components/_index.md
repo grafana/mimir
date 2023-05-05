@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/components/
 title: "Grafana Mimir components"
 menuTitle: "Components"
 description: "Grafana Mimir includes a set of components that interact to form a cluster."

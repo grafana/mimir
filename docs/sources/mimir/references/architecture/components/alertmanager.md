@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../../operators-guide/architecture/components/alertmanager/
 title: "(Optional) Grafana Mimir Alertmanager"
 menuTitle: "(Optional) Alertmanager"
 description: "The Alertmanager groups alert notifications and routes them to various notification channels."

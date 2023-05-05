@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/binary-index-header/
 title: "Grafana Mimir binary index-header"
 menuTitle: "Binary index-header"
 description: "The binary index-header contains information that the store-gateway uses at query time."

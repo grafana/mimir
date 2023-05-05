@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/hash-ring/
 title: "Grafana Mimir hash rings"
 menuTitle: "Hash rings"
 description: "Hash rings distribute sharding and replication work among Grafana Mimir components."

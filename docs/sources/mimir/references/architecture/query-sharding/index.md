@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/architecture/query-sharding/
 title: "Grafana Mimir query sharding"
 menuTitle: "Query sharding"
 description: "Query sharding parallelizes query execution."

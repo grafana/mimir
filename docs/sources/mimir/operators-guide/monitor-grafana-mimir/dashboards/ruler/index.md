@@ -18,7 +18,7 @@ The following example shows a Ruler dashboard from a demo cluster.
 
 ![Grafana Mimir ruler dashboard](mimir-ruler.png)
 
-Note: Even while operating in [Remote ruler mode]({{< relref "../../../architecture/components/ruler/#remote" >}}) you will still see values for the `Read from ingesters - QPS`.
+> **Note:** Even while operating in [Remote ruler mode]({{< relref "../../../../references/architecture/components/ruler/#remote" >}}) you will still see values for the `Read from ingesters - QPS`.
 
 This is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.
 

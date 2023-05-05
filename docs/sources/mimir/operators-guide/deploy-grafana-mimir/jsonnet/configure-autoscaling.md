@@ -12,9 +12,9 @@ weight: 30
 
 Mimir Jsonnet supports autoscaling for the following components:
 
-- [Ruler Querier]({{< relref "../../architecture/components/ruler/index.md" >}})
-- [Querier]({{< relref "../../architecture/components/querier.md" >}})
-- [Distributor]({{< relref "../../architecture/components/distributor.md" >}})
+- [Ruler Querier]({{< relref "../../../references/architecture/components/ruler/index.md" >}})
+- [Querier]({{< relref "../../../references/architecture/components/querier.md" >}})
+- [Distributor]({{< relref "../../../references/architecture/components/distributor.md" >}})
 
 Autoscaling, which is based on Prometheus metrics and [KEDA (Kubernetes-based Event Driven Autoscaler)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
 

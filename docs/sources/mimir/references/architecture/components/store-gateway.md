@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../../operators-guide/architecture/components/store-gateway/
 title: "Grafana Mimir store-gateway"
 menuTitle: "Store-gateway"
 description: "The store-gateway queries blocks from long-term storage."
@@ -7,7 +9,7 @@ weight: 70
 
 # Grafana Mimir store-gateway
 
-The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
+The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
 On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
@@ -128,7 +130,7 @@ The store-gateway supports the following type of caches:
 - [Metadata cache](#metadata-cache)
 
 We recommend that you use caching in a production environment.
-For more information about configuring the cache, refer to [production tips]({{< relref "../../run-production-environment/production-tips/index.md#caching" >}}).
+For more information about configuring the cache, refer to [production tips]({{< relref "../../../operators-guide/run-production-environment/production-tips/index.md#caching" >}}).
 
 ### Index cache
 
