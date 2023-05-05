@@ -50,7 +50,7 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v1.9.0
+      image: grafana/doc-validator:v1.11.0
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
