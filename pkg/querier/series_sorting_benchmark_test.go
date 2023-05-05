@@ -33,16 +33,16 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 func TestMergingAndSortingSeries(t *testing.T) {
 	testCases := map[string]struct {
-		seriesSets map[string][]labels.Labels
+		seriesSets []ingesterSeries
 		expected   []mergedSeries
 	}{
 		"no ingesters": {
-			seriesSets: map[string][]labels.Labels{},
+			seriesSets: []ingesterSeries{},
 			expected:   []mergedSeries{},
 		},
 		"single ingester, single series": {
-			seriesSets: map[string][]labels.Labels{
-				"ingester-1": {labels.FromStrings("some-label", "some-value")},
+			seriesSets: []ingesterSeries{
+				{IngesterName: "ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 			},
 			expected: []mergedSeries{
 				{
@@ -54,10 +54,10 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with single series": {
-			seriesSets: map[string][]labels.Labels{
-				"zone-a-ingester-1": {labels.FromStrings("some-label", "some-value")},
-				"zone-b-ingester-1": {labels.FromStrings("some-label", "some-value")},
-				"zone-c-ingester-1": {labels.FromStrings("some-label", "some-value")},
+			seriesSets: []ingesterSeries{
+				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 			},
 			expected: []mergedSeries{
 				{
@@ -71,10 +71,10 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with different series": {
-			seriesSets: map[string][]labels.Labels{
-				"zone-a-ingester-1": {labels.FromStrings("some-label", "value-a")},
-				"zone-b-ingester-1": {labels.FromStrings("some-label", "value-b")},
-				"zone-c-ingester-1": {labels.FromStrings("some-label", "value-c")},
+			seriesSets: []ingesterSeries{
+				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
+				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
+				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
 			},
 			expected: []mergedSeries{
 				{
@@ -99,7 +99,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		},
 	}
 
-	implementations := map[string]func(map[string][]labels.Labels) []mergedSeries{
+	implementations := map[string]func([]ingesterSeries) []mergedSeries{
 		"naive": naiveMergeAndSortSeriesSets,
 	}
 
@@ -126,11 +126,11 @@ func TestMergingAndSortingSeries(t *testing.T) {
 }
 
 // Equivalent of current naive implementation
-func naiveMergeAndSortSeriesSets(seriesSets map[string][]labels.Labels) []mergedSeries {
+func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 	hashToStreamingSeries := map[string]mergedSeries{}
 
-	for ingester, ingesterSeries := range seriesSets {
-		for seriesIndex, seriesLabels := range ingesterSeries {
+	for _, ingester := range ingesters {
+		for seriesIndex, seriesLabels := range ingester.Series {
 			key := client.LabelsToKeyString(seriesLabels)
 			series, exists := hashToStreamingSeries[key]
 
@@ -143,7 +143,7 @@ func naiveMergeAndSortSeriesSets(seriesSets map[string][]labels.Labels) []merged
 
 			series.Sources = append(series.Sources, mergedSeriesSource{
 				SeriesIndex: seriesIndex,
-				Ingester:    ingester,
+				Ingester:    ingester.IngesterName,
 			})
 
 			hashToStreamingSeries[key] = series
@@ -174,7 +174,12 @@ type mergedSeriesSource struct {
 	SeriesIndex int
 }
 
-func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) map[string][]labels.Labels {
+type ingesterSeries struct {
+	IngesterName string
+	Series       []labels.Labels
+}
+
+func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterSeries {
 	seriesPerZone := ingestersPerZone * seriesPerIngester
 	zoneSeries := make([]labels.Labels, seriesPerZone)
 
@@ -182,7 +187,7 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 		zoneSeries[seriesIdx] = labels.FromStrings("the-label", strconv.Itoa(seriesIdx))
 	}
 
-	seriesSets := make(map[string][]labels.Labels, zones*ingestersPerZone)
+	seriesSets := make([]ingesterSeries, 0, zones*ingestersPerZone)
 
 	for zone := 1; zone <= zones; zone++ {
 		rand.Shuffle(len(zoneSeries), func(i, j int) { zoneSeries[i], zoneSeries[j] = zoneSeries[j], zoneSeries[i] })
@@ -192,7 +197,7 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 			series := zoneSeries[(ingester-1)*seriesPerIngester : ingester*seriesPerIngester]
 			sort.Sort(byLabels(series))
 
-			seriesSets[ingesterName] = series
+			seriesSets = append(seriesSets, ingesterSeries{IngesterName: ingesterName, Series: series})
 		}
 	}
 
