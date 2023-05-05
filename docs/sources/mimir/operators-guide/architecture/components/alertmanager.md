@@ -97,10 +97,11 @@ When using a reverse proxy, use the following settings when you configure the HT
 
 The Mimir Alertmanager adds some custom template functions to the default ones of the Prometheus Alertmanager.
 
-| Function            | Params                                        | Description                                                                                                                                                                  |
-| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tenantID`          | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                                               |
-| `grafanaExploreURL` | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" "up{foo=\"bar\"}" }}` |
+| Function                | Params                                        | Description                                                                                                                                                                                                       |
+| ----------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tenantID`              | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                                                                                    |
+| `queryFromGeneratorURL` | `generator_url`                               | Returns the URL decoded query from `GeneratorURL` of an alert set by a Prometheus. Example: `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`                                                          |
+| `grafanaExploreURL`     | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" (queryFromGeneratorURL (index .Alerts 0).GeneratorURL) }}` |
 
 ## Sharding and replication
 
