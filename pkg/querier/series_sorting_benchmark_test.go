@@ -24,8 +24,12 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
+						// Reset the test data.
+						for i := range seriesSets {
+							seriesSets[i].NextSeriesIndex = 0
+						}
+
 						heapMergeSeriesSets(seriesSets)
-						//naiveMergeAndSortSeriesSets(seriesSets)
 					}
 				})
 			}
