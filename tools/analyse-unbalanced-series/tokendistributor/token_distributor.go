@@ -577,10 +577,13 @@ func (t *TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *C
 	head := candidateTokenInfoCircularList.head
 	curr := head
 	for {
-		improvement := t.evaluateImprovement(curr.getData(), optimalTokenOwnership, 1/float64(tokenCount))
-		weightedNavigableToken := newWeightedNavigableToken[*candidateTokenInfo](improvement)
-		setNavigableToken(weightedNavigableToken, curr)
-		pq.Add(weightedNavigableToken)
+		improvement, err := t.evaluateInsertionImprovement(curr.getData(), optimalTokenOwnership, 1/float64(tokenCount))
+		if err == nil {
+			weightedNavigableToken := newWeightedNavigableToken[*candidateTokenInfo](improvement)
+			setNavigableToken(weightedNavigableToken, curr)
+			pq.Add(weightedNavigableToken)
+
+		}
 		curr = curr.next
 		if curr == head {
 			break
@@ -668,12 +671,7 @@ func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) {
 	}
 }
 
-// addCandidateToTokenInfoCircularList gets as parameters a navigableToken[*candidateTokenInfo], representing a candidate
-// token, and a CircularList[*tokenInfo], representing a circular list of tokens belonging to the ring, and adds the former
-// to the latter. In order to do that, a tokenInfo is created, inserted in the list, and all its relevant information
-// such as replica start, extensibility and replicated token ownership are calculated. Moreover, these details are updated
-// for all the tokens affected by this insertion. Similarly, all the candidates following the candidate passed as parameter
-// that might be affected by this insertion are also modified in the list of candidates
+// DEPRECATED!!! Use addCandidateAndUpdateTokenInfoCircularList instead
 func (t *TokenDistributor) addCandidateToTokenInfoCircularList(navigableCandidate *navigableToken[*candidateTokenInfo], tokenInfoCircularList *CircularList[*tokenInfo]) {
 	candidate := navigableCandidate.getData()
 	newInstance := candidate.getOwningInstance()
@@ -977,6 +975,204 @@ func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableC
 	return nil
 }
 
+// evaluateInsertionImprovement evaluates the improvement that insertion of the given candidate into token list
+// would bring. The evaluation is based on the standard deviation from the optimal replicated ownership in case
+// of tokens, and on standard deviation from the optimal number of tokens per instance, in case of instances.
+func (t *TokenDistributor) evaluateInsertionImprovement(candidate *candidateTokenInfo, optimalTokenOwnership, multiplier float64) (float64, error) {
+	candidateInstance := candidate.getOwningInstance()
+	host := candidate.host
+	next := host.getNext()
+	improvement := 0.0
+
+	// We first calculate the replicated ownership of candidate token
+	oldOwnership := candidate.getReplicatedOwnership()
+	newOwnership := t.calculateReplicatedOwnership(candidate, candidate.getReplicaStart().(navigableTokenInterface))
+	stdev := calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, candidateInstance.tokenCount)
+	improvement += stdev
+	candidateInstance.adjustedOwnership = candidateInstance.ownership + newOwnership - oldOwnership
+	stats := strings.Builder{}
+	stats.WriteString(fmt.Sprintf("Adding candidate token %d (delta: %.3f, impr: %.5f) affects the following tokens:\n",
+		candidate.getToken(), newOwnership/optimalTokenOwnership, stdev))
+
+	// We now calculate potential changes in the replicated ownership of the tokenInfo that succeeds the host (i.e., next).
+	// This tokenInfo (next) is of interest because candidate has been placed between host and next.
+
+	// On the other hand. the replicated weight of next can change
+
+	// The replicated ownership of host and tokens preceding it cannot be changed because they precede the candidate,
+	// and the replicated weight is the distance between token's barrier and the token itself.
+	// Therefore, we cross the ring clockwise starting from next and calculate potential improvements of all the
+	// tokens that could be potentially affected by candidate's insertion. This basically means that we are looking
+	// for all the tokens that replicate the candidate. We keep track of visited congruence groups, so that we don't
+	// count the same group more than once. Once the count of visited groups is equal to RF, we can stop the visit.
+	// The reason for that is that no other token that succeeds the token of the last visited congruence group could
+	// contain a replica of candidate because between that token (included) and candidate (excluded) there would be
+	// RF different congruence groups, and therefore candidate would have already been replicated RF times. In other
+	// words, the replica start of that token would succeed candidate on the ring.
+
+	newInstanceZone := candidateInstance.zone
+	prevInstance := candidateInstance
+	replicasCount := 0
+	for currToken := next; replicasCount < t.replicationStrategy.getReplicationFactor(); currToken = currToken.getNext() {
+		currInstance := currToken.getOwningInstance()
+		currZone := currInstance.zone
+		// if this instance has already been visited, we go on
+		if t.isAlreadyVisited(currInstance) {
+			continue
+		}
+		// otherwise we mark these zone and instance as visited
+		currZone.precededBy = currZone
+		replicasCount++
+
+		// If this is the firs time we encounter an instance, we initialize its adjustedOwnership and mark it as seen.
+		// The adjustedOwnership of each instance will be used for the final evaluation of that instance, together with
+		// all potential improvements of all visited tokens
+		if currInstance.precededBy == nil {
+			currInstance.adjustedOwnership = currInstance.ownership
+			currInstance.precededBy = prevInstance
+			prevInstance = currInstance
+		}
+
+		barrier := currToken.getReplicaStart().(navigableTokenInterface).getPrevious()
+		// We now evaluate the improvement that insertion of candidateToken into the ring would bring.
+		// The only relevant parameter for calculating each token's new replicated ownership is the new
+		// barrier that insertion of candidateToken would give raise to.
+		// The analysis done below is based to the analysis did in addCandidateAndUpdateTokenInfoCircularList
+		if currToken.isExpandable() {
+			// If currToken is expandable by candidateToken, it basically means that it is possible to add
+			// candidateToken before currToken's replica start without changing the number of tokens replicated
+			// in currToken. The change would look like this:
+			// FROM: currToken <- ... <- currToken.replicaStart <- currToken.barrier
+			// TO:   currToken <- ... <- currToken.replicaStart <- candidateToken <- currToken.barrier
+			// Since candidateToken is a direct successor of next, expanding currToken by candidateToken is
+			// therefore possible only if currToken.replicaStart == next or, equivalently, if currentToken's
+			// barrier is host.
+			// currToken <- ... <- currToken.replicaStart=next <- candidateToken <- currToken.barrier=host
+			// In that case, currToken gets a new replicaStart (candidateToken), it remains expandable (adding another
+			// token congruent with candidateToken would not change the barrier), and its barrier remains host.
+			if currToken.getReplicaStart() == next {
+				barrier = host
+			} else {
+				continue
+			}
+		} else {
+			// If currToken is NOT expandable, we distinguish 2 possible cases:
+			// 1) whether currToken's instance is congruent with candidate's instance (always applicable) or
+			// 2) otherwise, if between currToken and its barrier there are exactly RF different congruence groups,
+			//    but there is no token between them that is congruent with candidates instance (applicable only if
+			//    zone-awareness is disabled)
+			if t.isCongruent(currInstance, candidateInstance) {
+				// In this case candidateToken could be a new barrier of currToken, but only if candidateToken lays
+				// between currToken and currentToken's barrier.
+				// currToken <- ... <- next <- candidateToken <- ... <- currToken.barrier
+				// In that case, new replica start of currToken is next, new barrier of currToken is candidateToken,
+				// and currToken is not expandable by tokens congruent with candidateToken anymore: in fact, adding
+				// another token congruent with candidateToken (and currentToken) in front of replica start (next),
+				// that token would become a new barrier, and that would further change the replicated token ownership
+				// of currToken.
+				// currToken <- ... <- currToken.replicaStart = next <- currToken.barrier = candidate
+				// In order to understand whether candidateToken lays between currToken and currToken's, we can compare
+				// distances between currToken and its barrier (i.e., currToken.getReplicatedOwnership()) and between
+				// currToken and candidateToken.
+				if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(candidate, currToken) {
+					// GOOD CASE: currToken <- ... <- next <- candidate <- ... <- currToken.barrier
+					// BECOMES: currToken <- ... <- currToken.replicaStart = next <- currToken.barrier = candidate
+					barrier = candidate
+				} else {
+					// BAD CASE: currToken <- ... <- currToken.barrier <- ... <- candidate
+					continue
+				}
+			} else {
+				// If currToken is not expandable, and it is not congruent with candidateToken, the only remaining
+				// possibility is that currToken's barrier is the first occurrence of (RF)st congruence group,
+				// and that there is no token congruent with candidateToken between currToken and its barrier.
+				// Note: the following cases could only occur when zone-awareness is disabled.
+
+				// There are 3 possible cases that we analyze here
+				if currToken.getReplicatedOwnership() < t.calculateDistanceAsFloat64(host, currToken) {
+					// Case 1: currToken's barrier lays between currToken and candidateToken
+					// currToken <- ... <- currToken.barrier <- ... <- candidateToken
+					// In this case, nothing can be done, i.e., insertion of candidateToken does not affect currToken
+					continue
+				} else if currToken.getReplicatedOwnership() == t.calculateDistanceAsFloat64(host, currToken) {
+					// Case 2: currToken's barrier is host (note: host BELONGS to the ring, while candidateToken
+					// DOES NOT BELONG to the ring yet, so it is possible that host is currToken's barrier).
+					// In this case being host the currToken's barrier, and knowing that the barrier is the first
+					// occurrence of RFst different congruence group, and that no token congruent to candidateToken
+					// lays between currToken and currToken's barrier (host), candidateToken can become the new
+					// barrier: in fact, it would be the first occurrence of a new congruence group. The change can
+					// be depicted this way:
+					// FROM: currToken <- ... <- next <- host = currToken.barrier
+					// TO:   currToken <- ... <- next = currToken.replicaStart <- candidateToken = currToken.barrier <- host
+					// Since candidateToken is a new barrier of currToken, the latter cannot be expanded by another
+					// token from the same congruence group of candidateToken.
+					barrier = candidate
+				} else if currToken.getReplicatedOwnership() > t.calculateDistanceAsFloat64(host, currToken) {
+					// Case 3: this is the most tricky case, and represents a situation when both candidateToken
+					// (not yet in the ring) and host (already in the ring) lay between currToken and currToken's
+					// barrier (but we don't know where exactly).
+					// currToken <- ... <- next <- host <- ... <- currToken.barrier
+					// currToken's barrier is the first occurrence of the RFs different congruence group, and there
+					// is no token belonging to candidateToken's congruence group between currToken and its barrier.
+					// This means that, if we add candidateToken to that path, it will be the first and only occurrence
+					// of a new congruence group, and currToken's barrier must be updated. In this case it is not
+					// obviously clear where, because between candidateToken and currToken's barrier there might be
+					// either just repetitions of the congruence groups seen before candidateToken, or also occurrences
+					// of new congruence groups. The safest way to go here is to re-apply calculateReplicaStart on
+					// currToken.
+					replicaStart, err := t.calculateReplicaStart(currToken.getNavigableToken().getData())
+					if err != nil {
+						return 0, err
+					}
+					barrier = replicaStart.getPrevious()
+				}
+			}
+		}
+		oldOwnership = currToken.getReplicatedOwnership()
+		newOwnership = t.calculateDistanceAsFloat64(barrier, currToken)
+		stdev = calculateImprovement(optimalTokenOwnership, newOwnership, oldOwnership, currInstance.tokenCount)
+		improvement += stdev
+		currInstance.adjustedOwnership += newOwnership - oldOwnership
+		if newOwnership != oldOwnership {
+			stats.WriteString(fmt.Sprintf("\ttoken %d [%s-%s] (old %.3f -> new %.3f, impr: %.5f)\n",
+				currToken.getToken(), currInstance.instanceId, currZone.zone, oldOwnership/optimalTokenOwnership, newOwnership/optimalTokenOwnership, stdev))
+		}
+	}
+
+	stats.WriteString(fmt.Sprintf("Candidate token %d affects the following instances:\n", candidate.getToken()))
+	// Go through all visited instances and zones, add recorder adjustedOwnership and clear visited instances and zones
+	currInstance := prevInstance
+	for currInstance != nil {
+		newOwnership = prevInstance.adjustedOwnership
+		oldOwnership = prevInstance.ownership
+		tokenCount := float64(prevInstance.tokenCount)
+		diff := sq(oldOwnership/tokenCount-optimalTokenOwnership) - sq(newOwnership/tokenCount-optimalTokenOwnership)
+		if currInstance == candidateInstance {
+			diff *= multiplier
+		}
+		improvement += diff
+		prevInstance = currInstance.precededBy
+		currInstance.precededBy = nil
+		currInstance.zone.precededBy = nil
+		currInstance.adjustedOwnership = 0.0
+		if newOwnership != oldOwnership {
+			oldOptimalTokenOwnership := tokenCount * optimalTokenOwnership
+			newOptimalTokenOwnership := oldOptimalTokenOwnership
+			if currInstance == candidateInstance {
+				newOptimalTokenOwnership += optimalTokenOwnership
+			}
+			stats.WriteString(fmt.Sprintf("\t[%s-%s] (old %.3f -> new %.3f, impr: %.5f)\n",
+				currInstance.instanceId, currInstance.zone.zone, oldOwnership/oldOptimalTokenOwnership, newOwnership/newOptimalTokenOwnership, diff))
+		}
+		currInstance = prevInstance
+	}
+	stats.WriteString(fmt.Sprintf("Evaluation of candidate %d [%s-%s] gives rise to the following improvement: %.5f\n",
+		candidate.getToken(), candidateInstance.instanceId, newInstanceZone.zone, improvement))
+	//fmt.Print(stats.String())
+
+	return improvement, nil
+}
+
 func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
@@ -1066,7 +1262,10 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 			// at this point i new tokens have already been added to the new instance,
 			// so we are looking for the (i + 1)st candidate. Therefore, the multiplier
 			// tho use in evaluateImprovement is (i + 1) / t.tokensPerInstance
-			newImprovement := t.evaluateImprovement(candidate, optimalTokenOwnership, float64(addedTokens+1)/float64(t.tokensPerInstance))
+			newImprovement, err := t.evaluateInsertionImprovement(candidate, optimalTokenOwnership, float64(addedTokens+1)/float64(t.tokensPerInstance))
+			if err != nil {
+				return nil, nil, nil, err
+			}
 			if pq.Len() == 0 {
 				break
 			}

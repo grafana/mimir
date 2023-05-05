@@ -10,7 +10,7 @@ import (
 
 func TestSimpleReplicationStrategy_GetReplicationSet(t *testing.T) {
 	sortedRingTokens, ringInstanceByToken, _ := createRingTokensInstancesZones()
-	simpleReplicationStrategy := newSimpleReplicationStrategy(3, nil)
+	simpleReplicationStrategy := NewSimpleReplicationStrategy(3, nil)
 	replicationSet, err := simpleReplicationStrategy.getReplicaSet(48, sortedRingTokens, ringInstanceByToken)
 	if err != nil {
 		errors.Wrap(err, "unable to get replication set")
@@ -100,7 +100,7 @@ func TestSimpleReplicationStrategy_GetReplicationStart(t *testing.T) {
 	}
 	sortedRingTokens, ringInstanceByToken, _ := createRingTokensInstancesZones()
 	for _, testData := range tests {
-		simpleReplicationStrategy := newSimpleReplicationStrategy(testData.replicationFactor, nil)
+		simpleReplicationStrategy := NewSimpleReplicationStrategy(testData.replicationFactor, nil)
 		_, found := ringInstanceByToken[testData.initialToken]
 		ringInstanceByToken[testData.initialToken] = testData.instance
 		replicaStart, err := simpleReplicationStrategy.getReplicaStart(testData.initialToken, sortedRingTokens, ringInstanceByToken)
@@ -116,7 +116,7 @@ func TestSimpleReplicationStrategy_GetReplicationStart(t *testing.T) {
 
 func TestSimpleReplicationStrategy_ReplicationStartAndReplicationSetConsistency(t *testing.T) {
 	sortedRingTokens, ringInstanceByToken, _ := createRingTokensInstancesZones()
-	simpleReplicationStrategy := newSimpleReplicationStrategy(3, nil)
+	simpleReplicationStrategy := NewSimpleReplicationStrategy(3, nil)
 	for _, token := range sortedRingTokens {
 		replicaStart, err := simpleReplicationStrategy.getReplicaStart(token, sortedRingTokens, ringInstanceByToken)
 		if err != nil {

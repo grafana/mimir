@@ -37,10 +37,10 @@ type SimpleReplicationStrategy struct {
 	logger            log.Logger
 }
 
-// newSimpleReplicationStrategy creates a new SimpleReplicationStrategy.
+// NewSimpleReplicationStrategy creates a new SimpleReplicationStrategy.
 // replicationFactor is the required replication factor.
 // bufInstances is a slices to be overwritten for the return value to avoid memory allocation;
-func newSimpleReplicationStrategy(replicationFactor int, bufInstances []Instance) SimpleReplicationStrategy {
+func NewSimpleReplicationStrategy(replicationFactor int, bufInstances []Instance) SimpleReplicationStrategy {
 	if bufInstances == nil {
 		bufInstances = make([]Instance, 0, GetBufferSize)
 	}

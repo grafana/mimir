@@ -165,7 +165,10 @@ func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 	bestCandidate := head
 	for {
 		candidate := curr.getData()
-		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		improvement, err := tokenDistributor.evaluateInsertionImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		if err != nil {
+			panic(err)
+		}
 		fmt.Printf("Improvement of insertion of candidate %s would be %.2f\n", candidate, improvement)
 
 		if improvement < bestOwnershipDecrease {
@@ -192,7 +195,10 @@ func TestTokenDistributor_CreatePriorityQueue(t *testing.T) {
 	curr := head
 	for {
 		candidate := curr.getData()
-		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		improvement, err := tokenDistributor.evaluateInsertionImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		if err != nil {
+			panic(err)
+		}
 		sortedImprovements = append(sortedImprovements, improvement)
 		curr = curr.next
 		if curr == head {
@@ -344,7 +350,10 @@ func TestTokenDistributor_NonSoQuale(t *testing.T) {
 	bestCandidate := head
 	for {
 		candidate := curr.getData()
-		improvement := tokenDistributor.evaluateImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		improvement, err := tokenDistributor.evaluateInsertionImprovement(candidate, optimalTokenOwnership, 1/float64(tokensPerInstance))
+		if err != nil {
+			panic(err)
+		}
 		fmt.Printf("Improvement of insertion of candidate %s would be %.2f\n", candidate, improvement)
 
 		if improvement < bestOwnershipDecrease {
@@ -424,10 +433,11 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 	zones := []Zone{"zone-a", "zone-b", "zone-c"}
 	replicationFactor := len(zones)
 	maxToken := Token(math.MaxUint32)
-	numberOfInstancesPerZone := 30
-	tokensPerInstance := 512
+	numberOfInstancesPerZone := 10
+	tokensPerInstance := 64
 	stats := make([]Statistics, 0, iterations)
 
+	var list *CircularList[*tokenInfo]
 	for it := 0; it < iterations; it++ {
 		fmt.Printf("Iteration %d...\n", it+1)
 		replicationStrategy := NewZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
@@ -436,15 +446,26 @@ func TestTokenDistributor_GenerationZoneAware(t *testing.T) {
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			for j := 0; j < len(zones); j++ {
 				instance := Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-				_, _, stat, _ := tokenDistributor.AddInstance(instance, zones[j])
+				listTokens, _, stat, _ := tokenDistributor.AddInstance(instance, zones[j])
 				fmt.Printf("Instance %s added\n", instance)
 				stats = append(stats, *stat)
+				list = listTokens
 			}
 		}
 		require.Len(t, tokenDistributor.sortedTokens, len(zones)*tokensPerInstance*numberOfInstancesPerZone)
 	}
 	statistics := GetAverageStatistics(stats)
 	statistics.Print()
+
+	curr := list.head
+	for {
+		fmt.Printf("[%d-%s-%s](%.3f) ", curr.getData().getToken(), curr.getData().getOwningInstance().instanceId, curr.getData().getOwningInstance().zone, curr.getData().getOwningInstance().ownership)
+		curr = curr.next
+		if curr == list.head {
+			break
+		}
+	}
+	fmt.Println()
 }
 
 func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
@@ -458,7 +479,7 @@ func TestTokenDistributor_GenerationNoReplication(t *testing.T) {
 
 	for it := 0; it < iterations; it++ {
 		fmt.Printf("Iteration %d...\n", it+1)
-		replicationStrategy := newSimpleReplicationStrategy(replicationFactor, nil)
+		replicationStrategy := NewSimpleReplicationStrategy(replicationFactor, nil)
 		tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
@@ -484,7 +505,7 @@ func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
 
 	for it := 0; it < iterations; it++ {
 		fmt.Printf("Iteration %d...\n", it+1)
-		replicationStrategy := newSimpleReplicationStrategy(replicationFactor, nil)
+		replicationStrategy := NewSimpleReplicationStrategy(replicationFactor, nil)
 		tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
 
 		for i := 0; i < numberOfInstancesPerZone; i++ {
