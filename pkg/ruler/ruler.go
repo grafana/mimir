@@ -104,7 +104,7 @@ type Config struct {
 	// URL of the alertmanager(s) to use in ModeDNS
 	AlertmanagerURL string `yaml:"alertmanager_url"`
 	// Specifies how alert managers should be discovered - injected internally
-	AlertManagerDiscovery alertmanagerdiscovery.Config `yaml:"-"`
+	AlertmanagerDiscovery alertmanagerdiscovery.Config `yaml:"-"`
 	// Alertmanager ring discovery configuration - injected internally
 	AlertManagerRing alertmanager.RingConfig `yaml:"-"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
