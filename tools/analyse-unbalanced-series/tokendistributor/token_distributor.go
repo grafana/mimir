@@ -485,8 +485,6 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	token := StatisticType{}
 	instance := StatisticType{}
 	registeredOwnersByInstance := make(map[Instance]float64, len(t.tokensByInstance))
-
-	totalTokens := float64(t.maxTokenValue) * float64(t.replicationStrategy.getReplicationFactor())
 	head := tokenInfoCircularList.head
 	curr := head
 	token.MinDistanceFromOptimalTokenOwnership = math.MaxFloat64
@@ -505,28 +503,28 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	instance.Sum = 0.0
 	for {
 		dist := curr.getData().getReplicatedOwnership() / optimalTokenOwnership
-		currTokensPercentage := curr.getData().getReplicatedOwnership() * 100.00 / totalTokens
+		currTokensOwnership := curr.getData().getReplicatedOwnership()
 		token.MinDistanceFromOptimalTokenOwnership = math.Min(token.MinDistanceFromOptimalTokenOwnership, dist)
 		token.MaxDistanceFromOptimalTokenOwnership = math.Max(token.MaxDistanceFromOptimalTokenOwnership, dist)
-		token.MinOwnership = math.Min(token.MinOwnership, currTokensPercentage)
-		token.MaxOwnership = math.Max(token.MaxOwnership, currTokensPercentage)
+		token.MinOwnership = math.Min(token.MinOwnership, currTokensOwnership)
+		token.MaxOwnership = math.Max(token.MaxOwnership, currTokensOwnership)
 		token.StandardDeviation += +sq(dist - 1.0)
 		token.Spread = (token.MaxOwnership - token.MinOwnership) * 100.00 / token.MaxOwnership
-		token.Sum += curr.getData().getReplicatedOwnership()
+		token.Sum += currTokensOwnership
 
 		dist = curr.getData().getOwningInstance().ownership / (optimalTokenOwnership * float64(t.tokensPerInstance))
-		currTokensPercentage = curr.getData().getOwningInstance().ownership * 100.00 / totalTokens
+		currTokensOwnership = curr.getData().getOwningInstance().ownership
 		instance.MinDistanceFromOptimalTokenOwnership = math.Min(instance.MinDistanceFromOptimalTokenOwnership, dist)
 		instance.MaxDistanceFromOptimalTokenOwnership = math.Max(instance.MaxDistanceFromOptimalTokenOwnership, dist)
-		instance.MinOwnership = math.Min(instance.MinOwnership, currTokensPercentage)
-		instance.MaxOwnership = math.Max(instance.MaxOwnership, currTokensPercentage)
+		instance.MinOwnership = math.Min(instance.MinOwnership, currTokensOwnership)
+		instance.MaxOwnership = math.Max(instance.MaxOwnership, currTokensOwnership)
 		instance.StandardDeviation += +sq(dist - 1.0)
 		instance.Spread = (instance.MaxOwnership - instance.MinOwnership) * 100.00 / instance.MaxOwnership
 		instance.Sum += curr.getData().getOwningInstance().ownership
 
 		_, ok := registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId]
 		if !ok {
-			registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId] = currTokensPercentage
+			registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId] = currTokensOwnership
 		}
 
 		curr = curr.next

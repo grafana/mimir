@@ -13,6 +13,8 @@ const (
 )
 
 type Statistics struct {
+	MaxToken                           uint32
+	ReplicationFactor                  int
 	CombinedStatistics                 map[string]StatisticType
 	RegisteredTokenOwnershipByInstance map[Instance]float64
 }
@@ -31,12 +33,12 @@ type StatisticType struct {
 func (s Statistics) Print() {
 	tokenStat, tokenStatFound := s.CombinedStatistics[TokenStatKey]
 	instanceStat, instanceStatFound := s.CombinedStatistics[InstanceStatKey]
-	fmt.Printf("Optimal token ownership: per token %.3f, per instance %.3f\n", tokenStat.OptimalTokenOwnership, instanceStat.OptimalTokenOwnership)
+	fmt.Printf("Toke space size: %d, replication factor: %d\n", s.MaxToken, s.ReplicationFactor)
 	if tokenStatFound {
-		fmt.Printf("Token    - min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %6.3f%%, max ownership: %6.3f%%, stdev: %6.3f, Spread: %6.3f, Sum: %6.3f\n", tokenStat.MinDistanceFromOptimalTokenOwnership, tokenStat.MaxDistanceFromOptimalTokenOwnership, tokenStat.MinOwnership, tokenStat.MaxOwnership, tokenStat.StandardDeviation, tokenStat.Spread, tokenStat.Sum)
+		fmt.Printf("Token    - opt: %10.3f, min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %10.3f, max ownership: %10.3f, stdev: %10.3f, Spread: %6.3f, Sum: %10.3f\n", tokenStat.OptimalTokenOwnership, tokenStat.MinDistanceFromOptimalTokenOwnership, tokenStat.MaxDistanceFromOptimalTokenOwnership, tokenStat.MinOwnership, tokenStat.MaxOwnership, tokenStat.StandardDeviation, tokenStat.Spread, tokenStat.Sum)
 	}
 	if instanceStatFound {
-		fmt.Printf("Instance - min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %6.3f%%, max ownership: %6.3f%%, stdev: %6.3f, Spread: %6.3f, Sum: %6.3f\n", instanceStat.MinDistanceFromOptimalTokenOwnership, instanceStat.MaxDistanceFromOptimalTokenOwnership, instanceStat.MinOwnership, instanceStat.MaxOwnership, instanceStat.StandardDeviation, instanceStat.Spread, instanceStat.Sum)
+		fmt.Printf("Instance - opt: %10.3f min dist from opt: %6.3f, max dist from opt: %6.3f, min ownership: %10.3f, max ownership: %10.3f, stdev: %10.3f, Spread: %6.3f, Sum: %10.3f\n", instanceStat.OptimalTokenOwnership, instanceStat.MinDistanceFromOptimalTokenOwnership, instanceStat.MaxDistanceFromOptimalTokenOwnership, instanceStat.MinOwnership, instanceStat.MaxOwnership, instanceStat.StandardDeviation, instanceStat.Spread, instanceStat.Sum)
 	}
 	/*for instance, ownership := range s.RegisteredTokenOwnershipByInstance {
 		fmt.Printf("%10s: %6.3f\n", instance, ownership)
