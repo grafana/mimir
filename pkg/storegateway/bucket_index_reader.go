@@ -689,13 +689,12 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 
 func (r *bucketIndexReader) recordLoadSeriesStats(stats *safeQueryStats, refetch bool, numSeries int, start, end uint64, loadStartTime time.Time) {
 	stats.update(func(stats *queryStats) {
-		if refetch {
+		if !refetch {
+			// only the root loadSeries will record the time
+			stats.seriesFetchDurationSum += time.Since(loadStartTime)
+		} else {
 			stats.seriesRefetches++
-			// We don't track refetches in a lot of detail because they are rare
-			return
 		}
-		// only the root loadSeries will record the time
-		stats.seriesFetchDurationSum += time.Since(loadStartTime)
 		stats.seriesFetched += numSeries
 		stats.seriesFetchedSizeSum += int(end - start)
 	})
