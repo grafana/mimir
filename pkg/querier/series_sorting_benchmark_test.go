@@ -236,6 +236,10 @@ func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 // Use a heap to merge lists of series from each ingester.
 // This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
 func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
+	if len(ingesters) == 0 {
+		return []mergedSeries{}
+	}
+
 	ingesterPointers := make([]*ingesterSeries, len(ingesters))
 	for i, _ := range ingesters {
 		ingesterPointers[i] = &ingesters[i]
@@ -247,12 +251,12 @@ func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 	// TODO: can we guess the size of this? Or calculate it by building a map of all series' hashes?
 	allSeries := []mergedSeries{}
 
-	for h.Len() > 0 {
+	for {
 		nextIngester := h[0]
 
 		if len(nextIngester.Series) == nextIngester.NextSeriesIndex {
-			heap.Pop(&h)
-			continue
+			// Ingesters with no series remaining sort last, so if we've reached an ingester with no series remaining, we are done.
+			return allSeries
 		}
 
 		nextSeriesFromIngester := nextIngester.Series[nextIngester.NextSeriesIndex]
@@ -283,8 +287,6 @@ func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 		nextIngester.NextSeriesIndex++
 		heap.Fix(&h, 0)
 	}
-
-	return allSeries
 }
 
 // Equivalent of StreamingSeries
@@ -350,11 +352,11 @@ func (pq ingesterPriorityQueue) Len() int { return len(pq) }
 
 func (pq ingesterPriorityQueue) Less(i, j int) bool {
 	if len(pq[i].Series) == pq[i].NextSeriesIndex {
-		return true
+		return false
 	}
 
 	if len(pq[j].Series) == pq[j].NextSeriesIndex {
-		return false
+		return true
 	}
 
 	return labels.Compare(pq[i].Series[pq[i].NextSeriesIndex], pq[j].Series[pq[j].NextSeriesIndex]) < 0
