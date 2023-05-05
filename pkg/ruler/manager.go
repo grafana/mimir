@@ -123,7 +123,7 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 		}
 
 	default:
-		level.Info(logger).Log("msg", "using dns based alert manager discovery")
+		level.Info(logger).Log("msg", "using dns based alertmanager discovery")
 		dnsProvider := alertmanagerdiscovery.NewDNSProvider(reg)
 		err = alertmanagerdiscovery.BuildDiscoveryConfigs(cfg.AlertmanagerURL, m.discoveryConfigs, cfg.AlertmanagerRefreshInterval, dnsProvider)
 		if err != nil {
