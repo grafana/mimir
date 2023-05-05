@@ -106,7 +106,7 @@ type Config struct {
 	// Specifies how alert managers should be discovered - injected internally
 	AlertmanagerDiscovery alertmanagerdiscovery.Config `yaml:"-"`
 	// Alertmanager ring discovery configuration - injected internally
-	AlertManagerRing alertmanager.RingConfig `yaml:"-"`
+	AlertmanagerRing alertmanager.RingConfig `yaml:"-"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
