@@ -36,7 +36,7 @@ func NewGRPCClient(address string) (httpgrpc.HTTPClient, error) {
 
 // GrpcToHTTPResponse returns an http.Response for the grpcResponse.
 func GrpcToHTTPResponse(grpcResponse *httpgrpc.HTTPResponse) *http.Response {
-	header := make(map[string][]string)
+	header := make(map[string][]string, len(grpcResponse.Headers))
 	for _, h := range grpcResponse.Headers {
 		header[h.Key] = h.Values
 	}
